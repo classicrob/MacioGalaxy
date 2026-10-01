@@ -1064,6 +1064,12 @@ void MarioActor::controlMain() {
         }
         sLastCore = core;
         sLastSub = sub;
+        static const bool traceSwing = std::getenv("PETARI_ODYSSEY_TRACE_SWING") != nullptr;
+        if (traceSwing && !mMario->mMovementStates._1) {
+            std::fprintf(stderr, "[odyssey] air swing: core %d sub %d F00 %d F0C %d F1C %d buffer %d hip drop %d\n", static_cast< int >(core),
+                         static_cast< int >(sub), static_cast< int >(_F00), static_cast< int >(_F0C), static_cast< int >(_F1C),
+                         Live::spinBuffer, static_cast< int >(mMario->mMovementStates._B));
+        }
     }
 #endif
     update2D();
