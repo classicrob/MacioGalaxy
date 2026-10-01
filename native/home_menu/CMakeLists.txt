@@ -38,6 +38,9 @@ if(_petari_home_menu_standalone)
             -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(petari_native_config INTERFACE -fsanitize=address,undefined)
     endif()
+    # HostAllocationScope, which progress.cpp uses.
+    add_library(petari_host_runtime STATIC ${PETARI_REPO_ROOT}/native/src/host_allocation.cpp)
+    target_link_libraries(petari_host_runtime PUBLIC petari_native_config)
 endif()
 
 # The menu and the HBM entry points. home_menu.cpp has no SDK dependency; the
@@ -47,6 +50,7 @@ add_library(petari_home_menu STATIC home_menu.cpp hbm_bridge.cpp launch_stage.cp
 target_include_directories(petari_home_menu PUBLIC include ${PETARI_REPO_ROOT}/native/include)
 target_link_libraries(petari_home_menu PUBLIC petari_native_config)
 target_compile_features(petari_home_menu PUBLIC cxx_std_17)
+target_link_libraries(petari_home_menu PUBLIC petari_host_runtime)  # progress.cpp: HostAllocationScope
 # The Controls page lists the live bindings when the input layer is in the
 # build (the root adds native/input first). Standalone builds show no lines.
 if(TARGET petari_input)

@@ -603,12 +603,14 @@ View Menu::view() const {
         view.items[2].label = "Go";
         view.items[3].label = "Back";
     } else if (!confirm) {
+        view.bands = true;
         view.title = "Super Mario Galaxy";
         view.message = "Paused";
         for (int i = 0; i < kListCount; i++) {
             view.items[i].label = kListLabels[i];
         }
     } else {
+        view.bands = true;
         const bool restart = mConfirming == Selection::Restart;
         view.title = restart ? "Restart from the title screen?" : "Quit Super Mario Galaxy?";
         view.message = "Progress since your last save will be lost.";
@@ -634,6 +636,13 @@ View Menu::view() const {
                       itemRect(progressPage ? 3 : 0).y1 + kPanelBottomMargin};
         view.titleY = kControlsTitleY;
         view.messageY = controls && mBackend != nullptr ? -0.705f : kControlsMessageY;
+    } else if (view.bands) {
+        // The game's pause-screen layout: a full-width band across the top with the title
+        // and message, the buttons over the scene below it.
+        const float firstItemTop = itemRect(0).y0;
+        view.panel = {-1.0f, -1.0f, 1.0f, firstItemTop - 0.08f};
+        view.titleY = -1.0f + (view.panel.y1 + 1.0f) * 0.42f;
+        view.messageY = -1.0f + (view.panel.y1 + 1.0f) * 0.75f;
     } else {
         // Room for the title and a two-line message above the first item.
         const float firstItemTop = itemRect(0).y0;

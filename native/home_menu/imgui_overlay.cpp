@@ -103,7 +103,8 @@ bool buildWithGalaxyGlyphs(ImFontAtlas* atlas) {
 
 ImFontBuilderIO gGalaxyBuilder = {buildWithGalaxyGlyphs};
 
-constexpr std::uint32_t kIconBase = 0xE000;  // picture glyph c is U+E000 + (c - 0x20)
+constexpr std::uint32_t kIconBase = 0xE000;
+constexpr float kBottomBandTop = 0.9f;  // the pause layout's bottom band (KPAD y), the footer inside it  // picture glyph c is U+E000 + (c - 0x20)
 
 ImFont* addGalaxyFont(ImFontAtlas* atlas, const GalaxyFont::Font& font, const char* name, const GalaxyFont::Font* icons) {
     static const ImWchar kSpaceOnly[] = {0x20, 0x20, 0};  // the base font only carries the size; the glyphs are ours
@@ -320,7 +321,7 @@ void galaxyPanel(ImDrawList* list, ImVec2 min, ImVec2 max, float rounding, float
     const int start = list->VtxBuffer.Size;
     // Nearly opaque: whatever the game shows (its own pause menu, if open) stays behind.
     list->AddRectFilled(min, max, color(0.0f, 0.0f, 0.0f, 0.97f * alpha), rounding);
-    shade(list, start, min, max, color(0.05f, 0.27f, 0.40f, 1.0f), color(0.01f, 0.09f, 0.20f, 1.0f));
+    shade(list, start, min, max, color(0.03f, 0.34f, 0.45f, 1.0f), color(0.01f, 0.14f, 0.24f, 1.0f));
     list->AddRect(min, max, color(0.40f, 0.86f, 1.0f, 0.9f * alpha), rounding, 0, unit * 3.0f);
     const ImVec2 inset(unit * 4.0f, unit * 4.0f);
     list->AddRect(ImVec2(min.x + inset.x, min.y + inset.y), ImVec2(max.x - inset.x, max.y - inset.y),
@@ -607,7 +608,17 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
     const float unit = imageHeight / 720.0f;  // one pixel of a 720-line image
     list->PushClipRect(imageMin, imageMax, false);
 
-    if (view.dimOpacity > 0.0f) {
+    if (view.bands) {
+        // As the game's pause screen: translucent teal bands top and bottom, the scene
+        // clear between them.
+        const float a = view.dimOpacity * 1.6f;
+        const ImVec2 topMax(imageMax.x, image.point(0.0f, view.panel.y1).y);
+        const ImVec2 bottomMin(imageMin.x, image.point(0.0f, kBottomBandTop).y);
+        list->AddRectFilled(imageMin, topMax, color(0.03f, 0.43f, 0.53f, a));
+        list->AddRectFilled(bottomMin, imageMax, color(0.03f, 0.43f, 0.53f, a));
+        list->AddLine(ImVec2(imageMin.x, topMax.y), topMax, color(0.55f, 0.92f, 1.0f, a * 0.9f), unit * 2.0f);
+        list->AddLine(bottomMin, ImVec2(imageMax.x, bottomMin.y), color(0.55f, 0.92f, 1.0f, a * 0.9f), unit * 2.0f);
+    } else if (view.dimOpacity > 0.0f) {
         // The game's pause screen tints the scene deep teal rather than grey.
         list->AddRectFilled(imageMin, imageMax, color(0.0f, 0.16f, 0.26f, view.dimOpacity * 1.3f));
     }
@@ -617,7 +628,9 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
         const float rounding = imageHeight * 0.035f;
         const ImVec2 panelMin = image.point(view.panel.x0, view.panel.y0);
         const ImVec2 panelMax = image.point(view.panel.x1, view.panel.y1);
-        galaxyPanel(list, panelMin, panelMax, rounding, unit, alpha);
+        if (!view.bands) {
+            galaxyPanel(list, panelMin, panelMax, rounding, unit, alpha);
+        }
 
         const float panelCenterX = (panelMin.x + panelMax.x) * 0.5f;
         const float textWidth = (panelMax.x - panelMin.x) * 0.9f;
@@ -685,7 +698,7 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
         // game's own screens show them.
         if (view.footer != nullptr && view.footer[0] != '\0') {
             const ImVec2 bandMin = image.point(-1.0f, 0.915f);
-            list->AddRectFilledMultiColor(bandMin, imageMax, color(0.0f, 0.12f, 0.22f, 0.0f), color(0.0f, 0.12f, 0.22f, 0.0f),
+            if (!view.bands) list->AddRectFilledMultiColor(bandMin, imageMax, color(0.0f, 0.12f, 0.22f, 0.0f), color(0.0f, 0.12f, 0.22f, 0.0f),
                                           color(0.0f, 0.12f, 0.22f, 0.85f * alpha), color(0.0f, 0.12f, 0.22f, 0.85f * alpha));
             centeredText(list, font, imageHeight * 0.03f, imageWidth * 0.94f,
                          ImVec2((imageMin.x + imageMax.x) * 0.5f, image.point(0.0f, 0.958f).y),

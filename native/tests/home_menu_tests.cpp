@@ -173,9 +173,9 @@ void testLifecycle() {
               std::strcmp(list.items[3].label, "My Progress") == 0 && std::strcmp(list.items[4].label, "Restart from Title") == 0 &&
               std::strcmp(list.items[5].label, "Quit") == 0,
           "list offers Resume, Controls, Mods, My Progress, Restart from Title, Quit");
-    check(list.panel.y0 >= -1.0f && list.panel.y1 <= 1.0f && list.items[5].rect.y1 < list.panel.y1 &&
-              list.messageY < list.items[0].rect.y0,
-          "six items fit inside the panel and the image");
+    check(list.bands && list.panel.y0 >= -1.0f && list.messageY < list.panel.y1 && list.items[0].rect.y0 > list.panel.y1 &&
+              list.items[5].rect.y1 < 0.9f,
+          "the list: title and message in the top band, six items between the bands");
     check(list.items[0].focused && !list.items[1].focused, "Resume focused first");
 
     for (int i = 0; i < 300; i++) {
@@ -487,9 +487,9 @@ void testFocusAndRepeat() {
     // Widescreen keeps the panel's shape.
     menu = newMenu();
     openToList(menu);
-    const float narrow = menu.view().panel.x1;
+    const float narrow = menu.view().items[0].rect.x1;
     menu.setWidescreen(true);
-    check(std::fabs(menu.view().panel.x1 - narrow * 608.0f / 832.0f) < 1e-5f, "16:9 narrows the panel in pointer space");
+    check(std::fabs(menu.view().items[0].rect.x1 - narrow * 608.0f / 832.0f) < 1e-5f, "16:9 narrows the buttons in pointer space");
     center(menu.view().items[0].rect, &x, &y);
     check(menu.view().items[0].rect.x1 < narrow, "items narrow too");
 }
@@ -967,7 +967,7 @@ void testWrapper() {
     };
     frame(WPAD_BUTTON_HOME, 0);
     check(HM::publishedView().visible, "HBMDraw publishes the view");
-    check(HM::publishedView().panel.x1 < 0.42f, "adjust flag applied");
+    check(HM::publishedView().items[0].rect.x1 < 0.33f, "adjust flag applied");
     for (int i = 0; i < 12; i++) {
         frame(0, 0);
     }
@@ -1034,7 +1034,7 @@ struct Bounds {
     int vertices = 0;
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
     float blackAlpha = 0.0f;  // most opaque pure-black vertex
-    float dimAlpha = 0.0f;    // most opaque vertex of the teal dim
+    float dimAlpha = 0.0f;    // most opaque vertex of the pause layout's teal bands
     bool focusColor = false;
 };
 
@@ -1059,7 +1059,7 @@ Bounds drawOverlay(float x, float y, float w, float h) {
             if (c.x == 0.0f && c.y == 0.0f && c.z == 0.0f) {
                 bounds.blackAlpha = std::fmax(bounds.blackAlpha, c.w);
             }
-            if (c.x == 0.0f && std::fabs(c.y - 0.16f) < 0.01f && std::fabs(c.z - 0.26f) < 0.01f) {
+            if (std::fabs(c.x - 0.03f) < 0.01f && std::fabs(c.y - 0.43f) < 0.01f && std::fabs(c.z - 0.53f) < 0.01f) {
                 bounds.dimAlpha = std::fmax(bounds.dimAlpha, c.w);
             }
             if (c.w > 0.99f && c.x > 0.9f && c.y > 0.7f && c.z < 0.3f) {
@@ -1093,7 +1093,7 @@ void testImGuiOverlay() {
     check(list.x0 < 161.0f && list.y1 > 759.0f, "dim covers the image");
     check(list.focusColor, "focused item highlighted");
     check(list.blackAlpha < 0.01f, "nothing is black while the list is shown");
-    check(std::fabs(list.dimAlpha - 0.65f) < 0.01f, "the game behind is tinted teal, as the game's pause screen is");
+    check(std::fabs(list.dimAlpha - 0.8f) < 0.01f, "teal bands top and bottom, as the game's pause screen has");
     check(!ImGui::GetIO().WantCaptureMouse && !ImGui::GetIO().WantCaptureKeyboard, "overlay takes no input");
 
     // Every confirmation's text fits the panel, in 4:3 and 16:9 images.

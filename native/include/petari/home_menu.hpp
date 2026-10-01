@@ -263,6 +263,9 @@ struct View {
     float panelOpacity = 0.0f;  // panel, text, and items
     float blackOpacity = 0.0f;  // full-image black, over everything
     Rect panel;
+    // The list and the confirmations: no panel; `panel` is a full-width band across
+    // the top (title and message), with a matching band along the bottom.
+    bool bands = false;
     const char* title = "";
     const char* message = "";  // may be empty
     char footer[192] = {};     // the buttons that work on this page, with icons; drawn along the image bottom
