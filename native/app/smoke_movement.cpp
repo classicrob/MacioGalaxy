@@ -58,6 +58,7 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
         {"dive landing (stick released)", 6, false, 0, false, 0, true, 0, true, 0, false, 30},
         {"roll to the end (stick held)", 0, false, 0, false, 3, false, 0, false, 140, false, 0, false, true, true},
         {"roll to the end (stick released)", 0, false, 0, false, 3, false, 0, false, 140, false, 0, false, false, true},
+        {"roll boost cadence", 0, false, 0, false, 3, false, 0, false, 150, false, 0, false, false, true, 15},
     };
     if (const char* dir = std::getenv("PETARI_MOVEMENT_WALL_DIR"); dir != nullptr) {
         const std::string d(dir);
@@ -384,12 +385,23 @@ Step MovementDriver::step(const Observation& o) {
         // A boost (15 frames apart at least; the emulated shake behind Spin repeats
         // about four times a second, so 30 frames after the start).
         if (mPhaseFrames == 30 && !task.noBoost) tap(Button::Spin, 2, step);
+        if (task.mash > 0 && mPhaseFrames >= 15 && mPhaseFrames % static_cast< unsigned long >(task.mash) == 0) {
+            tap(Button::Spin, 2, step);
+            ++mTaps;
+        }
         if (static_cast< int >(mPhaseFrames) >= task.roll) {
             float top = 0.0f;
             std::string speeds;
             for (size_t i = 0; i < mSpeeds.size(); ++i) {
                 top = std::max(top, mSpeeds[i]);
                 if (i % 5 == 0) speeds += (speeds.empty() ? "" : " ") + num(mSpeeds[i]);
+            }
+            if (task.mash > 0) {
+                int boosts = 0;
+                for (size_t i = 1; i < mSpeeds.size(); ++i) boosts += mSpeeds[i] > mSpeeds[i - 1] + 1.0f;
+                note(std::string("MOVEMENT ") + task.name + ": " + std::to_string(boosts) + " boosts from " + std::to_string(mTaps) +
+                     " Spin taps (every " + std::to_string(task.mash) + " frames)");
+                mTaps = 0;
             }
             note(std::string("MOVEMENT ") + task.name + ": max speed " + num(top) + " u/f; every 5th frame: " + speeds);
             ++mTask;

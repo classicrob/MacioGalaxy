@@ -9,6 +9,9 @@
 #include "Game/Player/Mario.hpp"
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioAnimator.hpp"
+#ifdef PETARI_NATIVE
+#include "Game/Animation/XanimePlayer.hpp"
+#endif
 #include "Game/Player/MarioConst.hpp"
 #include "Game/Player/MarioRabbit.hpp"
 #include "Game/Player/MarioSkate.hpp"
@@ -1606,13 +1609,22 @@ void Mario::procJump(bool a1) {
                 sOdyssey.air.extending = false;
             }
             const f32 rise = PetariNative::Odyssey::stepAir(sOdyssey.air, checkLvlA(), stickFront, stickSide);
+            if (sOdyssey.air.kind == PetariNative::Odyssey::Air::Dive && isAnimationRun("飛び込みジャンプ")) {
+                // SMO's dive is head-first all the way: hold the high dive's
+                // horizontal head-first frame instead of its upright rise and flip.
+                XanimeFrameCtrl* ctrl = getAnimator()->getXanimePlayer()->getFrameCtrl();
+                if (ctrl != nullptr) {
+                    ctrl->setFrame(28.0f);
+                    ctrl->setRate(0.0f);
+                }
+            }
             mJumpVec = front * sOdyssey.air.front + side * sOdyssey.air.side + up * rise;
             addVelocity(mJumpVec);
             static const bool trace = std::getenv("PETARI_ODYSSEY_TRACE") != nullptr;
             if (trace) {
-                std::fprintf(stderr, "[odyssey] frame %d kind %d rise %.3f front %.3f pos (%.3f, %.3f, %.3f) vel (%.3f, %.3f, %.3f)\n",
+                std::fprintf(stderr, "[odyssey] frame %d kind %d rise %.3f front %.3f pos (%.3f, %.3f, %.3f) vel (%.3f, %.3f, %.3f) anim %.1f\n",
                              sOdyssey.air.frame, static_cast< int >(sOdyssey.air.kind), rise, sOdyssey.air.front, mPosition.x, mPosition.y,
-                             mPosition.z, mVelocity.x, mVelocity.y, mVelocity.z);
+                             mPosition.z, mVelocity.x, mVelocity.y, mVelocity.z, getAnimator()->getFrame());
             }
         } else
 #endif
@@ -1908,7 +1920,8 @@ bool Mario::jumpToHipDrop() {
 void Mario::procHipDrop() {
     f32 gravityHipDrop;
 #ifdef PETARI_NATIVE
-    if (odysseyOn() && getPlayerMode() == 0 && !mMovementStates._1 && mActor->isRequestSpin()) {
+    if (odysseyOn() && getPlayerMode() == 0 && !mMovementStates._1 && PetariNative::Odyssey::Live::spinBuffer > 0) {
+        PetariNative::Odyssey::Live::spinBuffer = 0;
         // SMO's dive: Spin during a ground pound in the air (wind-up or fall) dives
         // forward along the facing: 20 forward, 28 up, gravity 2.0. Galaxy has no
         // dive; it uses _430 5 (the long jump's type, which also keeps a new ground
@@ -2728,6 +2741,12 @@ void Mario::doLanding() {
         // failed dive's forward roll as the get-up. Stick released: Galaxy's landing.
         const PetariNative::Odyssey::Air landed = sOdysseyLanded;
         sOdysseyLanded = PetariNative::Odyssey::Air::None;
+        if (landed == PetariNative::Odyssey::Air::Dive && isAnimationRun("飛び込みジャンプ")) {
+            XanimeFrameCtrl* ctrl = getAnimator()->getXanimePlayer()->getFrameCtrl();
+            if (ctrl != nullptr) {
+                ctrl->setRate(1.0f);  // the held dive frame plays on into Galaxy's landing
+            }
+        }
         if (odysseyOn() && !doHardLanding && isStickOn() &&
             (landed == PetariNative::Odyssey::Air::LongJump || landed == PetariNative::Odyssey::Air::Dive)) {
             TVec3f up(-mActor->_240);
@@ -2743,6 +2762,7 @@ void Mario::doLanding() {
                 mWalkSpeed = speed / mActor->getConst().getTable()->mWalkSpeed;
                 if (landed == PetariNative::Odyssey::Air::Dive) {
                     changeAnimation("飛び込み失敗回転着地", "基本");
+                    PetariNative::Odyssey::Live::getUpFrames = 12;  // then the run (Mario::updateWalkSpeed)
                 } else {
                     stopAnimation(nullptr, "基本");
                 }

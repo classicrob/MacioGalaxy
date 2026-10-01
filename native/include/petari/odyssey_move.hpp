@@ -335,6 +335,13 @@ inline RollState roll;
 inline bool rollStart = false;  // Spin while crouching on the ground
 inline bool rollBoost = false;  // Spin while rolling
 inline bool noSpinAir = false;  // in the mod's dive or long jump: Spin does nothing (SMO), no spin cooldown
+// Spin for the mod's own moves (dive, roll start, roll boost): set for this many
+// frames on the swing's rising edge, read independently of Galaxy's spin
+// cooldown and its swing lockouts (SMO's Y answers at once); a slightly early
+// press still counts.
+constexpr int SpinBufferFrames = 6;
+inline int spinBuffer = 0;
+inline int getUpFrames = 0;  // frames left of the forward-roll get-up after a dive landing (then the run animation)
 }  // namespace Live
 
 }  // namespace PetariNative::Odyssey

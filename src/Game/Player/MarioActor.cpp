@@ -1,5 +1,6 @@
 #include "Game/Player/MarioActor.hpp"
 #ifdef PETARI_NATIVE
+#include "Game/Util/GamePadUtil.hpp"
 #include <cstdlib>
 #include <petari/odyssey_move.hpp>
 extern "C" bool petari_mod_enabled(int mod);
@@ -1042,6 +1043,29 @@ void MarioActor::controlMain() {
     updateActionTrigger();
     updateControllerSwing();
     updateControllerSwingLeft();
+#ifdef PETARI_NATIVE
+    // OdysseyMovement: the swing's rising edge for the mod's Spin moves, every frame
+    // (updateSwingAction does not run in every action, e.g. a ground pound).
+    if (petari_mod_enabled(2)) {
+        namespace Live = PetariNative::Odyssey::Live;
+        static bool sLastCore = false, sLastSub = false;
+        const bool core = MR::isCorePadSwing(0);
+        const bool sub = MR::isSubPadSwing(0);
+        if ((core && !sLastCore) || (sub && !sLastSub)) {
+            Live::spinBuffer = Live::SpinBufferFrames;
+            static const bool trace = std::getenv("PETARI_ODYSSEY_TRACE") != nullptr;
+            if (trace) {
+                std::fprintf(stderr, "[odyssey] swing edge (core %d sub %d): jumping %d hip drop %d ground %d\n", static_cast< int >(core),
+                             static_cast< int >(sub), static_cast< int >(isJumping()), static_cast< int >(mMario->mMovementStates._B),
+                             static_cast< int >(mMario->mMovementStates._1));
+            }
+        } else if (Live::spinBuffer > 0) {
+            --Live::spinBuffer;
+        }
+        sLastCore = core;
+        sLastSub = sub;
+    }
+#endif
     update2D();
     if (_A61) {
         _A6C++;
@@ -1284,6 +1308,35 @@ void MarioActor::updateSwingAction() {
     if (isJumping() && mPlayerMode != 6 && !mMario->isStatusActive(MarioStatus_Foo)) {
         _946 = 0;
     }
+#ifdef PETARI_NATIVE
+    // OdysseyMovement: the mod's Spin moves read the swing's rising edge directly,
+    // buffered SpinBufferFrames frames, without Galaxy's spin cooldown (_946) and
+    // swing lockouts (_F1C/_F1E). A press they use starts no Galaxy spin and no
+    // cooldown; Galaxy's Star Spin otherwise keeps its own rules.
+    if (petari_mod_enabled(2) && mPlayerMode == 0 && !mMario->isSwimming()) {
+        namespace Live = PetariNative::Odyssey::Live;
+        const bool grounded = !isJumping() && mMario->mMovementStates._1;
+        if (grounded && Live::roll.rolling) {
+            // Rolling: a buffered press boosts once the 15-frame interval allows it.
+            if (Live::spinBuffer > 0 && Live::roll.sinceBoost + 1 >= PetariNative::Odyssey::Const::SlopeRollingReStartInterval) {
+                Live::rollBoost = true;
+                Live::spinBuffer = 0;
+            }
+            return;
+        }
+        if (Live::spinBuffer > 0 && grounded && (mMario->mMovementStates._A || mMario->checkSquat(false))) {
+            Live::rollStart = true;
+            Live::spinBuffer = 0;
+            return;
+        }
+        if (isJumping() && (mMario->mMovementStates._B || Live::noSpinAir)) {
+            return;  // ground pound: the buffer is the dive's (Mario::procHipDrop); dive/long jump: no spin
+        }
+        if (Live::spinBuffer > 0 && isRequestRush()) {
+            Live::spinBuffer = 0;  // Galaxy's own spin takes this press
+        }
+    }
+#endif
 
     bool requestRush = isRequestRush();
     bool requestSpinJump2P = false;
@@ -1384,22 +1437,13 @@ void MarioActor::updateSwingAction() {
     switch (action) {
     case 1: {
 #ifdef PETARI_NATIVE
-        // OdysseyMovement: on the ground, Spin while crouching (or holding the crouch
-        // button on the frame the crouch starts) starts SMO's roll and Spin while
-        // rolling boosts it (Mario::updateWalkSpeed runs it). In a ground pound,
-        // Spin is the dive (Mario::procHipDrop): no spin and no spin cooldown, so a
-        // roll can follow the dive's landing at once, as in SMO.
-        if (petari_mod_enabled(2) && mPlayerMode == 0 && isJumping() &&
-            (mMario->mMovementStates._B || PetariNative::Odyssey::Live::noSpinAir)) {
-            break;
-        }
-        if (petari_mod_enabled(2) && mPlayerMode == 0 && !isJumping() && mMario->mMovementStates._1 &&
-            (mMario->mMovementStates._A || mMario->checkSquat(false) || PetariNative::Odyssey::Live::roll.rolling)) {
-            if (PetariNative::Odyssey::Live::roll.rolling) {
-                PetariNative::Odyssey::Live::rollBoost = true;
-            } else {
-                PetariNative::Odyssey::Live::rollStart = true;
-            }
+        // OdysseyMovement: in a ground pound Spin is the dive, in the mod's dive or
+        // long jump it does nothing, while rolling it boosts: no Galaxy spin and no
+        // spin cooldown for any of them.
+        // (The moves themselves read the swing at the top of updateSwingAction.)
+        if (petari_mod_enabled(2) && mPlayerMode == 0 &&
+            ((isJumping() && (mMario->mMovementStates._B || PetariNative::Odyssey::Live::noSpinAir)) ||
+             (!isJumping() && mMario->mMovementStates._1 && PetariNative::Odyssey::Live::roll.rolling))) {
             break;
         }
 #endif

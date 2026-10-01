@@ -252,7 +252,18 @@ playability run, before the next step.
 - Slope walking in SMO is not well measured; the mod keeps Galaxy's slope
   behaviour except for the speed cap.
 - Animations are Galaxy's; some SMO moves (dive, roll) reuse the nearest Galaxy
-  animation, checked with XFB dumps (`PETARI_XFB_DUMP`; the harness marks each
+  animation. The mod's run reads the stick's tilt (`mStickPos.z`), not Galaxy's
+  run target, and keeps the target's index on the stick every frame: Galaxy
+  updates it only while a walk animation plays and ramps it up from 0 after a
+  stop, which made Mario glide standing after every mod handover (dive and long
+  jump landings, roll end). The dive holds frame 28 of the high dive (head-first)
+  in the air; its stick-held landing plays 12 frames of the forward roll, then
+  the run. The mod's Spin moves read the swing's rising edge each frame
+  (`MarioActor::controlMain`), buffered 6 frames, without Galaxy's spin cooldown
+  and swing lockouts: roll boosts at 15-frame taps measured 8 of 10 (one tap
+  lost to the 15-frame interval) before, 8-9 of 10 after (the emulated shake's
+  250 ms spacing is the remaining limit).
+  Checked with XFB dumps (`PETARI_XFB_DUMP`; the harness marks each
   move's name as the dump label): the dive uses Galaxy's high dive into water
   (upright while rising, head-first on the way down, belly landing); the roll
   restarts the failed-dive landing's forward roll every 12 frames (back to back),

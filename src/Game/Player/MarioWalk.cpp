@@ -742,9 +742,19 @@ void Mario::updateWalkSpeed() {
     if (petari_mod_enabled(2) && getPlayerMode() == 0 && !mMovementStates._A && !mMovementStates._F && mSinkTimer == 0 &&
         !isStatusActive(17)) {
         const f32 unit = mActor->getConst().getTable()->mWalkSpeed;  // Galaxy's full run, units/frame
-        // Galaxy's target is the stick after its dead zone (0..1); undo SMO's dead
-        // zone so stepRun sees the same tilt.
-        const f32 stick = targetWalkSpeed > 0.0f ? 0.1f + 0.9f * targetWalkSpeed : 0.0f;
+        // The stick's tilt itself, not Galaxy's target: that one follows a run-speed
+        // index only its animator updates, and ramps up from 0 after a stop
+        // (_404), so right after a mod move hands over (dive or long-jump landing,
+        // roll end) it reads "no stick" and Mario glides standing while braking.
+        // Galaxy's turn slip and brake turn (_3D0, _10) still stop the run.
+        const f32 stick = (_3D0 == 0 && !mMovementStates._10) ? MR::clamp(mStickPos.z, 0.0f, 1.0f) : 0.0f;
+        _404 = 0;
+        decideWalkSpeed();  // keep the run animation's index on the stick, so it runs instead of standing
+        if (PetariNative::Odyssey::Live::getUpFrames > 0 && --PetariNative::Odyssey::Live::getUpFrames == 0) {
+            // The dive landing's forward roll is done: Galaxy would hold its last
+            // (standing) frame while Mario moves on; hand over to the run.
+            stopAnimation("飛び込み失敗回転着地", "基本");
+        }
         mWalkSpeed = PetariNative::Odyssey::stepRun(mWalkSpeed * unit, stick) / unit;
         return;
     }

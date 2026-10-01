@@ -29,7 +29,9 @@
 //      released; logs "MOVEMENT <name> landing: speed <v> on the landing frame;
 //      every 5th frame: ..." over the 30 frames after it;
 //  12. rolls ridden to their end (no boost) with the stick held and released
-//      ("roll to the end (stick held)" and so on).
+//      ("roll to the end (stick held)" and so on);
+//  13. "roll boost cadence": Spin tapped every 15 frames through a roll; logs the
+//      boosts (speed jumps) out of the taps.
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example
 // PETARI_XFB_DUMP_LABELS="long jump,dive").
 // PETARI_MOVEMENT_ONLY=<name>[,<name>...] keeps only the tasks whose name
@@ -85,6 +87,7 @@ private:
         bool releaseStick = false; // release the stick at take-off (lands with it released)
         bool airStick = false;     // hold the stick from take-off (lands with it held)
         bool noBoost = false;      // roll: no boost, ridden to its end
+        int mash = 0;              // roll: tap Spin every this many frames (boost cadence)
     };
 
     void finish(Result result, const std::string& reason, Step& step);
@@ -112,6 +115,7 @@ private:
     float mMaxSpeed = 0.0f;
     Button mWallStick = Button::StickUp;  // PETARI_MOVEMENT_WALL_DIR: up, down, left, right
     float mFallLast = 0.0f;
+    int mTaps = 0;  // Spin taps in a boost-cadence roll
     std::vector<float> mSpeeds;
 };
 

@@ -63,16 +63,19 @@ Known gaps in this version:
 
 - No Cappy: no cap throw, cap jump, capture or cap bounce. F (Spin) keeps
   Galaxy's Star Spin except for the dive and the roll.
-- Galaxy has no animations for some SMO moves. The dive uses Galaxy's high dive
-  into water (Mario rises upright and turns head-first on the way down); the roll
+- Galaxy has no animations for some SMO moves. The dive holds the head-first
+  frame of Galaxy's high dive into water; the roll
   repeats the forward roll of a failed dive's landing back to back.
 - No ground-pound roll (SMO: Y on a ground-pound landing) and no roll speed-up
   on downhill slopes.
 - Slopes and slides keep Galaxy's behaviour; Galaxy's own wall-jump surfaces
   decide where Mario can wall-slide (walls Galaxy does not let him cling to stay
   that way).
-- Spin repeats about four times a second at most (the keyboard F emulates a
-  Wii Remote shake), so the fastest roll boosts are slower than SMO's.
+- Spin for the dive, the roll and its boosts answers at once (Galaxy's spin
+  cooldown does not apply to them, and a press up to 6 frames early still counts).
+  The emulated Wii Remote shake behind F repeats at most every 250 ms (about 15
+  frames), the same as the roll's boost interval, so mashing F at that rate
+  occasionally skips a boost.
 
 ## Odyssey camera
 
