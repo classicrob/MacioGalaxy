@@ -42,8 +42,9 @@
 //      frames later (the throw key, tapped), the bounce off Cappy, then a ground
 //      pound 8 frames after the bounce and a second dive. Every tap is 6 frames.
 //      Logs "MOVEMENT cappy loop: bounce ..." and FAILs without a bounce;
-//  17. "cappy ground bounce": the cap thrown from a standstill and held, a run
-//      after it, and a tapped jump 170 short of where Cappy hovers (678 ahead).
+//  17. "cappy ground bounce": a 20-frame run, the cap thrown along it and held,
+//      the run on after it, and a tapped jump 170 short of where Cappy hovers
+//      (678 ahead of the throw).
 // The Cappy tasks need PETARI_MODS=OdysseyMovement,Cappy and are skipped
 // otherwise (PETARI_CAPPY_TRACE=1 logs Cappy's state each frame).
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example
@@ -138,7 +139,7 @@ private:
     std::vector<float> mSpeeds;
     // Cappy tasks: the bounce's frame, whether it came, the second dive's press
     // (the ground task: its jump).
-    unsigned long mBounceFrame = 0;
+    unsigned long mBounceFrame = 0, mJumpFrame = 0;
     bool mBounced = false, mDive2 = false;
     float mBounceHeight = 0.0f, mAfterBounceApex = 0.0f;
     int mBounceStart = 0;  // bounces before the task (petari_cappy_bounces)
