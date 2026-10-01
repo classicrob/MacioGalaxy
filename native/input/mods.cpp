@@ -15,7 +15,7 @@ namespace {
 constexpr int kCount = static_cast<int>(Mod::Count);
 constexpr const char* kNames[kCount] = {"CollectStarBits", "ShootEnemy", "OdysseyMovement", "Cappy", "OdysseyJumpDive"};
 constexpr const char* kDescriptions[kCount] = {"Collect visible Star Bits", "Fire a Star Bit at the nearest enemy",
-                                               "Odyssey movement", "Cappy", "Jump in the air dives"};
+                                               "Odyssey movement", "Cappy", "Jump during a ground pound dives"};
 // The value of a mod with no line in mods.txt (a sub-option of another mod can
 // default on: it does nothing while its mod is off).
 constexpr bool kDefaults[kCount] = {false, false, false, false, true};

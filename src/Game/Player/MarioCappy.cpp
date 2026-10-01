@@ -526,7 +526,7 @@ void petariCappyWallJump() {
 }
 
 void petariCappyDiveStarted() {
-    // A dive while Cappy is out (Jump in the air, or ground pound + Spin) keeps
+    // A dive while Cappy is out (ground pound + Jump or Spin) keeps
     // him there like the throw key's press does (SMO dives with Y).
     if (s.cap != nullptr && active()) {
         Cappy::notePress(s.cappy);

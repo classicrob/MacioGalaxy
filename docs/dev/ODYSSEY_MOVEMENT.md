@@ -97,21 +97,22 @@ lava tile damages Mario. No standing glide, wrong facing, speed jump or launch
 at gravity changes was seen. Good Egg's flip-panel cube and egg road could not
 be reached by warping (death cube; Pull-Star posts), so no cube face was tested.
 
-Jump in the air dives (Mods::Mod::OdysseyJumpDive, default on; user request
-2026-10-01): MarioJump's procJump air branch dives on a new Jump press
-(`checkTrgA`) when: the mod and the option are on; normal Mario on foot, not
-swimming, no ground pound or tornado (procJump's plain branch already excludes
-every status: wall, hang, pole, swim, Pull Star...); a mod jump or fall kind
-(jumps 1-3, flips, ground-pound jump, wall jump, fall, Cappy's hop and bounces;
-not the dive, long jump or dive cap bounce) or a plain Galaxy jump/fall (_430
-0-4, 6, 7); more than 6 airborne frames; no dive yet this airtime; and the ground
-not within ContinuousJumpPreInputFrame (5) frames: `odysseyLandingSoon` steps
-the air model (or Galaxy's jump vector as a fall) from the current height above
-the ground (mVerticalSpeed). It is the same dive as ground pound + Spin
-(`odysseyStartDive`), so the dive's cap bounce works too. Harness: "jump dive"
-(A again 12 frames in: dives, leap pose, belly landing), "jump press before
-landing" (A 3 frames before landing: takes off again 1 frame after landing, as
-with the option off) and "jump double tap" (A 3 frames in: no dive).
+Jump during a ground pound dives (Mods::Mod::OdysseyJumpDive, default on). The
+first version (aa0467efc) dived on any new Jump press in the air; after playing
+it the user asked for the air crouch first, so now a plain jump's Jump presses
+are Galaxy's again and procHipDrop dives on a new Jump press (`checkTrgA`)
+during the mod's ground pound in the air, as Spin does: normal Mario on foot,
+not swimming, no jump-press dive yet this airtime (`sOdysseyAirDived`; any dive
+sets it, landing, a new jump or a Cappy bounce clears it), and the pound not
+landing within ContinuousJumpPreInputFrame (5) frames
+(`odysseyGroundPoundLandingSoon`: never during the pound's wind-up stall; in the
+fall, the fall speed grown by Galaxy's hip-drop gravity up to 45 against the
+height above the ground). Harness: "ground pound jump dive" (jump, pound at the
+peak, Jump 4 frames later: dives 182), "plain jump then jump" (no dive) and
+"ground pound jump before landing" (Jump 94 above the ground at 45 u/f: no dive;
+no ground-pound jump either, with the option on or off: Galaxy's ground-pound
+jump takes a press only after the landing, frames 5-30, so a press just before
+it has never been buffered).
 
 On Good Egg (EggStarGalaxy, planet gravity) with the mod on, the stage smoke
 passes and the same harness measured the standstill jumps 258.000 / 105.000,

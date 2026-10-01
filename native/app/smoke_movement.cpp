@@ -79,26 +79,29 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
     // The user's loop (playtest recording 2026-10-01 15:20, frames 15677-15780):
     // standing, Jump held 24 frames, the throw at 19, Jump at 40 (the jump-press
     // dive), Jump again 12 frames after the bounce (the second dive).
-    Task standstill{"cappy standstill loop", 24, false, 0, false};
+    Task standstill{"cappy jump-dive loop", 24, true, 40, false};
     standstill.cappy = 4;
     mTasks.push_back(loop);
     mTasks.push_back(ground);
     mTasks.push_back(throws);
     mTasks.push_back(standstill);
-    // "Jump in the air dives" (OdysseyJumpDive): a second press mid-air dives; one
-    // just before landing is a jump from the ground; a quick double tap is not.
-    Task jumpDive{"jump dive", 6, false, 0, false};
-    jumpDive.airPress = 12;
-    jumpDive.land = 30;
-    Task preLanding{"jump press before landing", 15, false, 0, false};
-    preLanding.airPress = 37;  // the held standstill jump lands 40 frames after its press
+    // "Jump during a ground pound dives" (OdysseyJumpDive): a jump, a ground pound
+    // at its peak, Jump 4 frames later: a dive. Jump in a plain jump: no dive.
+    // Jump just before a ground pound lands: the ground-pound jump, not a dive.
+    Task poundJumpDive{"ground pound jump dive", 2, false, 0, false, 0, true, 0, true};
+    poundJumpDive.hopHold = 15;
+    poundJumpDive.diveWithA = true;
+    poundJumpDive.land = 30;
+    Task plainJump{"plain jump then jump", 6, false, 0, false};
+    plainJump.airPress = 12;
+    plainJump.land = 30;
+    Task preLanding{"ground pound jump before landing", 15, false, 0, false, 0, true};
+    preLanding.hopHold = 15;
+    preLanding.poundPreLandA = true;
     preLanding.land = 30;
-    Task doubleTap{"jump double tap", 1, false, 0, false};
-    doubleTap.airPress = 3;
-    doubleTap.land = 30;
-    mTasks.push_back(jumpDive);
+    mTasks.push_back(poundJumpDive);
+    mTasks.push_back(plainJump);
     mTasks.push_back(preLanding);
-    mTasks.push_back(doubleTap);
     if (const char* dir = std::getenv("PETARI_MOVEMENT_WALL_DIR"); dir != nullptr) {
         const std::string d(dir);
         mWallStick = d == "down" ? Button::StickDown : d == "left" ? Button::StickLeft : d == "right" ? Button::StickRight : Button::StickUp;
@@ -334,6 +337,9 @@ Step MovementDriver::step(const Observation& o) {
                 mTaps = petari_cappy_collected();
             } else if (task.groundPound) {
                 tap(Button::A, static_cast< unsigned long >(task.hopHold), step);  // a hop (or a jump); the ground pound comes at its peak
+                mStartX = pos.x; mStartY = pos.y; mStartZ = pos.z;
+                mUpX = up.x; mUpY = up.y; mUpZ = up.z;
+                mDive2 = false;
                 mPhase = Phase::Hop;
                 mPhaseFrames = 0;
                 mLeftGround = false;
@@ -356,7 +362,28 @@ Step MovementDriver::step(const Observation& o) {
     }
     case Phase::Pound: {
         if (task.dive) {
-            if (mPhaseFrames == 4) startJump(Button::Spin);  // Spin during the pound's wind-up
+            if (mPhaseFrames == 4) {
+                if (task.diveWithA) {
+                    startJump(Button::A);  // Jump during the pound's wind-up
+                    mLeftGround = true;
+                } else {
+                    startJump(Button::Spin);  // Spin during the pound's wind-up
+                }
+            }
+            break;
+        }
+        if (task.poundPreLandA) {
+            const float h = dot(sub(pos, V{mStartX, mStartY, mStartZ}), V{mUpX, mUpY, mUpZ});
+            if (!mDive2 && !o.playerOnGround && mPhaseFrames > 6 && h < 100.0f && dot(moved, up) < -10.0f) {
+                tap(Button::A, 2, step);
+                mDive2 = true;
+                note(std::string(task.name) + ": Jump " + num(h) + " above the ground, falling " + num(-dot(moved, up)) + " u/f");
+            }
+            if (mDive2 && o.playerOnGround) {
+                mSpeeds.assign(1, horizontal);
+                mPhase = Phase::Landed;
+                mPhaseFrames = 0;
+            }
             break;
         }
         // Count grounded frames after the pound lands; jump on the 8th.
@@ -645,8 +672,9 @@ Step MovementDriver::step(const Observation& o) {
                 tap(Button::CapThrow, kTapFrames, step);
                 PetariNative::EfbDump::mark("cappy throw");
             }
-            if (mPhaseFrames == 40) {
-                tap(Button::A, kTapFrames, step);
+            if (mPhaseFrames == 26) tap(Button::Z, kTapFrames, step);  // the air crouch (ground pound)
+            if (mPhaseFrames == 30) {
+                tap(Button::A, kTapFrames, step);  // Jump in it: the dive
                 PetariNative::EfbDump::mark("cappy dive");
             }
         }
@@ -690,6 +718,7 @@ Step MovementDriver::step(const Observation& o) {
                 tap(Button::CapThrow, kTapFrames, step);
                 PetariNative::EfbDump::mark("cappy dive 2");
             }
+            if (task.cappy == 4 && mPhaseFrames == mBounceFrame + 8) tap(Button::Z, kTapFrames, step);
             if (task.cappy == 4 && mPhaseFrames == mBounceFrame + 12) {
                 tap(Button::A, kTapFrames, step);
                 PetariNative::EfbDump::mark("cappy dive 2");

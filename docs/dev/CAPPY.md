@@ -90,10 +90,11 @@ bounces every run.
 
 After a bounce the air throw's hop limit is cleared (I: a bounce is a new air
 action), so a throw after the bounce hops again. The bounce also gives back the
-jump-press dive ("Jump in the air dives", once per airtime otherwise), so the
-loop is jump, R, jump (dive), bounce, jump (dive). Any dive started while Cappy
-is out (jump press or ground pound + Spin) keeps him there as the throw key's
-press does (the latch).
+jump-press dive ("Jump during a ground pound dives", once per airtime
+otherwise), so the loop is jump, R, ground pound, Jump (dive), bounce, ground
+pound, Jump (dive): Space, R, Shift, Space, bounce, Shift, Space. Any dive
+started while Cappy is out (ground pound + Jump, Spin or R) keeps him there as
+the throw key's press does (the latch).
 
 ### Bounce contact, after the playtest
 
@@ -168,12 +169,13 @@ on the observatory fixture (`PETARI_CAPPY_TRACE=1` for the per-frame trace):
   is 678 out on his 21st frame and hovers; the dive arcs over him and comes down
   onto him, and the dive cap bounce comes on frame 50 (foot contact, 104 from
   Cappy; frame 44, 231 across, before the contact rework).
-- **cappy standstill loop** (the user's inputs: a standstill jump held 24
-  frames, R at 19, Jump at 40 for the dive, Jump 12 frames after the bounce):
-  the dive meets Cappy at Mario's body (118 from him) on frame 69, the bounce
-  rises, and the second jump-press dive follows. The ground pound and
-  dive after the bounce work; the bounce then rises 231 (from the model; the
-  harness's "rose 322" adds the second dive's rise). Cappy returns and is caught.
+- **cappy jump-dive loop** (the user's inputs since the dive needs the ground
+  pound, 2026-10-01: a running jump held 24 frames, R at 19, Shift at 26 and
+  Jump at 30 for the dive, Shift 8 and Jump 12 frames after the bounce): the
+  dive bounces on frame 59 (308.6 up), and the second ground pound + Jump dive
+  follows (the bounce re-armed it). From a standstill the same inputs miss: a
+  standing dive covers 20 u/f and needs about 34 frames to reach Cappy 678 out,
+  past his latched hover (30 frames), by when it has fallen below him.
 - **cappy ground bounce** (a running throw held, the run on, a jump 2 frames
   tapped 510 past the throw): the jump meets Cappy 124 up and the regular bounce
   rises 300.000. An earlier run whose jump tap was missed ran off the terrace

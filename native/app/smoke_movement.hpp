@@ -49,9 +49,10 @@
 //      enemy hits and the coins / Star Bits Cappy collected (aim them with the
 //      test-only PETARI_CAPPY_TEST_AIM=enemy|item, near enemies or items, e.g.
 //      with PETARI_STAGE_WARP);
-//  19. "cappy standstill loop": the user's playtest loop (2026-10-01): a
-//      standstill jump held 24 frames, the throw at 19, Jump at 40 (the
-//      jump-press dive), Jump 12 frames after the bounce (the second dive).
+//  19. "cappy jump-dive loop": the user's playtest loop (2026-10-01): a
+//      running jump held 24 frames, the throw at 19, the ground pound at 26
+//      and Jump at 30 (the dive), then the pound 8 and Jump 12 frames after the
+//      bounce (the second dive): Space, R, Shift, Space, bounce, Shift, Space.
 // The Cappy tasks need PETARI_MODS=OdysseyMovement,Cappy and are skipped
 // otherwise (PETARI_CAPPY_TRACE=1 logs Cappy's state each frame).
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example
@@ -115,6 +116,8 @@ private:
         int spinTaps = 0;          // standing still: this many Spin taps at varied hold and gap (input check)
         int cappy = 0;             // Cappy mod: 1 the air loop, 2 the ground throw and a jump into the cap
         int airPress = 0;          // press A again (2 frames) this many frames after the jump's press
+        bool diveWithA = false;    // with groundPound + dive: Jump instead of Spin during the pound
+        bool poundPreLandA = false;  // with groundPound: Jump just before the pound lands, then watch for the ground-pound jump
     };
 
     void finish(Result result, const std::string& reason, Step& step);
