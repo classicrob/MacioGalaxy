@@ -912,6 +912,79 @@ struct SwingCounter {
     }
 };
 
+// Investigation 2026-10-01 (a harness run once saw crouch + F + a direction on
+// one frame never spin): every short F tap, on the same frame as Shift and a
+// stick key, and at every spacing after the previous tap, must reach the game as
+// one swing edge per flick.
+void testShakeTapsAlwaysSwing() {
+    struct Case {
+        const char* name;
+        int holdFrames;  // 0: pressed and released between two frames
+        bool crouchAndStick;
+    };
+    const Case cases[] = {{"1-frame tap", 1, false}, {"2-frame tap", 2, false}, {"press+release within a frame", 0, false},
+                          {"1-frame tap with Shift+W", 1, true}, {"2-frame tap with Shift+W", 2, true},
+                          {"within-frame tap with Shift+W", 0, true}};
+    for (const Case& c : cases) {
+        Rig rig;
+        rig.frames_(30);
+        SwingCounter counter;
+        auto run = [&](int count) {
+            for (int i = 0; i < count; ++i) {
+                rig.frame();
+                counter.update(*rig.pad);
+            }
+        };
+        run(20);
+        if (c.crouchAndStick) {
+            press(In::Key::LeftShift);
+            press(In::Key::W);
+        }
+        press(In::Key::F);
+        if (c.holdFrames == 0) {
+            lift(In::Key::F);
+        }
+        run(c.holdFrames);
+        lift(In::Key::F);
+        run(60);
+        if (c.crouchAndStick) {
+            lift(In::Key::LeftShift);
+            lift(In::Key::W);
+        }
+        run(10);
+        check(counter.swingEdges == 1, std::string(c.name) + ": one swing edge (" + std::to_string(counter.swingEdges) + ")");
+    }
+    // A second tap at every offset after the first (Shift+W held meanwhile):
+    // the flick waits out the 250 ms spacing if needed, and both swing.
+    for (int offset = 1; offset <= 40; ++offset) {
+        Rig rig;
+        rig.frames_(30);
+        SwingCounter counter;
+        auto run = [&](int count) {
+            for (int i = 0; i < count; ++i) {
+                rig.frame();
+                counter.update(*rig.pad);
+            }
+        };
+        run(20);
+        press(In::Key::LeftShift);
+        press(In::Key::W);
+        press(In::Key::F);
+        run(1);
+        lift(In::Key::F);
+        run(offset - 1);
+        press(In::Key::F);
+        run(1);
+        lift(In::Key::F);
+        run(90);
+        lift(In::Key::LeftShift);
+        lift(In::Key::W);
+        run(10);
+        check(counter.swingEdges == 2,
+              "second tap " + std::to_string(offset) + " frames later: two swing edges (" + std::to_string(counter.swingEdges) + ")");
+    }
+}
+
 void testShake() {
     Rig rig;
     rig.frames_(30);
@@ -2215,6 +2288,7 @@ int main() {
     testFocusLoss();
     testPointer();
     testShake();
+    testShakeTapsAlwaysSwing();
     testJumpThenSpin();
     testRapidShake();
     testTilt();
