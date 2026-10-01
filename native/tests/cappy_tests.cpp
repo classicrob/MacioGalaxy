@@ -48,8 +48,10 @@ static void testThrowFlight() {
     while (!Cappy::step(c, false)) ++frames;
     check(frames + 1 == Cappy::Const::ThrowFrameGround, "a ground throw leaves on frame 12");
     check(c.state == Cappy::State::Fly && near(c.distance, 182.0f), "first frame: 182 ahead");
+    check(near(Cappy::shownDistance(c), 50.0f + 132.0f * 0.25f), "first frame shown out of Mario's hand");
     for (int f = 2; f <= 12; ++f) Cappy::step(c, false);
     check(near(c.distance, 182.0f + 11.0f * 32.0f), "frames 2-12 at 32 u/f: 534");
+    check(near(Cappy::shownDistance(c), c.distance), "on the measured line after the emergence");
     Cappy::step(c, false);
     check(near(c.distance, 534.0f + 28.8f), "frame 13 brakes to 28.8");
     for (int f = 14; f <= 21; ++f) Cappy::step(c, false);
@@ -126,13 +128,19 @@ static void testWallsAndReturn() {
 static void testBounceContact() {
     using Cappy::bounceContact;
     check(bounceContact(75.0f, 0.0f, false), "Cappy at Mario's body: contact");
-    check(bounceContact(-60.0f, 0.0f, false), "Cappy just under Mario's feet: contact");
-    check(bounceContact(75.0f, 149.0f, false), "body sphere: 100 + 50 across");
-    check(!bounceContact(75.0f, 151.0f, false), "beyond 150 across: no contact");
+    check(bounceContact(-45.0f, 0.0f, false), "Cappy just under Mario's feet: contact");
+    check(!bounceContact(-60.0f, 0.0f, false), "Cappy 60 under his feet (his top 35 below): no contact");
+    check(bounceContact(75.0f, 119.0f, false), "body sphere: 70 + 50 across");
+    check(!bounceContact(75.0f, 121.0f, false), "beyond 120 across: no contact");
+    // The bounce the user saw with air: Cappy 85 below Mario's feet and 231
+    // across met the foot cone, which had no distance bound.
+    check(!bounceContact(-85.0f, 231.0f, false), "Cappy 85 below and 231 across: no contact (was a bounce with air)");
+    check(!bounceContact(-30.0f, 150.0f, false), "Cappy 150 across at the feet: no contact");
     check(!bounceContact(-300.0f, 0.0f, false), "Cappy far below: no contact");
     // Ground pound: only the foot rule. Foot (40 up) at most 70 (+ its radius)
-    // above the catch point (20 above Cappy), at least 20 degrees above it.
-    check(bounceContact(-60.0f, 0.0f, true), "pound onto Cappy 60 below: foot rule");
+    // above the catch point (20 above Cappy), touching its sphere, at least 20
+    // degrees above it.
+    check(bounceContact(-45.0f, 0.0f, true), "pound onto Cappy 45 below: foot rule");
     check(!bounceContact(-200.0f, 0.0f, true), "pound with Cappy 200 below: too far");
     check(!bounceContact(-60.0f, 400.0f, true), "pound with Cappy far to the side: below 20 degrees");
     check(!bounceContact(75.0f, 0.0f, true), "pound: the body sphere does not count");

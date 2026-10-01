@@ -235,6 +235,12 @@ int petari_cappy_bounces() {
 int petari_cappy_state() {
     return 0;
 }
+int petari_cappy_hits() {
+    return 0;
+}
+int petari_cappy_collected() {
+    return 0;
+}
 bool petari_mod_enabled(int) {
     return false;
 }

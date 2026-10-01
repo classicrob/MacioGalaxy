@@ -4,22 +4,29 @@
 // changes anything, and every hook returns at once.
 #ifdef PETARI_NATIVE
 #include "Game/Player/MarioCappy.hpp"
+#include "Game/LiveActor/AllLiveActorGroup.hpp"
+#include "Game/LiveActor/HitSensor.hpp"
+#include "Game/LiveActor/HitSensorInfo.hpp"
+#include "Game/LiveActor/HitSensorKeeper.hpp"
 #include "Game/Map/HitInfo.hpp"
 #include "Game/Player/Mario.hpp"
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioParts.hpp"
+#include "Game/Util/ActorSensorUtil.hpp"
 #include "Game/Util/JointUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/MapUtil.hpp"
 #include "Game/Util/MathUtil.hpp"
 #include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/MtxUtil.hpp"
+#include "Game/Util/SoundUtil.hpp"
 #include <petari/cappy.hpp>
 #include <petari/odyssey_move.hpp>
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 extern "C" bool petari_mod_enabled(int mod);
 extern "C" bool petari_mod_take_press(int mod);
@@ -32,6 +39,18 @@ namespace {
     constexpr int kModCappy = 3;
     constexpr f32 kSpinDegrees = 40.0f;  // Cappy's spin while out, per frame (I)
 
+    void capSensor(HitSensor* pOwn, HitSensor* pOther);
+
+    // The flying cap: a MarioParts with an eye sensor (checked against enemies,
+    // map objects, coins and Star Bits, like Mario's own "eye").
+    class CappyParts : public MarioParts {
+    public:
+        CappyParts(LiveActor* pHost, MtxPtr pMtx) : MarioParts(pHost, "キャッピー", "MarioHair", false, nullptr, pMtx) {}
+        virtual void attackSensor(HitSensor* pOwn, HitSensor* pOther) override { capSensor(pOwn, pOther); }
+    };
+
+    constexpr int kMaxHits = 8;  // enemies hit by one throw (each once), as Mario's spin
+
     struct State {
         MarioActor* actor = nullptr;
         MarioParts* cap = nullptr;   // the flying cap (MarioHair.arc, hair hidden)
@@ -43,6 +62,8 @@ namespace {
         bool held = false;    // the throw button, this frame
         TVec3f origin;        // the throw line: release point and direction
         TVec3f dir;
+        TVec3f pressFront;    // Mario's facing when the throw was pressed (the line's direction)
+        f32 scale = 1.0f;     // drawn size: grows once fully thrown, shrinks on the way back
         TVec3f pos;           // Cappy's centre
         f32 blockedAt = -1.0f;
         f32 spin = 0.0f;
@@ -50,10 +71,14 @@ namespace {
         int frame = 0;
         f32 capOffsetUp = 30.0f;  // the cap's centre in MarioHair's model space (PETARI_CAPPY_CAP_OFFSET="up,front")
         f32 capOffsetFront = 5.0f;
+        HitSensor* hits[kMaxHits] = {};
+        int hitCount = 0;
     };
     State s;
     TPos3f sCapMtx;
-    int sBounces = 0;  // for the movement harness (petari_cappy_bounces)
+    int sBounces = 0;  // for the movement harness (petari_cappy_bounces, _hits, _collected)
+    int sHits = 0;
+    int sCollected = 0;
 
     bool trace() {
         static const bool on = std::getenv("PETARI_CAPPY_TRACE") != nullptr;
@@ -117,6 +142,13 @@ namespace {
     void startThrow(MarioActor* pActor, bool inAir) {
         Mario* mario = pActor->mMario;
         Cappy::startThrow(s.cappy, inAir);
+        s.hitCount = 0;
+        // The line follows Mario's facing at the press, as the dive does: Galaxy's
+        // throw animations (its spin) must not turn it before Cappy leaves.
+        s.pressFront = across(mario->mFrontVec, upOf(pActor));
+        if (MR::isNearZero(s.pressFront)) {
+            s.pressFront = across(mario->getAirFrontVec(), upOf(pActor));
+        }
         if (inAir) {
             const f32 height = upOf(pActor).dot(pActor->mPosition);
             const bool hop = s.hop.allows(height);
@@ -131,20 +163,66 @@ namespace {
         }
         mario->playSound("パンチ風切り");
         if (trace()) {
-            std::fprintf(stderr, "[cappy] throw (%s) at (%.1f, %.1f, %.1f)\n", inAir ? "air" : "ground", pActor->mPosition.x,
-                         pActor->mPosition.y, pActor->mPosition.z);
+            std::fprintf(stderr, "[cappy] throw (%s) at (%.1f, %.1f, %.1f) front (%.2f, %.2f, %.2f)\n", inAir ? "air" : "ground",
+                         pActor->mPosition.x, pActor->mPosition.y, pActor->mPosition.z, mario->mFrontVec.x, mario->mFrontVec.y,
+                         mario->mFrontVec.z);
         }
+    }
+
+    // Test only (PETARI_CAPPY_TEST_AIM=enemy|item, for the harness): the nearest
+    // valid enemy (or coin / Star Bit) sensor, logged, so a throw can be aimed
+    // at it. Never set in play.
+    HitSensor* testAimTarget(const TVec3f& rFrom) {
+        static const char* aim = std::getenv("PETARI_CAPPY_TEST_AIM");
+        AllLiveActorGroup* group = aim != nullptr ? MR::getAllLiveActorGroup() : nullptr;
+        if (group == nullptr) {
+            return nullptr;
+        }
+        const bool items = std::strcmp(aim, "item") == 0;
+        HitSensor* best = nullptr;
+        f32 bestDist = 0.0f;
+        for (s32 i = 0; i < group->getObjNum(); i++) {
+            LiveActor* actor = group->getActor(i);
+            if (actor == nullptr || MR::isDead(actor) || MR::isClipped(actor) || MR::isHiddenModel(actor) || actor->getSensorKeeper() == nullptr) {
+                continue;
+            }
+            HitSensorKeeper* keeper = actor->getSensorKeeper();
+            for (s32 j = 0; j < keeper->mSensorCount; j++) {
+                HitSensorInfo* info = keeper->getNthSensorInfo(j);
+                HitSensor* sensor = info != nullptr ? info->mSensor : nullptr;
+                if (sensor == nullptr || !sensor->isValid()) {
+                    continue;
+                }
+                const bool wanted = items ? (sensor->isType(ATYPE_COIN) || sensor->isType(ATYPE_STAR_PIECE)) : MR::isSensorEnemy(sensor);
+                const f32 dist = (sensor->mPosition - rFrom).length();
+                if (wanted && (best == nullptr || dist < bestDist)) {
+                    best = sensor;
+                    bestDist = dist;
+                }
+            }
+        }
+        if (best != nullptr) {
+            std::fprintf(stderr, "[cappy] test aim: %s at (%.1f, %.1f, %.1f), %.1f away\n", best->mHost->mName, best->mPosition.x,
+                         best->mPosition.y, best->mPosition.z, bestDist);
+        }
+        return best;
     }
 
     // Cappy leaves Mario: the line runs along his facing, across gravity, from 70
     // above his feet; a map polygon on it stops the flight (one ray, at the release).
     void release(MarioActor* pActor) {
         const TVec3f up = upOf(pActor);
-        s.dir = across(pActor->mMario->mFrontVec, up);
+        s.dir = across(s.pressFront, up);  // re-flattened: gravity may have turned since the press
         if (MR::isNearZero(s.dir)) {
             s.dir = across(pActor->mMario->getAirFrontVec(), up);
         }
         s.origin = pActor->mPosition + up * Cappy::Const::StartHeight;
+        if (const HitSensor* target = testAimTarget(s.origin); target != nullptr) {
+            const TVec3f aim = across(target->mPosition - s.origin, up);
+            if (!MR::isNearZero(aim)) {
+                s.dir = aim;
+            }
+        }
         s.blockedAt = -1.0f;
         const f32 reach = 700.0f + Cappy::Const::Radius;
         TVec3f hit;
@@ -153,6 +231,10 @@ namespace {
             s.blockedAt = std::max((hit - s.origin).length() - Cappy::Const::Radius, 0.0f);
         }
         s.spin = 0.0f;
+        if (trace()) {
+            std::fprintf(stderr, "[cappy] release at (%.1f, %.1f, %.1f) dir (%.2f, %.2f, %.2f) blocked at %.1f\n", s.origin.x, s.origin.y,
+                         s.origin.z, s.dir.x, s.dir.y, s.dir.z, s.blockedAt);
+        }
     }
 
     void placeModel(const TVec3f& up) {
@@ -161,8 +243,20 @@ namespace {
         TVec3f side;
         side.cross(up, s.dir);
         TVec3f front(s.dir * std::cos(angle) + side * std::sin(angle));
-        const TVec3f base(s.pos - up * s.capOffsetUp - front * s.capOffsetFront);
+        // Fully thrown, Cappy grows (as SMO's does) over GrowFrames; returning he
+        // shrinks back to a cap on Mario's head.
+        const f32 target = s.cappy.state == Cappy::State::Hover ? Cappy::Const::HoverScale : 1.0f;
+        // (Back twice as fast: after a bounce he is on Mario's head in a few frames.)
+        const f32 step = (Cappy::Const::HoverScale - 1.0f) / Cappy::Const::GrowFrames *
+                         (s.cappy.state == Cappy::State::Return ? 2.0f : 1.0f);
+        s.scale = s.scale < target ? std::min(s.scale + step, target) : std::max(s.scale - step, target);
+        const TVec3f base(s.pos - (up * s.capOffsetUp + front * s.capOffsetFront) * s.scale);
         MR::makeMtxUpFrontPos(&sCapMtx, up, front, base);
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                sCapMtx.mMtx[row][col] *= s.scale;
+            }
+        }
         if (MR::isDead(s.cap)) {
             s.cap->appear();
         }
@@ -174,6 +268,14 @@ namespace {
         }
         const Mario* mario = pActor->mMario;
         const Odyssey::Air air = Odyssey::Live::airKind;
+        if (s.cap != nullptr && !MR::isDead(s.cap)) {
+            // Where the cap is drawn (its joints, last calcAnim) against its logical centre.
+            MtxPtr capF = MR::getJointMtx(s.cap, "CapF");
+            MtxPtr cap2 = MR::getJointMtx(s.cap, "Cap2");
+            std::fprintf(stderr, "[cappy] drawn CapF (%.1f, %.1f, %.1f) Cap2 (%.1f, %.1f, %.1f) logical (%.1f, %.1f, %.1f) mario front (%.2f, %.2f, %.2f)\n",
+                         capF[0][3], capF[1][3], capF[2][3], cap2[0][3], cap2[1][3], cap2[2][3], s.pos.x, s.pos.y, s.pos.z,
+                         mario->mFrontVec.x, mario->mFrontVec.y, mario->mFrontVec.z);
+        }
         std::fprintf(stderr,
                      "[cappy] f%d %s t%d dist %.1f pos (%.1f, %.1f, %.1f) held %d latch %d | mario (%.1f, %.1f, %.1f) h %.1f air %d "
                      "jumping %d ground %d gp %d | bounce avail %d test %d contact %d\n",
@@ -196,8 +298,10 @@ void petariCappyInit(MarioActor* pActor) {
         std::sscanf(offset, "%f,%f", &s.capOffsetUp, &s.capOffsetFront);
     }
     sCapMtx.identity();
-    s.cap = new MarioParts(pActor, "キャッピー", "MarioHair", false, nullptr, sCapMtx.toMtxPtr());
+    s.cap = new CappyParts(pActor, sCapMtx.toMtxPtr());
     s.cap->initWithoutIter();
+    s.cap->initHitSensor(1);
+    MR::addHitSensorPosEye(s.cap, "cappy", 16, Cappy::Const::Radius + 10.0f, &s.pos, TVec3f(0.0f, 0.0f, 0.0f));
     MR::hideMaterial(s.cap, "Hair_v");
     MR::hideMaterial(s.cap, "Hair2_v");
     s.cap->kill();
@@ -279,6 +383,11 @@ void petariCappyUpdate(MarioActor* pActor) {
     }
 
     bool tested = false, contact = false;
+    if (s.cappy.state == Cappy::State::Windup || (s.cappy.state == Cappy::State::Fly && s.cappy.frame <= 4)) {
+        // Galaxy's spin animations start the spin's light trail and sparkles
+        // (MarioAnimator::spinEntry): not a cap throw's.
+        mario->stopEffect("スピンライト");
+    }
     if (Cappy::step(s.cappy, s.held, s.blockedAt)) {
         release(pActor);
         if (s.blockedAt >= 0.0f && s.blockedAt < Cappy::Const::StartDistance) {
@@ -289,6 +398,7 @@ void petariCappyUpdate(MarioActor* pActor) {
     switch (s.cappy.state) {
     case Cappy::State::Idle:
     case Cappy::State::Windup:
+        s.scale = 1.0f;
         showMarioCap(true);
         if (!MR::isDead(s.cap)) {
             s.cap->kill();
@@ -297,7 +407,7 @@ void petariCappyUpdate(MarioActor* pActor) {
         return;
     case Cappy::State::Fly:
     case Cappy::State::Hover:
-        s.pos = s.origin + s.dir * s.cappy.distance;
+        s.pos = s.origin + s.dir * Cappy::shownDistance(s.cappy);
         break;
     case Cappy::State::Return: {
         const TVec3f target(pActor->mPosition + up * Cappy::Const::ReturnHeight);
@@ -330,6 +440,31 @@ void petariCappyUpdate(MarioActor* pActor) {
                 std::fprintf(stderr, "[cappy] bounce (air %d gp %d) at (%.1f, %.1f, %.1f)\n", static_cast< int >(Odyssey::Live::airKind),
                              static_cast< int >(mario->mMovementStates._B), pActor->mPosition.x, pActor->mPosition.y, pActor->mPosition.z);
             }
+            // The contact frame: Cappy to Mario's touching sphere (head, body or
+            // feet, the nearest), so the bounce shows them touching even at the
+            // edge of the contact sphere.
+            const f32 heights[3] = {Cappy::Const::HeadHeight, Cappy::Const::BodyHeight, Cappy::Const::FootHeight};
+            const f32 radii[3] = {Cappy::Const::HeadRadius, Cappy::Const::BodyRadius, Cappy::Const::FootRadius};
+            int nearest = 0;
+            f32 nearestDist = 0.0f;
+            for (int i = 0; i < 3; ++i) {
+                const f32 d = (s.pos - (pActor->mPosition + up * heights[i])).length();
+                if (i == 0 || d < nearestDist) {
+                    nearest = i;
+                    nearestDist = d;
+                }
+            }
+            const TVec3f centre(pActor->mPosition + up * heights[nearest]);
+            TVec3f away(s.pos - centre);
+            if (MR::normalizeOrZero(&away)) {
+                away = up * -1.0f;
+            }
+            const TVec3f snapped(centre + away * (radii[nearest] + Cappy::Const::VisualRadius * 0.8f));
+            if (trace()) {
+                std::fprintf(stderr, "[cappy] contact: %s sphere, %.1f from Cappy; Cappy moved %.1f to touch\n",
+                             nearest == 0 ? "head" : nearest == 1 ? "body" : "foot", nearestDist, (snapped - s.pos).length());
+            }
+            s.pos = snapped;
             petariOdysseyCapBounce(mario);
             ++sBounces;
             s.bounce.bounce();
@@ -341,8 +476,61 @@ void petariCappyUpdate(MarioActor* pActor) {
     doTrace(pActor, up, tested, contact);
 }
 
+namespace {
+    // Cappy's touch (nice to have, docs/dev/CAPPY.md): an enemy gets Mario's
+    // spin punch (Galaxy's own reaction: stun, knock-back or defeat), each
+    // enemy once a throw, and Cappy comes back; coins and Star Bits are
+    // collected as if Mario touched them.
+    void capSensor(HitSensor* pOwn, HitSensor* pOther) {
+        if (!active() || s.actor == nullptr || s.cappy.state == Cappy::State::Idle || s.cappy.state == Cappy::State::Windup) {
+            return;
+        }
+        if (pOther->isType(ATYPE_COIN) || pOther->isType(ATYPE_STAR_PIECE)) {
+            if (pOther->receiveMessage(ACTMES_ITEM_GET, s.actor->getSensor("dummy"))) {
+                ++sCollected;
+                if (trace()) {
+                    std::fprintf(stderr, "[cappy] collected %s\n", pOther->mHost->mName);
+                }
+            }
+            return;
+        }
+        if (!MR::isSensorEnemy(pOther) || MR::isDead(pOther->mHost)) {
+            return;
+        }
+        for (int i = 0; i < s.hitCount; ++i) {
+            if (s.hits[i] == pOther) {
+                return;
+            }
+        }
+        if (s.hitCount >= kMaxHits) {
+            return;
+        }
+        // From Mario's body, as his spin punch (MarioActor::sendPunch), without
+        // its _FCC: an enemy hitting back must still be in reach of Mario.
+        if (MR::sendMsgPlayerPunch(pOther, s.actor->getSensor("body"))) {
+            s.hits[s.hitCount++] = pOther;
+            ++sHits;
+            if (!s.actor->selectCustomEffectSpinHitSound(pOther->mHost->mName)) {
+                MR::startSpinHitSound(s.actor);
+            }
+            if (trace()) {
+                std::fprintf(stderr, "[cappy] hit %s\n", pOther->mHost->mName);
+            }
+            Cappy::recall(s.cappy);
+        }
+    }
+}  // namespace
+
 void petariCappyWallJump() {
     s.bounce.wallJump();
+}
+
+void petariCappyDiveStarted() {
+    // A dive while Cappy is out (Jump in the air, or ground pound + Spin) keeps
+    // him there like the throw key's press does (SMO dives with Y).
+    if (s.cap != nullptr && active()) {
+        Cappy::notePress(s.cappy);
+    }
 }
 
 // The movement harness (native/app/smoke_movement.cpp): cap bounces so far, and
@@ -353,5 +541,13 @@ extern "C" int petari_cappy_bounces() {
 
 extern "C" int petari_cappy_state() {
     return static_cast< int >(s.cappy.state);
+}
+
+extern "C" int petari_cappy_collected() {
+    return sCollected;
+}
+
+extern "C" int petari_cappy_hits() {
+    return sHits;
 }
 #endif
