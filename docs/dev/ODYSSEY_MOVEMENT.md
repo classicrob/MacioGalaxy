@@ -156,17 +156,15 @@ mod changes Galaxy.
 | Spin jump | SMO's comes from a stick spin (rotate twice) | Galaxy spin jump (Spin in the air) | unchanged | — |
 | Crouch | ×1.2 on entry, ×0.95/f slide to 3.5, crouch-walk 3.5 (D) | Galaxy squat | ground speed hook while crouching | 1 |
 | Swim | `Swim*` constants (D) | Galaxy swimming | **unchanged in v1.** Galaxy's water levels are tuned around its swim | — |
-| Cap throw / Cappy | Cappy actor, cap bounce, vault, return jump | — | **left out of v1** (see below) | — |
+| Cap throw / Cappy | Cappy actor, cap bounce, vault, return jump | — | the separate `Cappy` mod (docs/dev/CAPPY.md): throw, hover, cap bounce | — |
 
 ### Cappy
 
-Left out of v1. SMO's cap throw needs a Cappy actor with its own flight and hit
-detection (`HackCap`, 189 functions, not decompiled, and its throw parameters are
-unpublished), plus captures, which have no meaning in Galaxy's levels. Galaxy's
-Star Spin already fills the "Y button" role (attack, collect, Launch Stars), and
-Galaxy's levels depend on it. A cap-bounce stand-in (a spin in the air after a
-dive giving the dive cap-bounce's 22 u/f, gravity 1.0, once per airtime) is a
-possible v2, kept out of v1 so the spin keeps behaving as Galaxy's levels expect.
+Not part of this mod: the separate **`Cappy`** mod (docs/dev/CAPPY.md) adds the
+cap throw on its own key (R / RB), with Cappy's flight, the air throw's hop and
+the cap bounces, built on this mod's air model (`Air::CapThrow`,
+`CapBounce`, `DiveCapBounce`, `GroundPoundCapBounce`). Galaxy's Star Spin stays
+on F. Captures are left out (they have no meaning in Galaxy's levels).
 
 ## 4. Inputs
 
@@ -280,4 +278,5 @@ playability run, before the next step.
   Holding the stick away lets go after 15 frames; Galaxy's 180-frame release is
   not used. SMO's slide state itself is not decompiled; the slide uses its
   PlayerConst values (WallKeepFrame 3, GravityWallSlide 0.5, FallSpeedMax 35).
-- No Cappy, cap bounce or captures; swimming is Galaxy's.
+- Cappy and the cap bounce are the separate Cappy mod (docs/dev/CAPPY.md); no
+  captures; swimming is Galaxy's.

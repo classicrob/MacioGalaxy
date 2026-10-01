@@ -62,7 +62,91 @@ namespace {
         sOdyssey.jumpKind = jumpKind;
         sOdyssey.active = true;
     }
+
+    // The current horizontal (across gravity) velocity of an airborne Mario: the
+    // mod's own when its model runs, else Galaxy's jump vector.
+    TVec3f odysseyAirVelocity(const Mario* pMario, const TVec3f& up) {
+        if (sOdyssey.active) {
+            TVec3f front(sOdyssey.front - up * up.dot(sOdyssey.front));
+            MR::normalizeOrZero(&front);
+            TVec3f side;
+            side.cross(up, front);
+            return front * sOdyssey.air.front + side * sOdyssey.air.side;
+        }
+        return pMario->mJumpVec - up * up.dot(pMario->mJumpVec);
+    }
+
+    f32 odysseyUpSpeed(const Mario* pMario, const TVec3f& up) {
+        return sOdyssey.active ? sOdyssey.air.up : up.dot(pMario->mJumpVec);
+    }
 }  // namespace
+
+#include "Game/Player/MarioCappy.hpp"
+
+// Cappy mod (docs/dev/CAPPY.md): the air throw's hop. Mario keeps his jump type
+// (_430) and Galaxy's air state; the mod's model takes over the motion: up 6
+// (unless above the last throw's height), gravity 0.3, horizontal speed capped
+// at 7 for 24 frames, then a normal fall.
+bool petariOdysseyAirThrow(Mario* pMario, bool hop) {
+    Mario& m = *pMario;
+    if (!m.mMovementStates.jumping || m.mMovementStates._B || m.mMovementStates._1) {
+        return false;
+    }
+    TVec3f up(-m.mActor->_240);
+    MR::normalizeOrZero(&up);
+    const TVec3f velocity = odysseyAirVelocity(pMario, up);
+    const f32 upSpeed = odysseyUpSpeed(pMario, up);
+    TVec3f dir(velocity);
+    MR::normalizeOrZero(&dir);
+    if (MR::isNearZero(dir)) {
+        dir = m.getAirFrontVec();
+    }
+    odysseyStart(PetariNative::Odyssey::Air::CapThrow, dir, up, velocity.length(), m._430);
+    sOdyssey.air = PetariNative::Odyssey::startCapThrow(velocity.length(), upSpeed, hop);
+    sOdyssey.lastChain = -1;
+    m.stopAnimationUpper(nullptr);
+    m.changeAnimation("空中ひねり", "落下");
+    return true;
+}
+
+// Cappy mod: bounce off the cap. From a dive: up 22, gravity 1.0, horizontal up
+// to 16; from a ground pound: up 35, gravity 1.5; otherwise up 25, gravity 1.0
+// (a jump's horizontal rules). Galaxy sees a normal jump (_430 0) with its
+// mid-air somersault.
+void petariOdysseyCapBounce(Mario* pMario) {
+    namespace Odyssey = PetariNative::Odyssey;
+    Mario& m = *pMario;
+    TVec3f up(-m.mActor->_240);
+    MR::normalizeOrZero(&up);
+    const bool groundPound = m.mMovementStates._B;
+    const bool dive = sOdyssey.active && sOdyssey.air.kind == Odyssey::Air::Dive;
+    const Odyssey::Air kind = groundPound ? Odyssey::Air::GroundPoundCapBounce : dive ? Odyssey::Air::DiveCapBounce : Odyssey::Air::CapBounce;
+    TVec3f velocity = groundPound ? TVec3f(0.0f, 0.0f, 0.0f) : odysseyAirVelocity(pMario, up);
+    TVec3f dir(velocity);
+    MR::normalizeOrZero(&dir);
+    if (MR::isNearZero(dir)) {
+        dir = m.getAirFrontVec();
+    }
+    if (groundPound) {
+        m.mMovementStates._B = false;
+        m._424 = 0;
+    }
+    m._430 = 0;
+    // The dive holds the leap's last frame at rate 0 (procJump): play on.
+    if (XanimeFrameCtrl* ctrl = m.getAnimator()->getXanimePlayer()->getFrameCtrl(); ctrl != nullptr) {
+        ctrl->setRate(1.0f);
+    }
+    m.stopAnimationUpper(nullptr);
+    m.stopAnimation(nullptr);
+    m.changeAnimation("空中一回転", "落下");
+    m.playSound("中ジャンプ");
+    m.playSound("声中ジャンプ");
+    m.playSound("ジャンプ踏切");
+    odysseyStart(kind, dir, up, velocity.length(), m._430);
+    sOdyssey.lastChain = -1;
+    std::fprintf(stderr, "[odyssey] cap bounce (kind %d) from (%.3f, %.3f, %.3f)\n", static_cast< int >(kind), m.mPosition.x,
+                 m.mPosition.y, m.mPosition.z);
+}
 #endif
 
 void MarioJump_FORCE_MATCH_SDATA2() {
@@ -1028,6 +1112,7 @@ void Mario::tryWallJump(const TVec3f& rVec, bool a2) {
         MR::normalizeOrZero(&up);
         odysseyStart(PetariNative::Odyssey::Air::WallJump, rVec, up, 0.0f, _430);
         sOdyssey.lastChain = -1;
+        petariCappyWallJump();  // Cappy mod: no cap bounce until the next landing (SMO)
     }
 #endif
     return;
@@ -1582,6 +1667,7 @@ void Mario::procJump(bool a1) {
 #ifdef PETARI_NATIVE
         PetariNative::Odyssey::Live::noSpinAir =
             sOdyssey.active && (sOdyssey.air.kind == PetariNative::Odyssey::Air::Dive || sOdyssey.air.kind == PetariNative::Odyssey::Air::LongJump);
+        PetariNative::Odyssey::Live::airKind = sOdyssey.active ? sOdyssey.air.kind : PetariNative::Odyssey::Air::None;
         if (sOdyssey.active && _430 != sOdyssey.jumpKind) {
             sOdyssey.active = false;  // the game turned the jump into something else (hip drop, ...)
             std::fprintf(stderr, "[odyssey] jump type %d became %d after %d frames: the game's own physics from here\n",
@@ -1676,6 +1762,7 @@ void Mario::procJump(bool a1) {
         sOdysseyLanded = sOdyssey.active ? sOdyssey.air.kind : PetariNative::Odyssey::Air::None;
         sOdyssey.active = false;
         PetariNative::Odyssey::Live::noSpinAir = false;
+        PetariNative::Odyssey::Live::airKind = PetariNative::Odyssey::Air::None;
 #endif
         doLanding();
 

@@ -1,5 +1,7 @@
 #include "remote_model.hpp"
 
+#include "petari/mods.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -104,6 +106,7 @@ std::uint32_t actionBits(Action action) {
     case Action::Start: return 0x0800;  // plus B while the title prompt is up (RemoteModel::heldBits)
     case Action::ModCollectStarBits:
     case Action::ModShootEnemy:
+    case Action::ModCappyThrow:
     case Action::CameraOrbitHold:
     case Action::CameraZoomIn:
     case Action::CameraZoomOut:
@@ -182,9 +185,16 @@ std::uint32_t RemoteModel::heldBits() const {
         return 0;
     }
     std::uint32_t bits = 0;
+    // Cappy mod (docs/dev/CAPPY.md): while it is active, an input bound to both
+    // Shake and the cap throw (RB by default) throws only.
+    const bool cappyClaims = Mods::enabled(Mods::Mod::Cappy) && Mods::enabled(Mods::Mod::OdysseyMovement);
     for (int i = 0; i < static_cast<int>(Action::Count); ++i) {
         const Action action = static_cast<Action>(i);
         for (const Binding& input : mBindings.inputs(action)) {
+            if (cappyClaims && action == Action::Shake) {
+                const auto& cap = mBindings.inputs(Action::ModCappyThrow);
+                if (std::find(cap.begin(), cap.end(), input) != cap.end()) continue;
+            }
             bool held = false;
             switch (input.device) {
             case Binding::Device::Key: held = input.code < Key::Max && mKeys[input.code]; break;
@@ -201,6 +211,20 @@ std::uint32_t RemoteModel::heldBits() const {
         }
     }
     return bits;
+}
+
+bool RemoteModel::actionHeld(Action action) const {
+    if (!mFocused) {
+        return false;
+    }
+    for (const Binding& input : mBindings.inputs(action)) {
+        switch (input.device) {
+        case Binding::Device::Key: if (input.code < Key::Max && mKeys[input.code]) return true; break;
+        case Binding::Device::Mouse: if (input.code < mMouse.size() && mMouse[input.code]) return true; break;
+        case Binding::Device::Pad: if (input.code < mPad.size() && mPad[input.code]) return true; break;
+        }
+    }
+    return false;
 }
 
 std::uint32_t RemoteModel::refreshRaw() {

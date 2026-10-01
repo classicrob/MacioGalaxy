@@ -166,4 +166,10 @@ if(BUILD_TESTING)
     target_include_directories(petari_odyssey_move_tests PRIVATE ${PETARI_REPO_ROOT}/native/include)
     target_compile_features(petari_odyssey_move_tests PRIVATE cxx_std_17)
     add_test(NAME native_odyssey_move COMMAND petari_odyssey_move_tests)
+
+    # Cappy mod: the cap's flight and bounce model alone (header-only).
+    add_executable(petari_cappy_tests ${PETARI_REPO_ROOT}/native/tests/cappy_tests.cpp)
+    target_include_directories(petari_cappy_tests PRIVATE ${PETARI_REPO_ROOT}/native/include)
+    target_compile_features(petari_cappy_tests PRIVATE cxx_std_17)
+    add_test(NAME native_cappy COMMAND petari_cappy_tests)
 endif()

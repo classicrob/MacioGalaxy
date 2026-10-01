@@ -7,6 +7,11 @@
 #include <cstring>
 
 #include <petari/efb_dump_mark.hpp>
+#include <petari/mods.hpp>
+
+// Cappy mod (src/Game/Player/MarioCappy.cpp).
+extern "C" int petari_cappy_bounces();
+extern "C" int petari_cappy_state();
 
 namespace PetariNative::App::Smoke {
 
@@ -62,6 +67,13 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
         {"dive from a jump (stick held)", 6, false, 0, false, 0, true, 0, true, 0, false, 30, false, true, false, 0, 15},
         {"spin taps", 0, false, 0, false, 0, false, 0, false, 0, false, 0, false, false, false, 0, 1, 60},
     };
+    // Cappy mod (docs/dev/CAPPY.md): only when it is on.
+    Task loop{"cappy loop", 10, true, 40, false};
+    loop.cappy = 1;
+    Task ground{"cappy ground bounce", 1, true, 20, false};
+    ground.cappy = 2;
+    mTasks.push_back(loop);
+    mTasks.push_back(ground);
     if (const char* dir = std::getenv("PETARI_MOVEMENT_WALL_DIR"); dir != nullptr) {
         const std::string d(dir);
         mWallStick = d == "down" ? Button::StickDown : d == "left" ? Button::StickLeft : d == "right" ? Button::StickRight : Button::StickUp;
@@ -101,6 +113,7 @@ const char* MovementDriver::phase() const {
     case Phase::Landed: return "movement: ground speed after landing";
     case Phase::SpinTaps: return "movement: spin taps";
     case Phase::Land: return "movement: landed";
+    case Phase::Cappy: return "movement: Cappy";
     case Phase::Done: return "movement: done";
     }
     return "movement";
@@ -194,6 +207,13 @@ Step MovementDriver::step(const Observation& o) {
     const V moved = sub(pos, last);
     const float horizontal = len(sub(moved, scale(up, dot(moved, up))));
 
+    // The Cappy tasks need the mod (PETARI_MODS=OdysseyMovement,Cappy).
+    while (mTask < mTasks.size() && mTasks[mTask].cappy > 0 && mPhase != Phase::Cappy &&
+           !(petari_mod_enabled(static_cast<int>(Mods::Mod::Cappy)) &&
+             petari_mod_enabled(static_cast<int>(Mods::Mod::OdysseyMovement)))) {
+        note(std::string(mTasks[mTask].name) + ": skipped (the Cappy mod is off)");
+        ++mTask;
+    }
     if (mTask >= mTasks.size()) {
         finish(Result::Pass, "movement measured: " + std::to_string(mTasks.size()) + " moves", step);
         return step;
@@ -223,6 +243,11 @@ Step MovementDriver::step(const Observation& o) {
         }
         mPhase = Phase::Jump;
         mPhaseFrames = 0;
+        if (task.cappy > 0) {
+            mPhase = Phase::Cappy;
+            mBounced = mDive2 = false;
+            mAfterBounceApex = 0.0f;
+        }
     };
 
     switch (mPhase) {
@@ -479,7 +504,19 @@ Step MovementDriver::step(const Observation& o) {
             for (size_t i = 0; i < mSpeeds.size(); i += 5) speeds += (speeds.empty() ? "" : " ") + num(mSpeeds[i]);
             note(std::string("MOVEMENT run") + (task.crouch > 0 ? " before the long jump" : "") + ": max speed " + num(mMaxSpeed) +
                  " u/f, frame " + std::to_string(reached) + " reached 95%; every 5th frame: " + speeds);
-            if (task.crouch > 0) {
+            if (task.cappy == 2) {
+                // Running: the cap thrown along the run and held; the run goes on after it.
+                tap(Button::CapThrow, 130, step);
+                PetariNative::EfbDump::mark(task.name);
+                mStartX = pos.x; mStartY = pos.y; mStartZ = pos.z;
+                mUpX = up.x; mUpY = up.y; mUpZ = up.z;
+                mLeftGround = false;
+                mBounced = mDive2 = false;
+                mAfterBounceApex = 0.0f;
+                mBounceStart = petari_cappy_bounces();
+                mPhase = Phase::Cappy;
+                mPhaseFrames = 0;
+            } else if (task.crouch > 0) {
                 tap(Button::Z, static_cast< unsigned long >(task.crouch + task.holdA + 2), step);
                 mPhase = Phase::Crouch;
                 mPhaseFrames = 0;
@@ -529,6 +566,79 @@ Step MovementDriver::step(const Observation& o) {
                 mPhaseFrames = 0;
                 break;
             }
+            ++mTask;
+            mPhase = Phase::Land;
+            mPhaseFrames = 0;
+            mReady = 0;
+        }
+        break;
+    }
+    case Phase::Cappy: {
+        // The Cappy mod's moves; heights from the take-off point along its -gravity
+        // (the ground task: from the throw, which its distances need too).
+        if (task.cappy == 1 && !mLeftGround && o.playerOnGround) {
+            mStartX = pos.x; mStartY = pos.y; mStartZ = pos.z;
+        }
+        const V start{mStartX, mStartY, mStartZ};
+        const V upStart{mUpX, mUpY, mUpZ};
+        const float height = dot(sub(pos, start), upStart);
+        if (mPhaseFrames == 1 && task.cappy == 1) mBounceStart = petari_cappy_bounces();
+        if (!o.playerOnGround) mLeftGround = true;
+        if (task.cappy == 1) {
+            // Running jump (A held 10), the throw at 6, a ground pound at 18, the
+            // dive (the throw key) at 22; after the bounce, a pound and a dive again.
+            if (mPhaseFrames == 6) {
+                tap(Button::CapThrow, kTapFrames, step);
+                PetariNative::EfbDump::mark("cappy throw");
+            }
+            if (mPhaseFrames == 18) tap(Button::Z, kTapFrames, step);
+            if (mPhaseFrames == 22) {
+                tap(Button::CapThrow, kTapFrames, step);
+                PetariNative::EfbDump::mark("cappy dive");
+            }
+        } else {
+            // Ground: running on after the cap; a tapped jump 170 short of it.
+            const V moved0 = sub(pos, start);
+            const float ahead = len(sub(moved0, scale(upStart, dot(moved0, upStart))));
+            if (!mBounced && o.playerOnGround && ahead >= 678.0f - 170.0f && (!mDive2 || mPhaseFrames >= mJumpFrame + 4)) {
+                // A 2-frame tap (a 1-frame one can fall between game frames), again
+                // if Mario is still on the ground 4 frames later.
+                tap(Button::A, 2, step);
+                if (!mDive2) PetariNative::EfbDump::mark("cappy ground jump");
+                mDive2 = true;  // here: the jump was made
+                mJumpFrame = mPhaseFrames;
+                note("cappy ground bounce: jump " + num(ahead) + " ahead of the throw");
+            }
+        }
+        if (!mBounced && petari_cappy_bounces() > mBounceStart) {
+            mBounced = true;
+            mBounceFrame = mPhaseFrames;
+            mBounceHeight = height;
+            PetariNative::EfbDump::mark("cappy bounce");
+            note(std::string(task.name) + ": bounce on frame " + std::to_string(mPhaseFrames) + " at height " + num(height));
+        }
+        if (mBounced) {
+            mAfterBounceApex = std::max(mAfterBounceApex, height - mBounceHeight);
+            if (task.cappy == 1 && mPhaseFrames == mBounceFrame + 8) tap(Button::Z, kTapFrames, step);
+            if (task.cappy == 1 && mPhaseFrames == mBounceFrame + 12) {
+                tap(Button::CapThrow, kTapFrames, step);
+                PetariNative::EfbDump::mark("cappy dive 2");
+            }
+        }
+        if (mLeftGround && o.playerOnGround && mPhaseFrames > 10 && (task.cappy == 1 || mDive2 || mBounced)) {
+            if (mStickHeld) {
+                step.presses.push_back({Button::StickUp, false});
+                mStickHeld = false;
+            }
+            if (!mBounced) {
+                finish(Result::Fail, std::string(task.name) + ": landed after " + std::to_string(mPhaseFrames) +
+                                         " frames without a cap bounce (Cappy state " + std::to_string(petari_cappy_state()) + ")",
+                       step);
+                break;
+            }
+            note(std::string("MOVEMENT ") + task.name + ": bounce on frame " + std::to_string(mBounceFrame) + " at height " +
+                 num(mBounceHeight) + ", rose " + num(mAfterBounceApex) + " after it, landed after " + std::to_string(mPhaseFrames) +
+                 " frames, " + num(len(sub(pos, start))) + " from the take-off");
             ++mTask;
             mPhase = Phase::Land;
             mPhaseFrames = 0;

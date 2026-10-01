@@ -164,7 +164,7 @@ void pressButton(int button, bool down) {
                                              Input::Action::StickDown, Input::Action::Plus,  Input::Action::Minus,
                                              Input::Action::StickLeft, Input::Action::StickRight,
                                              Input::Action::Shake,     Input::Action::DpadLeft, Input::Action::DpadRight,
-                                             Input::Action::NunchukZ};
+                                             Input::Action::NunchukZ,  Input::Action::ModCappyThrow};
     if (button < 0 || button >= static_cast<int>(sizeof(kActions) / sizeof(kActions[0]))) {
         return;
     }

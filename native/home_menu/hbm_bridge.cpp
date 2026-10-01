@@ -155,6 +155,7 @@ void refreshMods() {
         const auto mod = static_cast<Mods::Mod>(i);
         std::strncpy(entries[i].label, Mods::description(mod), sizeof(entries[i].label) - 1);
         entries[i].on = Mods::enabled(mod);
+        if (mod == Mods::Mod::Cappy) entries[i].needs = static_cast<int>(Mods::Mod::OdysseyMovement);
     }
     instance().setMods(entries, count);
 }

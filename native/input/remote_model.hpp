@@ -107,6 +107,8 @@ public:
 
     // A bound input went down since the last call (reconnects a remote).
     bool takeActivity();
+    // An input bound to the action is down now (and the window has focus).
+    bool actionHeld(Action action) const;
     // How many times the game has read the remote (KPADRead's WPADProbe, every
     // frame). A flick the game did not read in time (a stalled frame) plays
     // again, so a stall (a shader compile, a load) cannot swallow a press.

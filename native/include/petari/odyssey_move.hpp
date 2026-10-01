@@ -74,6 +74,20 @@ constexpr float WallJumpGravity = 0.95f;
 constexpr int WallJumpInvalidateInputFrame = 25;
 constexpr float GravityWallSlide = 0.5f;
 constexpr int WallKeepFrame = 3;
+// The cap (Cappy mod, docs/dev/CAPPY.md): the air throw's hop and the cap bounces.
+constexpr float SpinAirJumpPower = 6.0f;
+constexpr float GravitySpinAir = 0.3f;
+constexpr float SpinAirSpeedMax = 7.0f;
+constexpr int SpinAirFrames = 24;  // falling after 24 frames (community-measured)
+constexpr float GravityAir = 1.5f;
+constexpr float JumpMoveSpeedMin = 11.0f;
+constexpr float TrampleHighJumpPower = 25.0f;  // regular cap bounce
+constexpr float TrampleHighGravity = 1.0f;
+constexpr float CapHeadSpringJumpPowerHigh = 22.0f;  // cap bounce from a dive
+constexpr float CapHeadSpringJumpGravityHigh = 1.0f;
+constexpr float CapHeadSpringSpeedMax = 16.0f;
+constexpr float TrampleHipDropJumpPower = 35.0f;  // cap bounce from a ground pound
+constexpr float TrampleHipDropGravity = 1.5f;
 constexpr float SquatAccelRate = 1.2f;
 constexpr float SquatBrakeRate = 0.95f;
 constexpr float SquatBrakeEndSpeed = 3.5f;
@@ -91,6 +105,8 @@ enum class Air : int {
     Jump1, Jump2, Jump3,  // the jump chain
     Backflip, Sideflip, LongJump, Dive, GroundPoundJump, WallJump,
     Fall,
+    CapThrow,                                     // the air throw's hop (Cappy mod)
+    CapBounce, DiveCapBounce, GroundPoundCapBounce,  // bouncing off Cappy
 };
 
 inline float lerp(float a, float b, float t) { return a + (b - a) * t; }
@@ -123,6 +139,10 @@ inline float gravityOf(Air kind) {
     case Air::Dive: return Const::HeadSlidingGravityAir;
     case Air::GroundPoundJump: return Const::JumpGravity;
     case Air::WallJump: return Const::WallJumpGravity;
+    case Air::CapThrow: return Const::GravitySpinAir;  // GravityAir once the hop ends (stepAir)
+    case Air::CapBounce: return Const::TrampleHighGravity;
+    case Air::DiveCapBounce: return Const::CapHeadSpringJumpGravityHigh;
+    case Air::GroundPoundCapBounce: return Const::TrampleHipDropGravity;
     default: return Const::JumpGravity;  // falls (GravityAir 1.5)
     }
 }
@@ -189,12 +209,42 @@ inline AirState startAir(Air kind, float frontSpeed) {
         s.cap = std::max(Const::WallJumpHSpeed, Const::NormalMaxSpeed);
         s.inputLockout = Const::WallJumpInvalidateInputFrame;
         break;
+    case Air::CapThrow:  // the hop: startCapThrow sets up (no new hop above the last throw's height)
+        s.up = Const::SpinAirJumpPower;
+        s.front = std::min(frontSpeed, Const::SpinAirSpeedMax);
+        s.cap = Const::SpinAirSpeedMax;
+        break;
+    case Air::CapBounce:  // like a jump: start min(v, 24), cap max(v, 14)
+        s.up = Const::TrampleHighJumpPower;
+        s.front = std::min(frontSpeed, Const::JumpBaseSpeedMax);
+        s.cap = std::max(s.front, Const::NormalMaxSpeed);
+        break;
+    case Air::DiveCapBounce:
+        s.up = Const::CapHeadSpringJumpPowerHigh;
+        s.front = std::min(frontSpeed, Const::CapHeadSpringSpeedMax);
+        s.cap = Const::CapHeadSpringSpeedMax;
+        break;
+    case Air::GroundPoundCapBounce:
+        s.up = Const::TrampleHipDropJumpPower;
+        s.front = std::min(frontSpeed, Const::NormalMaxSpeed);
+        s.cap = Const::NormalMaxSpeed;
+        break;
     case Air::Fall:
     case Air::None:
         s.front = frontSpeed;
-        s.cap = std::max(frontSpeed, 11.0f);  // JumpMoveSpeedMin
+        s.cap = std::max(frontSpeed, Const::JumpMoveSpeedMin);
         break;
     }
+    return s;
+}
+
+// The air throw (Cappy mod): SpinAirJumpPower up, unless Mario is still above
+// the height of the last air throw in this airtime (PlayerCapActionHistory's
+// limit height): then the throw only slows his fall. upSpeed: the current up
+// speed; hop: whether the limit allows a new hop.
+inline AirState startCapThrow(float frontSpeed, float upSpeed, bool hop) {
+    AirState s = startAir(Air::CapThrow, frontSpeed);
+    if (!hop) s.up = std::min(upSpeed, 0.0f);
     return s;
 }
 
@@ -204,7 +254,11 @@ inline AirState startAir(Air kind, float frontSpeed) {
 // chain jumps move before gravity on their first frame; other moves take
 // gravity first).
 inline float stepAir(AirState& s, bool jumpHeld, float stickFront, float stickSide) {
-    const float g = gravityOf(s.kind);
+    if (s.kind == Air::CapThrow && s.frame == Const::SpinAirFrames) {
+        s.kind = Air::Fall;  // the throw is over: a normal fall
+        s.cap = std::max(s.cap, Const::JumpMoveSpeedMin);
+    }
+    const float g = s.kind == Air::Fall ? Const::GravityAir : gravityOf(s.kind);
     float rise;
     if (s.extending && (s.frame == 0 || (jumpHeld && s.frame < Const::ExtendFrame))) {
         // Chain jumps keep their speed on the first frame and then while the
@@ -342,6 +396,10 @@ inline bool noSpinAir = false;  // in the mod's dive or long jump: Spin does not
 constexpr int SpinBufferFrames = 6;
 inline int spinBuffer = 0;
 inline int getUpFrames = 0;  // frames left of the forward-roll get-up after a dive landing (then the run animation)
+// Cappy mod (docs/dev/CAPPY.md): the air move in progress (MarioJump.cpp), and
+// the frames left of a ground throw's brake (MarioWalk.cpp).
+inline Air airKind = Air::None;
+inline int capThrowBrake = 0;
 }  // namespace Live
 
 }  // namespace PetariNative::Odyssey

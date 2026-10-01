@@ -252,7 +252,8 @@ enum class Script { Title, Playable, Gameplay, Reload, Story, Galaxy, Observe };
 
 // Spin (the Shake binding) and CameraLeft/CameraRight (D-pad left/right, the
 // camera rotation bindings) are used by the stage script (smoke_stage.hpp).
-enum class Button { A, B, StickUp, StickDown, Plus, Minus, StickLeft, StickRight, Spin, CameraLeft, CameraRight, Z };
+// CapThrow is the Cappy mod's throw (smoke_movement.hpp).
+enum class Button { A, B, StickUp, StickDown, Plus, Minus, StickLeft, StickRight, Spin, CameraLeft, CameraRight, Z, CapThrow };
 
 struct Press {
     Button button;

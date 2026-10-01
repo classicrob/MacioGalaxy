@@ -556,7 +556,7 @@ Settings settings() {
 }
 
 namespace {
-constexpr Action kModActions[] = {Action::ModCollectStarBits, Action::ModShootEnemy};
+constexpr Action kModActions[] = {Action::ModCollectStarBits, Action::ModShootEnemy, Action::ModCappyThrow};
 std::atomic<int> gModPresses[std::size(kModActions)];
 
 // Latency probe (petari/latency_probe.hpp): a down edge of an input bound to A
@@ -718,6 +718,11 @@ void injectActionPress(Action action) {
             gModPresses[i].fetch_add(1, std::memory_order_relaxed);
         }
     }
+}
+
+bool actionHeld(Action action) {
+    std::lock_guard<std::mutex> lock(gHostMutex);
+    return model().actionHeld(action);
 }
 
 void keyEvent(KeyCode code, bool down, bool repeat) {

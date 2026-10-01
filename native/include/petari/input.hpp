@@ -106,6 +106,9 @@ enum class Action : std::uint8_t {
     // Photo mode (docs/dev/ODYSSEY_CAMERA.md "Photo mode"), only while it is on:
     PhotoMode,  // freeze the game and fly the camera; again to return
     PhotoShot,  // in photo mode: save a screenshot
+    // Cappy mod (docs/dev/CAPPY.md): throw the cap. While the mod is active, an
+    // input bound to it and to Shake throws only (RB by default; X still spins).
+    ModCappyThrow,
     Count
 };
 
@@ -289,6 +292,8 @@ void motionControlShown(Steering steering);
 int takeActionPresses(Action action);
 // Adds one press of a mod action, as if its key went down (tests and drivers).
 void injectActionPress(Action action);
+// Whether an input bound to a mod action is down now. Any thread.
+bool actionHeld(Action action);
 
 // Read-only bound output for route recording, including controller axes.
 struct BoundState {
