@@ -3,9 +3,7 @@
 #include "Game/Util/GamePadUtil.hpp"
 #include <cstdlib>
 #include <petari/odyssey_move.hpp>
-#ifdef PETARI_NATIVE
 #include "Game/Player/MarioCappy.hpp"
-#endif
 extern "C" bool petari_mod_enabled(int mod);
 #endif
 #include "Game/Animation/XanimeCore.hpp"
