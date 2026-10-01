@@ -105,6 +105,7 @@ add_library(petari_input STATIC
     bindings.cpp
     camera_input.cpp
     mods.cpp
+    remap.cpp
     remote_model.cpp
     wpad_host.cpp
     ${PETARI_KPAD_SOURCE})
@@ -160,6 +161,11 @@ if(BUILD_TESTING)
         target_compile_definitions(petari_input_tests PRIVATE PETARI_INPUT_TEST_SDL3=1)
     endif()
     add_test(NAME native_input COMMAND petari_input_tests)
+
+    # Remapping from the Home menu: capture, conflicts, the Home guard, controls.txt.
+    add_executable(petari_input_remap_tests ${PETARI_REPO_ROOT}/native/tests/input_remap_tests.cpp)
+    target_link_libraries(petari_input_remap_tests PRIVATE petari_input)
+    add_test(NAME native_input_remap COMMAND petari_input_remap_tests)
 
     # OdysseyMovement mod: the SMO movement model alone (header-only).
     add_executable(petari_odyssey_move_tests ${PETARI_REPO_ROOT}/native/tests/odyssey_move_tests.cpp)

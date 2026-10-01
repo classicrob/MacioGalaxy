@@ -132,9 +132,45 @@ controllers act as one.
 
 All bindings are remappable: `Bindings::bind/unbind/clear`, with a text form
 (`serialize`/`parse`, one `Action=Key:Name,Mouse:Button` line per action) for
-saving. Menus use B to go back (scenario select, galaxy map, file select). The
+saving. The Home menu's Controls page edits them in the game
+(`petari/input_remap.hpp`, `remap.cpp`; player guide in native/CONTROLS.md
+"Changing controls"; see "Remapping" below). Menus use B to go back (scenario select, galaxy map, file select). The
 pause menu closes with Plus. Escape sends only Plus: the game refuses to open
 pause while B is held. Backspace sends B for going back in menus.
+
+## Remapping
+
+`petari/input_remap.hpp`:
+
+- **Capture.** `beginCapture()` makes the next down edge of a key, mouse button
+  or controller button a capture instead of game input: `captureState()`
+  reports it once (`Captured`, with the input). Escape reports `Cancelled`. The
+  captured press, its OS repeats and its release never reach the remote, the
+  mod presses or the cameras. Inputs already held when the capture starts are
+  released to the game normally. `cancelCapture()` stops a capture that has
+  seen no press. The check runs first in `keyEvent`, `mouseButtonEvent` and
+  `padButtonEvent`, under the host mutex.
+- **Slots.** Each action shows two keyboard/mouse slots and two controller
+  slots: the first two inputs of each kind, in binding order. `assign` puts an
+  input in a slot (an input of the other kind goes to its own column),
+  replacing the old one in place. An input already in the action's other slot
+  trades places with it.
+- **Conflicts.** `Resolve::Check` changes nothing and reports `Conflict` when
+  another action has the input (`boundElsewhere`). `Swap` gives those actions
+  the slot's old input in its place, or removes the input from them if the
+  slot was empty. `KeepBoth` leaves them alone. `conflicts` (what the page
+  outlines) ignores sharing the defaults have themselves.
+- **Home guard.** `assign`, `clearSlot` and `resetAction` refuse
+  (`HomeUnreachable`) any change that leaves Home without a keyboard or mouse
+  input.
+- **controls.txt.** `load` gives the defaults for a missing file; for an
+  unreadable or invalid one it gives the defaults too and returns false with
+  a message, never failing startup. A file that leaves Home without a
+  keyboard or mouse input gets the default Home keys back. `save` writes all
+  actions with a comment header, through a temporary file and a rename. The
+  first save after an invalid file keeps it as `controls.txt.bad`. Nothing is
+  written until the player changes something, so without a controls.txt the
+  defaults apply exactly as before.
 
 ## Game hints
 
@@ -349,6 +385,14 @@ mutations also fails a test:
 - the stick not zeroed while steering;
 - a steering hint that never lapses.
 
+`native/tests/input_remap_tests.cpp` (`ctest -R native_input_remap`, 64
+checks) covers capture (keys, mouse and controller buttons, Escape, repeats
+and the release swallowed, held inputs released, cancel), slots, assign with
+check, swap, keep both and the other kind, trading slots, default sharing,
+the Home guard (clear, swap away, other kind), resets, and controls.txt: the
+round trip, missing, partial, invalid (defaults, message, `.bad` copy), the
+Home repair and an unwritable file.
+
 ## Integration (root)
 
 ```cmake
@@ -370,8 +414,9 @@ In the application:
    `petari_input_sdl3` or directly with `keyEvent`, `mouseButtonEvent`,
    `mouseMoved`, `mouseLeft`, and `focusChanged`.
 3. Hide the system cursor over the image. The game draws the Star Pointer.
-4. Optionally load and save `Bindings` text, forward `rumbleActive` to haptics,
-   and install a speaker sink.
+4. Load `controls.txt` with `Remap::load` (it remembers the file for the Home
+   menu's saves), forward `rumbleActive` to haptics, and install a speaker
+   sink.
 
 Standalone build:
 

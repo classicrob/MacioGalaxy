@@ -13,12 +13,15 @@ namespace PetariNative::Mods {
 namespace {
 
 constexpr int kCount = static_cast<int>(Mod::Count);
-constexpr const char* kNames[kCount] = {"CollectStarBits", "ShootEnemy", "OdysseyMovement", "Cappy"};
+constexpr const char* kNames[kCount] = {"CollectStarBits", "ShootEnemy", "OdysseyMovement", "Cappy", "OdysseyJumpDive"};
 constexpr const char* kDescriptions[kCount] = {"Collect visible Star Bits", "Fire a Star Bit at the nearest enemy",
-                                               "Odyssey movement", "Cappy"};
+                                               "Odyssey movement", "Cappy", "Jump in the air dives"};
+// The value of a mod with no line in mods.txt (a sub-option of another mod can
+// default on: it does nothing while its mod is off).
+constexpr bool kDefaults[kCount] = {false, false, false, false, true};
 // Input::Action::Count: the mod is a mode with no button of its own.
 constexpr Input::Action kActions[kCount] = {Input::Action::ModCollectStarBits, Input::Action::ModShootEnemy,
-                                            Input::Action::Count, Input::Action::ModCappyThrow};
+                                            Input::Action::Count, Input::Action::ModCappyThrow, Input::Action::Count};
 
 std::atomic<bool> gEnabled[kCount];
 std::mutex gFileMutex;
@@ -43,7 +46,7 @@ bool parseInto(const std::string& text, bool (&out)[kCount], std::string* error)
             if (key == kNames[i]) index = i;
         }
         if (index < 0 || (value != "on" && value != "off")) {
-            *error = "line " + std::to_string(number) + ": expected <CollectStarBits|ShootEnemy|OdysseyMovement|Cappy>=on|off";
+            *error = "line " + std::to_string(number) + ": expected <CollectStarBits|ShootEnemy|OdysseyMovement|Cappy|OdysseyJumpDive>=on|off";
             return false;
         }
         out[index] = value == "on";
@@ -92,7 +95,8 @@ bool parse(const std::string& text, std::string* error) {
 
 bool load(const std::filesystem::path& file, std::string* error) {
     HostAllocationScope scope;
-    bool values[kCount] = {};
+    bool values[kCount];
+    for (int i = 0; i < kCount; ++i) values[i] = kDefaults[i];
     std::ifstream in(file);
     if (in) {
         std::stringstream text;
@@ -104,11 +108,13 @@ bool load(const std::filesystem::path& file, std::string* error) {
     }
     if (const char* env = std::getenv("PETARI_MODS"); env != nullptr && env[0] != '\0') {
         std::string list = env;
-        for (int i = 0; i < kCount; ++i) values[i] = false;
+        for (int i = 0; i < kCount; ++i) values[i] = kDefaults[i];
         std::istringstream names(list);
         std::string item;
         while (std::getline(names, item, ',')) {
             if (item.empty() || item == "none") continue;
+            const bool on = item[0] != '-';
+            if (!on) item.erase(0, 1);
             int index = -1;
             for (int i = 0; i < kCount; ++i) {
                 if (item == kNames[i]) index = i;
@@ -117,7 +123,7 @@ bool load(const std::filesystem::path& file, std::string* error) {
                 *error = "PETARI_MODS: unknown mod " + item;
                 return false;
             }
-            values[index] = true;
+            values[index] = on;
         }
     }
     for (int i = 0; i < kCount; ++i) gEnabled[i].store(values[i], std::memory_order_relaxed);

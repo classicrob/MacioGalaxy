@@ -2170,6 +2170,17 @@ void testMods() {
     Mods::resetForTesting();
     unsetenv("PETARI_MODS");
     check(Mods::load("/nonexistent/petari-mods.txt", &error) && !Mods::enabled(Mods::Mod::ShootEnemy), "missing file: all off");
+    check(Mods::enabled(Mods::Mod::OdysseyJumpDive) && !Mods::enabled(Mods::Mod::OdysseyMovement),
+          "missing file: the jump-dive sub-option defaults on (it does nothing while Odyssey movement is off)");
+    check(Mods::parse("OdysseyJumpDive=off\n", &error) && !Mods::enabled(Mods::Mod::OdysseyJumpDive), "the sub-option can be turned off");
+    setenv("PETARI_MODS", "OdysseyMovement,-OdysseyJumpDive", 1);
+    check(Mods::load("/nonexistent/petari-mods.txt", &error) && Mods::enabled(Mods::Mod::OdysseyMovement) &&
+              !Mods::enabled(Mods::Mod::OdysseyJumpDive),
+          "PETARI_MODS: -Name turns a default-on mod off");
+    setenv("PETARI_MODS", "OdysseyMovement", 1);
+    check(Mods::load("/nonexistent/petari-mods.txt", &error) && Mods::enabled(Mods::Mod::OdysseyJumpDive),
+          "PETARI_MODS: unlisted mods keep their default");
+    unsetenv("PETARI_MODS");
     setenv("PETARI_MODS", "CollectStarBits", 1);
     check(Mods::load("/nonexistent/petari-mods.txt", &error) && Mods::enabled(Mods::Mod::CollectStarBits) &&
               !Mods::enabled(Mods::Mod::ShootEnemy),

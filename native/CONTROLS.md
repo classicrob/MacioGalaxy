@@ -19,12 +19,50 @@ selection have been exercised in the full game; later controls remain unverified
 | Escape | Pause; tap again to resume |
 | Backspace | Back in menus |
 
-Bindings are loaded from `controls.txt` in the app's user directory (normally
-`~/Library/Application Support/Petari`, overridden by `--user`). Mouse motion
-controls the Star Pointer by default. In the game, F1 (or `, the key under Escape) then Controls lists
-every control as currently bound, remaps included. While the title screen asks
-for A and B, a bar at the top of the screen names the keys ("Keyboard: Return
-starts | F1: all controls").
+Every control can be changed in the game: F1 (or `, the key under Escape),
+then Controls (see "Changing controls" below). Changes are saved in
+`controls.txt` in the app's user directory (normally
+`~/Library/Application Support/Petari`, overridden by `--user`), loaded at
+startup. Mouse motion controls the Star Pointer by default. While the title
+screen asks for A and B, a bar at the top of the screen names the keys
+("Keyboard: Return starts | F1: all controls").
+
+## Changing controls
+
+F1 → Controls lists every action with four slots: two for keyboard keys or
+mouse buttons, two for controller buttons. The Wii button each action stands
+for is shown as the game's own icon.
+
+- Move to a slot (arrow keys, WASD, the controller's stick or D-pad, or point
+  with the mouse) and press A (Space, or click it). Then press the key, mouse
+  button or controller button you want there. A controller button pressed for
+  a keyboard slot goes to the controller slot of the same number, and the
+  other way round. That press is not sent to the game.
+- Escape cancels, and so do 10 seconds without a press. Escape itself cannot
+  be put in a slot this way (Reset puts it back on Pause).
+- If another action already has that input (for example Cap throw on F, which
+  is Spin), the page asks: **Swap** (the other action gets this slot's old
+  input, or loses it if the slot was empty), **Keep both** (the input does
+  both), or **Cancel**. Slots shared with another action are outlined in
+  orange; the defaults' own sharing (RB: Spin and the Cappy mod's throw) is not
+  marked. Actions changed from the default are named in gold.
+- Under the table: **Clear slot**, **Reset action** (that action's default
+  inputs; other actions are not touched), **Reset all** (press A twice), and
+  **Back**.
+- This menu always keeps a keyboard or mouse input: a change that would take
+  the last one away from it is refused with a message.
+- Changes apply at once and are saved to `controls.txt` immediately.
+
+`controls.txt` is the same text form the input layer reads
+(`Action=Input,Input`, one line per action, `#` comments). It can still be
+edited by hand: a file naming only some actions keeps the defaults for the
+rest. Without the file the defaults apply, and the game does not create one
+until something is changed. A file that cannot be read or has an error is
+ignored: the game starts with the default controls, prints the reason
+(`petari: controls: ...`) and shows it on the Controls page. The first change
+made in the game then replaces the file and keeps the old one as
+`controls.txt.bad`. A file that leaves this menu without a keyboard or mouse
+input gets F1 and ` back.
 
 Additional development defaults provide the remaining remote controls. These
 have input-component tests but have not been approved through gameplay:
@@ -32,7 +70,7 @@ have input-component tests but have not been approved through gameplay:
 | Input | Action |
 | --- | --- |
 | Arrow keys | D-pad; Up enters first-person view where supported, Down or Space leaves it |
-| F1 or ` | Native Home menu: Resume, Controls (every key as currently bound), Mods (with Level Select, native/LEVEL_SELECT.md), Restart from Title, Quit |
+| F1 or ` | Native Home menu: Resume, Controls (every control, remappable), Mods (with Level Select, native/LEVEL_SELECT.md), Restart from Title, Quit |
 | G / V | Optional mods (off by default; F1 → Mods): collect visible Star Bits / fire a Star Bit at the nearest enemy. See native/MODS.md |
 | R | Cap throw, only with the Cappy mod on (F1 → Mods; it needs Odyssey movement). Hold to keep Cappy out. See native/MODS.md |
 | J / L, I / K, Z / X, Command or middle mouse + mouse, trackpad scroll and pinch, right stick | Only with the Odyssey camera mod on (F1 → Mods → Odyssey camera): orbit, pitch, zoom. C recentres. See native/MODS.md |
@@ -69,7 +107,7 @@ played with a physical controller yet.
 | L3 (left stick click) | Collect visible Star Bits mod (off by default; native/MODS.md) |
 | RB with the Cappy mod on | Cap throw instead of Spin (the left button still spins; with the mod off RB spins as before) |
 
-Controller buttons remap in `controls.txt` like keys: for example
+Controller buttons remap on the Controls page or in `controls.txt` like keys: for example
 `Shake=Pad:West,Pad:RightShoulder,Key:F`. The names are:
 South, East, West, North, Back, Guide, Start, LeftStick, RightStick,
 LeftShoulder, RightShoulder, DpadUp, DpadDown, DpadLeft, DpadRight,

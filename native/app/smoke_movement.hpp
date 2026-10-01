@@ -111,6 +111,7 @@ private:
         int hopHold = 1;           // groundPound: frames A is held for the jump before the pound (1: a hop)
         int spinTaps = 0;          // standing still: this many Spin taps at varied hold and gap (input check)
         int cappy = 0;             // Cappy mod: 1 the air loop, 2 the ground throw and a jump into the cap
+        int airPress = 0;          // press A again (2 frames) this many frames after the jump's press
     };
 
     void finish(Result result, const std::string& reason, Step& step);
@@ -139,6 +140,7 @@ private:
     Button mWallStick = Button::StickUp;  // PETARI_MOVEMENT_WALL_DIR: up, down, left, right
     float mFallLast = 0.0f;
     int mTaps = 0;  // Spin taps in a boost-cadence roll
+    long mRetakeoff = -1;  // Landed: first frame Mario left the ground again (-1: never)
     unsigned long mNextTap = 0;  // frame of the next spin-taps press
     std::vector<float> mSpeeds;
     // Cappy tasks: the bounce's frame, whether it came, the second dive's press
