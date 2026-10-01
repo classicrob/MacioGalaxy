@@ -6,7 +6,9 @@ Odyssey's cap throw, on top of the Odyssey movement mod
 throw the cap in the air (a small hop), ground pound, dive into the hovering cap,
 bounce off it, and dive again. With the mod off the game is unchanged.
 
-Status: design (2026-10-01). Captures are out of scope.
+Status (2026-10-01): throw, flight, hover, return, the visual and the three
+cap bounces are implemented and measured (see "Measured"). Enemy hits and
+collection are not done yet. Captures are out of scope.
 
 ## Sources
 
@@ -67,11 +69,23 @@ press, the difference being Mario's wind-up), so its trajectory is used for both
 | Regular bounce (jump or fall into Cappy) | up 25, gravity 1.0, horizontal min(v, 24), cap max(v, 14) | `TrampleHighJumpPower`/`Gravity` (D); 300 u in 24 f (C) |
 | Bounce from a ground pound | up 35, gravity 1.5, horizontal cap 14 | `TrampleHipDropJumpPower`/`Gravity` (D); 390.5 u (C) |
 | Contact | Mario's head or body sphere (r 40 at 110 up, r 50 at 75) touches a sphere of r 100 at Cappy; or his foot (r 40 at 40) is at most 70 above Cappy's catch point (20 above Cappy) and at least 20° above it. A ground-pound bounce needs the foot rule | C |
-| Conditions | Cappy hovering (fully thrown), the throw button held (released, Cappy just returns), Mario in the air | C |
+| Conditions | Cappy hovering (fully thrown), Mario in the air | C, relaxed (below) |
 | One per airtime | refreshed on landing; a wall jump removes it until the next landing | C; `clearLandLimit` sets `mIsCapJumpPossible` (D) |
 | After a bounce | Cappy returns to Mario | C |
 
 A ground throw followed by a jump into the hovering cap is a regular bounce.
+
+**The hold rule, relaxed (I).** smo.wiki says the throw button must be held for a
+bounce (released, Cappy just returns). Played on a keyboard that makes the loop
+finicky: the R that starts the dive is tapped, and the dive reaches Cappy about
+22 frames later. So here holding only *extends* the hover (to frame 122); a
+tapped throw still hovers 10 frames and can be bounced on then; and a throw
+press while Cappy is out (the dive's R) counts as holding for 30 frames
+(`HoldLatchFrames`). The harness's loop uses 6-frame taps throughout and
+bounces every run.
+
+After a bounce the air throw's hop limit is cleared (I: a bounce is a new air
+action), so a throw after the bounce hops again.
 
 ## How it hooks into Galaxy
 
@@ -113,6 +127,29 @@ A ground throw followed by a jump into the hovering cap is a regular bounce.
   nothing is created and nothing changes.
 - **Trace.** `PETARI_CAPPY_TRACE=1` logs Cappy's state, position and distance
   each frame, and Mario's bounce eligibility (available, held, contact).
+
+## Measured
+
+`PETARI_SMOKE=movement PETARI_MOVEMENT_ONLY=cappy PETARI_MODS=OdysseyMovement,Cappy`
+on the observatory fixture (`PETARI_CAPPY_TRACE=1` for the per-frame trace):
+
+- **cappy loop** (running jump, throw 6 frames in, ground pound at 18, dive with
+  the throw key at 22, all 6-frame taps): Cappy leaves 8 frames after the press,
+  is 678 out on his 21st frame and hovers; the dive arcs over him and comes down
+  onto him, and the dive cap bounce comes on frame 44 (22 frames into the dive,
+  with 7 frames of the dive press's 30-frame latch left). The ground pound and
+  dive after the bounce work; the bounce then rises 231 (from the model; the
+  harness's "rose 322" adds the second dive's rise). Cappy returns and is caught.
+- **cappy ground bounce** (a running throw held, the run on, a jump 2 frames
+  tapped 510 past the throw): the jump meets Cappy 124 up and the regular bounce
+  rises 300.000. An earlier run whose jump tap was missed ran off the terrace
+  edge under Cappy and bounced from the fall: also a regular bounce, as in SMO.
+- XFB dumps (`PETARI_XFB_DUMP_LABELS="cappy throw,cappy dive,cappy bounce,cappy
+  dive 2"`): the cap leaves Mario's head when it is thrown, and he shows his hair
+  (MarioHair on `Cap0`) until it is caught. The red cap spins along the line,
+  hovers, and flies back; the bounce plays Galaxy's mid-air somersault.
+- Movement baseline (`native/tools/movement_baseline.py`): PASS with mods off,
+  with OdysseyMovement on, and with OdysseyMovement and Cappy on.
 
 ## Plan
 

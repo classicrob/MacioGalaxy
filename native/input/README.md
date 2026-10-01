@@ -128,6 +128,7 @@ controllers act as one.
 | Tab (hold) | WASD tilt the remote | provisional |
 | T | Toggle upright posture | provisional |
 | Left Alt (hold) | Walk: half stick | provisional |
+| R; controller RB | Cap throw (`ModCappyThrow`, Cappy mod only; docs/dev/CAPPY.md). Pressed and held state go to the game, not to the remote. While the mod is active (Cappy and OdysseyMovement on), an input bound to both Shake and the cap throw (RB) does not shake | provisional |
 
 All bindings are remappable: `Bindings::bind/unbind/clear`, with a text form
 (`serialize`/`parse`, one `Action=Key:Name,Mouse:Button` line per action) for

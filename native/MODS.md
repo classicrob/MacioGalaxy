@@ -8,6 +8,7 @@ unmodified game and every test run behave exactly as before.
 | Collect visible Star Bits (`CollectStarBits`) | G, controller L3 (left stick click) | Every Star Bit on screen flies to Mario, as if the pointer had touched each one |
 | Fire a Star Bit at the nearest enemy (`ShootEnemy`) | V (no controller default) | Shoots one Star Bit at the nearest enemy on screen |
 | Odyssey movement (`OdysseyMovement`) | none (a mode; it uses the normal Jump, Crouch and Spin buttons) | Mario moves with Super Mario Odyssey's physics and moveset: see "Odyssey movement" below. |
+| Cappy (`Cappy`) | R, controller RB | Super Mario Odyssey's cap throw and cap bounce; needs Odyssey movement: see "Cappy" below. |
 
 ## Turning mods on
 
@@ -61,8 +62,8 @@ own numbers).
 
 Known gaps in this version:
 
-- No Cappy: no cap throw, cap jump, capture or cap bounce. F (Spin) keeps
-  Galaxy's Star Spin except for the dive and the roll.
+- Cappy is a separate mod (below). F (Spin) keeps Galaxy's Star Spin except
+  for the dive and the roll.
 - Galaxy has no animations for some SMO moves. The dive flies in Galaxy's
   long-jump leap, played quickly into its end pose (both arms swept back); the roll
   repeats the forward roll of a failed dive's landing back to back.
@@ -76,6 +77,48 @@ Known gaps in this version:
   The emulated Wii Remote shake behind F repeats at most every 250 ms (about 15
   frames), the same as the roll's boost interval, so mashing F at that rate
   occasionally skips a boost.
+
+## Cappy
+
+Mario throws his cap like in Super Mario Odyssey, and can bounce off it. Turn it
+on in F1 → Mods (`Cappy=on` in `mods.txt`, or `PETARI_MODS=OdysseyMovement,Cappy`
+for one run). It needs Odyssey movement: with that off, Cappy does nothing and
+the Mods line reads "Cappy: On (needs Odyssey movement)". The cap model loads
+with the stage, so turning Cappy on takes effect at the next stage load (a
+level, the observatory, or Level Select). Only normal Mario throws (not the
+power-up suits, not swimming).
+
+| Move | Keyboard | Controller |
+| --- | --- | --- |
+| Throw (Cappy flies about 680 units ahead, hovers, and comes back) | R | RB |
+| Keep Cappy out longer (up to 2 seconds) | hold R | hold RB |
+| Air throw (a small hop; no new height while above the last throw) | R in the air | RB in the air |
+| Dive (as Spin) | R during a ground pound | RB during a ground pound |
+| Roll, roll boost (as Spin) | R while crouching, while rolling | RB, same |
+| Cap bounce | jump, fall, dive or ground pound into the hovering cap | same |
+
+The signature loop: Space (jump), R (throw), Shift (ground pound), R (dive):
+Mario dives onto the hovering cap, bounces off it, and can ground pound and dive
+again. One cap bounce per airtime; landing gives it back, a wall jump takes it
+away until the next landing. A bounce from a dive is 231 units high, from a jump
+or fall 300, from a ground pound 391.
+
+With the Cappy mod on, RB throws instead of spinning (the left button still
+spins; with the mod off RB spins as before). R and RB are remappable in
+`controls.txt` (`ModCappyThrow=Key:R,Pad:RightShoulder`).
+
+Known gaps in this version:
+
+- Luigi keeps his cap on and throws a red one (Galaxy has no hair model for
+  him).
+- Cappy does not hit enemies or collect anything yet, and there are no
+  captures, homing throws or cap-return jumps.
+- SMO's own Cappy parameters are not published: the flight follows the
+  community's frame measurements; the hover without holding (10 frames) and
+  the return speed are our own choices. A tapped throw stays bounceable for its
+  short hover, and pressing R again while Cappy is out (the dive) keeps him
+  there as if held, for half a second, so the tapped loop works. Details and
+  sources: docs/dev/CAPPY.md.
 
 ## Odyssey camera
 
