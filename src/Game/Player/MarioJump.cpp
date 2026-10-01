@@ -48,7 +48,7 @@ namespace {
     OdysseyAir sOdyssey;
     bool sOdysseyGroundPoundJump = false;  // the next tryJump is a ground-pound jump
     PetariNative::Odyssey::Air sOdysseyLanded = PetariNative::Odyssey::Air::None;  // the mod's move that just landed (doLanding)
-    constexpr f32 kOdysseyDiveLeapFrame = 14.0f;  // the long jump animation's stretched-out frame, held through a dive
+    constexpr f32 kOdysseyDiveLeapRate = 2.2f;  // the long-jump leap (49 frames) reaches its end ~22 frames into a dive
 
     bool odysseyOn() { return petari_mod_enabled(kModOdysseyMovement); }
 
@@ -1611,21 +1611,29 @@ void Mario::procJump(bool a1) {
             }
             const f32 rise = PetariNative::Odyssey::stepAir(sOdyssey.air, checkLvlA(), stickFront, stickSide);
             if (sOdyssey.air.kind == PetariNative::Odyssey::Air::Dive && isAnimationRun("幅とび")) {
-                // The dive flies in the long jump's leap: played to its stretched-out
-                // frame, then held there until the landing.
+                // The dive's flight (about 33 frames) is shorter than the leap (49):
+                // play it faster, then hold its last frame until the landing.
                 XanimeFrameCtrl* ctrl = getAnimator()->getXanimePlayer()->getFrameCtrl();
-                if (ctrl != nullptr && ctrl->getFrame() >= kOdysseyDiveLeapFrame) {
-                    ctrl->setFrame(kOdysseyDiveLeapFrame);
-                    ctrl->setRate(0.0f);
+                if (ctrl != nullptr) {
+                    const f32 last = static_cast< f32 >(ctrl->getEnd()) - 1.0f;
+                    if (ctrl->getFrame() >= last) {
+                        ctrl->setFrame(last);
+                        ctrl->setRate(0.0f);
+                    } else {
+                        ctrl->setRate(kOdysseyDiveLeapRate);
+                    }
                 }
             }
             mJumpVec = front * sOdyssey.air.front + side * sOdyssey.air.side + up * rise;
             addVelocity(mJumpVec);
             static const bool trace = std::getenv("PETARI_ODYSSEY_TRACE") != nullptr;
             if (trace) {
-                std::fprintf(stderr, "[odyssey] frame %d kind %d rise %.3f front %.3f pos (%.3f, %.3f, %.3f) vel (%.3f, %.3f, %.3f) anim %.1f\n",
+                XanimePlayer* player = getAnimator()->getXanimePlayer();
+                std::fprintf(stderr,
+                             "[odyssey] frame %d kind %d rise %.3f front %.3f pos (%.3f, %.3f, %.3f) vel (%.3f, %.3f, %.3f) anim %s %.1f/%d\n",
                              sOdyssey.air.frame, static_cast< int >(sOdyssey.air.kind), rise, sOdyssey.air.front, mPosition.x, mPosition.y,
-                             mPosition.z, mVelocity.x, mVelocity.y, mVelocity.z, getAnimator()->getFrame());
+                             mPosition.z, mVelocity.x, mVelocity.y, mVelocity.z, player->getCurrentAnimationName(), getAnimator()->getFrame(),
+                             player->getFrameCtrl() != nullptr ? static_cast< int >(player->getFrameCtrl()->getEnd()) : -1);
             }
         } else
 #endif
@@ -1927,14 +1935,16 @@ void Mario::procHipDrop() {
         // SMO's dive: Spin during a ground pound in the air (wind-up or fall) dives
         // forward along the facing: 20 forward, 28 up, gravity 2.0. Galaxy has no
         // dive; it uses _430 5 (the long jump's type, which also keeps a new ground
-        // pound from starting, as in SMO) with Galaxy's long-jump leap, held at its
-        // stretched-out frame for the flight (procJump), and lands in a belly flop
-        // (doLanding).
+        // pound from starting, as in SMO) with Galaxy's long-jump leap, played fast
+        // enough to reach its end (both arms swept back, the pose a long jump settles
+        // into when it flies long) and held there (procJump); it lands in a belly
+        // flop (doLanding).
         mMovementStates._B = false;
         _424 = 0;
         _430 = 5;
         stopAnimation(nullptr);
-        changeAnimation("幅とび", "落下");
+        changeAnimationNonStop("幅とび");
+        changeAnimation(nullptr, "落下");
         playSound("声高飛び込み");
         playSound("ジャンプ踏切");
         TVec3f up(-mActor->_240);
@@ -2747,7 +2757,7 @@ void Mario::doLanding() {
         if (landed == PetariNative::Odyssey::Air::Dive && isAnimationRun("幅とび")) {
             XanimeFrameCtrl* ctrl = getAnimator()->getXanimePlayer()->getFrameCtrl();
             if (ctrl != nullptr) {
-                ctrl->setRate(1.0f);  // release the held leap frame
+                ctrl->setRate(1.0f);  // undo the dive's leap timing
             }
         }
         if (odysseyOn() && landed == PetariNative::Odyssey::Air::Dive && !doHardLanding && !isStickOn()) {

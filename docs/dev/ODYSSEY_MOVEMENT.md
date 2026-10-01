@@ -256,9 +256,10 @@ playability run, before the next step.
   run target, and keeps the target's index on the stick every frame: Galaxy
   updates it only while a walk animation plays and ramps it up from 0 after a
   stop, which made Mario glide standing after every mod handover (dive and long
-  jump landings, roll end). The dive plays Galaxy's long-jump leap (`幅とび`) and
-  holds its stretched-out frame 14 until the landing (user feedback: it reads more
-  naturally than the high dive's head-first frame); its stick-held landing plays 12 frames of the forward roll, then
+  jump landings, roll end). The dive plays Galaxy's long-jump leap (`幅とび`, 49
+  frames) at 2.2x, so it reaches its last frame (both arms swept back, the pose
+  a long jump settles into when it flies long) about 22 frames in, and holds it
+  until the landing (user feedback); its stick-held landing plays 12 frames of the forward roll, then
   the run. The mod's Spin moves read the swing's rising edge each frame
   (`MarioActor::controlMain`), buffered 6 frames, without Galaxy's spin cooldown
   and swing lockouts: roll boosts at 15-frame taps measured 8 of 10 (one tap
