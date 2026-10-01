@@ -63,8 +63,8 @@ Known gaps in this version:
 
 - No Cappy: no cap throw, cap jump, capture or cap bounce. F (Spin) keeps
   Galaxy's Star Spin except for the dive and the roll.
-- Galaxy has no animations for some SMO moves. The dive holds the head-first
-  frame of Galaxy's high dive into water; the roll
+- Galaxy has no animations for some SMO moves. The dive flies in Galaxy's
+  long-jump leap (held at its stretched-out frame); the roll
   repeats the forward roll of a failed dive's landing back to back.
 - No ground-pound roll (SMO: Y on a ground-pound landing) and no roll speed-up
   on downhill slopes.

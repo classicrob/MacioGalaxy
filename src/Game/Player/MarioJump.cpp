@@ -48,6 +48,7 @@ namespace {
     OdysseyAir sOdyssey;
     bool sOdysseyGroundPoundJump = false;  // the next tryJump is a ground-pound jump
     PetariNative::Odyssey::Air sOdysseyLanded = PetariNative::Odyssey::Air::None;  // the mod's move that just landed (doLanding)
+    constexpr f32 kOdysseyDiveLeapFrame = 14.0f;  // the long jump animation's stretched-out frame, held through a dive
 
     bool odysseyOn() { return petari_mod_enabled(kModOdysseyMovement); }
 
@@ -1609,12 +1610,12 @@ void Mario::procJump(bool a1) {
                 sOdyssey.air.extending = false;
             }
             const f32 rise = PetariNative::Odyssey::stepAir(sOdyssey.air, checkLvlA(), stickFront, stickSide);
-            if (sOdyssey.air.kind == PetariNative::Odyssey::Air::Dive && isAnimationRun("飛び込みジャンプ")) {
-                // SMO's dive is head-first all the way: hold the high dive's
-                // horizontal head-first frame instead of its upright rise and flip.
+            if (sOdyssey.air.kind == PetariNative::Odyssey::Air::Dive && isAnimationRun("幅とび")) {
+                // The dive flies in the long jump's leap: played to its stretched-out
+                // frame, then held there until the landing.
                 XanimeFrameCtrl* ctrl = getAnimator()->getXanimePlayer()->getFrameCtrl();
-                if (ctrl != nullptr) {
-                    ctrl->setFrame(28.0f);
+                if (ctrl != nullptr && ctrl->getFrame() >= kOdysseyDiveLeapFrame) {
+                    ctrl->setFrame(kOdysseyDiveLeapFrame);
                     ctrl->setRate(0.0f);
                 }
             }
@@ -1920,18 +1921,20 @@ bool Mario::jumpToHipDrop() {
 void Mario::procHipDrop() {
     f32 gravityHipDrop;
 #ifdef PETARI_NATIVE
-    if (odysseyOn() && getPlayerMode() == 0 && !mMovementStates._1 && PetariNative::Odyssey::Live::spinBuffer > 0) {
+    if (odysseyOn() && getPlayerMode() == 0 && !mMovementStates._1 &&
+        (PetariNative::Odyssey::Live::spinBuffer > 0 || mActor->isRequestSpin())) {
         PetariNative::Odyssey::Live::spinBuffer = 0;
         // SMO's dive: Spin during a ground pound in the air (wind-up or fall) dives
         // forward along the facing: 20 forward, 28 up, gravity 2.0. Galaxy has no
         // dive; it uses _430 5 (the long jump's type, which also keeps a new ground
-        // pound from starting, as in SMO) with Galaxy's head-first high dive into
-        // water, whose landing is a belly flop.
+        // pound from starting, as in SMO) with Galaxy's long-jump leap, held at its
+        // stretched-out frame for the flight (procJump), and lands in a belly flop
+        // (doLanding).
         mMovementStates._B = false;
         _424 = 0;
         _430 = 5;
         stopAnimation(nullptr);
-        changeAnimation("飛び込みジャンプ", "落下");
+        changeAnimation("幅とび", "落下");
         playSound("声高飛び込み");
         playSound("ジャンプ踏切");
         TVec3f up(-mActor->_240);
@@ -2741,11 +2744,18 @@ void Mario::doLanding() {
         // failed dive's forward roll as the get-up. Stick released: Galaxy's landing.
         const PetariNative::Odyssey::Air landed = sOdysseyLanded;
         sOdysseyLanded = PetariNative::Odyssey::Air::None;
-        if (landed == PetariNative::Odyssey::Air::Dive && isAnimationRun("飛び込みジャンプ")) {
+        if (landed == PetariNative::Odyssey::Air::Dive && isAnimationRun("幅とび")) {
             XanimeFrameCtrl* ctrl = getAnimator()->getXanimePlayer()->getFrameCtrl();
             if (ctrl != nullptr) {
-                ctrl->setRate(1.0f);  // the held dive frame plays on into Galaxy's landing
+                ctrl->setRate(1.0f);  // release the held leap frame
             }
+        }
+        if (odysseyOn() && landed == PetariNative::Odyssey::Air::Dive && !doHardLanding && !isStickOn()) {
+            // Stick released: the dive ends in Galaxy's belly flop (its landing for
+            // a dive into shallow water), as before the leap pose.
+            stopWalk();
+            changeAnimation("飛び込み失敗着地", "基本");
+            goto POST_LANDING;
         }
         if (odysseyOn() && !doHardLanding && isStickOn() &&
             (landed == PetariNative::Odyssey::Air::LongJump || landed == PetariNative::Odyssey::Air::Dive)) {

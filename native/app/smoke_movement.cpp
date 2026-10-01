@@ -59,6 +59,7 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
         {"roll to the end (stick held)", 0, false, 0, false, 3, false, 0, false, 140, false, 0, false, true, true},
         {"roll to the end (stick released)", 0, false, 0, false, 3, false, 0, false, 140, false, 0, false, false, true},
         {"roll boost cadence", 0, false, 0, false, 3, false, 0, false, 150, false, 0, false, false, true, 15},
+        {"dive from a jump (stick held)", 6, false, 0, false, 0, true, 0, true, 0, false, 30, false, true, false, 0, 15},
     };
     if (const char* dir = std::getenv("PETARI_MOVEMENT_WALL_DIR"); dir != nullptr) {
         const std::string d(dir);
@@ -258,7 +259,7 @@ Step MovementDriver::step(const Observation& o) {
                 mPhase = Phase::Crouch;
                 mPhaseFrames = 0;
             } else if (task.groundPound) {
-                tap(Button::A, 1, step);  // a hop; the ground pound comes at its peak
+                tap(Button::A, static_cast< unsigned long >(task.hopHold), step);  // a hop (or a jump); the ground pound comes at its peak
                 mPhase = Phase::Hop;
                 mPhaseFrames = 0;
                 mLeftGround = false;

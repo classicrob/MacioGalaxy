@@ -31,7 +31,9 @@
 //  12. rolls ridden to their end (no boost) with the stick held and released
 //      ("roll to the end (stick held)" and so on);
 //  13. "roll boost cadence": Spin tapped every 15 frames through a roll; logs the
-//      boosts (speed jumps) out of the taps.
+//      boosts (speed jumps) out of the taps;
+//  14. "dive from a jump (stick held)": a full jump, a ground pound at its peak,
+//      then the dive.
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example
 // PETARI_XFB_DUMP_LABELS="long jump,dive").
 // PETARI_MOVEMENT_ONLY=<name>[,<name>...] keeps only the tasks whose name
@@ -88,6 +90,7 @@ private:
         bool airStick = false;     // hold the stick from take-off (lands with it held)
         bool noBoost = false;      // roll: no boost, ridden to its end
         int mash = 0;              // roll: tap Spin every this many frames (boost cadence)
+        int hopHold = 1;           // groundPound: frames A is held for the jump before the pound (1: a hop)
     };
 
     void finish(Result result, const std::string& reason, Step& step);
