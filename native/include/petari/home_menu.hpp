@@ -39,8 +39,25 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <string>
 
 namespace PetariNative::HomeMenu {
+
+// The game's picture-font icons (GalaxyFont::Picture), as UTF-8 that menu text
+// can embed: picture character c is U+E000 + (c - 0x20). Drawn in their own
+// colors with the game's fonts, as "(A)" and so on without them.
+#define PETARI_ICON_A "\xEE\x80\x90"        // U+E010: the A button
+#define PETARI_ICON_B "\xEE\x80\x91"        // U+E011: B
+#define PETARI_ICON_C "\xEE\x80\x92"        // U+E012: Nunchuk C
+#define PETARI_ICON_SHAKE "\xEE\x80\x93"    // U+E013: the Wii Remote (shake)
+#define PETARI_ICON_ONE "\xEE\x80\x95"      // U+E015: 1
+#define PETARI_ICON_TWO "\xEE\x80\x96"      // U+E016: 2
+#define PETARI_ICON_STICK "\xEE\x80\x9F"    // U+E01F: the Control Stick
+#define PETARI_ICON_PAD "\xEE\x80\xA3"      // U+E023: the + Control Pad
+#define PETARI_ICON_HOME "\xEE\x80\xA6"     // U+E026: HOME
+#define PETARI_ICON_MINUS "\xEE\x80\xA7"    // U+E027: -
+#define PETARI_ICON_PLUS "\xEE\x80\xA8"     // U+E028: +
+#define PETARI_ICON_Z "\xEE\x80\xA9"        // U+E029: Nunchuk Z
 
 // Values equal HBMSelectBtnNum.
 enum class Selection : int { None = -1, Resume = 0, Quit = 1, Restart = 2 };
@@ -175,6 +192,7 @@ struct View {
     Rect panel;
     const char* title = "";
     const char* message = "";  // may be empty
+    char footer[192] = {};     // the buttons that work on this page, with icons; drawn along the image bottom
     float titleY = 0.0f;       // text centers, KPAD space
     float messageY = 0.0f;
     int itemCount = 0;
@@ -221,6 +239,9 @@ public:
     bool takeCameraChange(CameraOptions* options);
     const CameraOptions& camera() const { return mCamera; }
     int levelMission() const { return mLevelMission; }
+    // Keyboard names for the footer's buttons (A, Plus, Home, the + Control
+    // Pad's left/right); empty names show the icon alone. Kept across opens.
+    void setFooterKeys(const char* confirm, const char* back, const char* close, const char* change);
     Selection selection() const { return mPhase == Phase::Finished ? mResult : Selection::None; }  // HBMGetSelectBtnNum
 
     Phase phase() const { return mPhase; }
@@ -290,6 +311,7 @@ private:
     char mLevelLabels[2][80] = {};
     char mLevelMessage[96] = {};
     void refreshLevelLabels();
+    char mFooterKeys[4][32] = {};  // confirm, back, close, change
     CameraOptions mCamera;
     bool mCameraChanged = false;
     char mCameraLabels[5][48] = {};
@@ -305,6 +327,15 @@ Menu& instance();
 // Snapshot published by HBMDraw, hidden once a selection is reported. Any thread.
 View publishedView();
 void publish(const View& view);
+
+// Loads the game's fonts from the disc's LayoutData/Font.arc (galaxy_font.hpp)
+// into the ImGui font atlas, so the menus use the game's lettering and button
+// icons. Call once on the thread that owns the ImGui context, after it exists
+// and outside a frame (the atlas is rebuilt before the next frame). False, with
+// a message, when the file is missing or unreadable: the menus then keep
+// ImGui's built-in font. Target petari_home_menu_imgui.
+bool installGalaxyFonts(const char* fontArchive, std::string* error);
+bool galaxyFontsInstalled();
 
 // Draws publishedView() with Dear ImGui (target petari_home_menu_imgui). Call
 // on the thread that owns the ImGui context, between aurora_begin_frame() and

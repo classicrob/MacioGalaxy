@@ -43,7 +43,7 @@ endif()
 # The menu and the HBM entry points. home_menu.cpp has no SDK dependency; the
 # bridge reads the SDK's HBM and KPAD structures.
 # progress.cpp: the personal progress record (petari/progress.hpp), shown on the My Progress page.
-add_library(petari_home_menu STATIC home_menu.cpp hbm_bridge.cpp launch_stage.cpp ${PETARI_REPO_ROOT}/native/progress/progress.cpp)
+add_library(petari_home_menu STATIC home_menu.cpp hbm_bridge.cpp launch_stage.cpp galaxy_font.cpp ${PETARI_REPO_ROOT}/native/progress/progress.cpp)
 target_include_directories(petari_home_menu PUBLIC include ${PETARI_REPO_ROOT}/native/include)
 target_link_libraries(petari_home_menu PUBLIC petari_native_config)
 target_compile_features(petari_home_menu PUBLIC cxx_std_17)
@@ -72,6 +72,9 @@ if(TARGET imgui)
     if(TARGET petari_input)
         target_compile_definitions(petari_home_menu_imgui PRIVATE PETARI_HOME_MENU_INPUT=1)
     endif()
+    # Development tool: every page rendered offline to PNG (native/tools/home_menu_render.cpp).
+    add_executable(petari_home_menu_render EXCLUDE_FROM_ALL ${PETARI_REPO_ROOT}/native/tools/home_menu_render.cpp)
+    target_link_libraries(petari_home_menu_render PRIVATE petari_home_menu_imgui)
 else()
     message(STATUS "petari_home_menu: no imgui target; the overlay is not built")
 endif()
@@ -94,6 +97,19 @@ if(BUILD_TESTING)
         target_link_libraries(petari_home_menu_tests PRIVATE petari_home_menu)
     endif()
     add_test(NAME native_home_menu COMMAND petari_home_menu_tests)
+
+    # The game's fonts (galaxy_font.hpp): synthetic data, the ImGui atlas, and the
+    # real Font.arc when the disc is in build/game-data (skipped otherwise).
+    add_executable(petari_galaxy_font_tests ${PETARI_REPO_ROOT}/native/tests/galaxy_font_tests.cpp)
+    target_compile_definitions(petari_galaxy_font_tests PRIVATE
+        PETARI_TEST_FONT_ARCHIVE="${PETARI_REPO_ROOT}/build/game-data/RMGE01/files/LayoutData/Font.arc")
+    if(TARGET petari_home_menu_imgui)
+        target_link_libraries(petari_galaxy_font_tests PRIVATE petari_home_menu_imgui)
+        target_compile_definitions(petari_galaxy_font_tests PRIVATE PETARI_GALAXY_FONT_TEST_IMGUI=1)
+    else()
+        target_link_libraries(petari_galaxy_font_tests PRIVATE petari_home_menu)
+    endif()
+    add_test(NAME native_galaxy_font COMMAND petari_galaxy_font_tests)
 
     add_executable(petari_progress_tests ${PETARI_REPO_ROOT}/native/tests/progress_tests.cpp)
     target_link_libraries(petari_progress_tests PRIVATE petari_home_menu)

@@ -29,6 +29,7 @@
 #include <petari/camera_settings.hpp>
 #include <petari/efb_dump_mark.hpp>
 #include <petari/input.hpp>
+#include <petari/home_menu.hpp>
 
 #include "host.hpp"
 #include "smoke_background.hpp"
@@ -502,6 +503,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "PETARI SMOKE BACKGROUND: accessory activation policy; hidden window at %d,%d; flags=0x%llx\n",
                      x, y, static_cast<unsigned long long>(SDL_GetWindowFlags(window)));
         App::Events::assertFocus();
+    }
+    // The native menus draw with the game's own fonts from the disc; without them
+    // (a disc without LayoutData/Font.arc) they keep ImGui's built-in font.
+    {
+        std::string fontError;
+        if (!PetariNative::HomeMenu::installGalaxyFonts((paths.disc / "files/LayoutData/Font.arc").string().c_str(), &fontError)) {
+            std::fprintf(stderr, "petari: menus use the built-in font: %s\n", fontError.c_str());
+        }
     }
     App::LatencyReport::configureLayer(info.window);
     if (!prepareKnownPipelines(static_cast<SDL_Window*>(info.window))) {

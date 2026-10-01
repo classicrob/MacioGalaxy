@@ -747,6 +747,7 @@ struct Bounds {
     int vertices = 0;
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
     float blackAlpha = 0.0f;  // most opaque pure-black vertex
+    float dimAlpha = 0.0f;    // most opaque vertex of the teal dim
     bool focusColor = false;
 };
 
@@ -770,6 +771,9 @@ Bounds drawOverlay(float x, float y, float w, float h) {
             const ImVec4 c = ImGui::ColorConvertU32ToFloat4(v.col);
             if (c.x == 0.0f && c.y == 0.0f && c.z == 0.0f) {
                 bounds.blackAlpha = std::fmax(bounds.blackAlpha, c.w);
+            }
+            if (c.x == 0.0f && std::fabs(c.y - 0.16f) < 0.01f && std::fabs(c.z - 0.26f) < 0.01f) {
+                bounds.dimAlpha = std::fmax(bounds.dimAlpha, c.w);
             }
             if (c.w > 0.99f && c.x > 0.9f && c.y > 0.7f && c.z < 0.3f) {
                 bounds.focusColor = true;
@@ -801,7 +805,8 @@ void testImGuiOverlay() {
           "drawing stays inside the game image");
     check(list.x0 < 161.0f && list.y1 > 759.0f, "dim covers the image");
     check(list.focusColor, "focused item highlighted");
-    check(std::fabs(list.blackAlpha - 0.5f) < 0.01f, "only the half dim is black while the list is shown");
+    check(list.blackAlpha < 0.01f, "nothing is black while the list is shown");
+    check(std::fabs(list.dimAlpha - 0.65f) < 0.01f, "the game behind is tinted teal, as the game's pause screen is");
     check(!ImGui::GetIO().WantCaptureMouse && !ImGui::GetIO().WantCaptureKeyboard, "overlay takes no input");
 
     // Every confirmation's text fits the panel, in 4:3 and 16:9 images.
@@ -819,6 +824,7 @@ void testImGuiOverlay() {
             confirm.update(press(A));
             HM::View view = confirm.view();
             view.dimOpacity = 0.0f;  // leave only the panel and its contents
+            view.footer[0] = '\0';
             HM::publish(view);
             const float w = wide ? 1280.0f : 960.0f;
             const float x = (1280.0f - w) * 0.5f;

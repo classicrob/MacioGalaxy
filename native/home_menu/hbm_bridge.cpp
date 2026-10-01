@@ -145,6 +145,26 @@ void refreshControls() {
         std::strncpy(entries[i].pad, summary[i].pad.c_str(), sizeof(entries[i].pad) - 1);
     }
     instance().setControls(entries, count);
+
+    // The footer's key names: each button's first keyboard or mouse input (arrow keys for
+    // the + Control Pad's left and right when they are bound).
+    const Input::Bindings bindings = Input::bindings();
+    auto key = [&bindings](Input::Action action, Input::KeyCode prefer) {
+        const auto& inputs = bindings.inputs(action);
+        for (const Input::Binding& input : inputs) {
+            if (input.device == Input::Binding::Device::Key && input.code == prefer) return Input::displayName(input);
+        }
+        for (const Input::Binding& input : inputs) {
+            if (input.device != Input::Binding::Device::Pad) return Input::displayName(input);
+        }
+        return std::string();
+    };
+    const std::string left = key(Input::Action::DpadLeft, Input::Key::Left);
+    const std::string right = key(Input::Action::DpadRight, Input::Key::Right);
+    const std::string change = left == "Left arrow" && right == "Right arrow" ? std::string("\xE2\x86\x90/\xE2\x86\x92")  // U+2190/U+2192
+                               : left.empty() || right.empty() ? left + right : left + "/" + right;
+    instance().setFooterKeys(key(Input::Action::A, 0).c_str(), key(Input::Action::Plus, 0).c_str(),
+                             key(Input::Action::Home, 0).c_str(), change.c_str());
 }
 
 // The Mods page toggles, from the mod settings in effect now.

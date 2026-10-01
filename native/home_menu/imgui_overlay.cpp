@@ -6,7 +6,13 @@
 #include "petari/progress.hpp"
 #include "petari/pipeline_startup.hpp"
 
+#include "petari/galaxy_font.hpp"
+
 #include <imgui.h>
+#include <imgui_internal.h>  // ShadeVertsLinearColorGradientKeepAlpha, the stb_truetype builder
+#ifdef IMGUI_ENABLE_FREETYPE
+#include <misc/freetype/imgui_freetype.h>
+#endif
 
 #ifdef PETARI_HOME_MENU_INPUT
 #include <string>
@@ -21,6 +27,8 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <utility>
 
 namespace PetariNative::HomeMenu {
 namespace App = PetariNative::App;
@@ -37,18 +45,198 @@ ImU32 color(float r, float g, float b, float a) {
     return ImGui::ColorConvertFloat4ToU32(ImVec4(r, g, b, std::clamp(a, 0.0f, 1.0f)));
 }
 
+// --- The game's fonts in the ImGui atlas (installGalaxyFonts) ---
+
+GalaxyFont::Set gGalaxy;           // kept: the atlas copies glyph pixels from it whenever it is rebuilt
+ImFont* gTextFont = nullptr;       // MessageFont26, with the picture icons at U+E000..
+ImFont* gTitleFont = nullptr;      // MenuFont64
+struct GlyphRect {
+    int rect;                      // atlas custom rect index
+    const GalaxyFont::Glyph* glyph;
+};
+std::vector<GlyphRect> gGlyphRects;
+
+const ImFontBuilderIO* baseBuilder() {
+#ifdef IMGUI_ENABLE_FREETYPE
+    return ImGuiFreeType::GetBuilderForFreeType();
+#else
+    return ImFontAtlasGetBuilderForStbTruetype();
+#endif
+}
+
+// The usual build, then the glyph cells copied into their rectangles. The
+// atlas becomes RGBA (the picture icons are in color); the rest stays white.
+bool buildWithGalaxyGlyphs(ImFontAtlas* atlas) {
+    if (!baseBuilder()->FontBuilder_Build(atlas)) {
+        return false;
+    }
+    const int width = atlas->TexWidth;
+    const int height = atlas->TexHeight;
+    if (atlas->TexPixelsRGBA32 == nullptr) {
+        if (atlas->TexPixelsAlpha8 == nullptr) {
+            return false;
+        }
+        atlas->TexPixelsRGBA32 = static_cast<unsigned int*>(IM_ALLOC(static_cast<size_t>(width) * height * 4));
+        for (int i = 0; i < width * height; ++i) {
+            atlas->TexPixelsRGBA32[i] = IM_COL32(255, 255, 255, atlas->TexPixelsAlpha8[i]);
+        }
+    }
+    for (const GlyphRect& entry : gGlyphRects) {
+        const ImFontAtlasCustomRect* rect = atlas->GetCustomRectByIndex(entry.rect);
+        const GalaxyFont::Glyph& glyph = *entry.glyph;
+        for (int y = 0; y < glyph.height && y < rect->Height; ++y) {
+            for (int x = 0; x < glyph.width && x < rect->Width; ++x) {
+                const std::uint8_t* p = glyph.rgba.data() + (static_cast<size_t>(y) * glyph.width + x) * 4;
+                atlas->TexPixelsRGBA32[static_cast<size_t>(rect->Y + y) * width + rect->X + x] = IM_COL32(p[0], p[1], p[2], p[3]);
+            }
+        }
+    }
+    atlas->TexPixelsUseColors = true;
+    // Only the RGBA copy is complete. GetTexDataAsRGBA32 would otherwise convert the
+    // alpha copy again over it; backends read RGBA.
+    if (atlas->TexPixelsAlpha8 != nullptr) {
+        IM_FREE(atlas->TexPixelsAlpha8);
+        atlas->TexPixelsAlpha8 = nullptr;
+    }
+    return true;
+}
+
+ImFontBuilderIO gGalaxyBuilder = {buildWithGalaxyGlyphs};
+
+constexpr std::uint32_t kIconBase = 0xE000;  // picture glyph c is U+E000 + (c - 0x20)
+
+ImFont* addGalaxyFont(ImFontAtlas* atlas, const GalaxyFont::Font& font, const char* name, const GalaxyFont::Font* icons) {
+    static const ImWchar kSpaceOnly[] = {0x20, 0x20, 0};  // the base font only carries the size; the glyphs are ours
+    ImFontConfig config;
+    config.SizePixels = static_cast<float>(font.lineFeed);
+    config.GlyphRanges = kSpaceOnly;
+    std::snprintf(config.Name, sizeof(config.Name), "%s", name);
+    ImFont* imFont = atlas->AddFontDefault(&config);
+    auto add = [&](const GalaxyFont::Glyph& glyph, ImWchar code, float offsetY) {
+        const int rect = atlas->AddCustomRectFontGlyph(imFont, code, std::max(1, glyph.width), std::max(1, glyph.height),
+                                                       static_cast<float>(glyph.advance),
+                                                       ImVec2(static_cast<float>(glyph.left), offsetY));
+        gGlyphRects.push_back({rect, &glyph});
+    };
+    for (const GalaxyFont::Glyph& glyph : font.glyphs) {
+        if (glyph.code <= 0xFFFF) add(glyph, static_cast<ImWchar>(glyph.code), 0.0f);
+    }
+    if (icons != nullptr) {
+        for (const GalaxyFont::Glyph& glyph : icons->glyphs) {
+            if (glyph.code >= 0x20 && glyph.code < 0x120) {
+                add(glyph, static_cast<ImWchar>(kIconBase + glyph.code - 0x20),
+                    std::floor((static_cast<float>(font.lineFeed) - static_cast<float>(glyph.height)) * 0.5f));
+            }
+        }
+    }
+    return imFont;
+}
+
+ImFont* textFont() {
+    return gTextFont != nullptr ? gTextFont : ImGui::GetFont();
+}
+
+// The picture icons' stand-ins when the game's fonts are not loaded.
+const char* iconFallback(std::uint32_t code) {
+    switch (code - kIconBase + 0x20) {
+    case GalaxyFont::Picture::A: return "(A)";
+    case GalaxyFont::Picture::B: return "(B)";
+    case GalaxyFont::Picture::C: return "(C)";
+    case GalaxyFont::Picture::Z: return "(Z)";
+    case GalaxyFont::Picture::One: return "(1)";
+    case GalaxyFont::Picture::Two: return "(2)";
+    case GalaxyFont::Picture::Plus: return "(+)";
+    case GalaxyFont::Picture::Minus: return "(-)";
+    case GalaxyFont::Picture::Home: return "(Home)";
+    case GalaxyFont::Picture::Pad: return "(D-pad)";
+    case GalaxyFont::Picture::Stick: return "(Stick)";
+    case GalaxyFont::Picture::Remote: return "(Shake)";
+    default: return "";
+    }
+}
+
+// An icon's code point if `p` starts one (U+E000..U+E0FF, UTF-8 EE 80..83 xx).
+std::uint32_t iconAt(const char* p) {
+    const auto* u = reinterpret_cast<const unsigned char*>(p);
+    if (u[0] == 0xEE && u[1] >= 0x80 && u[1] <= 0x83 && (u[2] & 0xC0) == 0x80) {
+        return 0xE000u | ((u[1] & 0x3Fu) << 6) | (u[2] & 0x3Fu);
+    }
+    return 0;
+}
+
+// Text as drawn: icons replaced by their stand-ins when the game's fonts are
+// missing. A fixed buffer: this can run on a game thread.
+struct Prepared {
+    char text[256];
+};
+Prepared prepare(const char* text) {
+    Prepared out{};
+    size_t n = 0;
+    for (const char* p = text; *p != '\0' && n + 1 < sizeof(out.text);) {
+        const std::uint32_t icon = iconAt(p);
+        if (icon != 0 && gTextFont == nullptr) {
+            for (const char* f = iconFallback(icon); *f != '\0' && n + 1 < sizeof(out.text); ++f) out.text[n++] = *f;
+            p += 3;
+        } else {
+            out.text[n++] = *p++;
+        }
+    }
+    out.text[n] = '\0';
+    return out;
+}
+
+ImVec2 measure(ImFont* font, float size, const char* text) {
+    return font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+}
+
+// Text with a soft drop shadow, as the game's messages have; icons keep their
+// own colors (drawn white).
+void richText(ImDrawList* list, ImFont* font, float size, ImVec2 pos, ImU32 col, const char* text, bool shadow = true) {
+    const float alpha = ImGui::ColorConvertU32ToFloat4(col).w;
+    if (shadow) {
+        const float d = std::max(1.0f, size * 0.06f);
+        list->AddText(font, size, ImVec2(pos.x + d, pos.y + d), color(0.0f, 0.04f, 0.1f, 0.75f * alpha), text);
+    }
+    const char* run = text;
+    float x = pos.x;
+    for (const char* p = text;;) {
+        const std::uint32_t icon = *p != '\0' ? iconAt(p) : 0;
+        if (*p == '\0' || icon != 0) {
+            if (p > run) {
+                list->AddText(font, size, ImVec2(x, pos.y), col, run, p);
+                x += font->CalcTextSizeA(size, FLT_MAX, 0.0f, run, p).x;
+            }
+            if (*p == '\0') break;
+            list->AddText(font, size, ImVec2(x, pos.y), color(1.0f, 1.0f, 1.0f, alpha), p, p + 3);
+            x += font->CalcTextSizeA(size, FLT_MAX, 0.0f, p, p + 3).x;
+            p += 3;
+            run = p;
+        } else {
+            ++p;
+        }
+    }
+}
+
+// Fits text into maxWidth (scaling it down) and returns its size.
+float fitSize(ImFont* font, float size, float maxWidth, const char* text, ImVec2* extent) {
+    *extent = measure(font, size, text);
+    if (extent->x > maxWidth && extent->x > 0.0f) {
+        size *= maxWidth / extent->x;
+        *extent = measure(font, size, text);
+    }
+    return size;
+}
+
 // Text centered on a point, scaled down if needed to fit maxWidth.
 void centeredText(ImDrawList* list, ImFont* font, float size, float maxWidth, ImVec2 center, ImU32 col,
-                  const char* text) {
+                  const char* text, bool shadow = true) {
     if (text == nullptr || text[0] == '\0') {
         return;
     }
-    ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
-    if (extent.x > maxWidth && extent.x > 0.0f) {
-        size *= maxWidth / extent.x;
-        extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
-    }
-    list->AddText(font, size, ImVec2(center.x - extent.x * 0.5f, center.y - extent.y * 0.5f), col, text);
+    const Prepared prepared = prepare(text);
+    ImVec2 extent;
+    size = fitSize(font, size, maxWidth, prepared.text, &extent);
+    richText(list, font, size, ImVec2(center.x - extent.x * 0.5f, center.y - extent.y * 0.5f), col, prepared.text, shadow);
 }
 
 // Text starting at a point's x, vertically centered on it, scaled down if
@@ -57,15 +245,146 @@ void leftText(ImDrawList* list, ImFont* font, float size, float maxWidth, ImVec2
     if (text == nullptr || text[0] == '\0') {
         return;
     }
-    ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
-    if (extent.x > maxWidth && extent.x > 0.0f) {
-        size *= maxWidth / extent.x;
-        extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, text);
+    const Prepared prepared = prepare(text);
+    ImVec2 extent;
+    size = fitSize(font, size, maxWidth, prepared.text, &extent);
+    richText(list, font, size, ImVec2(left.x, left.y - extent.y * 0.5f), col, prepared.text);
+}
+
+// A centered message, on two lines (split at the space nearest the middle)
+// when one line would have to shrink by more than a fifth.
+void messageText(ImDrawList* list, ImFont* font, float size, float maxWidth, ImVec2 center, ImU32 col, const char* text) {
+    if (text == nullptr || text[0] == '\0') {
+        return;
     }
-    list->AddText(font, size, ImVec2(left.x, left.y - extent.y * 0.5f), col, text);
+    const Prepared prepared = prepare(text);
+    const char* split = nullptr;
+    if (measure(font, size, prepared.text).x > maxWidth * 1.25f) {
+        const size_t length = std::strlen(prepared.text);
+        for (size_t i = 0; i < length; ++i) {
+            if (prepared.text[i] == ' ' &&
+                (split == nullptr || std::abs(static_cast<long>(i) - static_cast<long>(length / 2)) <
+                                         std::abs(static_cast<long>(split - prepared.text) - static_cast<long>(length / 2)))) {
+                split = prepared.text + i;
+            }
+        }
+    }
+    if (split == nullptr) {
+        centeredText(list, font, size, maxWidth, center, col, text);
+        return;
+    }
+    Prepared first{}, second{};
+    std::snprintf(first.text, sizeof(first.text), "%.*s", static_cast<int>(split - prepared.text), prepared.text);
+    std::snprintf(second.text, sizeof(second.text), "%s", split + 1);
+    // One size for both lines: the larger fit.
+    ImVec2 e1, e2;
+    const float s = std::min(fitSize(font, size, maxWidth, first.text, &e1), fitSize(font, size, maxWidth, second.text, &e2));
+    const float line = s * 1.05f;
+    e1 = measure(font, s, first.text);
+    e2 = measure(font, s, second.text);
+    richText(list, font, s, ImVec2(center.x - e1.x * 0.5f, center.y - line), col, first.text);
+    richText(list, font, s, ImVec2(center.x - e2.x * 0.5f, center.y), col, second.text);
+}
+
+// A page title in the game's outlined title lettering (MenuFont64: white fill,
+// black outline, tinted by col), or an outlined fallback.
+void titleText(ImDrawList* list, float size, float maxWidth, ImVec2 center, float alpha, const char* text) {
+    if (text == nullptr || text[0] == '\0') {
+        return;
+    }
+    ImFont* font = gTitleFont != nullptr ? gTitleFont : textFont();
+    ImVec2 extent;
+    size = fitSize(font, size, maxWidth, text, &extent);
+    const ImVec2 pos(center.x - extent.x * 0.5f, center.y - extent.y * 0.5f);
+    const float d = std::max(1.0f, size * 0.05f);
+    list->AddText(font, size, ImVec2(pos.x + d, pos.y + d * 1.5f), color(0.0f, 0.05f, 0.12f, 0.6f * alpha), text);
+    if (gTitleFont == nullptr) {
+        const ImU32 outline = color(0.02f, 0.08f, 0.18f, alpha);
+        for (int i = 0; i < 8; ++i) {
+            const float a = static_cast<float>(i) * 0.785398f;
+            list->AddText(font, size, ImVec2(pos.x + std::cos(a) * d, pos.y + std::sin(a) * d), outline, text);
+        }
+    }
+    list->AddText(font, size, pos, color(1.0f, 1.0f, 1.0f, alpha), text);
+}
+
+// A vertical gradient over the shapes added since vertex `start`, alpha kept.
+void shade(ImDrawList* list, int start, ImVec2 min, ImVec2 max, ImU32 top, ImU32 bottom) {
+    ImGui::ShadeVertsLinearColorGradientKeepAlpha(list, start, list->VtxBuffer.Size, ImVec2(min.x, min.y),
+                                                  ImVec2(min.x, max.y), top, bottom);
+}
+
+// The menu panel: deep space blue, a cyan rim and a faint inner line, like the
+// game's pause bands and window frames.
+void galaxyPanel(ImDrawList* list, ImVec2 min, ImVec2 max, float rounding, float unit, float alpha) {
+    const int start = list->VtxBuffer.Size;
+    list->AddRectFilled(min, max, color(0.0f, 0.0f, 0.0f, 0.9f * alpha), rounding);
+    shade(list, start, min, max, color(0.05f, 0.27f, 0.40f, 1.0f), color(0.01f, 0.09f, 0.20f, 1.0f));
+    list->AddRect(min, max, color(0.40f, 0.86f, 1.0f, 0.9f * alpha), rounding, 0, unit * 3.0f);
+    const ImVec2 inset(unit * 4.0f, unit * 4.0f);
+    list->AddRect(ImVec2(min.x + inset.x, min.y + inset.y), ImVec2(max.x - inset.x, max.y - inset.y),
+                  color(1.0f, 1.0f, 1.0f, 0.16f * alpha), std::max(0.0f, rounding - inset.x), 0, unit);
+}
+
+// A menu button: the game's white-to-blue capsule with a cyan rim; the focused
+// one turns gold and glows, as the game's selected buttons light up.
+void galaxyButton(ImDrawList* list, ImFont* font, float textSize, ImVec2 min, ImVec2 max, bool focused, float unit,
+                  float alpha, const char* label) {
+    const float radius = (max.y - min.y) * 0.5f;
+    if (focused) {
+        const float glow = unit * 5.0f;
+        list->AddRectFilled(ImVec2(min.x - glow, min.y - glow), ImVec2(max.x + glow, max.y + glow),
+                            color(1.0f, 0.86f, 0.30f, 0.35f * alpha), radius + glow);
+    }
+    const int start = list->VtxBuffer.Size;
+    list->AddRectFilled(min, max, color(1.0f, 1.0f, 1.0f, (focused ? 1.0f : 0.94f) * alpha), radius);
+    if (focused) {
+        shade(list, start, min, max, color(1.0f, 1.0f, 0.93f, 1.0f), color(1.0f, 0.84f, 0.36f, 1.0f));
+    } else {
+        shade(list, start, min, max, color(1.0f, 1.0f, 1.0f, 1.0f), color(0.60f, 0.78f, 0.97f, 1.0f));
+    }
+    const ImU32 rim = focused ? color(0.98f, 0.80f, 0.22f, alpha) : color(0.22f, 0.74f, 1.0f, 0.95f * alpha);
+    list->AddRect(min, max, rim, radius, 0, unit * 3.0f);
+    const ImVec2 inset(unit * 3.5f, unit * 3.5f);
+    list->AddRect(ImVec2(min.x + inset.x, min.y + inset.y), ImVec2(max.x - inset.x, max.y - inset.y),
+                  color(1.0f, 1.0f, 1.0f, 0.7f * alpha), std::max(0.0f, radius - inset.x), 0, unit);
+    const ImVec2 center((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+    const float labelWidth = (max.x - min.x) - radius * 1.4f;
+    // Dark lettering with a light emboss below it, as on the game's buttons.
+    const ImU32 ink = focused ? color(0.30f, 0.17f, 0.02f, alpha) : color(0.20f, 0.25f, 0.34f, alpha);
+    centeredText(list, font, textSize, labelWidth, ImVec2(center.x, center.y + unit), color(1.0f, 1.0f, 1.0f, 0.8f * alpha),
+                 label, false);
+    centeredText(list, font, textSize, labelWidth, center, ink, label, false);
 }
 
 }  // namespace
+
+bool installGalaxyFonts(const char* fontArchive, std::string* error) {
+    if (ImGui::GetCurrentContext() == nullptr) {
+        if (error != nullptr) *error = "no ImGui context";
+        return false;
+    }
+    if (gTextFont != nullptr) {
+        return true;
+    }
+    if (!GalaxyFont::load(fontArchive, &gGalaxy, error)) {
+        gGalaxy = GalaxyFont::Set{};
+        return false;
+    }
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    if (atlas->Fonts.Size == 0) {
+        atlas->AddFontDefault();  // ImGui's own font stays the default for anything else drawn with ImGui
+    }
+    gGlyphRects.clear();
+    gTextFont = addGalaxyFont(atlas, gGalaxy.message, "Galaxy MessageFont26", &gGalaxy.picture);
+    gTitleFont = addGalaxyFont(atlas, gGalaxy.menu, "Galaxy MenuFont64", nullptr);
+    atlas->FontBuilderIO = &gGalaxyBuilder;
+    return true;
+}
+
+bool galaxyFontsInstalled() {
+    return gTextFont != nullptr;
+}
 
 Rect titleHintRect() {
     // Above the logo: the title's own text ("Press both A and B", the
@@ -84,7 +403,7 @@ void drawTitleHint(const char* text, float imageX, float imageY, float imageWidt
     const ImVec2 barMax = image.point(r.x1, r.y1);
     list->PushClipRect(image.point(-1.0f, -1.0f), image.point(1.0f, 1.0f), false);
     list->AddRectFilled(barMin, barMax, color(0.02f, 0.03f, 0.08f, 0.62f), (barMax.y - barMin.y) * 0.5f);
-    centeredText(list, ImGui::GetFont(), imageHeight * 0.034f, (barMax.x - barMin.x) * 0.92f,
+    centeredText(list, textFont(), imageHeight * 0.034f, (barMax.x - barMin.x) * 0.92f,
                  ImVec2((barMin.x + barMax.x) * 0.5f, (barMin.y + barMax.y) * 0.5f), color(1.0f, 1.0f, 1.0f, 0.95f),
                  text);
     list->PopClipRect();
@@ -100,7 +419,7 @@ void drawProgressBadges(float imageX, float imageY, float imageWidth, float imag
         return;
     }
     ImDrawList* list = ImGui::GetForegroundDrawList();
-    ImFont* font = ImGui::GetFont();
+    ImFont* font = textFont();
     list->PushClipRect(ImVec2(imageX, imageY), ImVec2(imageX + imageWidth, imageY + imageHeight), false);
     const float textSize = imageHeight * 0.03f;
     const float height = imageHeight * 0.045f;
@@ -174,44 +493,45 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
     // The foreground list draws over everything without a window, so the
     // overlay never takes ImGui focus or input.
     ImDrawList* list = ImGui::GetForegroundDrawList();
-    ImFont* font = ImGui::GetFont();
+    ImFont* font = textFont();
     const ImageSpace image{imageX, imageY, imageWidth, imageHeight};
     const ImVec2 imageMin = image.point(-1.0f, -1.0f);
     const ImVec2 imageMax = image.point(1.0f, 1.0f);
+    const float unit = imageHeight / 720.0f;  // one pixel of a 720-line image
     list->PushClipRect(imageMin, imageMax, false);
 
     if (view.dimOpacity > 0.0f) {
-        list->AddRectFilled(imageMin, imageMax, color(0.0f, 0.0f, 0.0f, view.dimOpacity));
+        // The game's pause screen tints the scene deep teal rather than grey.
+        list->AddRectFilled(imageMin, imageMax, color(0.0f, 0.16f, 0.26f, view.dimOpacity * 1.3f));
     }
 
     const float alpha = view.panelOpacity;
     if (alpha > 0.0f) {
-        const float rounding = imageHeight * 0.02f;
+        const float rounding = imageHeight * 0.035f;
         const ImVec2 panelMin = image.point(view.panel.x0, view.panel.y0);
         const ImVec2 panelMax = image.point(view.panel.x1, view.panel.y1);
-        list->AddRectFilled(panelMin, panelMax, color(0.06f, 0.08f, 0.16f, 0.94f * alpha), rounding);
-        list->AddRect(panelMin, panelMax, color(0.55f, 0.65f, 0.95f, 0.6f * alpha), rounding, 0, imageHeight * 0.003f);
+        galaxyPanel(list, panelMin, panelMax, rounding, unit, alpha);
 
         const float panelCenterX = (panelMin.x + panelMax.x) * 0.5f;
         const float textWidth = (panelMax.x - panelMin.x) * 0.9f;
-        const float titleSize = imageHeight * 0.05f;
+        const float titleSize = imageHeight * 0.062f;
         const float messageSize = imageHeight * 0.034f;
         const float itemSize = imageHeight * 0.04f;
         const float titleY = image.point(0.0f, view.titleY).y;
         const float messageY = image.point(0.0f, view.messageY).y;
-        centeredText(list, font, titleSize, textWidth, ImVec2(panelCenterX, titleY), color(1.0f, 1.0f, 1.0f, alpha),
-                     view.title);
-        centeredText(list, font, messageSize, textWidth, ImVec2(panelCenterX, messageY),
-                     color(0.78f, 0.82f, 0.92f, alpha), view.message);
+        titleText(list, titleSize, textWidth, ImVec2(panelCenterX, titleY), alpha, view.title);
+        messageText(list, font, messageSize, textWidth, ImVec2(panelCenterX, messageY), color(0.80f, 0.93f, 1.0f, alpha),
+                    view.message);
 
         // Controls page: action names on the left, inputs on the right, one
         // row each, with a light band on every other row for reading across.
         if (view.lineCount > 0) {
             const ImVec2 areaMin = image.point(view.linesArea.x0, view.linesArea.y0);
             const ImVec2 areaMax = image.point(view.linesArea.x1, view.linesArea.y1);
-            const float rowHeight = (areaMax.y - areaMin.y) / static_cast<float>(view.lineCount);
+            // Few lines keep a normal row height from the top rather than stretching.
+            const float rowHeight = std::min((areaMax.y - areaMin.y) / static_cast<float>(view.lineCount), imageHeight * 0.064f);
             const float areaWidth = areaMax.x - areaMin.x;
-            const float textSize = std::min(rowHeight * 0.72f, imageHeight * 0.034f);
+            const float textSize = std::min(rowHeight * 0.78f, imageHeight * 0.036f);
             const float pad = areaWidth * 0.02f;
             bool padColumn = false;
             for (int i = 0; i < view.lineCount; i++) {
@@ -220,17 +540,21 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
             // Action | keyboard and mouse [| controller].
             const float split = areaMin.x + areaWidth * (padColumn ? 0.3f : 0.42f);
             const float split2 = padColumn ? areaMin.x + areaWidth * 0.69f : areaMax.x;
+            const float bandRounding = rowHeight * 0.3f;
             for (int i = 0; i < view.lineCount; i++) {
                 const float top = areaMin.y + rowHeight * static_cast<float>(i);
                 const float middle = top + rowHeight * 0.5f;
                 const bool header = view.lines[i].action[0] == '\0';
-                if (i % 2 == 0 || header) {
+                if (header) {
                     list->AddRectFilled(ImVec2(areaMin.x, top), ImVec2(areaMax.x, top + rowHeight),
-                                        color(1.0f, 1.0f, 1.0f, (header ? 0.12f : 0.06f) * alpha));
+                                        color(0.35f, 0.80f, 1.0f, 0.22f * alpha), bandRounding);
+                } else if (i % 2 == 0) {
+                    list->AddRectFilled(ImVec2(areaMin.x, top), ImVec2(areaMax.x, top + rowHeight),
+                                        color(1.0f, 1.0f, 1.0f, 0.07f * alpha), bandRounding);
                 }
-                const ImU32 headerColor = color(0.78f, 0.82f, 0.92f, alpha);
+                const ImU32 headerColor = color(0.60f, 0.92f, 1.0f, alpha);
                 leftText(list, font, textSize, split - areaMin.x - 2.0f * pad, ImVec2(areaMin.x + pad, middle),
-                         color(0.78f, 0.82f, 0.92f, alpha), view.lines[i].action);
+                         color(0.90f, 0.96f, 1.0f, alpha), view.lines[i].action);
                 leftText(list, font, textSize, split2 - split - 2.0f * pad, ImVec2(split + pad, middle),
                          header ? headerColor : color(1.0f, 0.92f, 0.55f, alpha), view.lines[i].inputs);
                 if (padColumn) {
@@ -242,17 +566,19 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
 
         for (int i = 0; i < view.itemCount; i++) {
             const ViewItem& item = view.items[i];
-            const ImVec2 itemMin = image.point(item.rect.x0, item.rect.y0);
-            const ImVec2 itemMax = image.point(item.rect.x1, item.rect.y1);
-            const ImVec2 center((itemMin.x + itemMax.x) * 0.5f, (itemMin.y + itemMax.y) * 0.5f);
-            const float labelWidth = (itemMax.x - itemMin.x) * 0.9f;
-            if (item.focused) {
-                list->AddRectFilled(itemMin, itemMax, color(0.98f, 0.80f, 0.22f, alpha), rounding);
-                centeredText(list, font, itemSize, labelWidth, center, color(0.08f, 0.06f, 0.02f, alpha), item.label);
-            } else {
-                list->AddRectFilled(itemMin, itemMax, color(0.22f, 0.27f, 0.42f, 0.9f * alpha), rounding);
-                centeredText(list, font, itemSize, labelWidth, center, color(0.92f, 0.94f, 1.0f, alpha), item.label);
-            }
+            galaxyButton(list, font, itemSize, image.point(item.rect.x0, item.rect.y0), image.point(item.rect.x1, item.rect.y1),
+                         item.focused, unit, alpha, item.label);
+        }
+
+        // The buttons that work here, along the bottom of the image, as the
+        // game's own screens show them.
+        if (view.footer != nullptr && view.footer[0] != '\0') {
+            const ImVec2 bandMin = image.point(-1.0f, 0.915f);
+            list->AddRectFilledMultiColor(bandMin, imageMax, color(0.0f, 0.12f, 0.22f, 0.0f), color(0.0f, 0.12f, 0.22f, 0.0f),
+                                          color(0.0f, 0.12f, 0.22f, 0.85f * alpha), color(0.0f, 0.12f, 0.22f, 0.85f * alpha));
+            centeredText(list, font, imageHeight * 0.03f, imageWidth * 0.94f,
+                         ImVec2((imageMin.x + imageMax.x) * 0.5f, image.point(0.0f, 0.958f).y),
+                         color(0.92f, 0.97f, 1.0f, alpha), view.footer);
         }
     }
 
@@ -266,7 +592,7 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
 bool drawPipelinePreparation(const PipelinePreparationView& view, float width, float height) {
     if (!ImGui::GetCurrentContext() || width <= 0 || height <= 0) return false;
     ImDrawList* list = ImGui::GetForegroundDrawList();
-    ImFont* font = ImGui::GetFont();
+    ImFont* font = textFont();
     const float scale = std::min(width / 1280.0f, height / 720.0f);
     const float center = width * 0.5f;
     const float contentWidth = width * 0.82f;
