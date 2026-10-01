@@ -60,6 +60,7 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
         {"roll to the end (stick released)", 0, false, 0, false, 3, false, 0, false, 140, false, 0, false, false, true},
         {"roll boost cadence", 0, false, 0, false, 3, false, 0, false, 150, false, 0, false, false, true, 15},
         {"dive from a jump (stick held)", 6, false, 0, false, 0, true, 0, true, 0, false, 30, false, true, false, 0, 15},
+        {"spin taps", 0, false, 0, false, 0, false, 0, false, 0, false, 0, false, false, false, 0, 1, 60},
     };
     if (const char* dir = std::getenv("PETARI_MOVEMENT_WALL_DIR"); dir != nullptr) {
         const std::string d(dir);
@@ -98,6 +99,7 @@ const char* MovementDriver::phase() const {
     case Phase::WallClimb: return "movement: jumping against the wall";
     case Phase::WallSlide: return "movement: sliding down the wall";
     case Phase::Landed: return "movement: ground speed after landing";
+    case Phase::SpinTaps: return "movement: spin taps";
     case Phase::Land: return "movement: landed";
     case Phase::Done: return "movement: done";
     }
@@ -161,6 +163,16 @@ Step MovementDriver::step(const Observation& o) {
         mPhaseFrames = 0;
         mReady = 0;
         note("movement measurements in " + o.stage + " at (" + num(o.playerX) + ", " + num(o.playerY) + ", " + num(o.playerZ) + ")");
+        // PETARI_STAGE_WARP=x,y,z or name:<GeneralPos>: start the tasks there (test-only).
+        if (const char* warp = std::getenv("PETARI_STAGE_WARP"); warp != nullptr && warp[0] != '\0') {
+            if (std::strncmp(warp, "name:", 5) == 0) {
+                step.warp = true;
+                step.warpName = warp + 5;
+            } else if (std::sscanf(warp, "%f,%f,%f", &step.warpX, &step.warpY, &step.warpZ) == 3) {
+                step.warp = true;
+            }
+            if (step.warp) note(std::string("warp to ") + warp);
+        }
         return step;
     }
     if (mFrame >= mFrameLimit) {
@@ -187,7 +199,7 @@ Step MovementDriver::step(const Observation& o) {
         return step;
     }
     const Task& task = mTasks[mTask];
-    if (mPhaseFrames > kTaskLimit) {
+    if (mPhaseFrames > kTaskLimit && mPhase != Phase::SpinTaps) {
         finish(Result::Fail, std::string(task.name) + " did not finish within " + std::to_string(kTaskLimit) + " frames", step);
         return step;
     }
@@ -252,6 +264,13 @@ Step MovementDriver::step(const Observation& o) {
         mReady = (o.playerOnGround && horizontal < kStillSpeed && std::fabs(dot(moved, up)) < kStillSpeed) ? mReady + 1 : 0;
         if (mReady >= kStandStill) {
             mReady = 0;
+            if (task.spinTaps > 0) {
+                mPhase = Phase::SpinTaps;
+                mPhaseFrames = 0;
+                mTaps = 0;
+                mNextTap = mFrame + 1;
+                break;
+            }
             if (task.crouch > 0) {
                 // Backflip: crouch, then jump. Roll: crouch, then Spin (Z held longer so
                 // the Spin lands inside the crouch whatever the input timing).
@@ -365,6 +384,26 @@ Step MovementDriver::step(const Observation& o) {
             step.presses.push_back({mWallStick, false});
             startJump();
             mLeftGround = true;  // measured from the press, in the air
+        }
+        break;
+    }
+    case Phase::SpinTaps: {
+        // Holds of 1-6 frames and gaps of 16-40 frames, mixed so presses land at
+        // every phase against the 200 Hz reports and the 250 ms shake spacing.
+        static const int kHolds[] = {1, 2, 3, 4, 6, 1, 3, 2, 5};
+        static const int kGaps[] = {16, 20, 25, 31, 40, 17, 23, 29, 35, 19};
+        if (mFrame >= mNextTap && mTaps < task.spinTaps) {
+            const int hold = kHolds[mTaps % 9];
+            tap(Button::Spin, static_cast< unsigned long >(hold), step);
+            mNextTap = mFrame + static_cast< unsigned long >(kGaps[mTaps % 10]);
+            ++mTaps;
+        }
+        if (mTaps >= task.spinTaps && mFrame >= mNextTap + 30) {
+            note(std::string("MOVEMENT spin taps: ") + std::to_string(mTaps) + " taps");
+            mTaps = 0;
+            ++mTask;
+            mPhase = Phase::Land;
+            mPhaseFrames = 0;
         }
         break;
     }

@@ -33,11 +33,15 @@
 //  13. "roll boost cadence": Spin tapped every 15 frames through a roll; logs the
 //      boosts (speed jumps) out of the taps;
 //  14. "dive from a jump (stick held)": a full jump, a ground pound at its peak,
-//      then the dive.
+//      then the dive;
+//  15. "spin taps": standing, Spin tapped spinTaps times with holds of 1-6 frames
+//      and gaps of 16-40 frames (beyond the shake spacing); logs "MOVEMENT spin
+//      taps: N taps" (compare with the game's swing count).
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example
 // PETARI_XFB_DUMP_LABELS="long jump,dive").
 // PETARI_MOVEMENT_ONLY=<name>[,<name>...] keeps only the tasks whose name
-// contains one of them.
+// contains one of them. PETARI_STAGE_WARP=x,y,z or name:<GeneralPos> moves Mario
+// there first (test-only), e.g. onto a small planet or a slope.
 // Each jump logs "MOVEMENT <name>: apex <height> after <frames> frames, take-off
 // speed <s>"; heights are along -gravity from the take-off point. The run logs
 // "MOVEMENT run: max speed <v> u/f, frame <n> reached 95%". Compare with the
@@ -68,7 +72,7 @@ public:
     bool wantsPlayer() const { return mPhase != Phase::Boot || mBoot.wantsPlayer(); }
 
 private:
-    enum class Phase { Boot, Settle, Jump, Land, Run, Crouch, Hop, Pound, Reverse, Roll, WallRun, WallClimb, WallSlide, Landed, Done };
+    enum class Phase { Boot, Settle, Jump, Land, Run, Crouch, Hop, Pound, Reverse, Roll, WallRun, WallClimb, WallSlide, Landed, SpinTaps, Done };
     struct Release {
         unsigned long frame;
         Button button;
@@ -91,6 +95,7 @@ private:
         bool noBoost = false;      // roll: no boost, ridden to its end
         int mash = 0;              // roll: tap Spin every this many frames (boost cadence)
         int hopHold = 1;           // groundPound: frames A is held for the jump before the pound (1: a hop)
+        int spinTaps = 0;          // standing still: this many Spin taps at varied hold and gap (input check)
     };
 
     void finish(Result result, const std::string& reason, Step& step);
@@ -119,6 +124,7 @@ private:
     Button mWallStick = Button::StickUp;  // PETARI_MOVEMENT_WALL_DIR: up, down, left, right
     float mFallLast = 0.0f;
     int mTaps = 0;  // Spin taps in a boost-cadence roll
+    unsigned long mNextTap = 0;  // frame of the next spin-taps press
     std::vector<float> mSpeeds;
 };
 
