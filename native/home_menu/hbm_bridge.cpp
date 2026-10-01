@@ -73,6 +73,12 @@ std::uint32_t buttons(u32 wpad) {
     if (wpad & WPAD_BUTTON_HOME) {
         bits |= Button::Home;
     }
+    if (wpad & WPAD_BUTTON_C) {
+        bits |= Button::C;
+    }
+    if (wpad & WPAD_BUTTON_Z) {
+        bits |= Button::Z;
+    }
     return bits;
 }
 
@@ -440,6 +446,7 @@ void init() {
         hold = 0;
     }
 #ifdef PETARI_HOME_MENU_INPUT
+    Input::takeMenuScroll();  // scrolling from before the menu opened is not for it
     instance().setControlsBackend(&gInputControls);
     refreshControls();
     refreshMods();
@@ -451,7 +458,13 @@ void init() {
 
 void calc(const HBMControllerData* controllers) {
     Menu& menu = instance();
-    menu.update(frameInput(controllers));
+    FrameInput input = frameInput(controllers);
+#ifdef PETARI_HOME_MENU_INPUT
+    const Input::MenuScroll scroll = Input::takeMenuScroll();
+    input.scrollRows = -scroll.rows;  // the wheel's + is toward the top
+    input.scrollPages = scroll.pages;
+#endif
+    menu.update(input);
 #ifdef PETARI_HOME_MENU_INPUT
     applyModToggles();
     applyFolderToggles();

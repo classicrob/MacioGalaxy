@@ -74,6 +74,8 @@ void pressButton(int button, bool down);
 void assertFocus();
 // Moves the pointer to a window point.
 void movePointer(float x, float y);
+// A wheel movement for the native menus (Input::menuWheel).
+void menuWheel(float y);
 }  // namespace Events
 
 // --- frame_seam.cpp ---

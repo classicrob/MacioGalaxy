@@ -318,7 +318,8 @@ void shade(ImDrawList* list, int start, ImVec2 min, ImVec2 max, ImU32 top, ImU32
 // game's pause bands and window frames.
 void galaxyPanel(ImDrawList* list, ImVec2 min, ImVec2 max, float rounding, float unit, float alpha) {
     const int start = list->VtxBuffer.Size;
-    list->AddRectFilled(min, max, color(0.0f, 0.0f, 0.0f, 0.9f * alpha), rounding);
+    // Nearly opaque: whatever the game shows (its own pause menu, if open) stays behind.
+    list->AddRectFilled(min, max, color(0.0f, 0.0f, 0.0f, 0.97f * alpha), rounding);
     shade(list, start, min, max, color(0.05f, 0.27f, 0.40f, 1.0f), color(0.01f, 0.09f, 0.20f, 1.0f));
     list->AddRect(min, max, color(0.40f, 0.86f, 1.0f, 0.9f * alpha), rounding, 0, unit * 3.0f);
     const ImVec2 inset(unit * 4.0f, unit * 4.0f);
@@ -382,18 +383,41 @@ void drawRemapTable(ImDrawList* list, ImFont* font, const ImageSpace& image, con
     std::snprintf(where, sizeof(where), "%d-%d of %d", remap.firstRow + 1, remap.firstRow + remap.rowCount, remap.totalRows);
     leftText(list, font, textSize * 0.85f, labelRight - areaMin.x - 2.0f * pad, ImVec2(areaMin.x + pad, headerY),
              color(0.75f, 0.88f, 1.0f, 0.85f * alpha), where);
-    // More rows above or below: small arrows at the table's right edge.
-    const float arrow = rowHeight * 0.22f;
-    const float arrowX = areaMax.x + pad * 1.6f;
-    if (remap.firstRow > 0) {
-        const float y = areaMin.y + rowHeight * 1.2f;
-        list->AddTriangleFilled(ImVec2(arrowX, y - arrow), ImVec2(arrowX - arrow, y + arrow * 0.6f),
-                                ImVec2(arrowX + arrow, y + arrow * 0.6f), color(0.60f, 0.92f, 1.0f, alpha));
+    // The scrollbar: arrow buttons at both ends, the track, and a capsule thumb
+    // (gold while dragged). Dimmed when every row fits.
+    const bool scrollable = remap.totalRows > remap.rowCount;
+    const float barAlpha = (scrollable ? 1.0f : 0.35f) * alpha;
+    const ImVec2 trackMin = image.point(remap.track.x0, remap.track.y0);
+    const ImVec2 trackMax = image.point(remap.track.x1, remap.track.y1);
+    const float barWidth = trackMax.x - trackMin.x;
+    list->AddRectFilled(trackMin, trackMax, color(0.0f, 0.05f, 0.12f, 0.45f * barAlpha), barWidth * 0.5f);
+    list->AddRect(trackMin, trackMax, color(0.40f, 0.86f, 1.0f, 0.45f * barAlpha), barWidth * 0.5f, 0, unit);
+    const ImVec2 thumbMin = image.point(remap.thumb.x0, remap.thumb.y0);
+    const ImVec2 thumbMax = image.point(remap.thumb.x1, remap.thumb.y1);
+    {
+        const int start = list->VtxBuffer.Size;
+        list->AddRectFilled(ImVec2(thumbMin.x + unit, thumbMin.y), ImVec2(thumbMax.x - unit, thumbMax.y),
+                            color(1.0f, 1.0f, 1.0f, barAlpha), barWidth * 0.5f);
+        if (remap.dragging) {
+            shade(list, start, thumbMin, thumbMax, color(1.0f, 1.0f, 0.93f, 1.0f), color(1.0f, 0.84f, 0.36f, 1.0f));
+        } else {
+            shade(list, start, thumbMin, thumbMax, color(1.0f, 1.0f, 1.0f, 1.0f), color(0.60f, 0.78f, 0.97f, 1.0f));
+        }
+        list->AddRect(ImVec2(thumbMin.x + unit, thumbMin.y), ImVec2(thumbMax.x - unit, thumbMax.y),
+                      remap.dragging ? color(0.98f, 0.80f, 0.22f, barAlpha) : color(0.22f, 0.74f, 1.0f, barAlpha), barWidth * 0.5f,
+                      0, unit * 1.5f);
     }
-    if (remap.firstRow + remap.rowCount < remap.totalRows) {
-        const float y = areaMax.y - rowHeight * 0.2f;
-        list->AddTriangleFilled(ImVec2(arrowX, y + arrow), ImVec2(arrowX + arrow, y - arrow * 0.6f),
-                                ImVec2(arrowX - arrow, y - arrow * 0.6f), color(0.60f, 0.92f, 1.0f, alpha));
+    for (int end = 0; end < 2; end++) {
+        const Rect& r = end == 0 ? remap.upArrow : remap.downArrow;
+        const ImVec2 min = image.point(r.x0, r.y0), max = image.point(r.x1, r.y1);
+        const ImVec2 c((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+        const float radius = std::min(max.x - min.x, max.y - min.y) * 0.5f;
+        list->AddCircleFilled(c, radius, color(0.20f, 0.55f, 0.75f, 0.7f * barAlpha));
+        list->AddCircle(c, radius, color(0.55f, 0.92f, 1.0f, barAlpha), 0, unit * 1.5f);
+        const bool more = end == 0 ? remap.firstRow > 0 : remap.firstRow + remap.rowCount < remap.totalRows;
+        const float t = radius * 0.5f, dir = end == 0 ? -1.0f : 1.0f;
+        list->AddTriangleFilled(ImVec2(c.x, c.y + dir * t), ImVec2(c.x - t, c.y - dir * t * 0.6f), ImVec2(c.x + t, c.y - dir * t * 0.6f),
+                                color(1.0f, 1.0f, 1.0f, (more ? 1.0f : 0.35f) * barAlpha));
     }
 
     const float pulse = 0.65f + 0.35f * std::sin(static_cast<float>(ImGui::GetTime()) * 6.0f);

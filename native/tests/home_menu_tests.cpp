@@ -789,6 +789,95 @@ void testRemapper() {
     check(!summary.view().remap.active && summary.view().itemCount == 1, "no backend: the summary page");
 }
 
+// Scrolling the remapper: wheel rows, pages (Page Up/Down, the controller's
+// LB/LT), and the scrollbar with the pointer (arrows, track, dragging the thumb).
+void testRemapperScrolling() {
+    FakeControls fake;
+    fake.rows = 34;
+    HM::Menu menu = newMenu();
+    menu.setControlsBackend(&fake);
+    openRemapper(menu);
+
+    HM::FrameInput wheel;
+    wheel.scrollRows = 3;
+    menu.update(wheel);
+    HM::View view = menu.view();
+    check(view.remap.firstRow == 3 && view.remap.focusRow == 0, "the wheel scrolls; the focus stays on a shown row (row 3)");
+    wheel.scrollRows = 100;
+    menu.update(wheel);
+    check(menu.view().remap.firstRow == 34 - HM::kRemapVisibleRows, "the wheel stops at the end");
+    wheel.scrollRows = -100;
+    menu.update(wheel);
+    view = menu.view();
+    check(view.remap.firstRow == 0 && view.remap.focusRow + view.remap.firstRow == HM::kRemapVisibleRows - 1,
+          "back to the top; the focus kept to the last shown row");
+
+    HM::FrameInput page;
+    page.scrollPages = 1;
+    menu.update(page);
+    view = menu.view();
+    check(view.remap.firstRow == HM::kRemapVisibleRows && view.remap.firstRow + view.remap.focusRow == 2 * HM::kRemapVisibleRows - 1,
+          "Page Down moves the list and the focus a page");
+    menu.update(press(HM::Button::C));
+    check(menu.view().remap.firstRow == 0, "the controller's LB (Nunchuk C) pages up");
+    menu.update(press(HM::Button::Z));
+    check(menu.view().remap.firstRow == HM::kRemapVisibleRows, "LT (Nunchuk Z) pages down");
+    page.scrollPages = -5;
+    menu.update(page);
+    check(menu.view().remap.firstRow == 0 && menu.view().remap.focusRow == 0, "Page Up stops at the top");
+
+    // The scrollbar: the thumb is the shown fraction; arrows step a row; the track pages.
+    view = menu.view();
+    const HM::Rect track = view.remap.track;
+    const float thumbShare = (view.remap.thumb.y1 - view.remap.thumb.y0) / (track.y1 - track.y0);
+    check(std::fabs(thumbShare - 11.0f / 34.0f) < 0.01f && view.remap.thumb.y0 == track.y0, "the thumb: 11 of 34, at the top");
+    float x = 0.0f, y = 0.0f;
+    center(view.remap.downArrow, &x, &y);
+    menu.update(pointer(x, y));
+    menu.update(pointer(x, y, B));
+    check(menu.view().remap.firstRow == 1 && menu.phase() == HM::Phase::Controls, "the down arrow scrolls one row");
+    center(view.remap.upArrow, &x, &y);
+    menu.update(pointer(x, y, B));
+    check(menu.view().remap.firstRow == 0, "the up arrow scrolls back");
+    x = (track.x0 + track.x1) * 0.5f;
+    menu.update(pointer(x, track.y1 - 0.01f, B));
+    check(menu.view().remap.firstRow == HM::kRemapVisibleRows, "a click on the track below the thumb pages down");
+    menu.update(pointer(x, track.y0 + 0.01f, B));
+    check(menu.view().remap.firstRow == 0, "above the thumb pages up");
+
+    // Drag the thumb to the bottom and back to the middle.
+    view = menu.view();
+    const float grabY = (view.remap.thumb.y0 + view.remap.thumb.y1) * 0.5f;
+    menu.update(pointer(x, grabY, B));
+    check(menu.view().remap.dragging, "pressing on the thumb grabs it");
+    HM::FrameInput drag = pointer(x, track.y1 + 0.5f);
+    drag.hold = B;
+    menu.update(drag);
+    check(menu.view().remap.firstRow == 34 - HM::kRemapVisibleRows && menu.view().remap.dragging,
+          "dragging past the end shows the last rows");
+    drag.pointerY = grabY + ((track.y1 - track.y0) - (view.remap.thumb.y1 - view.remap.thumb.y0)) * 0.5f;
+    menu.update(drag);
+    const int middle = menu.view().remap.firstRow;
+    check(middle >= 10 && middle <= 13, "dragging to the middle (" + std::to_string(middle) + ")");
+    menu.update(pointer(x, drag.pointerY));
+    check(!menu.view().remap.dragging && menu.view().remap.firstRow == middle, "releasing drops the thumb where it is");
+    check(menu.phase() == HM::Phase::Controls && fake.begins == 0, "scrolling never captured or left the page");
+
+    // A click on the panel's empty space is not "back"; outside the panel it is.
+    view = menu.view();
+    menu.update(pointer(0.0f, (view.panel.y0 + view.titleY) * 0.5f, B));
+    check(menu.phase() == HM::Phase::Controls, "a click inside the panel stays");
+    menu.update(pointer(view.panel.x1 + 0.05f, 0.0f, B));
+    check(menu.phase() == HM::Phase::List, "a click outside the panel goes back");
+
+    // No scrolling while capturing.
+    openRemapper(menu);
+    menu.update(press(A));
+    wheel.scrollRows = 5;
+    menu.update(wheel);
+    check(menu.view().remap.firstRow == 0 && menu.view().remap.capturing, "the wheel does nothing during a capture");
+}
+
 void testBridgeInput() {
     HBMControllerData data;
     KPADStatus pads[WPAD_MAX_CONTROLLERS];
@@ -1507,6 +1596,7 @@ int main() {
     testFocusAndRepeat();
     testControlsPage();
     testRemapper();
+    testRemapperScrolling();
     testModsPage();
     testModFolderPage();
     testProgressPage();

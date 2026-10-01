@@ -40,7 +40,8 @@ constexpr float kControlsBackHalfWidth = 0.2f;
 // The remapper: the table, then its buttons.
 constexpr float kRemapTop = -0.62f;
 constexpr float kRemapBottom = 0.58f;
-constexpr float kRemapHalfWidth = 0.82f;
+constexpr float kRemapHalfWidth = 0.82f;   // the table's left edge (and the scrollbar's right)
+constexpr float kRemapTableRight = 0.75f;  // the table's right edge; the scrollbar is beyond it
 constexpr float kRemapLabelShare = 0.32f;  // of the table width; four slots share the rest
 constexpr float kRemapButtonsTop = 0.65f;
 
@@ -531,6 +532,8 @@ View Menu::view() const {
                 remap.cells[r][slot] = remapCellRect(r, slot);
             }
         }
+        scrollbarRects(&remap.upArrow, &remap.downArrow, &remap.track, &remap.thumb);
+        remap.dragging = mThumbDragging;
         if (mRemapMode == RemapMode::Conflict) {
             view.items[0].label = "Swap";
             view.items[1].label = "Keep both";
@@ -761,6 +764,7 @@ void Menu::activate(int index) {
                 mRemapTop = 0;
                 mRemapOnButtons = false;
                 mResetAllArmed = false;
+                mThumbDragging = false;
                 mBackend->notice(mRemapMessage, sizeof(mRemapMessage));
             }
             break;
@@ -998,7 +1002,50 @@ void Menu::scrollToRow() {
 
 Rect Menu::remapArea() const {
     const float ax = adjustX();
-    return {-kRemapHalfWidth / ax, kRemapTop, kRemapHalfWidth / ax, kRemapBottom};
+    return {-kRemapHalfWidth / ax, kRemapTop, kRemapTableRight / ax, kRemapBottom};
+}
+
+Rect Menu::remapPanel() const {
+    const float ax = adjustX();
+    return {-kControlsHalfWidth / ax, kControlsTop, kControlsHalfWidth / ax, kRemapButtonsTop + 0.14f + kPanelBottomMargin};
+}
+
+// The scrollbar beside the rows (below the header): an arrow at each end, the
+// track between, and a thumb as tall as the shown fraction of the rows.
+void Menu::scrollbarRects(Rect* up, Rect* down, Rect* track, Rect* thumb) const {
+    const float ax = adjustX();
+    const Rect area = remapArea();
+    const float rowHeight = (area.y1 - area.y0) / static_cast<float>(kRemapVisibleRows + 1);
+    const float x0 = (kRemapTableRight + 0.02f) / ax, x1 = (kRemapHalfWidth + 0.005f) / ax;
+    const float top = area.y0 + rowHeight;
+    *up = {x0, top, x1, top + rowHeight};
+    *down = {x0, area.y1 - rowHeight, x1, area.y1};
+    *track = {x0, up->y1, x1, down->y0};
+    const int total = std::max(mRemapRowCount, 1);
+    const float height = track->y1 - track->y0;
+    const float shown = std::min(1.0f, static_cast<float>(kRemapVisibleRows) / static_cast<float>(total));
+    const float thumbHeight = std::max(height * shown, rowHeight * 0.6f);
+    const int range = std::max(0, mRemapRowCount - kRemapVisibleRows);
+    const float at = range > 0 ? static_cast<float>(mRemapTop) / static_cast<float>(range) : 0.0f;
+    const float thumbTop = track->y0 + (height - thumbHeight) * at;
+    *thumb = {x0, thumbTop, x1, thumbTop + thumbHeight};
+}
+
+// Scrolls the list by rows. moveFocus (paging): the focus moves as far; else
+// it stays where it is unless it would leave the shown rows.
+void Menu::scrollRemapBy(int rows, bool moveFocus) {
+    const int range = std::max(0, mRemapRowCount - kRemapVisibleRows);
+    const int before = mRemapTop;
+    mRemapTop = std::clamp(mRemapTop + rows, 0, range);
+    if (moveFocus) {
+        mRemapRow = std::clamp(mRemapRow + rows, 0, std::max(0, mRemapRowCount - 1));
+        mRemapOnButtons = false;
+    }
+    mRemapRow = std::clamp(mRemapRow, mRemapTop, std::max(mRemapTop, std::min(mRemapRowCount, mRemapTop + kRemapVisibleRows) - 1));
+    if (mRemapTop != before || moveFocus) {
+        mResetAllArmed = false;
+        play(Sound::Focus);
+    }
 }
 
 // A slot of a shown row; the header takes the table's first row.
@@ -1171,7 +1218,34 @@ void Menu::updateRemap(const FrameInput& input, bool pointerMoved) {
     if (input.trigger & Button::Home) {
         play(Sound::ReturnApp);
         close();
+        mThumbDragging = false;
         return;
+    }
+    Rect upArrow, downArrow, track, thumb;
+    scrollbarRects(&upArrow, &downArrow, &track, &thumb);
+    // Dragging the thumb: the list follows the pointer until the button is released.
+    if (mThumbDragging) {
+        if ((input.hold & Button::B) == 0 || mRemapMode != RemapMode::Browse) {
+            mThumbDragging = false;
+        } else if (input.pointerValid) {
+            const float travel = (track.y1 - track.y0) - (thumb.y1 - thumb.y0);
+            const int range = std::max(0, mRemapRowCount - kRemapVisibleRows);
+            const float at = travel > 0.0f ? std::clamp((input.pointerY - mThumbGrab - track.y0) / travel, 0.0f, 1.0f) : 0.0f;
+            scrollRemapBy(static_cast<int>(std::lround(at * static_cast<float>(range))) - mRemapTop, false);
+        }
+        return;
+    }
+    // Wheel and trackpad, Page Up/Down, and the controller's LB/LT (Nunchuk C/Z) page.
+    if (mRemapMode == RemapMode::Browse) {
+        int pages = input.scrollPages;
+        pages += (input.trigger & Button::Z) ? 1 : 0;
+        pages -= (input.trigger & Button::C) ? 1 : 0;
+        if (input.scrollRows != 0) {
+            scrollRemapBy(input.scrollRows, false);
+        }
+        if (pages != 0) {
+            scrollRemapBy(pages * kRemapVisibleRows, true);
+        }
     }
     int hoveredRow = -1, hoveredSlot = 0;
     const bool overCell = input.pointerValid && mRemapMode == RemapMode::Browse &&
@@ -1198,6 +1272,23 @@ void Menu::updateRemap(const FrameInput& input, bool pointerMoved) {
     }
     const bool a = (input.trigger & Button::A) != 0;
     const bool b = (input.trigger & Button::B) != 0;
+    // The scrollbar, with the pointer's button (B, the left mouse button).
+    if (b && input.pointerValid && mRemapMode == RemapMode::Browse) {
+        const float x = input.pointerX, y = input.pointerY;
+        if (upArrow.contains(x, y) || downArrow.contains(x, y)) {
+            scrollRemapBy(upArrow.contains(x, y) ? -1 : 1, false);
+            return;
+        }
+        if (thumb.contains(x, y)) {
+            mThumbDragging = true;
+            mThumbGrab = y - thumb.y0;
+            return;
+        }
+        if (track.contains(x, y)) {
+            scrollRemapBy(y < thumb.y0 ? -kRemapVisibleRows : kRemapVisibleRows, false);
+            return;
+        }
+    }
     if (a || (b && (overCell || hoveredButton >= 0))) {
         if (b && overCell) {
             mRemapRow = hoveredRow;
@@ -1215,6 +1306,10 @@ void Menu::updateRemap(const FrameInput& input, bool pointerMoved) {
         return;
     }
     if (b) {
+        // A click on the panel's empty space does nothing; elsewhere B is back.
+        if (input.pointerValid && remapPanel().contains(input.pointerX, input.pointerY)) {
+            return;
+        }
         if (mRemapMode == RemapMode::Conflict) {
             activateRemapButton(2);
         } else {

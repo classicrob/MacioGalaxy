@@ -727,6 +727,13 @@ bool actionHeld(Action action) {
 }
 
 namespace {
+std::mutex gMenuScrollMutex;
+float gMenuRows = 0.0f;  // accumulated rows, + toward the top
+int gMenuPages = 0;
+constexpr KeyCode kPageUp = 75, kPageDown = 78;  // USB HID usages
+}  // namespace
+
+namespace {
 // Capture for the Home menu's remapping (input_remap.hpp). Guarded by gHostMutex.
 CaptureState gCapture = CaptureState::Idle;
 Binding gCaptured;
@@ -779,6 +786,10 @@ void keyEvent(KeyCode code, bool down, bool repeat) {
     gHostActivity = true;
     std::lock_guard<std::mutex> lock(gHostMutex);
     if (captureEvent(Binding::key(code), down, repeat)) return;
+    if (down && (code == kPageUp || code == kPageDown)) {
+        std::lock_guard<std::mutex> pages(gMenuScrollMutex);
+        gMenuPages = std::clamp(gMenuPages + (code == kPageDown ? 1 : -1), -20, 20);
+    }
     if (down && !repeat) {
         countModPress(Binding::key(code));
         notePressForProbe(Binding::key(code));
@@ -881,6 +892,22 @@ void mouseWheel(float x, float y) {
     } else {
         CameraSettings::zoomSteps(-y);  // wheel up: closer
     }
+}
+
+void menuWheel(float y) {
+    const bool precise = y != std::round(y);
+    std::lock_guard<std::mutex> lock(gMenuScrollMutex);
+    gMenuRows = std::clamp(gMenuRows + (precise ? y * 0.5f : y * 3.0f), -100.0f, 100.0f);
+}
+
+MenuScroll takeMenuScroll() {
+    std::lock_guard<std::mutex> lock(gMenuScrollMutex);
+    MenuScroll scroll;
+    scroll.rows = static_cast<int>(gMenuRows);  // toward zero: the fraction carries over
+    gMenuRows -= static_cast<float>(scroll.rows);
+    scroll.pages = gMenuPages;
+    gMenuPages = 0;
+    return scroll;
 }
 
 void pinch(float scale) {
@@ -991,6 +1018,9 @@ void resetForTesting() {
         std::lock_guard<std::mutex> lock(gHostMutex);
         gCapture = CaptureState::Idle;
         gSwallowRelease = false;
+        std::lock_guard<std::mutex> scroll(gMenuScrollMutex);
+        gMenuRows = 0.0f;
+        gMenuPages = 0;
     }
     {
         Interrupts guard;
