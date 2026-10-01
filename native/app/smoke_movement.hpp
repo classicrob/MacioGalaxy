@@ -44,7 +44,11 @@
 //      Logs "MOVEMENT cappy loop: bounce ..." and FAILs without a bounce;
 //  17. "cappy ground bounce": a 20-frame run, the cap thrown along it and held,
 //      the run on after it, and a tapped jump 170 short of where Cappy hovers
-//      (678 ahead of the throw).
+//      (678 ahead of the throw);
+//  18. "cappy throws": standing, a throw every 90 frames, five times; logs the
+//      enemy hits and the coins / Star Bits Cappy collected (aim them with the
+//      test-only PETARI_CAPPY_TEST_AIM=enemy|item, near enemies or items, e.g.
+//      with PETARI_STAGE_WARP).
 // The Cappy tasks need PETARI_MODS=OdysseyMovement,Cappy and are skipped
 // otherwise (PETARI_CAPPY_TRACE=1 logs Cappy's state each frame).
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example

@@ -12,6 +12,8 @@
 // Cappy mod (src/Game/Player/MarioCappy.cpp).
 extern "C" int petari_cappy_bounces();
 extern "C" int petari_cappy_state();
+extern "C" int petari_cappy_hits();
+extern "C" int petari_cappy_collected();
 
 namespace PetariNative::App::Smoke {
 
@@ -72,8 +74,11 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
     loop.cappy = 1;
     Task ground{"cappy ground bounce", 1, true, 20, false};
     ground.cappy = 2;
+    Task throws{"cappy throws", 1, false, 0, false};
+    throws.cappy = 3;
     mTasks.push_back(loop);
     mTasks.push_back(ground);
+    mTasks.push_back(throws);
     if (const char* dir = std::getenv("PETARI_MOVEMENT_WALL_DIR"); dir != nullptr) {
         const std::string d(dir);
         mWallStick = d == "down" ? Button::StickDown : d == "left" ? Button::StickLeft : d == "right" ? Button::StickRight : Button::StickUp;
@@ -302,6 +307,11 @@ Step MovementDriver::step(const Observation& o) {
                 tap(Button::Z, static_cast< unsigned long >(task.crouch + task.holdA + (task.roll > 0 ? 10 : 2)), step);
                 mPhase = Phase::Crouch;
                 mPhaseFrames = 0;
+            } else if (task.cappy == 3) {
+                mPhase = Phase::Cappy;
+                mPhaseFrames = 0;
+                mBounceStart = petari_cappy_hits();
+                mTaps = petari_cappy_collected();
             } else if (task.groundPound) {
                 tap(Button::A, static_cast< unsigned long >(task.hopHold), step);  // a hop (or a jump); the ground pound comes at its peak
                 mPhase = Phase::Hop;
@@ -584,6 +594,24 @@ Step MovementDriver::step(const Observation& o) {
         const float height = dot(sub(pos, start), upStart);
         if (mPhaseFrames == 1 && task.cappy == 1) mBounceStart = petari_cappy_bounces();
         if (!o.playerOnGround) mLeftGround = true;
+        if (task.cappy == 3) {
+            // Standing: a throw every 90 frames, five times (aim them with
+            // PETARI_CAPPY_TEST_AIM); then the hits and items Cappy got.
+            if (mPhaseFrames % 90 == 1 && mPhaseFrames < 450) {
+                tap(Button::CapThrow, kTapFrames, step);
+                static const char* const kLabels[] = {"cappy throws 1", "cappy throws 2", "cappy throws 3", "cappy throws 4", "cappy throws 5"};
+                PetariNative::EfbDump::mark(kLabels[mPhaseFrames / 90]);
+            }
+            if (mPhaseFrames >= 450) {
+                note(std::string("MOVEMENT cappy throws: ") + std::to_string(petari_cappy_hits() - mBounceStart) + " enemy hits, " +
+                     std::to_string(petari_cappy_collected() - mTaps) + " items collected in 5 throws");
+                ++mTask;
+                mPhase = Phase::Land;
+                mPhaseFrames = 0;
+                mReady = 0;
+            }
+            break;
+        }
         if (task.cappy == 1) {
             // Running jump (A held 10), the throw at 6, a ground pound at 18, the
             // dive (the throw key) at 22; after the bounce, a pound and a dive again.
