@@ -592,8 +592,12 @@ void Mario::updateWalkSpeed() {
         Odyssey::Live::rollStart = false;
         static const bool trace = std::getenv("PETARI_ODYSSEY_TRACE") != nullptr;
         if (trace && Odyssey::Live::roll.rolling) {
-            std::fprintf(stderr, "[odyssey] roll speed %.3f walk %.3f ground %d jumping %d slip %d sink %d status17 %d\n",
-                         Odyssey::Live::roll.speed, mWalkSpeed, static_cast< int >(mMovementStates._1),
+            std::fprintf(stderr, "[odyssey] roll speed %.3f walk %.3f pos (%.1f, %.1f, %.1f) slope %.1f ground %d jumping %d slip %d sink %d status17 %d\n",
+                         Odyssey::Live::roll.speed, mWalkSpeed, mPosition.x, mPosition.y, mPosition.z,
+                         getGroundPolygon() != nullptr && getGroundPolygon()->isValid()
+                             ? MR::acos(MR::clamp(getGroundPolygon()->getNormal(0)->dot(-*getGravityVec()), -1.0f, 1.0f)) * 180.0f / MR::pi()
+                             : -1.0f,
+                         static_cast< int >(mMovementStates._1),
                          static_cast< int >(mMovementStates.jumping), static_cast< int >(mMovementStates._4), static_cast< int >(mSinkTimer),
                          static_cast< int >(isStatusActive(17)));
         }
@@ -601,6 +605,20 @@ void Mario::updateWalkSpeed() {
             Odyssey::Live::roll.rolling = false;
         }
         if (Odyssey::Live::roll.rolling) {
+            // Slopes: faster down, slower up (along the roll's heading).
+            if (getGroundPolygon() != nullptr && getGroundPolygon()->isValid()) {
+                TVec3f up(-*getGravityVec());
+                MR::normalizeOrZero(&up);
+                const TVec3f& normal = *getGroundPolygon()->getNormal(0);
+                const f32 cosSlope = MR::clamp(normal.dot(up), -1.0f, 1.0f);
+                TVec3f downhill(-up - normal * normal.dot(-up));  // gravity along the ground
+                if (MR::normalizeOrZero(&downhill) == 0) {  // a usable direction (flat ground gives none)
+                    TVec3f front(mFrontVec - normal * normal.dot(mFrontVec));
+                    MR::normalizeOrZero(&front);
+                    const f32 slopeDegrees = MR::acos(cosSlope) * 180.0f / MR::pi();
+                    Odyssey::Live::roll.speed += Odyssey::rollSlopeChange(slopeDegrees, front.dot(downhill));
+                }
+            }
             Odyssey::stepRoll(Odyssey::Live::roll, Odyssey::Live::rollBoost);
             Odyssey::Live::rollBoost = false;
             mMovementStates._A = false;

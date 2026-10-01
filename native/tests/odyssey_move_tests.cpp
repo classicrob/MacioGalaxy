@@ -152,6 +152,17 @@ static void testGroundPoundAndRoll() {
         ++frames;
     }
     check(!slow.rolling && frames > 50, "an unboosted roll decays below 17 and ends");
+    check(near(rollSlopeChange(0.0f, 1.0f), 0.0f), "flat ground: no slope change");
+    check(near(rollSlopeChange(30.0f, 1.0f), 0.6f) && near(rollSlopeChange(45.0f, 1.0f), 0.6f), "downhill at 30 degrees or more: +0.6");
+    check(near(rollSlopeChange(15.0f, 1.0f), 0.3f), "half the slope: +0.3");
+    check(near(rollSlopeChange(30.0f, -1.0f), -0.5f), "uphill: -0.5");
+    check(near(rollSlopeChange(30.0f, 0.0f), 0.0f), "across the slope: none");
+    RollState down = startRoll(20.0f, false);
+    for (int i = 0; i < 120; ++i) {
+        down.speed += rollSlopeChange(30.0f, 1.0f);
+        stepRoll(down, false);
+    }
+    check(down.rolling && near(down.speed, 35.0f), "a downhill roll speeds up to the 35 cap");
 }
 
 static void testWallSlide() {
