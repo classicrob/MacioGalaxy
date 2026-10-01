@@ -1,4 +1,8 @@
 #include "Game/NPC/TalkMessageCtrl.hpp"
+#ifdef PETARI_NATIVE
+#include <cstdio>
+#include <cstdlib>
+#endif
 #include "Game/AreaObj/MessageArea.hpp"
 #include "Game/LiveActor/ActorCameraInfo.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -161,7 +165,29 @@ void TalkMessageCtrl::rootNodePre(bool arg) {
 
         bool cond = false;
 
-        switch (branch->mIndex) {
+        u16 condition = branch->mIndex;
+#ifdef PETARI_NATIVE
+        // These case numbers follow the Korean build this code was decompiled from
+        // (RMGK01), which added the LED-pattern check. The US disc's message flows
+        // (RMGE01, the disc the port runs; its rootNodePre has 14 cases) number them
+        // 11 = Astro Galaxy branch, 12 = time-keep demo, 13 = message already read.
+        // Read unmapped, every observatory progress branch asked isTimeKeepDemoActive
+        // (e.g. the Luma at the Fountain's Launch Star always said "You can't go up
+        // there yet.").
+        switch (condition) {
+        case 11:
+            condition = 14;
+            break;
+        case 12:
+            condition = 11;
+            break;
+        case 13:
+            condition = 12;
+            break;
+        }
+#endif
+
+        switch (condition) {
         case 0:
             return;
         case 1:
@@ -213,6 +239,13 @@ void TalkMessageCtrl::rootNodePre(bool arg) {
             break;
         }
 
+#ifdef PETARI_NATIVE
+        static const bool trace = std::getenv("PETARI_TALK_TRACE") != nullptr;
+        if (trace) {
+            std::fprintf(stderr, "[talk] branch condition %d (case %d) arg %d: %s\n", static_cast< int >(branch->mIndex),
+                         static_cast< int >(condition), static_cast< int >(branch->mNextIdx), cond ? "true" : "false");
+        }
+#endif
         if (cond) {
             control->forwardCurrentBranchNode(true);
             continue;

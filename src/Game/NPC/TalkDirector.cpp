@@ -402,7 +402,14 @@ bool TalkDirector::getBranchResult(u16 arg) {
         return MR::isOnLuigiHiding();
     }
 
+#ifdef PETARI_NATIVE
+    // 0x70 is the first branch flag's offset in the Wii's 32-bit layout; on a
+    // 64-bit host the class is larger and that offset is elsewhere (every Astro
+    // Galaxy branch read false). The 28 flags are declared in order from it.
+    return (&mIsKinopioExplorerRescued)[arg];
+#else
     return (reinterpret_cast< bool* >(this) + arg)[0x70];
+#endif
 }
 
 void TalkDirector::initBranchResult() {
