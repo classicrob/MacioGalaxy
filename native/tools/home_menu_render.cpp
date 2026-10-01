@@ -126,6 +126,46 @@ void rasterize(Canvas& canvas, const Texture& texture) {
     }
 }
 
+// A stand-in for the input layer's remapper: the default rows, and a capture
+// that "presses" F, which Spin already has.
+class FakeControls final : public HM::ControlsBackend {
+public:
+    int rowCount() override { return 34; }
+    void row(int index, HM::RemapRow* out) override {
+        static const char* const kLabels[] = {
+            PETARI_ICON_STICK " Move forward", PETARI_ICON_STICK " Move back", PETARI_ICON_STICK " Move left",
+            PETARI_ICON_STICK " Move right", PETARI_ICON_A " Jump / confirm", PETARI_ICON_SHAKE " Spin",
+            PETARI_ICON_Z " Crouch / ground pound", PETARI_ICON_B " Shoot Star Bits / back", PETARI_ICON_A " Start (title: A and B)",
+            PETARI_ICON_C " Recenter camera", PETARI_ICON_PAD " Rotate camera left", PETARI_ICON_PAD " Rotate camera right"};
+        static const char* const kSlots[][4] = {
+            {"W", "", "", ""}, {"S", "", "", ""}, {"A", "", "", ""}, {"D", "", "", ""},
+            {"Space", "Right mouse", "bottom", ""}, {"F", "", "left", "RB"}, {"Left Shift", "Right Shift", "LT", ""},
+            {"Left mouse", "Backspace", "right", "RT"}, {"Return", "Keypad Enter", "top", ""}, {"C", "", "LB", ""},
+            {"Q", "Left arrow", "D-pad left", ""}, {"E", "Right arrow", "D-pad right", ""}};
+        const int i = index % 12;
+        std::snprintf(out->label, sizeof(out->label), "%s", index < 12 ? kLabels[i] : "Camera mod: orbit left");
+        for (int s = 0; s < 4; ++s) std::snprintf(out->slots[s], sizeof(out->slots[s]), "%s", kSlots[i][s]);
+        out->changed = index == 9;
+        out->conflict[0] = index == 9;
+    }
+    void beginCapture() override {}
+    void cancelCapture() override {}
+    HM::CaptureStatus pollCapture(char* name, int size) override {
+        if (!captured) return HM::CaptureStatus::Waiting;
+        std::snprintf(name, static_cast<size_t>(size), "F");
+        return HM::CaptureStatus::Captured;
+    }
+    HM::RemapOutcome place(int, int, HM::RemapChoice, char* other, int size) override {
+        std::snprintf(other, static_cast<size_t>(size), "Spin");
+        return HM::RemapOutcome::Conflict;
+    }
+    HM::RemapOutcome clearSlot(int, int) override { return HM::RemapOutcome::Done; }
+    HM::RemapOutcome resetRow(int) override { return HM::RemapOutcome::Done; }
+    HM::RemapOutcome resetAll() override { return HM::RemapOutcome::Done; }
+    void notice(char* out, int size) override { std::snprintf(out, static_cast<size_t>(size), "%s", ""); }
+    bool captured = false;
+};
+
 HM::FrameInput press(std::uint32_t button) {
     HM::FrameInput input;
     input.hold = button;
@@ -234,7 +274,22 @@ int main(int argc, char** argv) {
     menu.update(press(Down));
     menu.update(press(A));
     shot("controls");
+    // The remapper: browsing, waiting for a press, and a conflict.
+    FakeControls fake;
+    menu.setControlsBackend(&fake);
     menu.update(press(Plus));
+    menu.update(press(A));
+    for (int i = 0; i < 9; ++i) menu.update(press(Down));
+    menu.update(press(Right));
+    shot("remap");
+    menu.update(press(A));
+    shot("remap-capture");
+    fake.captured = true;
+    menu.update(HM::FrameInput{});
+    shot("remap-conflict");
+    menu.update(press(Plus));
+    menu.update(press(Plus));
+    menu.setControlsBackend(nullptr);
     menu.update(press(Down));
     menu.update(press(A));
     shot("mods");

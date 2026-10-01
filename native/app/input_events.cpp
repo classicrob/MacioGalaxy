@@ -10,30 +10,18 @@
 #include "host.hpp"
 #include "smoke_background.hpp"
 #include "petari/input.hpp"
+#include "petari/input_remap.hpp"
 #include "petari/input_sdl3.hpp"
 
 namespace PetariNative::App::Events {
 
 bool loadControls(const std::filesystem::path& file, std::string* error) {
-    std::error_code ec;
-    if (!std::filesystem::exists(file, ec)) {
-        return true;  // defaults
-    }
-    std::ifstream in(file);
-    if (!in) {
-        *error = "cannot read " + file.string();
-        return false;
-    }
-    std::stringstream text;
-    text << in.rdbuf();
-    Input::Bindings bindings = Input::Bindings::defaults();
-    std::string parseError;
-    if (!bindings.parse(text.str(), &parseError)) {
-        *error = file.string() + ": " + parseError;
-        return false;
-    }
+    // A missing file is the defaults; an invalid one is the defaults too, with a
+    // message (the Home menu's Controls page shows it until the player saves).
+    Input::Bindings bindings;
+    const bool ok = Input::Remap::load(file, &bindings, error);
     Input::setBindings(bindings);
-    return true;
+    return ok;
 }
 
 namespace {

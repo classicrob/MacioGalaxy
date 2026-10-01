@@ -385,10 +385,11 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "petari: %s\n", error.c_str());
         return 1;
     }
-    if (!App::Events::loadControls(paths.user / "controls.txt", &error)) {
+    // controls.txt: never fatal. An invalid file leaves the default controls in use.
+    if (!App::Events::loadControls(paths.user / "controls.txt", &error) || !error.empty()) {
         std::fprintf(stderr, "petari: controls: %s\n", error.c_str());
-        return 1;
     }
+    error.clear();
     // The personal progress record (native/PROGRESS.md): beside the save, never inside it. A damaged
     // file is reported and left alone; progress is then not recorded this run.
     if (!PetariNative::Progress::load(paths.user / "progress.json", &error)) {

@@ -39,6 +39,18 @@ is the same either way.
 - Sizes follow the game image's height, so the pages read the same at any
   window size; long messages wrap to two lines.
 
+## Controls page
+
+The Controls page is a remapper (native/CONTROLS.md "Changing controls"): a
+scrolling table of every action, with its icon, two keyboard/mouse slots and
+two controller slots as key caps. The focused slot is a gold capsule that
+pulses "Press..." while it waits for an input. Shared inputs are outlined in
+orange, and changed actions are named in gold. The buttons below are Clear
+slot, Reset action, Reset all and Back, or Swap, Keep both and Cancel for a
+conflict. The page logic is in `home_menu.cpp` (`Menu::updateRemap`) on a
+`ControlsBackend`. The bridge's backend (`hbm_bridge.cpp`, `InputControls`)
+applies changes to the live bindings and saves `controls.txt`.
+
 ## Checking the look
 
 - Offline, every page to PNG (no game, any size):
@@ -52,6 +64,10 @@ is the same either way.
   `home-<page>`; with `PETARI_SURFACE_DUMP=<dir>
   PETARI_SURFACE_DUMP_LABELS=home-,pause` the window images (overlay
   included) are written there. The game's own pause menu is marked `pause`.
+  On Controls the tour remaps Cap throw to F (Spin's key) through a real
+  capture and chooses Swap (`home-remap-capture`, `-conflict`, `-done`), so
+  the run's `controls.txt` ends with `ModCappyThrow=Key:F,...` and
+  `Shake=Key:R,...`.
 
 ## Tests
 
@@ -61,4 +77,7 @@ malformed input), the ImGui atlas with the fonts installed (letters white,
 icons in color, ImGui's own font kept first), a missing archive leaving the
 built-in font, and, when the disc is present, the real Font.arc.
 `native_home_menu` checks the overlay's geometry, colors and readability at
-480 lines with the built-in font.
+480 lines with the built-in font, and the remapper on a fake backend:
+navigation and scrolling, capture, the conflict choices, Escape and the
+10-second timeout, the refused Home change, the buttons (Reset all needs a
+second A), the pointer, and a black-out cancelling a capture.

@@ -591,6 +591,204 @@ void setPad(KPADStatus* status, u32 holdBits, u32 trigBits) {
     status->trig = trigBits;
 }
 
+// The Controls page as a remapper, on a fake backend that records what the
+// page asks of it.
+class FakeControls final : public HM::ControlsBackend {
+public:
+    int rows = 30;
+    HM::CaptureStatus capture = HM::CaptureStatus::Waiting;
+    HM::RemapOutcome placeOutcome = HM::RemapOutcome::Done;
+    HM::RemapOutcome clearOutcome = HM::RemapOutcome::Done;
+    int begins = 0, cancels = 0, clears = 0, resets = 0, resetAlls = 0;
+    std::vector<HM::RemapChoice> choices;
+    int lastRow = -1, lastSlot = -1;
+    std::string noticeText;
+
+    int rowCount() override { return rows; }
+    void row(int index, HM::RemapRow* out) override {
+        std::snprintf(out->label, sizeof(out->label), "Action %d", index);
+        std::snprintf(out->slots[0], sizeof(out->slots[0]), "K%d", index);
+    }
+    void beginCapture() override { ++begins; capture = HM::CaptureStatus::Waiting; }
+    void cancelCapture() override { ++cancels; }
+    HM::CaptureStatus pollCapture(char* name, int size) override {
+        std::snprintf(name, static_cast<size_t>(size), "F");
+        return capture;
+    }
+    HM::RemapOutcome place(int row, int slot, HM::RemapChoice choice, char* other, int size) override {
+        lastRow = row;
+        lastSlot = slot;
+        choices.push_back(choice);
+        std::snprintf(other, static_cast<size_t>(size), "Spin");
+        return choice == HM::RemapChoice::Check ? placeOutcome : HM::RemapOutcome::Done;
+    }
+    HM::RemapOutcome clearSlot(int row, int slot) override {
+        ++clears;
+        lastRow = row;
+        lastSlot = slot;
+        return clearOutcome;
+    }
+    HM::RemapOutcome resetRow(int row) override {
+        ++resets;
+        lastRow = row;
+        return HM::RemapOutcome::Done;
+    }
+    HM::RemapOutcome resetAll() override {
+        ++resetAlls;
+        return HM::RemapOutcome::Done;
+    }
+    void notice(char* out, int size) override { std::snprintf(out, static_cast<size_t>(size), "%s", noticeText.c_str()); }
+};
+
+void openRemapper(HM::Menu& menu) {
+    openToList(menu);
+    menu.update(press(Down));
+    menu.update(press(A));
+    check(menu.phase() == HM::Phase::Controls, "Controls opens");
+}
+
+bool contains(const char* text, const char* part) {
+    return std::strstr(text, part) != nullptr;
+}
+
+void testRemapper() {
+    FakeControls fake;
+    HM::Menu menu = newMenu();
+    menu.setControlsBackend(&fake);
+    fake.noticeText = "controls.txt has an error";
+    openRemapper(menu);
+    HM::View view = menu.view();
+    check(view.remap.active && view.remap.totalRows == 30 && view.remap.rowCount == HM::kRemapVisibleRows,
+          "the remapper shows the first 11 of 30 rows");
+    check(contains(view.message, "controls.txt has an error"), "a load notice shows when the page opens");
+    check(view.itemCount == 4 && std::strcmp(view.items[3].label, "Back") == 0, "Clear, Reset action, Reset all, Back");
+    check(view.remap.focusRow == 0 && view.remap.focusSlot == 0 && !view.items[0].focused, "focus on the first slot");
+    fake.noticeText.clear();
+
+    // Navigation: Right moves along the slots (clamped), Down scrolls.
+    for (int i = 0; i < 5; i++) menu.update(press(Right));
+    check(menu.view().remap.focusSlot == HM::kRemapSlots - 1, "Right stops at the last slot");
+    menu.update(press(Left));
+    for (int i = 0; i < 12; i++) menu.update(press(Down));
+    view = menu.view();
+    check(view.remap.firstRow == 2 && view.remap.focusRow == 10 && view.remap.focusSlot == 2,
+          "Down past the shown rows scrolls (row 12, slot 2)");
+    for (int i = 0; i < 20; i++) menu.update(press(Down));
+    view = menu.view();
+    check(view.remap.focusRow == -1 && view.items[2].focused, "past the last row: the buttons, under the slot");
+    check(view.remap.firstRow + view.remap.rowCount == 30, "scrolled to the end");
+    menu.update(press(Up));
+    check(menu.view().remap.focusRow == HM::kRemapVisibleRows - 1, "Up returns to the last row");
+
+    // Capture: A starts it; the menu ignores its own buttons while waiting.
+    menu.update(press(A));
+    check(fake.begins == 1 && menu.view().remap.capturing, "A on a slot starts a capture");
+    menu.update(press(Home | Plus | Down));
+    check(menu.phase() == HM::Phase::Controls && menu.view().remap.capturing, "Home and Plus do nothing while capturing");
+    fake.capture = HM::CaptureStatus::Captured;
+    fake.placeOutcome = HM::RemapOutcome::Done;
+    menu.update(none());
+    view = menu.view();
+    check(!view.remap.capturing && fake.choices.size() == 1 && fake.choices[0] == HM::RemapChoice::Check &&
+              fake.lastRow == 29 && fake.lastSlot == 2,
+          "the captured input goes to the focused slot");
+    check(contains(view.message, "Action 29: F"), "the message says what changed");
+
+    // A conflict: Swap / Keep both / Cancel, Cancel first.
+    fake.choices.clear();
+    fake.placeOutcome = HM::RemapOutcome::Conflict;
+    menu.update(press(A));
+    fake.capture = HM::CaptureStatus::Captured;
+    menu.update(none());
+    view = menu.view();
+    check(view.itemCount == 3 && std::strcmp(view.items[0].label, "Swap") == 0 && view.items[2].focused,
+          "a conflict offers Swap, Keep both and Cancel, on Cancel");
+    check(contains(view.message, "F is already Spin"), "the conflict names the other action");
+    menu.update(press(A));
+    check(fake.choices.size() == 1 && menu.view().itemCount == 4, "Cancel changes nothing");
+    for (int choice = 0; choice < 2; choice++) {
+        fake.choices.clear();
+        menu.update(press(Up));  // back from the buttons to the row (Cancel left the focus there)
+        menu.update(press(A));
+        fake.capture = HM::CaptureStatus::Captured;
+        menu.update(none());
+        menu.update(press(Left));
+        menu.update(press(Left));
+        if (choice == 1) menu.update(press(Right));
+        menu.update(press(A));
+        check(fake.choices.size() == 2 && fake.choices[1] == (choice == 0 ? HM::RemapChoice::Swap : HM::RemapChoice::KeepBoth),
+              choice == 0 ? "Swap" : "Keep both");
+    }
+    fake.choices.clear();
+    menu.update(press(A));
+    fake.capture = HM::CaptureStatus::Captured;
+    menu.update(none());
+    menu.update(press(Plus));
+    check(fake.choices.size() == 1 && menu.phase() == HM::Phase::Controls && menu.view().itemCount == 4,
+          "Plus cancels a conflict and stays on the page");
+
+    // Escape (the backend reports Cancelled) and the timeout.
+    menu.update(press(A));
+    fake.capture = HM::CaptureStatus::Cancelled;
+    menu.update(none());
+    check(!menu.view().remap.capturing && contains(menu.view().message, "Not changed"), "a cancelled capture");
+    const int cancels = fake.cancels;
+    menu.update(press(A));
+    for (int i = 0; i < 599; i++) menu.update(none());
+    check(menu.view().remap.capturing, "still waiting after 599 frames");
+    menu.update(none());
+    check(!menu.view().remap.capturing && fake.cancels == cancels + 1, "10 s without a press cancels the capture");
+
+    // Home refused.
+    fake.placeOutcome = HM::RemapOutcome::HomeUnreachable;
+    menu.update(press(A));
+    fake.capture = HM::CaptureStatus::Captured;
+    menu.update(none());
+    check(contains(menu.view().message, "must keep"), "a refused change says why");
+
+    // The buttons act on the selected slot; Reset all needs a second A.
+    for (int i = 0; i < 20; i++) menu.update(press(Down));
+    while (menu.view().items[0].focused == false) menu.update(press(Left));
+    menu.update(press(A));
+    check(fake.clears == 1 && fake.lastRow == 29 && fake.lastSlot == 2, "Clear slot acts on the selected slot");
+    menu.update(press(Right));
+    menu.update(press(A));
+    check(fake.resets == 1 && fake.lastRow == 29, "Reset action");
+    menu.update(press(Right));
+    menu.update(press(A));
+    check(fake.resetAlls == 0 && contains(menu.view().items[2].label, "again"), "Reset all asks first");
+    menu.update(press(A));
+    check(fake.resetAlls == 1, "Reset all on the second A");
+    menu.update(press(A));
+    menu.update(press(Left));
+    menu.update(press(Right));
+    menu.update(press(A));
+    check(fake.resetAlls == 1, "moving away disarms Reset all");
+    menu.update(press(Right));
+    menu.update(press(A));
+    check(menu.phase() == HM::Phase::List && menu.focus() == 1, "Back returns to the list on Controls");
+
+    // The pointer: moving onto a slot focuses it; B (left click) there captures.
+    menu.update(press(A));
+    view = menu.view();
+    float x = 0.0f, y = 0.0f;
+    center(view.remap.cells[3][1], &x, &y);
+    menu.update(pointer(x, y));
+    check(menu.view().remap.focusRow == 3 && menu.view().remap.focusSlot == 1, "pointing at a slot focuses it");
+    const int begins = fake.begins;
+    menu.update(pointer(x, y, B));
+    check(fake.begins == begins + 1 && menu.view().remap.capturing, "clicking a slot captures");
+    // Closing the menu while capturing cancels the capture.
+    const int before = fake.cancels;
+    menu.startBlackOut();
+    check(fake.cancels == before + 1, "a black-out cancels the capture");
+
+    // Without a backend the page is the read-only summary.
+    HM::Menu summary = newMenu();
+    openRemapper(summary);
+    check(!summary.view().remap.active && summary.view().itemCount == 1, "no backend: the summary page");
+}
+
 void testBridgeInput() {
     HBMControllerData data;
     KPADStatus pads[WPAD_MAX_CONTROLLERS];
@@ -1308,6 +1506,7 @@ int main() {
     testBlackOut();
     testFocusAndRepeat();
     testControlsPage();
+    testRemapper();
     testModsPage();
     testModFolderPage();
     testProgressPage();

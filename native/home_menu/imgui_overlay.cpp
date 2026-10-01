@@ -357,6 +357,89 @@ void galaxyButton(ImDrawList* list, ImFont* font, float textSize, ImVec2 min, Im
     centeredText(list, font, textSize, labelWidth, center, ink, label, false);
 }
 
+
+// The Controls page's remapper: action names, then two keyboard/mouse and two
+// controller slots per row, each a small key cap; the focused slot is a gold
+// capsule ("Press..." while it waits for an input).
+void drawRemapTable(ImDrawList* list, ImFont* font, const ImageSpace& image, const RemapView& remap, float unit, float alpha) {
+    const ImVec2 areaMin = image.point(remap.area.x0, remap.area.y0);
+    const ImVec2 areaMax = image.point(remap.area.x1, remap.area.y1);
+    const float rowHeight = (areaMax.y - areaMin.y) / static_cast<float>(kRemapVisibleRows + 1);
+    const float textSize = std::min(rowHeight * 0.66f, image.height * 0.032f);
+    const float pad = (areaMax.x - areaMin.x) * 0.012f;
+    const float labelRight = image.point(remap.cells[0][0].x0, 0.0f).x;
+    const float rounding = rowHeight * 0.3f;
+
+    // Header: the two device columns, and where the list is.
+    list->AddRectFilled(areaMin, ImVec2(areaMax.x, areaMin.y + rowHeight), color(0.35f, 0.80f, 1.0f, 0.22f * alpha), rounding);
+    const float headerY = areaMin.y + rowHeight * 0.5f;
+    const ImU32 headerColor = color(0.60f, 0.92f, 1.0f, alpha);
+    const float keysX0 = image.point(remap.cells[0][0].x0, 0.0f).x, keysX1 = image.point(remap.cells[0][1].x1, 0.0f).x;
+    const float padsX0 = image.point(remap.cells[0][2].x0, 0.0f).x, padsX1 = image.point(remap.cells[0][3].x1, 0.0f).x;
+    centeredText(list, font, textSize, keysX1 - keysX0, ImVec2((keysX0 + keysX1) * 0.5f, headerY), headerColor, "Keyboard and mouse");
+    centeredText(list, font, textSize, padsX1 - padsX0, ImVec2((padsX0 + padsX1) * 0.5f, headerY), headerColor, "Controller");
+    char where[48];
+    std::snprintf(where, sizeof(where), "%d-%d of %d", remap.firstRow + 1, remap.firstRow + remap.rowCount, remap.totalRows);
+    leftText(list, font, textSize * 0.85f, labelRight - areaMin.x - 2.0f * pad, ImVec2(areaMin.x + pad, headerY),
+             color(0.75f, 0.88f, 1.0f, 0.85f * alpha), where);
+    // More rows above or below: small arrows at the table's right edge.
+    const float arrow = rowHeight * 0.22f;
+    const float arrowX = areaMax.x + pad * 1.6f;
+    if (remap.firstRow > 0) {
+        const float y = areaMin.y + rowHeight * 1.2f;
+        list->AddTriangleFilled(ImVec2(arrowX, y - arrow), ImVec2(arrowX - arrow, y + arrow * 0.6f),
+                                ImVec2(arrowX + arrow, y + arrow * 0.6f), color(0.60f, 0.92f, 1.0f, alpha));
+    }
+    if (remap.firstRow + remap.rowCount < remap.totalRows) {
+        const float y = areaMax.y - rowHeight * 0.2f;
+        list->AddTriangleFilled(ImVec2(arrowX, y + arrow), ImVec2(arrowX + arrow, y - arrow * 0.6f),
+                                ImVec2(arrowX - arrow, y - arrow * 0.6f), color(0.60f, 0.92f, 1.0f, alpha));
+    }
+
+    const float pulse = 0.65f + 0.35f * std::sin(static_cast<float>(ImGui::GetTime()) * 6.0f);
+    for (int r = 0; r < remap.rowCount; r++) {
+        const RemapRow& row = remap.rows[r];
+        const float top = areaMin.y + rowHeight * static_cast<float>(r + 1);
+        const float middle = top + rowHeight * 0.5f;
+        if (r % 2 == 0) {
+            list->AddRectFilled(ImVec2(areaMin.x, top), ImVec2(areaMax.x, top + rowHeight), color(1.0f, 1.0f, 1.0f, 0.06f * alpha),
+                                rounding);
+        }
+        if (r == remap.selectedRow) {
+            list->AddRect(ImVec2(areaMin.x, top), ImVec2(areaMax.x, top + rowHeight), color(0.98f, 0.80f, 0.22f, 0.55f * alpha),
+                          rounding, 0, unit * 1.5f);
+        }
+        // Changed from the default: the name in gold.
+        leftText(list, font, textSize, labelRight - areaMin.x - 2.0f * pad, ImVec2(areaMin.x + pad, middle),
+                 row.changed ? color(1.0f, 0.84f, 0.42f, alpha) : color(0.90f, 0.96f, 1.0f, alpha), row.label);
+        for (int slot = 0; slot < kRemapSlots; slot++) {
+            const ImVec2 min = image.point(remap.cells[r][slot].x0, remap.cells[r][slot].y0);
+            const ImVec2 max = image.point(remap.cells[r][slot].x1, remap.cells[r][slot].y1);
+            const bool focused = r == remap.focusRow && slot == remap.focusSlot;
+            const char* text = row.slots[slot];
+            if (focused) {
+                galaxyButton(list, font, textSize, min, max, true, unit * 0.6f, remap.capturing ? alpha * pulse : alpha,
+                             remap.capturing ? "Press..." : (text[0] != '\0' ? text : "-"));
+                continue;
+            }
+            const bool conflict = row.conflict[slot];
+            const float capRounding = (max.y - min.y) * 0.35f;
+            list->AddRectFilled(min, max, color(0.75f, 0.90f, 1.0f, (text[0] != '\0' ? 0.13f : 0.05f) * alpha), capRounding);
+            if (r == remap.selectedRow && slot == remap.selectedSlot) {
+                list->AddRect(min, max, color(0.98f, 0.80f, 0.22f, alpha), capRounding, 0, unit * 2.0f);
+            } else if (conflict) {
+                list->AddRect(min, max, color(1.0f, 0.55f, 0.25f, 0.9f * alpha), capRounding, 0, unit * 1.5f);
+            }
+            const ImU32 ink = text[0] == '\0' ? color(0.60f, 0.72f, 0.85f, 0.5f * alpha)
+                              : conflict      ? color(1.0f, 0.68f, 0.40f, alpha)
+                              : slot < 2      ? color(1.0f, 0.92f, 0.55f, alpha)
+                                              : color(0.62f, 0.86f, 1.0f, alpha);
+            centeredText(list, font, textSize * 0.92f, (max.x - min.x) * 0.9f, ImVec2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f),
+                         ink, text[0] != '\0' ? text : "-");
+        }
+    }
+}
+
 }  // namespace
 
 bool installGalaxyFonts(const char* fontArchive, std::string* error) {
@@ -562,6 +645,10 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
                              header ? headerColor : color(0.62f, 0.86f, 1.0f, alpha), view.lines[i].pad);
                 }
             }
+        }
+
+        if (view.remap.active) {
+            drawRemapTable(list, font, image, view.remap, unit, alpha);
         }
 
         for (int i = 0; i < view.itemCount; i++) {

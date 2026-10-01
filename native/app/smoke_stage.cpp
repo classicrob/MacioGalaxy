@@ -53,7 +53,19 @@ constexpr unsigned long kTourGap = 45;
 constexpr TourEntry kHomeTour[] = {
     {Button::Home, nullptr},      {Button::A, "home-list"},
     {Button::StickDown, nullptr}, {Button::A, nullptr},  // Controls
-    {Button::A, "home-controls"}, {Button::Plus, nullptr},
+    {Button::A, "home-controls"},
+    // The remapper: down to Cap throw (row 22), capture the Spin key (F, Spin's), see the
+    // conflict, choose Swap (Cancel is focused first: left twice), then leave.
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::A, nullptr},         {Button::A, "home-remap-capture"},
+    {Button::Spin, nullptr},      {Button::A, "home-remap-conflict"},
+    {Button::StickLeft, nullptr}, {Button::StickLeft, nullptr}, {Button::A, nullptr},
+    {Button::A, "home-remap-done"}, {Button::Plus, nullptr},
     {Button::StickDown, nullptr}, {Button::A, nullptr},  // Mods
     {Button::A, "home-mods"},
     // To Back (focus clamps there), then up: Mod folder, Level Select, Odyssey camera.
