@@ -360,6 +360,9 @@ void runSmoke(Driver* driver) {
     for (const Smoke::Press& press : step.presses) {
         Events::pressButton(static_cast<int>(press.button), press.down);
     }
+    if (step.menuWheel != 0.0f) {
+        Events::menuWheel(step.menuWheel);
+    }
     if (step.warp && !Smoke::warpPlayer(step)) {
         std::fprintf(stderr, "PETARI SMOKE: warp requested with no player to move\n");
     }

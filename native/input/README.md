@@ -163,6 +163,14 @@ pause while B is held. Backspace sends B for going back in menus.
 - **Home guard.** `assign`, `clearSlot` and `resetAction` refuse
   (`HomeUnreachable`) any change that leaves Home without a keyboard or mouse
   input.
+- **Menu scrolling.** `menuWheel(y)` takes the wheel as the system reports it
+  (the SDL3 adapter passes `event.wheel.y` without the FLIPPED correction, so
+  macOS natural scrolling is honoured; + scrolls toward the top).
+  `takeMenuScroll()` returns whole rows since the last call: 3 per wheel
+  notch, 1 per 2 units of precise (trackpad) scrolling, with the fraction
+  carried over. It also returns Page Up / Page Down presses, repeats
+  included. The Home menu takes them each frame it runs and discards them
+  when it opens. Page keys pressed during a capture are captured, not paged.
 - **controls.txt.** `load` gives the defaults for a missing file; for an
   unreadable or invalid one it gives the defaults too and returns false with
   a message, never failing startup. A file that leaves Home without a
@@ -385,8 +393,9 @@ mutations also fails a test:
 - the stick not zeroed while steering;
 - a steering hint that never lapses.
 
-`native/tests/input_remap_tests.cpp` (`ctest -R native_input_remap`, 64
-checks) covers capture (keys, mouse and controller buttons, Escape, repeats
+`native/tests/input_remap_tests.cpp` (`ctest -R native_input_remap`, 74
+checks) covers menu scrolling (notches, trackpad fractions, the cap, Page
+keys and repeats, a Page key captured), capture (keys, mouse and controller buttons, Escape, repeats
 and the release swallowed, held inputs released, cancel), slots, assign with
 check, swap, keep both and the other kind, trading slots, default sharing,
 the Home guard (clear, swap away, other kind), resets, and controls.txt: the

@@ -212,6 +212,42 @@ void testCapture() {
     In::resetForTesting();
 }
 
+void testMenuScroll() {
+    In::resetForTesting();
+    In::focusChanged(true);
+    check(In::takeMenuScroll().rows == 0, "no scrolling at first");
+    In::menuWheel(1.0f);
+    In::MenuScroll s = In::takeMenuScroll();
+    check(s.rows == 3 && s.pages == 0, "a wheel notch is 3 rows toward the top");
+    In::menuWheel(-2.0f);
+    check(In::takeMenuScroll().rows == -6, "two notches down");
+    // Trackpad: small precise deltas add up, the fraction carries over.
+    for (int i = 0; i < 5; i++) In::menuWheel(0.3f);
+    s = In::takeMenuScroll();
+    check(s.rows == 0, "0.75 rows of trackpad: nothing yet");
+    In::menuWheel(0.3f);
+    check(In::takeMenuScroll().rows == 0, "0.9 rows");
+    In::menuWheel(0.3f);
+    check(In::takeMenuScroll().rows == 1, "1.05 rows: one row");
+    check(In::takeMenuScroll().rows == 0, "taken once");
+    In::menuWheel(1000.0f);
+    check(In::takeMenuScroll().rows <= 100, "a burst is capped");
+    // Page Up/Down keys, repeats included, and they still reach nothing else.
+    In::keyEvent(78, true, false);
+    In::keyEvent(78, true, true);
+    In::keyEvent(78, false, false);
+    In::keyEvent(75, true, false);
+    In::keyEvent(75, false, false);
+    check(In::takeMenuScroll().pages == 1, "Page Down twice (a repeat), Page Up once");
+    // A Page key pressed during a capture is the captured input, not a page.
+    In::beginCapture();
+    In::keyEvent(78, true, false);
+    In::Binding got;
+    check(In::captureState(&got) == In::CaptureState::Captured && In::takeMenuScroll().pages == 0, "captured, not paged");
+    In::keyEvent(78, false, false);
+    In::resetForTesting();
+}
+
 std::string read(const std::filesystem::path& file) {
     std::ifstream in(file);
     std::stringstream text;
@@ -293,6 +329,7 @@ int main() {
     testHomeGuard();
     testReset();
     testCapture();
+    testMenuScroll();
     testFile();
     if (gFailures > 0) {
         std::fprintf(stderr, "%d of %d remap checks failed\n", gFailures, gChecks);

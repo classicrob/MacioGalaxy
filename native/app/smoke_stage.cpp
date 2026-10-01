@@ -47,13 +47,26 @@ constexpr float kPausedDrift = 1.0f;
 // with a mark labels the image dumps from then on (and taps nothing); the others tap a button.
 struct TourEntry {
     Button button;
-    const char* mark;  // null: tap the button
+    const char* mark;  // null: act (see kind)
+    enum Kind { Tap, Down, Up, Point, Wheel } kind = Tap;  // tap / hold / release the button, move the pointer, wheel
+    float u = 0.0f, v = 0.0f;  // Point: over the game image, 0..1; Wheel: u is the movement (+ toward the top)
 };
 constexpr unsigned long kTourGap = 45;
 constexpr TourEntry kHomeTour[] = {
     {Button::Home, nullptr},      {Button::A, "home-list"},
     {Button::StickDown, nullptr}, {Button::A, nullptr},  // Controls
     {Button::A, "home-controls"},
+    // Scrolling the list: two wheel notches down (6 rows), then drag the scrollbar's thumb to
+    // the bottom with the left mouse button (the thumb's centre after the wheel, for a 16:9
+    // image), then leave and come back so the remap below starts at the top.
+    {Button::A, nullptr, TourEntry::Wheel, -2.0f},
+    {Button::A, "home-scroll-wheel"},
+    {Button::B, nullptr, TourEntry::Point, 0.7915f, 0.4425f},
+    {Button::B, nullptr, TourEntry::Down},
+    {Button::B, nullptr, TourEntry::Point, 0.7915f, 0.97f},
+    {Button::A, "home-scroll-drag"},
+    {Button::B, nullptr, TourEntry::Up},
+    {Button::Plus, nullptr},      {Button::A, nullptr},
     // The remapper: down to Cap throw (row 22), capture the Spin key (F, Spin's), see the
     // conflict, choose Swap (Cancel is focused first: left twice), then leave.
     {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
@@ -639,6 +652,15 @@ void StageDriver::exercise(const Observation& o, Step& step) {
             if (entry.mark != nullptr) {
                 PetariNative::EfbDump::mark(entry.mark);
                 note(std::string("home tour: ") + entry.mark);
+            } else if (entry.kind == TourEntry::Point) {
+                step.pointer = true;
+                step.pointerU = entry.u;
+                step.pointerV = entry.v;
+            } else if (entry.kind == TourEntry::Wheel) {
+                step.menuWheel = entry.u;
+            } else if (entry.kind == TourEntry::Down || entry.kind == TourEntry::Up) {
+                step.presses.push_back({entry.button, entry.kind == TourEntry::Down});
+                step.assertFocus = true;
             } else {
                 tap(entry.button, entry.button == Button::Plus ? kPauseHold : kTapFrames, step);
             }

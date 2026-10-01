@@ -173,9 +173,9 @@ void testLifecycle() {
               std::strcmp(list.items[3].label, "My Progress") == 0 && std::strcmp(list.items[4].label, "Restart from Title") == 0 &&
               std::strcmp(list.items[5].label, "Quit") == 0,
           "list offers Resume, Controls, Mods, My Progress, Restart from Title, Quit");
-    check(list.panel.y0 >= -1.0f && list.panel.y1 <= 1.0f && list.items[5].rect.y1 < list.panel.y1 &&
-              list.messageY < list.items[0].rect.y0,
-          "six items fit inside the panel and the image");
+    check(list.bands && list.panel.y0 >= -1.0f && list.messageY < list.panel.y1 && list.items[0].rect.y0 > list.panel.y1 &&
+              list.items[5].rect.y1 < 0.9f,
+          "the list: title and message in the top band, six items between the bands");
     check(list.items[0].focused && !list.items[1].focused, "Resume focused first");
 
     for (int i = 0; i < 300; i++) {
@@ -487,9 +487,9 @@ void testFocusAndRepeat() {
     // Widescreen keeps the panel's shape.
     menu = newMenu();
     openToList(menu);
-    const float narrow = menu.view().panel.x1;
+    const float narrow = menu.view().items[0].rect.x1;
     menu.setWidescreen(true);
-    check(std::fabs(menu.view().panel.x1 - narrow * 608.0f / 832.0f) < 1e-5f, "16:9 narrows the panel in pointer space");
+    check(std::fabs(menu.view().items[0].rect.x1 - narrow * 608.0f / 832.0f) < 1e-5f, "16:9 narrows the buttons in pointer space");
     center(menu.view().items[0].rect, &x, &y);
     check(menu.view().items[0].rect.x1 < narrow, "items narrow too");
 }
@@ -789,6 +789,95 @@ void testRemapper() {
     check(!summary.view().remap.active && summary.view().itemCount == 1, "no backend: the summary page");
 }
 
+// Scrolling the remapper: wheel rows, pages (Page Up/Down, the controller's
+// LB/LT), and the scrollbar with the pointer (arrows, track, dragging the thumb).
+void testRemapperScrolling() {
+    FakeControls fake;
+    fake.rows = 34;
+    HM::Menu menu = newMenu();
+    menu.setControlsBackend(&fake);
+    openRemapper(menu);
+
+    HM::FrameInput wheel;
+    wheel.scrollRows = 3;
+    menu.update(wheel);
+    HM::View view = menu.view();
+    check(view.remap.firstRow == 3 && view.remap.focusRow == 0, "the wheel scrolls; the focus stays on a shown row (row 3)");
+    wheel.scrollRows = 100;
+    menu.update(wheel);
+    check(menu.view().remap.firstRow == 34 - HM::kRemapVisibleRows, "the wheel stops at the end");
+    wheel.scrollRows = -100;
+    menu.update(wheel);
+    view = menu.view();
+    check(view.remap.firstRow == 0 && view.remap.focusRow + view.remap.firstRow == HM::kRemapVisibleRows - 1,
+          "back to the top; the focus kept to the last shown row");
+
+    HM::FrameInput page;
+    page.scrollPages = 1;
+    menu.update(page);
+    view = menu.view();
+    check(view.remap.firstRow == HM::kRemapVisibleRows && view.remap.firstRow + view.remap.focusRow == 2 * HM::kRemapVisibleRows - 1,
+          "Page Down moves the list and the focus a page");
+    menu.update(press(HM::Button::C));
+    check(menu.view().remap.firstRow == 0, "the controller's LB (Nunchuk C) pages up");
+    menu.update(press(HM::Button::Z));
+    check(menu.view().remap.firstRow == HM::kRemapVisibleRows, "LT (Nunchuk Z) pages down");
+    page.scrollPages = -5;
+    menu.update(page);
+    check(menu.view().remap.firstRow == 0 && menu.view().remap.focusRow == 0, "Page Up stops at the top");
+
+    // The scrollbar: the thumb is the shown fraction; arrows step a row; the track pages.
+    view = menu.view();
+    const HM::Rect track = view.remap.track;
+    const float thumbShare = (view.remap.thumb.y1 - view.remap.thumb.y0) / (track.y1 - track.y0);
+    check(std::fabs(thumbShare - 11.0f / 34.0f) < 0.01f && view.remap.thumb.y0 == track.y0, "the thumb: 11 of 34, at the top");
+    float x = 0.0f, y = 0.0f;
+    center(view.remap.downArrow, &x, &y);
+    menu.update(pointer(x, y));
+    menu.update(pointer(x, y, B));
+    check(menu.view().remap.firstRow == 1 && menu.phase() == HM::Phase::Controls, "the down arrow scrolls one row");
+    center(view.remap.upArrow, &x, &y);
+    menu.update(pointer(x, y, B));
+    check(menu.view().remap.firstRow == 0, "the up arrow scrolls back");
+    x = (track.x0 + track.x1) * 0.5f;
+    menu.update(pointer(x, track.y1 - 0.01f, B));
+    check(menu.view().remap.firstRow == HM::kRemapVisibleRows, "a click on the track below the thumb pages down");
+    menu.update(pointer(x, track.y0 + 0.01f, B));
+    check(menu.view().remap.firstRow == 0, "above the thumb pages up");
+
+    // Drag the thumb to the bottom and back to the middle.
+    view = menu.view();
+    const float grabY = (view.remap.thumb.y0 + view.remap.thumb.y1) * 0.5f;
+    menu.update(pointer(x, grabY, B));
+    check(menu.view().remap.dragging, "pressing on the thumb grabs it");
+    HM::FrameInput drag = pointer(x, track.y1 + 0.5f);
+    drag.hold = B;
+    menu.update(drag);
+    check(menu.view().remap.firstRow == 34 - HM::kRemapVisibleRows && menu.view().remap.dragging,
+          "dragging past the end shows the last rows");
+    drag.pointerY = grabY + ((track.y1 - track.y0) - (view.remap.thumb.y1 - view.remap.thumb.y0)) * 0.5f;
+    menu.update(drag);
+    const int middle = menu.view().remap.firstRow;
+    check(middle >= 10 && middle <= 13, "dragging to the middle (" + std::to_string(middle) + ")");
+    menu.update(pointer(x, drag.pointerY));
+    check(!menu.view().remap.dragging && menu.view().remap.firstRow == middle, "releasing drops the thumb where it is");
+    check(menu.phase() == HM::Phase::Controls && fake.begins == 0, "scrolling never captured or left the page");
+
+    // A click on the panel's empty space is not "back"; outside the panel it is.
+    view = menu.view();
+    menu.update(pointer(0.0f, (view.panel.y0 + view.titleY) * 0.5f, B));
+    check(menu.phase() == HM::Phase::Controls, "a click inside the panel stays");
+    menu.update(pointer(view.panel.x1 + 0.05f, 0.0f, B));
+    check(menu.phase() == HM::Phase::List, "a click outside the panel goes back");
+
+    // No scrolling while capturing.
+    openRemapper(menu);
+    menu.update(press(A));
+    wheel.scrollRows = 5;
+    menu.update(wheel);
+    check(menu.view().remap.firstRow == 0 && menu.view().remap.capturing, "the wheel does nothing during a capture");
+}
+
 void testBridgeInput() {
     HBMControllerData data;
     KPADStatus pads[WPAD_MAX_CONTROLLERS];
@@ -878,7 +967,7 @@ void testWrapper() {
     };
     frame(WPAD_BUTTON_HOME, 0);
     check(HM::publishedView().visible, "HBMDraw publishes the view");
-    check(HM::publishedView().panel.x1 < 0.42f, "adjust flag applied");
+    check(HM::publishedView().items[0].rect.x1 < 0.33f, "adjust flag applied");
     for (int i = 0; i < 12; i++) {
         frame(0, 0);
     }
@@ -945,7 +1034,7 @@ struct Bounds {
     int vertices = 0;
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
     float blackAlpha = 0.0f;  // most opaque pure-black vertex
-    float dimAlpha = 0.0f;    // most opaque vertex of the teal dim
+    float dimAlpha = 0.0f;    // most opaque vertex of the pause layout's teal bands
     bool focusColor = false;
 };
 
@@ -970,7 +1059,7 @@ Bounds drawOverlay(float x, float y, float w, float h) {
             if (c.x == 0.0f && c.y == 0.0f && c.z == 0.0f) {
                 bounds.blackAlpha = std::fmax(bounds.blackAlpha, c.w);
             }
-            if (c.x == 0.0f && std::fabs(c.y - 0.16f) < 0.01f && std::fabs(c.z - 0.26f) < 0.01f) {
+            if (std::fabs(c.x - 0.03f) < 0.01f && std::fabs(c.y - 0.43f) < 0.01f && std::fabs(c.z - 0.53f) < 0.01f) {
                 bounds.dimAlpha = std::fmax(bounds.dimAlpha, c.w);
             }
             if (c.w > 0.99f && c.x > 0.9f && c.y > 0.7f && c.z < 0.3f) {
@@ -1004,7 +1093,7 @@ void testImGuiOverlay() {
     check(list.x0 < 161.0f && list.y1 > 759.0f, "dim covers the image");
     check(list.focusColor, "focused item highlighted");
     check(list.blackAlpha < 0.01f, "nothing is black while the list is shown");
-    check(std::fabs(list.dimAlpha - 0.65f) < 0.01f, "the game behind is tinted teal, as the game's pause screen is");
+    check(std::fabs(list.dimAlpha - 0.8f) < 0.01f, "teal bands top and bottom, as the game's pause screen has");
     check(!ImGui::GetIO().WantCaptureMouse && !ImGui::GetIO().WantCaptureKeyboard, "overlay takes no input");
 
     // Every confirmation's text fits the panel, in 4:3 and 16:9 images.
@@ -1507,6 +1596,7 @@ int main() {
     testFocusAndRepeat();
     testControlsPage();
     testRemapper();
+    testRemapperScrolling();
     testModsPage();
     testModFolderPage();
     testProgressPage();

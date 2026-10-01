@@ -267,6 +267,7 @@ struct Step {
     bool pointer = false;      // move the pointer to (u, v), normalised over the game image
     float pointerU = 0.0f;
     float pointerV = 0.0f;
+    float menuWheel = 0.0f;    // a wheel movement for the native menus (Input::menuWheel; + toward the top)
     bool requestQuit = false;  // press the power button (once, when the result is decided)
     // Test-only player warp (stage script, PETARI_STAGE_WARP): to warpName (a GeneralPos, via
     // MR::setPlayerPos) when not empty, else to (warpX, warpY, warpZ) via MR::setPlayerPosAndWait.

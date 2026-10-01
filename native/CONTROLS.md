@@ -33,9 +33,14 @@ F1 → Controls lists every action with four slots: two for keyboard keys or
 mouse buttons, two for controller buttons. The Wii button each action stands
 for is shown as the game's own icon.
 
+- The list scrolls: the mouse wheel or a two-finger trackpad swipe, the
+  scrollbar on the right (drag its thumb, click the track to page, or click
+  its arrows), Page Up / Page Down, the controller's LB / LT, or moving past
+  the first or last shown row.
 - Move to a slot (arrow keys, WASD, the controller's stick or D-pad, or point
-  with the mouse) and press A (Space, or click it). Then press the key, mouse
-  button or controller button you want there. A controller button pressed for
+  at it with the mouse) and press A (Space), or click it. Then press the key,
+  mouse button or controller button you want there. A click that starts the
+  wait is not taken as the new input; the next press is. A controller button pressed for
   a keyboard slot goes to the controller slot of the same number, and the
   other way round. That press is not sent to the game.
 - Escape cancels, and so do 10 seconds without a press. Escape itself cannot
