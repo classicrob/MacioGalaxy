@@ -48,7 +48,10 @@
 //  18. "cappy throws": standing, a throw every 90 frames, five times; logs the
 //      enemy hits and the coins / Star Bits Cappy collected (aim them with the
 //      test-only PETARI_CAPPY_TEST_AIM=enemy|item, near enemies or items, e.g.
-//      with PETARI_STAGE_WARP).
+//      with PETARI_STAGE_WARP);
+//  19. "cappy standstill loop": the user's playtest loop (2026-10-01): a
+//      standstill jump held 24 frames, the throw at 19, Jump at 40 (the
+//      jump-press dive), Jump 12 frames after the bounce (the second dive).
 // The Cappy tasks need PETARI_MODS=OdysseyMovement,Cappy and are skipped
 // otherwise (PETARI_CAPPY_TRACE=1 logs Cappy's state each frame).
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example
