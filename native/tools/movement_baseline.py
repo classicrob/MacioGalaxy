@@ -10,7 +10,11 @@ on a fresh observatory fixture and compares its MOVEMENT lines with:
   movement_baseline.py --app build/macos-gx/native/app/Petari.app/Contents/MacOS/Petari --output build/mv-baseline
   movement_baseline.py ... --mods off      # only the unmodified game
 
-Launch it through the app lock in shared checkouts. Exit status 0 when every
+Launch it through the app lock in shared checkouts, with the quiet class
+(PETARI_LOCK_CLASS=quiet): the jump heights depend on how many frames A is held,
+and under machine load a harness tap can reach the game a frame longer or
+shorter (seen on 2026-10-01: tap 166.7/176.6 instead of 156.4 while other builds
+ran; exact again when quiet). Exit status 0 when every
 value matches, 1 otherwise. Only moves whose result does not depend on the
 run-up are compared (the long jump, dive and flips after a run vary with where
 the run ends).
