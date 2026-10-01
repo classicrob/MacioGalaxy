@@ -74,6 +74,20 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
     ground.cappy = 2;
     mTasks.push_back(loop);
     mTasks.push_back(ground);
+    // "Jump in the air dives" (OdysseyJumpDive): a second press mid-air dives; one
+    // just before landing is a jump from the ground; a quick double tap is not.
+    Task jumpDive{"jump dive", 6, false, 0, false};
+    jumpDive.airPress = 12;
+    jumpDive.land = 30;
+    Task preLanding{"jump press before landing", 15, false, 0, false};
+    preLanding.airPress = 37;  // the held standstill jump lands 40 frames after its press
+    preLanding.land = 30;
+    Task doubleTap{"jump double tap", 1, false, 0, false};
+    doubleTap.airPress = 3;
+    doubleTap.land = 30;
+    mTasks.push_back(jumpDive);
+    mTasks.push_back(preLanding);
+    mTasks.push_back(doubleTap);
     if (const char* dir = std::getenv("PETARI_MOVEMENT_WALL_DIR"); dir != nullptr) {
         const std::string d(dir);
         mWallStick = d == "down" ? Button::StickDown : d == "left" ? Button::StickLeft : d == "right" ? Button::StickRight : Button::StickUp;
@@ -434,10 +448,13 @@ Step MovementDriver::step(const Observation& o) {
     }
     case Phase::Landed: {
         mSpeeds.push_back(horizontal);
+        if (!o.playerOnGround && mRetakeoff < 0) mRetakeoff = static_cast< long >(mPhaseFrames);
         if (static_cast< int >(mPhaseFrames) >= task.land) {
             std::string speeds;
             for (size_t i = 0; i < mSpeeds.size(); i += 5) speeds += (speeds.empty() ? "" : " ") + num(mSpeeds[i]);
-            note(std::string("MOVEMENT ") + task.name + ": speed " + num(mSpeeds[0]) + " on the landing frame; every 5th frame: " + speeds);
+            note(std::string("MOVEMENT ") + task.name + ": speed " + num(mSpeeds[0]) + " on the landing frame; every 5th frame: " + speeds +
+                 (mRetakeoff >= 0 ? "; took off again " + std::to_string(mRetakeoff) + " frames after landing" : "; stayed on the ground"));
+            mRetakeoff = -1;
             ++mTask;
             mPhase = Phase::Land;
             mPhaseFrames = 0;
@@ -534,6 +551,11 @@ Step MovementDriver::step(const Observation& o) {
         break;
     }
     case Phase::Jump: {
+        if (task.airPress > 0 && static_cast< int >(mPhaseFrames) == task.airPress) {
+            tap(Button::A, 2, step);
+            note(std::string(task.name) + ": A again " + std::to_string(task.airPress) + " frames after the jump, " +
+                 (o.playerOnGround ? "on the ground" : "in the air"));
+        }
         if (task.wall && mPhaseFrames == 1) {
             // The press frame still slid down the wall: measure from the take-off.
             mStartX = pos.x; mStartY = pos.y; mStartZ = pos.z;

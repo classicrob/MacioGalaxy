@@ -3,7 +3,9 @@
 // turns it on, so an unmodified game and every test run are untouched.
 //
 // Settings live in mods.txt in the user directory, one "Name=on|off" line per
-// mod; PETARI_MODS=<name>,<name> (or "none") overrides the file for a run.
+// mod; a mod with no line has its default (off, except OdysseyJumpDive).
+// PETARI_MODS=<name>,<name> (or "none") overrides the file for a run: the
+// listed mods on, the others at their default; "-<name>" turns one off.
 // The F1 menu's Mods page toggles them and saves the file.
 
 #include <filesystem>
@@ -16,6 +18,7 @@ enum class Mod : int {
     ShootEnemy,       // one button fires a Star Bit at the nearest enemy on screen
     OdysseyMovement,  // Mario moves with Super Mario Odyssey's physics (docs/dev/ODYSSEY_MOVEMENT.md); no button
     Cappy,            // Odyssey's cap throw and cap bounce (docs/dev/CAPPY.md); needs OdysseyMovement
+    OdysseyJumpDive,  // with OdysseyMovement: pressing Jump in the air dives; ON unless turned off
     Count
 };
 

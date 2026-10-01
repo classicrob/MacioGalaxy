@@ -141,7 +141,7 @@ struct Rect {
 
 constexpr int kMaxItems = 8;
 constexpr int kMaxControls = 20;
-constexpr int kMaxMods = 4;
+constexpr int kMaxMods = 5;
 constexpr int kMaxFolderMods = 64;   // detected disc-file mods (native/MODS.md)
 constexpr int kFolderPageSize = 3;   // toggles per page of the Mod folder page
 

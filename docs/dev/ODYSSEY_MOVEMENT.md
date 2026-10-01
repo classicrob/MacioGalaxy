@@ -97,6 +97,22 @@ lava tile damages Mario. No standing glide, wrong facing, speed jump or launch
 at gravity changes was seen. Good Egg's flip-panel cube and egg road could not
 be reached by warping (death cube; Pull-Star posts), so no cube face was tested.
 
+Jump in the air dives (Mods::Mod::OdysseyJumpDive, default on; user request
+2026-10-01): MarioJump's procJump air branch dives on a new Jump press
+(`checkTrgA`) when: the mod and the option are on; normal Mario on foot, not
+swimming, no ground pound or tornado (procJump's plain branch already excludes
+every status: wall, hang, pole, swim, Pull Star...); a mod jump or fall kind
+(jumps 1-3, flips, ground-pound jump, wall jump, fall, Cappy's hop and bounces;
+not the dive, long jump or dive cap bounce) or a plain Galaxy jump/fall (_430
+0-4, 6, 7); more than 6 airborne frames; no dive yet this airtime; and the ground
+not within ContinuousJumpPreInputFrame (5) frames: `odysseyLandingSoon` steps
+the air model (or Galaxy's jump vector as a fall) from the current height above
+the ground (mVerticalSpeed). It is the same dive as ground pound + Spin
+(`odysseyStartDive`), so the dive's cap bounce works too. Harness: "jump dive"
+(A again 12 frames in: dives, leap pose, belly landing), "jump press before
+landing" (A 3 frames before landing: takes off again 1 frame after landing, as
+with the option off) and "jump double tap" (A 3 frames in: no dive).
+
 On Good Egg (EggStarGalaxy, planet gravity) with the mod on, the stage smoke
 passes and the same harness measured the standstill jumps 258.000 / 105.000,
 the ground-pound jump 513.500, the running jump 312.000 and the triple jump

@@ -39,6 +39,14 @@ for one run). Switching it mid-air takes effect from the next jump. Swimming,
 the power-up suits (Bee, Boo, Spring, Fire, Ice, Flying) and riding things stay
 Galaxy's.
 
+"Jump in the air dives" (`OdysseyJumpDive` in `mods.txt`, a line on the Mods
+page) is on by default with Odyssey movement: pressing Jump again in the air
+dives, once per jump, from Mario's normal jumps and falls only (not in the first
+6 frames of a jump, nor within 5 frames of landing, where the press is the next
+jump on landing as before; never on walls, poles, Pull Stars, in water or as Bee,
+Boo, Spring, Fire, Ice or Flying Mario). Turn it off to dive only from a ground
+pound.
+
 | Move | Keyboard | Controller | Numbers (measured in the game unless marked) |
 | --- | --- | --- | --- |
 | Run | WASD | left stick | 14 u/f top speed after 40 frames (SMO 14) |
@@ -48,7 +56,7 @@ Galaxy's.
 | Sideflip | run, flick the stick back, Space | run, flick the stick back, bottom button | 496 high |
 | Ground pound | Shift in the air | LT in the air | falls at up to 45 u/f (model) |
 | Ground-pound jump | Space 5–30 frames after a ground pound lands | bottom button, same timing | 513.5 high |
-| Dive | F during a ground pound | left button / RB during a ground pound | 182 up, 20 u/f forward; landing with a direction held rolls forward into a run at the landing speed (about 20 u/f); stick released: belly landing and stop |
+| Dive | F during a ground pound, or Space again in the air ("Jump in the air dives", on by default) | left button / RB during a ground pound, or the bottom button again in the air | 182 up, 20 u/f forward; landing with a direction held rolls forward into a run at the landing speed (about 20 u/f); stick released: belly landing and stop |
 | Roll | Shift, then F, on the ground | LT, then left button / RB | 20 u/f, slowing 0.2% a frame; ends below 17 (about 80 frames), then runs on at that speed with a direction held, or skids to a stop with the stick released |
 | Roll boost | F while rolling (15 frames apart) | left button / RB while rolling | back up to 23 u/f |
 | Long jump out of a roll | Space while rolling | bottom button while rolling | as the long jump |

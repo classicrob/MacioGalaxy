@@ -49,6 +49,12 @@ namespace {
     bool sOdysseyGroundPoundJump = false;  // the next tryJump is a ground-pound jump
     PetariNative::Odyssey::Air sOdysseyLanded = PetariNative::Odyssey::Air::None;  // the mod's move that just landed (doLanding)
     constexpr f32 kOdysseyDiveLeapRate = 2.2f;  // the long-jump leap (49 frames) reaches its end ~22 frames into a dive
+    // "Jump in the air dives" (Mods::Mod::OdysseyJumpDive, on by default): Jump
+    // pressed again in the air dives, from the mod's jumps and plain falls only.
+    constexpr int kModOdysseyJumpDive = 4;
+    constexpr s32 kJumpDiveMinFrames = 6;  // airborne frames before a press can dive (a double tap or mash does not)
+    s32 sOdysseyAirFrames = 0;             // frames in procJump's air branch since the last landing (or wall jump)
+    bool sOdysseyAirDived = false;         // one jump dive per airtime
 
     bool odysseyOn() { return petari_mod_enabled(kModOdysseyMovement); }
 
@@ -147,6 +153,80 @@ void petariOdysseyCapBounce(Mario* pMario) {
     std::fprintf(stderr, "[odyssey] cap bounce (kind %d) from (%.3f, %.3f, %.3f)\n", static_cast< int >(kind), m.mPosition.x,
                  m.mPosition.y, m.mPosition.z);
 }
+#endif
+
+#ifdef PETARI_NATIVE
+namespace {
+    // OdysseyMovement: SMO's dive (20 forward, 28 up, gravity 2.0) from the air,
+    // for Spin in a ground pound (procHipDrop) and Jump in the air (procJump).
+    // Galaxy has no dive; it uses _430 5 (the long jump's type, which also keeps a
+    // new ground pound from starting, as in SMO) with Galaxy's long-jump leap,
+    // played fast enough to reach its end (both arms swept back, the pose a long
+    // jump settles into when it flies long) and held there (procJump); it lands
+    // running or in a belly flop (doLanding).
+    void odysseyStartDive(Mario& m, const char* pFrom) {
+        m.mMovementStates._B = false;
+        m._424 = 0;
+        m._430 = 5;
+        m.stopAnimation(nullptr);
+        m.changeAnimationNonStop("幅とび");
+        m.changeAnimation(nullptr, "落下");
+        m.playSound("声高飛び込み");
+        m.playSound("ジャンプ踏切");
+        TVec3f up(-m.mActor->_240);
+        MR::normalizeOrZero(&up);
+        odysseyStart(PetariNative::Odyssey::Air::Dive, m.getAirFrontVec(), up, 0.0f, m._430);
+        sOdyssey.lastChain = -1;
+        sOdysseyAirDived = true;
+        std::fprintf(stderr, "[odyssey] dive (%s) from (%.3f, %.3f, %.3f)\n", pFrom, m.mPosition.x, m.mPosition.y, m.mPosition.z);
+    }
+
+    // Whether the ground is within ContinuousJumpPreInputFrame frames along the
+    // current air motion (the mod's model, or Galaxy's jump vector as a plain
+    // fall): a Jump press then belongs to the landing (the game's buffered double,
+    // triple or ground-pound jump), not to a dive.
+    bool odysseyLandingSoon(const Mario& m) {
+        TVec3f up(-m.mActor->_240);
+        MR::normalizeOrZero(&up);
+        PetariNative::Odyssey::AirState s;
+        if (sOdyssey.active) {
+            s = sOdyssey.air;
+        } else {
+            s = PetariNative::Odyssey::startAir(PetariNative::Odyssey::Air::Fall, 0.0f);
+            s.up = up.dot(m.mJumpVec);
+        }
+        f32 height = m.mVerticalSpeed;  // distance to the ground below, along gravity
+        for (int i = 0; i < PetariNative::Odyssey::Const::ContinuousJumpPreInputFrame; ++i) {
+            height += PetariNative::Odyssey::stepAir(s, false, 0.0f, 0.0f);
+            if (height <= 0.0f) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool odysseyJumpDiveKind() {
+        if (!sOdyssey.active) {
+            return true;  // a plain Galaxy fall or jump (checked by _430 at the call)
+        }
+        switch (sOdyssey.air.kind) {
+        case PetariNative::Odyssey::Air::Jump1:
+        case PetariNative::Odyssey::Air::Jump2:
+        case PetariNative::Odyssey::Air::Jump3:
+        case PetariNative::Odyssey::Air::Backflip:
+        case PetariNative::Odyssey::Air::Sideflip:
+        case PetariNative::Odyssey::Air::GroundPoundJump:
+        case PetariNative::Odyssey::Air::WallJump:
+        case PetariNative::Odyssey::Air::Fall:
+        case PetariNative::Odyssey::Air::CapThrow:
+        case PetariNative::Odyssey::Air::CapBounce:
+        case PetariNative::Odyssey::Air::GroundPoundCapBounce:
+            return true;
+        default:
+            return false;  // the dive itself, the long jump (as in SMO), the dive's cap bounce
+        }
+    }
+}  // namespace
 #endif
 
 void MarioJump_FORCE_MATCH_SDATA2() {
@@ -492,6 +572,8 @@ void Mario::tryJump() {
 
 #ifdef PETARI_NATIVE
     sOdyssey.active = false;
+    sOdysseyAirFrames = 0;  // a new airtime (also after a landing that skipped procJump's, e.g. water)
+    sOdysseyAirDived = false;
     if (odysseyJump) {
         TVec3f up(-mActor->_240);
         MR::normalizeOrZero(&up);
@@ -1113,6 +1195,7 @@ void Mario::tryWallJump(const TVec3f& rVec, bool a2) {
         odysseyStart(PetariNative::Odyssey::Air::WallJump, rVec, up, 0.0f, _430);
         sOdyssey.lastChain = -1;
         petariCappyWallJump();  // Cappy mod: no cap bounce until the next landing (SMO)
+        sOdysseyAirFrames = 0;  // the wall jump's own press does not dive
     }
 #endif
     return;
@@ -1673,6 +1756,17 @@ void Mario::procJump(bool a1) {
             std::fprintf(stderr, "[odyssey] jump type %d became %d after %d frames: the game's own physics from here\n",
                          static_cast< int >(sOdyssey.jumpKind), static_cast< int >(_430), sOdyssey.air.frame);
         }
+        ++sOdysseyAirFrames;
+        // "Jump in the air dives": a new Jump press, not in the first frames of the
+        // jump, once per airtime, from the mod's jumps and falls of normal Mario on
+        // foot (procJump's plain air branch: no wall, swim, hang, pole, Pull Star or
+        // other status, no special player mode, no ground pound or tornado), and not
+        // when the ground is near enough that the press is a buffered landing jump.
+        if (odysseyOn() && petari_mod_enabled(kModOdysseyJumpDive) && getPlayerMode() == 0 && !isSwimming() && !mMovementStates._B &&
+            !mMovementStates._F && !sOdysseyAirDived && sOdysseyAirFrames > kJumpDiveMinFrames &&
+            (_430 <= 4 || _430 == 6 || _430 == 7) && odysseyJumpDiveKind() && checkTrgA() && !odysseyLandingSoon(*this)) {
+            odysseyStartDive(*this, "Jump in the air");
+        }
         if (sOdyssey.active) {
             // This frame's velocity from the model, in the current gravity frame:
             // front/side across gravity, up against it (planets turn the frame).
@@ -1761,6 +1855,8 @@ void Mario::procJump(bool a1) {
 #ifdef PETARI_NATIVE
         sOdysseyLanded = sOdyssey.active ? sOdyssey.air.kind : PetariNative::Odyssey::Air::None;
         sOdyssey.active = false;
+        sOdysseyAirFrames = 0;
+        sOdysseyAirDived = false;
         PetariNative::Odyssey::Live::noSpinAir = false;
         PetariNative::Odyssey::Live::airKind = PetariNative::Odyssey::Air::None;
 #endif
@@ -2019,26 +2115,8 @@ void Mario::procHipDrop() {
     if (odysseyOn() && getPlayerMode() == 0 && !mMovementStates._1 &&
         (PetariNative::Odyssey::Live::spinBuffer > 0 || mActor->isRequestSpin())) {
         PetariNative::Odyssey::Live::spinBuffer = 0;
-        // SMO's dive: Spin during a ground pound in the air (wind-up or fall) dives
-        // forward along the facing: 20 forward, 28 up, gravity 2.0. Galaxy has no
-        // dive; it uses _430 5 (the long jump's type, which also keeps a new ground
-        // pound from starting, as in SMO) with Galaxy's long-jump leap, played fast
-        // enough to reach its end (both arms swept back, the pose a long jump settles
-        // into when it flies long) and held there (procJump); it lands in a belly
-        // flop (doLanding).
-        mMovementStates._B = false;
-        _424 = 0;
-        _430 = 5;
-        stopAnimation(nullptr);
-        changeAnimationNonStop("幅とび");
-        changeAnimation(nullptr, "落下");
-        playSound("声高飛び込み");
-        playSound("ジャンプ踏切");
-        TVec3f up(-mActor->_240);
-        MR::normalizeOrZero(&up);
-        odysseyStart(PetariNative::Odyssey::Air::Dive, getAirFrontVec(), up, 0.0f, _430);
-        sOdyssey.lastChain = -1;
-        std::fprintf(stderr, "[odyssey] dive from (%.3f, %.3f, %.3f)\n", mPosition.x, mPosition.y, mPosition.z);
+        // SMO's dive: Spin during a ground pound in the air (wind-up or fall).
+        odysseyStartDive(*this, "ground pound + Spin");
         return;
     }
 #endif
