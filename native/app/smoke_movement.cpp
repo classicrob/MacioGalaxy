@@ -76,9 +76,15 @@ MovementDriver::MovementDriver(unsigned long frameLimit) : mBoot(frameLimit + 1,
     ground.cappy = 2;
     Task throws{"cappy throws", 1, false, 0, false};
     throws.cappy = 3;
+    // The user's loop (playtest recording 2026-10-01 15:20, frames 15677-15780):
+    // standing, Jump held 24 frames, the throw at 19, Jump at 40 (the jump-press
+    // dive), Jump again 12 frames after the bounce (the second dive).
+    Task standstill{"cappy standstill loop", 24, false, 0, false};
+    standstill.cappy = 4;
     mTasks.push_back(loop);
     mTasks.push_back(ground);
     mTasks.push_back(throws);
+    mTasks.push_back(standstill);
     // "Jump in the air dives" (OdysseyJumpDive): a second press mid-air dives; one
     // just before landing is a jump from the ground; a quick double tap is not.
     Task jumpDive{"jump dive", 6, false, 0, false};
@@ -614,7 +620,7 @@ Step MovementDriver::step(const Observation& o) {
         const V start{mStartX, mStartY, mStartZ};
         const V upStart{mUpX, mUpY, mUpZ};
         const float height = dot(sub(pos, start), upStart);
-        if (mPhaseFrames == 1 && task.cappy == 1) mBounceStart = petari_cappy_bounces();
+        if (mPhaseFrames == 1 && (task.cappy == 1 || task.cappy == 4)) mBounceStart = petari_cappy_bounces();
         if (!o.playerOnGround) mLeftGround = true;
         if (task.cappy == 3) {
             // Standing: a throw every 90 frames, five times (aim them with
@@ -633,6 +639,16 @@ Step MovementDriver::step(const Observation& o) {
                 mReady = 0;
             }
             break;
+        }
+        if (task.cappy == 4) {
+            if (mPhaseFrames == 19) {
+                tap(Button::CapThrow, kTapFrames, step);
+                PetariNative::EfbDump::mark("cappy throw");
+            }
+            if (mPhaseFrames == 40) {
+                tap(Button::A, kTapFrames, step);
+                PetariNative::EfbDump::mark("cappy dive");
+            }
         }
         if (task.cappy == 1) {
             // Running jump (A held 10), the throw at 6, a ground pound at 18, the
@@ -674,8 +690,12 @@ Step MovementDriver::step(const Observation& o) {
                 tap(Button::CapThrow, kTapFrames, step);
                 PetariNative::EfbDump::mark("cappy dive 2");
             }
+            if (task.cappy == 4 && mPhaseFrames == mBounceFrame + 12) {
+                tap(Button::A, kTapFrames, step);
+                PetariNative::EfbDump::mark("cappy dive 2");
+            }
         }
-        if (mLeftGround && o.playerOnGround && mPhaseFrames > 10 && (task.cappy == 1 || mDive2 || mBounced)) {
+        if (mLeftGround && o.playerOnGround && mPhaseFrames > 10 && (task.cappy == 1 || task.cappy == 4 || mDive2 || mBounced)) {
             if (mStickHeld) {
                 step.presses.push_back({Button::StickUp, false});
                 mStickHeld = false;

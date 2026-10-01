@@ -25,7 +25,12 @@ constexpr float GroundBrakeRate = 0.95f;  // SpinBrakeRate (D)
 constexpr int JumpLockGround = 13;     // no jump or ground pound this many frames after the press (C)
 constexpr int JumpLockAir = 9;
 // Cappy's flight (C: the sheet's measured throw, 678 u by frame 21).
-constexpr float StartDistance = 182.0f;  // ahead of Mario on the first frame
+constexpr float StartDistance = 182.0f;  // ahead of Mario on the first frame (measured)
+// Drawn from Mario's hand: the first frames come out from EmergeDistance and
+// reach the measured line on frame EmergeFrames + 1 (I: the measurement's
+// 182-unit first step reads as a pop from his head on screen).
+constexpr float EmergeDistance = 50.0f;
+constexpr int EmergeFrames = 3;
 constexpr float StartHeight = 70.0f;     // above Mario's feet, along -gravity
 constexpr float CruiseSpeed = 32.0f;     // frames 2-12
 constexpr int CruiseEndFrame = 12;
@@ -38,8 +43,15 @@ constexpr float ReturnSpeedMax = 40.0f;  // (I)
 constexpr float CatchRadius = 80.0f;     // (I)
 constexpr float Radius = 50.0f;          // Cappy's size: he rests 50 above the floor (C)
 constexpr float ReturnHeight = 110.0f;   // he returns to Mario's head (I)
-// Cap bounce contact (C: smo.wiki Cap bounce). Heights above Mario's feet.
-constexpr float BounceRadius = 100.0f;
+// Cap bounce contact. Heights above Mario's feet (C: smo.wiki Cap bounce). SMO's
+// Cappy has a 100 sphere, but he is drawn grown to about twice a cap's size
+// once fully thrown; ours is Mario's cap (radius about 22, grown 1.8x to about
+// 40 when hovering, HoverScale), so the sphere is 70 (I): the bounce comes when
+// Mario visibly touches him, not a body length before.
+constexpr float BounceRadius = 70.0f;
+constexpr float HoverScale = 1.8f;      // drawn size once fully thrown (C: "he visibly grows")
+constexpr int GrowFrames = 4;           // frames to grow or shrink (I)
+constexpr float VisualRadius = 40.0f;   // the grown cap's drawn radius (I, measured on MarioHair's cap)
 constexpr float HeadHeight = 110.0f, HeadRadius = 40.0f;
 constexpr float BodyHeight = 75.0f, BodyRadius = 50.0f;
 constexpr float FootHeight = 40.0f, FootRadius = 40.0f;
@@ -159,6 +171,14 @@ inline void recall(Cap& c) {
 
 inline bool bounceable(const Cap& c) { return c.state == State::Hover; }
 
+// Where Cappy is along the line: the measured distance, except in the first
+// EmergeFrames frames, which come out of Mario's hand toward it.
+inline float shownDistance(const Cap& c) {
+    if (c.state != State::Fly || c.frame > Const::EmergeFrames) return c.distance;
+    const float t = static_cast<float>(c.frame) / static_cast<float>(Const::EmergeFrames + 1);
+    return std::min(c.distance, Const::EmergeDistance + (c.distance - Const::EmergeDistance) * t);
+}
+
 // Contact for a cap bounce. up: Mario's up component and across distance of
 // Cappy relative to Mario's feet (Cappy minus feet: `up` along -gravity,
 // `across` the rest). groundPound: only the foot rule counts.
@@ -168,10 +188,16 @@ inline bool bounceContact(float up, float across, bool groundPound) {
         return dy * dy + across * across <= (Const::BounceRadius + radius) * (Const::BounceRadius + radius);
     };
     if (!groundPound && (sphere(Const::HeadHeight, Const::HeadRadius) || sphere(Const::BodyHeight, Const::BodyRadius))) return true;
-    // Foot: at most FootAboveMax above Cappy's catch point, and at least
-    // FootElevationMinDeg above it seen from there.
+    // Foot: touching the sphere around Cappy's catch point, at most FootAboveMax
+    // above it and at least FootElevationMinDeg above it seen from there (the
+    // landing-on-top rule; without the distance it would reach 200 across).
+    // (The foot's centre at most FootAboveMax above the catch point: his feet at
+    // most 50 above Cappy's centre, about the grown cap's top.)
     const float footAbove = Const::FootHeight - (up + Const::CatchPointHeight);
-    if (footAbove < 0.0f || footAbove > Const::FootAboveMax + Const::FootRadius) return false;
+    if (footAbove < 0.0f || footAbove > Const::FootAboveMax) return false;
+    if (footAbove * footAbove + across * across > (Const::BounceRadius + Const::FootRadius) * (Const::BounceRadius + Const::FootRadius)) {
+        return false;
+    }
     const float elevation = std::atan2(footAbove, across) * 57.29578f;
     return elevation >= Const::FootElevationMinDeg;
 }

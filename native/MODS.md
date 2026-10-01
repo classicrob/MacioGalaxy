@@ -106,9 +106,9 @@ power-up suits, not swimming).
 | Roll, roll boost (as Spin) | R while crouching, while rolling | RB, same |
 | Cap bounce | jump, fall, dive or ground pound into the hovering cap | same |
 
-The signature loop: Space (jump), R (throw), Shift (ground pound), R (dive):
-Mario dives onto the hovering cap, bounces off it, and can ground pound and dive
-again. One cap bounce per airtime; landing gives it back, a wall jump takes it
+The signature loop: Space (jump), R (throw), Space (the jump-press dive; or
+Shift then R, as in SMO): Mario dives into the hovering cap, bounces off it, and
+can dive again (Space, or Shift then R). One cap bounce per airtime; landing gives it back, a wall jump takes it
 away until the next landing. A bounce from a dive is 231 units high, from a jump
 or fall 300, from a ground pound 391.
 
@@ -120,13 +120,16 @@ Known gaps in this version:
 
 - Luigi keeps his cap on and throws a red one (Galaxy has no hair model for
   him).
-- Cappy does not hit enemies or collect anything yet, and there are no
-  captures, homing throws or cap-return jumps.
+- Cappy hits enemies with Mario's spin punch and collects Star Bits and coins
+  he touches (coins not yet checked in game). No captures, homing throws or
+  cap-return jumps.
 - SMO's own Cappy parameters are not published: the flight follows the
   community's frame measurements; the hover without holding (10 frames) and
   the return speed are our own choices. A tapped throw stays bounceable for its
-  short hover, and pressing R again while Cappy is out (the dive) keeps him
-  there as if held, for half a second, so the tapped loop works. Details and
+  short hover, and a dive while Cappy is out (R or Space) keeps him there as if
+  held, for half a second, so the tapped loop works. The bounce needs Mario to
+  touch the cap (it grows when fully thrown), and gives back the jump-press dive.
+  Details and
   sources: docs/dev/CAPPY.md.
 
 ## Odyssey camera

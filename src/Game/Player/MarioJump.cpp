@@ -150,6 +150,9 @@ void petariOdysseyCapBounce(Mario* pMario) {
     m.playSound("ジャンプ踏切");
     odysseyStart(kind, dir, up, velocity.length(), m._430);
     sOdyssey.lastChain = -1;
+    // A cap bounce is a new air action: the jump-press dive is available again.
+    sOdysseyAirDived = false;
+    sOdysseyAirFrames = 0;
     std::fprintf(stderr, "[odyssey] cap bounce (kind %d) from (%.3f, %.3f, %.3f)\n", static_cast< int >(kind), m.mPosition.x,
                  m.mPosition.y, m.mPosition.z);
 }
@@ -178,6 +181,7 @@ namespace {
         odysseyStart(PetariNative::Odyssey::Air::Dive, m.getAirFrontVec(), up, 0.0f, m._430);
         sOdyssey.lastChain = -1;
         sOdysseyAirDived = true;
+        petariCappyDiveStarted();
         std::fprintf(stderr, "[odyssey] dive (%s) from (%.3f, %.3f, %.3f)\n", pFrom, m.mPosition.x, m.mPosition.y, m.mPosition.z);
     }
 
@@ -220,6 +224,7 @@ namespace {
         case PetariNative::Odyssey::Air::Fall:
         case PetariNative::Odyssey::Air::CapThrow:
         case PetariNative::Odyssey::Air::CapBounce:
+        case PetariNative::Odyssey::Air::DiveCapBounce:  // dive, bounce, dive again (SMO's loop)
         case PetariNative::Odyssey::Air::GroundPoundCapBounce:
             return true;
         default:

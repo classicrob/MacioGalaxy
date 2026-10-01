@@ -19,6 +19,8 @@ void petariCappySwingAction(MarioActor* pActor);
 void petariCappyUpdate(MarioActor* pActor);
 // MarioJump.cpp: a wall jump removes the cap bounce until the next landing.
 void petariCappyWallJump();
+// MarioJump.cpp: a dive started; while Cappy is out it keeps him there (as a throw press).
+void petariCappyDiveStarted();
 
 // MarioJump.cpp (the movement mod's air state lives there).
 // The air throw: SMO's hop (no new hop above the last throw's height, `hop`).

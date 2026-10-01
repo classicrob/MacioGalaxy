@@ -62,6 +62,8 @@ namespace {
         bool held = false;    // the throw button, this frame
         TVec3f origin;        // the throw line: release point and direction
         TVec3f dir;
+        TVec3f pressFront;    // Mario's facing when the throw was pressed (the line's direction)
+        f32 scale = 1.0f;     // drawn size: grows once fully thrown, shrinks on the way back
         TVec3f pos;           // Cappy's centre
         f32 blockedAt = -1.0f;
         f32 spin = 0.0f;
@@ -141,6 +143,12 @@ namespace {
         Mario* mario = pActor->mMario;
         Cappy::startThrow(s.cappy, inAir);
         s.hitCount = 0;
+        // The line follows Mario's facing at the press, as the dive does: Galaxy's
+        // throw animations (its spin) must not turn it before Cappy leaves.
+        s.pressFront = across(mario->mFrontVec, upOf(pActor));
+        if (MR::isNearZero(s.pressFront)) {
+            s.pressFront = across(mario->getAirFrontVec(), upOf(pActor));
+        }
         if (inAir) {
             const f32 height = upOf(pActor).dot(pActor->mPosition);
             const bool hop = s.hop.allows(height);
@@ -155,8 +163,9 @@ namespace {
         }
         mario->playSound("パンチ風切り");
         if (trace()) {
-            std::fprintf(stderr, "[cappy] throw (%s) at (%.1f, %.1f, %.1f)\n", inAir ? "air" : "ground", pActor->mPosition.x,
-                         pActor->mPosition.y, pActor->mPosition.z);
+            std::fprintf(stderr, "[cappy] throw (%s) at (%.1f, %.1f, %.1f) front (%.2f, %.2f, %.2f)\n", inAir ? "air" : "ground",
+                         pActor->mPosition.x, pActor->mPosition.y, pActor->mPosition.z, mario->mFrontVec.x, mario->mFrontVec.y,
+                         mario->mFrontVec.z);
         }
     }
 
@@ -203,7 +212,7 @@ namespace {
     // above his feet; a map polygon on it stops the flight (one ray, at the release).
     void release(MarioActor* pActor) {
         const TVec3f up = upOf(pActor);
-        s.dir = across(pActor->mMario->mFrontVec, up);
+        s.dir = across(s.pressFront, up);  // re-flattened: gravity may have turned since the press
         if (MR::isNearZero(s.dir)) {
             s.dir = across(pActor->mMario->getAirFrontVec(), up);
         }
@@ -222,6 +231,10 @@ namespace {
             s.blockedAt = std::max((hit - s.origin).length() - Cappy::Const::Radius, 0.0f);
         }
         s.spin = 0.0f;
+        if (trace()) {
+            std::fprintf(stderr, "[cappy] release at (%.1f, %.1f, %.1f) dir (%.2f, %.2f, %.2f) blocked at %.1f\n", s.origin.x, s.origin.y,
+                         s.origin.z, s.dir.x, s.dir.y, s.dir.z, s.blockedAt);
+        }
     }
 
     void placeModel(const TVec3f& up) {
@@ -230,8 +243,20 @@ namespace {
         TVec3f side;
         side.cross(up, s.dir);
         TVec3f front(s.dir * std::cos(angle) + side * std::sin(angle));
-        const TVec3f base(s.pos - up * s.capOffsetUp - front * s.capOffsetFront);
+        // Fully thrown, Cappy grows (as SMO's does) over GrowFrames; returning he
+        // shrinks back to a cap on Mario's head.
+        const f32 target = s.cappy.state == Cappy::State::Hover ? Cappy::Const::HoverScale : 1.0f;
+        // (Back twice as fast: after a bounce he is on Mario's head in a few frames.)
+        const f32 step = (Cappy::Const::HoverScale - 1.0f) / Cappy::Const::GrowFrames *
+                         (s.cappy.state == Cappy::State::Return ? 2.0f : 1.0f);
+        s.scale = s.scale < target ? std::min(s.scale + step, target) : std::max(s.scale - step, target);
+        const TVec3f base(s.pos - (up * s.capOffsetUp + front * s.capOffsetFront) * s.scale);
         MR::makeMtxUpFrontPos(&sCapMtx, up, front, base);
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                sCapMtx.mMtx[row][col] *= s.scale;
+            }
+        }
         if (MR::isDead(s.cap)) {
             s.cap->appear();
         }
@@ -243,6 +268,14 @@ namespace {
         }
         const Mario* mario = pActor->mMario;
         const Odyssey::Air air = Odyssey::Live::airKind;
+        if (s.cap != nullptr && !MR::isDead(s.cap)) {
+            // Where the cap is drawn (its joints, last calcAnim) against its logical centre.
+            MtxPtr capF = MR::getJointMtx(s.cap, "CapF");
+            MtxPtr cap2 = MR::getJointMtx(s.cap, "Cap2");
+            std::fprintf(stderr, "[cappy] drawn CapF (%.1f, %.1f, %.1f) Cap2 (%.1f, %.1f, %.1f) logical (%.1f, %.1f, %.1f) mario front (%.2f, %.2f, %.2f)\n",
+                         capF[0][3], capF[1][3], capF[2][3], cap2[0][3], cap2[1][3], cap2[2][3], s.pos.x, s.pos.y, s.pos.z,
+                         mario->mFrontVec.x, mario->mFrontVec.y, mario->mFrontVec.z);
+        }
         std::fprintf(stderr,
                      "[cappy] f%d %s t%d dist %.1f pos (%.1f, %.1f, %.1f) held %d latch %d | mario (%.1f, %.1f, %.1f) h %.1f air %d "
                      "jumping %d ground %d gp %d | bounce avail %d test %d contact %d\n",
@@ -350,6 +383,11 @@ void petariCappyUpdate(MarioActor* pActor) {
     }
 
     bool tested = false, contact = false;
+    if (s.cappy.state == Cappy::State::Windup || (s.cappy.state == Cappy::State::Fly && s.cappy.frame <= 4)) {
+        // Galaxy's spin animations start the spin's light trail and sparkles
+        // (MarioAnimator::spinEntry): not a cap throw's.
+        mario->stopEffect("スピンライト");
+    }
     if (Cappy::step(s.cappy, s.held, s.blockedAt)) {
         release(pActor);
         if (s.blockedAt >= 0.0f && s.blockedAt < Cappy::Const::StartDistance) {
@@ -360,6 +398,7 @@ void petariCappyUpdate(MarioActor* pActor) {
     switch (s.cappy.state) {
     case Cappy::State::Idle:
     case Cappy::State::Windup:
+        s.scale = 1.0f;
         showMarioCap(true);
         if (!MR::isDead(s.cap)) {
             s.cap->kill();
@@ -368,7 +407,7 @@ void petariCappyUpdate(MarioActor* pActor) {
         return;
     case Cappy::State::Fly:
     case Cappy::State::Hover:
-        s.pos = s.origin + s.dir * s.cappy.distance;
+        s.pos = s.origin + s.dir * Cappy::shownDistance(s.cappy);
         break;
     case Cappy::State::Return: {
         const TVec3f target(pActor->mPosition + up * Cappy::Const::ReturnHeight);
@@ -401,6 +440,31 @@ void petariCappyUpdate(MarioActor* pActor) {
                 std::fprintf(stderr, "[cappy] bounce (air %d gp %d) at (%.1f, %.1f, %.1f)\n", static_cast< int >(Odyssey::Live::airKind),
                              static_cast< int >(mario->mMovementStates._B), pActor->mPosition.x, pActor->mPosition.y, pActor->mPosition.z);
             }
+            // The contact frame: Cappy to Mario's touching sphere (head, body or
+            // feet, the nearest), so the bounce shows them touching even at the
+            // edge of the contact sphere.
+            const f32 heights[3] = {Cappy::Const::HeadHeight, Cappy::Const::BodyHeight, Cappy::Const::FootHeight};
+            const f32 radii[3] = {Cappy::Const::HeadRadius, Cappy::Const::BodyRadius, Cappy::Const::FootRadius};
+            int nearest = 0;
+            f32 nearestDist = 0.0f;
+            for (int i = 0; i < 3; ++i) {
+                const f32 d = (s.pos - (pActor->mPosition + up * heights[i])).length();
+                if (i == 0 || d < nearestDist) {
+                    nearest = i;
+                    nearestDist = d;
+                }
+            }
+            const TVec3f centre(pActor->mPosition + up * heights[nearest]);
+            TVec3f away(s.pos - centre);
+            if (MR::normalizeOrZero(&away)) {
+                away = up * -1.0f;
+            }
+            const TVec3f snapped(centre + away * (radii[nearest] + Cappy::Const::VisualRadius * 0.8f));
+            if (trace()) {
+                std::fprintf(stderr, "[cappy] contact: %s sphere, %.1f from Cappy; Cappy moved %.1f to touch\n",
+                             nearest == 0 ? "head" : nearest == 1 ? "body" : "foot", nearestDist, (snapped - s.pos).length());
+            }
+            s.pos = snapped;
             petariOdysseyCapBounce(mario);
             ++sBounces;
             s.bounce.bounce();
@@ -459,6 +523,14 @@ namespace {
 
 void petariCappyWallJump() {
     s.bounce.wallJump();
+}
+
+void petariCappyDiveStarted() {
+    // A dive while Cappy is out (Jump in the air, or ground pound + Spin) keeps
+    // him there like the throw key's press does (SMO dives with Y).
+    if (s.cap != nullptr && active()) {
+        Cappy::notePress(s.cappy);
+    }
 }
 
 // The movement harness (native/app/smoke_movement.cpp): cap bounces so far, and

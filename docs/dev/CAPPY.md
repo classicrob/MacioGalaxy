@@ -7,7 +7,10 @@ throw the cap in the air (a small hop), ground pound, dive into the hovering cap
 bounce off it, and dive again. With the mod off the game is unchanged.
 
 Status (2026-10-01): throw, flight, hover, return, the visual and the three
-cap bounces are implemented and measured (see "Measured"). Enemy hits and
+cap bounces are implemented and measured (see "Measured"); the bounce contact
+was reworked after the user's playtest ("Bounce contact, after the playtest").
+Cappy hits enemies (verified on Good Egg) and collects Star Bits (verified) and
+coins (same path, not yet seen in game). Enemy hits and
 collection are not done yet. Captures are out of scope.
 
 ## Sources
@@ -51,7 +54,7 @@ press, the difference being Mario's wind-up), so its trajectory is used for both
 
 | What | Value | Source |
 |---|---|---|
-| First frame | 182 ahead of Mario, 70 up | C |
+| First frame | 182 ahead of Mario, 70 up | C; drawn coming out of his hand (50) and on the measured line from frame 4 (I) |
 | Cruise | 32 u/f on frames 2–12 | C |
 | Brake | −3.2 u/f² on frames 13–21 (28.8 … 3.2), stop at 678 | C |
 | Hover, button held | until frame 122 after leaving ("at max length f22–122") | C |
@@ -59,7 +62,8 @@ press, the difference being Mario's wind-up), so its trajectory is used for both
 | Return | accelerate 2 u/f² to 40 u/f toward Mario's head, caught within 80 | I (unpublished return strength / speed) |
 | Size | radius 50 (Cappy rests 50 above the floor) | C |
 | Walls | a map polygon between this frame's and the next position stops the flight there (Cappy hovers at the wall) | C (SMO stops at walls within 30° of perpendicular; any wall here, v1) |
-| Path | a straight line along Mario's facing across gravity at the release, fixed in the world (Mario's later moves do not drag it) | C |
+| Path | a straight line along Mario's facing across gravity at the press (the dive's direction; Galaxy's throw spin must not turn it), from where he is at the release, fixed in the world | C |
+| Drawn size | Mario's cap, growing 1.8x over 4 frames once fully thrown, shrinking on the way back | C ("he visibly grows"), I (the factor) |
 
 ### Cap bounce
 
@@ -68,7 +72,7 @@ press, the difference being Mario's wind-up), so its trajectory is used for both
 | Bounce from a dive | up 22, gravity 1.0, horizontal min(v, 16), cap 16 | `CapHeadSpringJumpPowerHigh`, `CapHeadSpringSpeedMax` (D); 231 u in 21 f (C) |
 | Regular bounce (jump or fall into Cappy) | up 25, gravity 1.0, horizontal min(v, 24), cap max(v, 14) | `TrampleHighJumpPower`/`Gravity` (D); 300 u in 24 f (C) |
 | Bounce from a ground pound | up 35, gravity 1.5, horizontal cap 14 | `TrampleHipDropJumpPower`/`Gravity` (D); 390.5 u (C) |
-| Contact | Mario's head or body sphere (r 40 at 110 up, r 50 at 75) touches a sphere of r 100 at Cappy; or his foot (r 40 at 40) is at most 70 above Cappy's catch point (20 above Cappy) and at least 20° above it. A ground-pound bounce needs the foot rule | C |
+| Contact | Mario's head or body sphere (r 40 at 110 up, r 50 at 75) touches a sphere of r 70 at Cappy (SMO: 100, for a much bigger Cappy); or his foot (r 40 at 40) touches that sphere around Cappy's catch point (20 above Cappy), at most 70 above it and at least 20° above it. A ground-pound bounce needs the foot rule | C, scaled (I): see below |
 | Conditions | Cappy hovering (fully thrown), Mario in the air | C, relaxed (below) |
 | One per airtime | refreshed on landing; a wall jump removes it until the next landing | C; `clearLandLimit` sets `mIsCapJumpPossible` (D) |
 | After a bounce | Cappy returns to Mario | C |
@@ -85,7 +89,33 @@ press while Cappy is out (the dive's R) counts as holding for 30 frames
 bounces every run.
 
 After a bounce the air throw's hop limit is cleared (I: a bounce is a new air
-action), so a throw after the bounce hops again.
+action), so a throw after the bounce hops again. The bounce also gives back the
+jump-press dive ("Jump in the air dives", once per airtime otherwise), so the
+loop is jump, R, jump (dive), bounce, jump (dive). Any dive started while Cappy
+is out (jump press or ground pound + Spin) keeps him there as the throw key's
+press does (the latch).
+
+### Bounce contact, after the playtest
+
+The user found the loop janky, "a lot of air between Cappy and Mario in the
+bounce". Their recording (playtest-recordings/all-missions-20261001-152029.csv,
+frames 15677-15780: a standstill jump, the air throw, a jump-press dive, the
+dive bounce 22 frames later) and the harness trace showed why: the bounce was
+SMO's geometry on a cap a quarter of Cappy's size, and the foot rule as written
+had no distance bound, so it fired with Cappy 231 across and 85 below Mario's
+feet (a body length away; the drawn cap was where the logic had it, within one
+frame). Changes:
+
+- the contact sphere is 70, and the foot rule also needs the foot to touch it
+  (cappy_tests: the 231/85 case is no contact now);
+- the hovering cap grows 1.8x, as SMO's Cappy does when fully thrown;
+- on the contact frame Cappy moves to touch the sphere that met him (head, body
+  or feet; 32-36 units in the harness), then flies back and shrinks on the way;
+- the line's direction is taken at the press;
+- Galaxy's spin trail and sparkles (the throw animations' `スピンライト`) are
+  stopped for a throw.
+
+Before/after XFB sheet: build/cappy-runs/bounce-before-after.png (local).
 
 ## How it hooks into Galaxy
 
@@ -136,8 +166,12 @@ on the observatory fixture (`PETARI_CAPPY_TRACE=1` for the per-frame trace):
 - **cappy loop** (running jump, throw 6 frames in, ground pound at 18, dive with
   the throw key at 22, all 6-frame taps): Cappy leaves 8 frames after the press,
   is 678 out on his 21st frame and hovers; the dive arcs over him and comes down
-  onto him, and the dive cap bounce comes on frame 44 (22 frames into the dive,
-  with 7 frames of the dive press's 30-frame latch left). The ground pound and
+  onto him, and the dive cap bounce comes on frame 50 (foot contact, 104 from
+  Cappy; frame 44, 231 across, before the contact rework).
+- **cappy standstill loop** (the user's inputs: a standstill jump held 24
+  frames, R at 19, Jump at 40 for the dive, Jump 12 frames after the bounce):
+  the dive meets Cappy at Mario's body (118 from him) on frame 69, the bounce
+  rises, and the second jump-press dive follows. The ground pound and
   dive after the bounce work; the bounce then rises 231 (from the model; the
   harness's "rose 322" adds the second dive's rise). Cappy returns and is caught.
 - **cappy ground bounce** (a running throw held, the run on, a jump 2 frames
