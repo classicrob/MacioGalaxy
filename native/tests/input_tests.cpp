@@ -986,6 +986,42 @@ void testShakeTapsAlwaysSwing() {
     }
 }
 
+// Investigation 2026-10-01, continued: a harness dive's F press (a 6-frame tap
+// during a ground pound) sometimes never reached the game at all, mostly on the
+// first run after a build. The shake plays in real time at 200 Hz; a game frame
+// that stalls through it (a first-time shader compile when the dive's assets
+// appear) reads nothing of it: before the fix, stalls of 6-11 frames lost the
+// press. A flick the game did not read in time now plays again once the game
+// reads: a press during a stall of any length swings exactly once.
+void testShakeSurvivesStall() {
+    for (int stallFrames : {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 20, 30, 40}) {
+        Rig rig;
+        rig.frames_(30);
+        SwingCounter counter;
+        auto run = [&](int count) {
+            for (int i = 0; i < count; ++i) {
+                rig.frame();
+                counter.update(*rig.pad);
+            }
+        };
+        run(20);
+        press(In::Key::F);
+        // The game stalls: reports keep coming, nobody reads them.
+        for (int i = 0; i < stallFrames; ++i) {
+            const long target = (rig.frames + 1) * 10 / 3;
+            In::pumpReports(static_cast<int>(target - rig.reports));
+            rig.reports = target;
+            ++rig.frames;
+            if (i == 0) {
+                lift(In::Key::F);
+            }
+        }
+        run(60);
+        check(counter.swingEdges == 1, "F pressed as the game stalls " + std::to_string(stallFrames) +
+                                           " frames: one swing when it resumes (" + std::to_string(counter.swingEdges) + ")");
+    }
+}
+
 void testShake() {
     Rig rig;
     rig.frames_(30);
@@ -2346,6 +2382,7 @@ int main() {
     testPointer();
     testShake();
     testShakeTapsAlwaysSwing();
+    testShakeSurvivesStall();
     testJumpThenSpin();
     testRapidShake();
     testTilt();

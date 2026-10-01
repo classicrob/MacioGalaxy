@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace PetariNative::Input::Detail {
 namespace {
@@ -45,6 +47,20 @@ int shakeReports() {
 // returned (43 reports). A flick that starts while the previous one is still
 // returning keeps the filtered value high, and the game sees one long swing.
 constexpr std::uint64_t kShakeSpacingReports = 50;
+// The game sees a flick only if it reads the remote soon enough after the
+// rise (WPadHVSwing compares the newest sample with the one 20 before, once a
+// frame). Reading every frame (3-4 reports) it always does; a frame that stalls
+// longer (a first-time shader compile, a load) misses the whole shake. So a
+// flick not read within kShakeSeenReports of its start plays again from rest
+// once that shake is over and the game is reading again (a read within
+// kShakeReadRecentReports), at most kShakeReplays times: each press is one
+// swing the game sees.
+// Measured with KPAD's filtering (native_input testShakeSurvivesStall): reads up
+// to 20-22 reports after the rise still see the swing, 24 and later do not.
+constexpr std::uint64_t kShakeSeenReports = 21;
+constexpr std::uint64_t kShakeReadRecentReports = 8;
+constexpr std::uint64_t kShakeGapReports = 7;  // after a shake ends, before its replay
+constexpr int kShakeReplays = 3;
 static_assert(kShakeSpacingReports >= kShakeFlickReports + kShakeReturnReports - 1, "flicks must not overlap");
 
 float approach(float value, float target, float step) {
@@ -382,8 +398,10 @@ void RemoteModel::releaseAll() {
     mMouseInWindow = false;
     // A flick in progress finishes its slow return: cutting it off would drop
     // the acceleration by over 1 g, which the game reads as another swing.
-    // A flick still waiting is cancelled.
+    // A flick still waiting (or waiting to replay) is cancelled.
     mShakeStart = 0;
+    mShakeReplay = false;
+    mShakeReplays = 0;
 }
 
 void RemoteModel::focusChanged(bool focused) {
@@ -493,9 +511,15 @@ Report RemoteModel::nextReport(const PointerCalibration& calibration) {
     if ((rising & kButtonAorB) != 0) {
         mLastButtonReport = mReportIndex;
     }
+    static const bool traceShake = std::getenv("PETARI_SHAKE_TRACE") != nullptr;
+    if (traceShake && (rising & kBitShake) != 0) {
+        std::fprintf(stderr, "[shake] press at report %llu (pending %llu, last A/B %llu, last shake %llu)\n",
+                     static_cast<unsigned long long>(mReportIndex), static_cast<unsigned long long>(mShakeStart),
+                     static_cast<unsigned long long>(mLastButtonReport), static_cast<unsigned long long>(mLastShakeStart));
+    }
     if ((rising & kBitShake) != 0 && mShakeStart == 0) {
-        // At most one shake waits: presses while one is pending are dropped.
-        // It starts after Mario's post-A/B swing lockout (the delay is fixed
+        // At most one shake waits: presses while one is pending are dropped, so
+        // mashing F leaves no tail of spins after the last press. It starts after Mario's post-A/B swing lockout (the delay is fixed
         // at the press, so later presses do not extend it) and after the
         // previous flick has returned.
         const int delay = std::max(mSettings.shakeDelayAfterButtonReports, 0);
@@ -508,9 +532,29 @@ Report RemoteModel::nextReport(const PointerCalibration& calibration) {
         }
         mShakeStart = start;
     }
-    if (mShakeStart != 0 && mReportIndex >= mShakeStart) {
+    if (mGameReads != mSeenGameReads) {
+        mSeenGameReads = mGameReads;
+        mLastReadReport = mReportIndex;
+        if (mShakeReport >= 0 && mReportIndex <= mShakeStartReport + kShakeSeenReports) {
+            mShakeSeen = true;
+        }
+    }
+    if (mShakeReplay && mShakeReport < 0 && mReportIndex >= mLastShakeEnd + kShakeGapReports &&
+        mReportIndex <= mLastReadReport + kShakeReadRecentReports) {
+        mShakeReplay = false;
+        mShakeStart = mShakeStart == 0 ? mReportIndex : mShakeStart;
+        if (traceShake) {
+            std::fprintf(stderr, "[shake] flick not read by the game; replaying it (%d)\n", mShakeReplays);
+        }
+    }
+    if (mShakeStart != 0 && mReportIndex >= mShakeStart && mShakeReport < 0) {
+        if (traceShake) {
+            std::fprintf(stderr, "[shake] flick starts at report %llu\n", static_cast<unsigned long long>(mReportIndex));
+        }
         mShakeStart = 0;
         mShakeReport = 0;
+        mShakeStartReport = mReportIndex;
+        mShakeSeen = mGameReads == 0;  // nobody reads yet (boot, the tests): nothing to wait for
         mLastShakeStart = mReportIndex;
     }
 
@@ -539,6 +583,13 @@ Report RemoteModel::nextReport(const PointerCalibration& calibration) {
         report.acc[0] += shakeAcceleration(mShakeReport);
         if (++mShakeReport >= shakeReports()) {
             mShakeReport = -1;
+            mLastShakeEnd = mReportIndex;
+            if (!mShakeSeen && mShakeReplays < kShakeReplays) {
+                ++mShakeReplays;
+                mShakeReplay = true;
+            } else {
+                mShakeReplays = 0;
+            }
         }
     }
 

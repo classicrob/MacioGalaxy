@@ -375,9 +375,20 @@ void buildReport(Channel& ch, const Report& input) {
 // disabled every frame, so the calibration is copied there, in order with the
 // writes, and the tick reads the copy under the same lock. A change reaches
 // the reports at the next KPADRead, before KPAD next uses the dots.
+// Game reads of the remote (WPADProbe from KPADRead, once a frame), for the
+// shake's hold (RemoteModel::setGameReads).
+std::atomic<std::uint64_t> gGameReads{0};
+// True on a thread while it runs the report tick: KPAD's sampling callback
+// probes from there too, and that is not the game reading (the test clock runs
+// the tick on the game's own thread).
+thread_local bool gInReportTick = false;
+
 void snapshotCalibration(s32 chan, Channel& ch) {
     if (std::this_thread::get_id() != gKpadThread) {
         return;  // the report tick (KPAD's sampling callback) or another thread
+    }
+    if (chan == 0 && !gInReportTick) {
+        gGameReads.fetch_add(1, std::memory_order_relaxed);
     }
     const KPADInsideStatus& kp = inside_kpads[chan];
     Detail::PointerCalibration c;
@@ -421,6 +432,10 @@ void noteActivity(const Report& report) {
 
 void tickChannel(s32 chan) {
     Channel& ch = gChannels[chan];
+    struct TickScope {
+        TickScope() { gInReportTick = true; }
+        ~TickScope() { gInReportTick = false; }
+    } tickScope;
 
     Report input;
     SpeakerSink sink = nullptr;
@@ -431,6 +446,7 @@ void tickChannel(s32 chan) {
         sink = gSpeakerSink;
         sinkUser = gSpeakerUser;
         if (chan == 0) {
+            model().setGameReads(gGameReads.load(std::memory_order_relaxed));
             input = model().nextReport(ch.calibration);
             activity = model().takeActivity();
         }

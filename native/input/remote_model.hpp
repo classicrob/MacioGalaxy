@@ -109,6 +109,10 @@ public:
     bool takeActivity();
     // An input bound to the action is down now (and the window has focus).
     bool actionHeld(Action action) const;
+    // How many times the game has read the remote (KPADRead's WPADProbe, every
+    // frame). A flick the game did not read in time (a stalled frame) plays
+    // again, so a stall (a shader compile, a load) cannot swallow a press.
+    void setGameReads(std::uint64_t reads) { mGameReads = reads; }
 
     Report nextReport(const PointerCalibration& calibration);
 
@@ -177,6 +181,14 @@ private:
     std::uint64_t mLastButtonReport = 0;  // report of the last A or B press (0: none)
     std::uint64_t mShakeStart = 0;        // the pending shake starts at this report (0: none)
     std::uint64_t mLastShakeStart = 0;    // report the last shake started (0: none)
+    std::uint64_t mGameReads = 0;         // setGameReads
+    std::uint64_t mSeenGameReads = 0;     // mGameReads at the last report
+    std::uint64_t mLastReadReport = 0;    // report at which a new game read was last seen
+    std::uint64_t mShakeStartReport = 0;  // report the current flick started
+    std::uint64_t mLastShakeEnd = 0;      // report the last shake's return ended
+    bool mShakeSeen = false;              // the game read within kShakeSeenReports of the flick
+    bool mShakeReplay = false;            // the last flick went unread: play it again
+    int mShakeReplays = 0;                // replays of the current press so far
     std::uint64_t mTitlePromptReport = 0;  // report of the last titlePromptShown (0: none)
     std::uint64_t mMotionReport = 0;       // report of the last motionControlShown (0: none)
     Steering mSteering = Steering::Ball;

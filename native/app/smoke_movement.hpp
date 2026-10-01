@@ -34,19 +34,23 @@
 //      boosts (speed jumps) out of the taps;
 //  14. "dive from a jump (stick held)": a full jump, a ground pound at its peak,
 //      then the dive;
-//  15. "cappy loop" (Cappy mod, docs/dev/CAPPY.md): a running jump, the cap
+//  15. "spin taps": standing, Spin tapped spinTaps times with holds of 1-6 frames
+//      and gaps of 16-40 frames (beyond the shake spacing); logs "MOVEMENT spin
+//      taps: N taps" (compare with the game's swing count);
+//  16. "cappy loop" (Cappy mod, docs/dev/CAPPY.md): a running jump, the cap
 //      thrown 6 frames in, a ground pound 12 frames after the throw, the dive 4
 //      frames later (the throw key, tapped), the bounce off Cappy, then a ground
 //      pound 8 frames after the bounce and a second dive. Every tap is 6 frames.
 //      Logs "MOVEMENT cappy loop: bounce ..." and FAILs without a bounce;
-//  16. "cappy ground bounce": the cap thrown from a standstill and held, a run
+//  17. "cappy ground bounce": the cap thrown from a standstill and held, a run
 //      after it, and a tapped jump 170 short of where Cappy hovers (678 ahead).
 // The Cappy tasks need PETARI_MODS=OdysseyMovement,Cappy and are skipped
 // otherwise (PETARI_CAPPY_TRACE=1 logs Cappy's state each frame).
 // With PETARI_XFB_DUMP, each move marks its name as the dump label (for example
 // PETARI_XFB_DUMP_LABELS="long jump,dive").
 // PETARI_MOVEMENT_ONLY=<name>[,<name>...] keeps only the tasks whose name
-// contains one of them.
+// contains one of them. PETARI_STAGE_WARP=x,y,z or name:<GeneralPos> moves Mario
+// there first (test-only), e.g. onto a small planet or a slope.
 // Each jump logs "MOVEMENT <name>: apex <height> after <frames> frames, take-off
 // speed <s>"; heights are along -gravity from the take-off point. The run logs
 // "MOVEMENT run: max speed <v> u/f, frame <n> reached 95%". Compare with the
@@ -77,7 +81,7 @@ public:
     bool wantsPlayer() const { return mPhase != Phase::Boot || mBoot.wantsPlayer(); }
 
 private:
-    enum class Phase { Boot, Settle, Jump, Land, Run, Crouch, Hop, Pound, Reverse, Roll, WallRun, WallClimb, WallSlide, Landed, Cappy, Done };
+    enum class Phase { Boot, Settle, Jump, Land, Run, Crouch, Hop, Pound, Reverse, Roll, WallRun, WallClimb, WallSlide, Landed, SpinTaps, Cappy, Done };
     struct Release {
         unsigned long frame;
         Button button;
@@ -100,6 +104,7 @@ private:
         bool noBoost = false;      // roll: no boost, ridden to its end
         int mash = 0;              // roll: tap Spin every this many frames (boost cadence)
         int hopHold = 1;           // groundPound: frames A is held for the jump before the pound (1: a hop)
+        int spinTaps = 0;          // standing still: this many Spin taps at varied hold and gap (input check)
         int cappy = 0;             // Cappy mod: 1 the air loop, 2 the ground throw and a jump into the cap
     };
 
@@ -129,6 +134,7 @@ private:
     Button mWallStick = Button::StickUp;  // PETARI_MOVEMENT_WALL_DIR: up, down, left, right
     float mFallLast = 0.0f;
     int mTaps = 0;  // Spin taps in a boost-cadence roll
+    unsigned long mNextTap = 0;  // frame of the next spin-taps press
     std::vector<float> mSpeeds;
     // Cappy tasks: the bounce's frame, whether it came, the second dive's press
     // (the ground task: its jump).
