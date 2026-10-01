@@ -217,6 +217,13 @@ void Menu::setControls(const ControlsEntry* entries, int count) {
     }
 }
 
+void Menu::setFooterKeys(const char* confirm, const char* back, const char* close, const char* change) {
+    const char* names[4] = {confirm, back, close, change};
+    for (int i = 0; i < 4; i++) {
+        std::snprintf(mFooterKeys[i], sizeof(mFooterKeys[i]), "%s", names[i] != nullptr ? names[i] : "");
+    }
+}
+
 void Menu::setMods(const ModsEntry* entries, int count) {
     mModCount = std::clamp(count, 0, kMaxMods);
     for (int i = 0; i < mModCount; i++) {
@@ -543,6 +550,19 @@ View Menu::view() const {
         view.items[kConfirmAccept].label = restart ? "Restart" : "Quit";
         view.items[kConfirmCancel].label = "Cancel";
     }
+    // "<icon> <key>: <what>" for each button that works here.
+    const bool changes = mPhase == Phase::Levels || mPhase == Phase::Camera || progressPage;
+    size_t used = 0;
+    auto hint = [&](const char* icon, const char* key, const char* what) {
+        if (used >= sizeof(view.footer)) return;
+        const int n = std::snprintf(view.footer + used, sizeof(view.footer) - used, "%s%s %s%s%s", used > 0 ? "     " : "", icon, key,
+                                    key[0] != '\0' ? ": " : "", what);
+        used += n > 0 ? static_cast<size_t>(n) : 0;
+    };
+    if (changes) hint(PETARI_ICON_PAD, mFooterKeys[3], "change");
+    hint(PETARI_ICON_A, mFooterKeys[0], "choose");
+    hint(PETARI_ICON_PLUS, mFooterKeys[1], "back");
+    hint(PETARI_ICON_HOME, mFooterKeys[2], "close");
     view.itemCount = itemCount();
     if (controls || progressPage) {
         view.panel = {-kControlsHalfWidth / ax, kControlsTop, kControlsHalfWidth / ax,
@@ -550,11 +570,13 @@ View Menu::view() const {
         view.titleY = kControlsTitleY;
         view.messageY = kControlsMessageY;
     } else {
-        view.panel = {-kPanelHalfWidth / ax, kPanelTop, kPanelHalfWidth / ax,
-                      itemRect(view.itemCount - 1).y1 + kPanelBottomMargin};
+        // Room for the title and a two-line message above the first item.
         const float firstItemTop = itemRect(0).y0;
-        view.titleY = kPanelTop + (firstItemTop - kPanelTop) * 0.33f;
-        view.messageY = kPanelTop + (firstItemTop - kPanelTop) * 0.66f;
+        const float panelTop = std::min(kPanelTop, firstItemTop - 0.34f);
+        view.panel = {-kPanelHalfWidth / ax, panelTop, kPanelHalfWidth / ax,
+                      itemRect(view.itemCount - 1).y1 + kPanelBottomMargin};
+        view.titleY = panelTop + (firstItemTop - panelTop) * 0.33f;
+        view.messageY = panelTop + (firstItemTop - panelTop) * 0.66f;
     }
     for (int i = 0; i < view.itemCount; i++) {
         view.items[i].rect = itemRect(i);
@@ -600,9 +622,10 @@ Rect Menu::itemRect(int index) const {
     // Six or more items (the Mods page) use a tighter column so they fit.
     const bool compact = itemCount() > 5;
     const bool dense = itemCount() > 6;  // seven items: the Mods page with a Mod folder entry
-    const float spacing = dense ? 0.17f : compact ? 0.2f : kItemSpacing;
-    const float top = (dense ? -0.4f : compact ? -0.32f : kItemTop) + spacing * static_cast<float>(index);
-    return {-kItemHalfWidth / ax, top, kItemHalfWidth / ax, top + (dense ? 0.14f : compact ? 0.16f : kItemHeight)};
+    // The dense column ends above the footer band (View::footer, from y 0.915).
+    const float spacing = dense ? 0.165f : compact ? 0.2f : kItemSpacing;
+    const float top = (dense ? -0.46f : compact ? -0.32f : kItemTop) + spacing * static_cast<float>(index);
+    return {-kItemHalfWidth / ax, top, kItemHalfWidth / ax, top + (dense ? 0.135f : compact ? 0.16f : kItemHeight)};
 }
 
 int Menu::itemAt(float x, float y) const {

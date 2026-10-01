@@ -57,6 +57,11 @@ struct StageConfig {
     bool warp = false;
     std::string warpName;
     float warpX = 0.0f, warpY = 0.0f, warpZ = 0.0f;
+    // PETARI_STAGE_HOME_TOUR=1: after the pause checks, open the native Home menu (Home) and visit
+    // every page (list, Controls, Mods, Odyssey camera, Level Select, Mod folder, My Progress, the
+    // Restart confirmation), marking "home-<page>" on each for the image dumps (PETARI_SURFACE_DUMP),
+    // then close it. The game's own pause menu is marked "pause" in any run.
+    bool homeTour = false;
 };
 
 // PETARI_SMOKE=stage: reads PETARI_STAGE, PETARI_SCENARIO and
@@ -79,7 +84,7 @@ public:
     bool wantsPlayer() const { return mPhase != Phase::Boot || mBoot.wantsPlayer(); }
 
 private:
-    enum class Phase { Boot, Load, Ready, Warp, Idle, Walk, Jump, Spin, Camera, PauseOpen, Paused, PauseClose, Probe, Tail, Done };
+    enum class Phase { Boot, Load, Ready, Warp, Idle, Walk, Jump, Spin, Camera, PauseOpen, Paused, PauseClose, HomeTour, Probe, Tail, Done };
     struct Check {
         std::string name;
         const char* status;  // "ok", "warn" or "fail"
@@ -127,6 +132,7 @@ private:
     float mMaxRise = 0;
     int mWalksOk = 0;
     bool mPausePressed = false;
+    size_t mTourStep = 0;  // next entry of the Home menu tour
     unsigned long mPauseOpenCount = 0, mPauseCloseCount = 0;
     unsigned long mPhysicalBase = 0;  // physical gameplay inputs when the stage was entered
     unsigned long mPhysicalSeen = 0;

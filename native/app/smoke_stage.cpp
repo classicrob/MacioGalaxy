@@ -43,6 +43,37 @@ constexpr unsigned long kPauseMenuSettle = 90;
 constexpr unsigned long kPausedHold = 45;
 constexpr float kPausedDrift = 1.0f;
 
+// The Home menu tour (StageConfig::homeTour): one entry every kTourGap frames. An entry
+// with a mark labels the image dumps from then on (and taps nothing); the others tap a button.
+struct TourEntry {
+    Button button;
+    const char* mark;  // null: tap the button
+};
+constexpr unsigned long kTourGap = 45;
+constexpr TourEntry kHomeTour[] = {
+    {Button::Home, nullptr},      {Button::A, "home-list"},
+    {Button::StickDown, nullptr}, {Button::A, nullptr},  // Controls
+    {Button::A, "home-controls"}, {Button::Plus, nullptr},
+    {Button::StickDown, nullptr}, {Button::A, nullptr},  // Mods
+    {Button::A, "home-mods"},
+    // To Back (focus clamps there), then up: Mod folder, Level Select, Odyssey camera.
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickUp, nullptr},   {Button::A, nullptr},  // Mod folder
+    {Button::A, "home-modfolder"}, {Button::Plus, nullptr},
+    {Button::StickUp, nullptr},   {Button::A, nullptr},  // Level Select
+    {Button::A, "home-levels"},   {Button::Plus, nullptr},
+    {Button::StickUp, nullptr},   {Button::A, nullptr},  // Odyssey camera
+    {Button::A, "home-camera"},   {Button::Plus, nullptr},
+    {Button::Plus, nullptr},                             // back to the list, on Mods
+    {Button::StickDown, nullptr}, {Button::A, nullptr},  // My Progress
+    {Button::A, "home-progress"}, {Button::Plus, nullptr},
+    {Button::StickDown, nullptr}, {Button::A, nullptr},  // Restart from Title: the confirmation
+    {Button::A, "home-confirm"},  {Button::Plus, nullptr},
+    {Button::Home, nullptr},      {Button::A, "home-closed"},
+};
+
 struct Vec {
     float x, y, z;
 };
@@ -108,6 +139,7 @@ bool stageEnabledFromEnvironment(StageConfig* config) {
     config->scenario = static_cast<int>(number);
     config->tailFrames = environmentNumber("PETARI_STAGE_IDLE_FRAMES", 600);
     config->probe = environmentNumber("PETARI_STAGE_PROBE", 0) != 0;
+    config->homeTour = environmentNumber("PETARI_STAGE_HOME_TOUR", 0) != 0;
     if (const char* warp = std::getenv("PETARI_STAGE_WARP"); warp != nullptr && warp[0] != '\0') {
         if (std::strncmp(warp, "name:", 5) == 0 && warp[5] != '\0') {
             config->warp = true;
@@ -148,6 +180,7 @@ const char* StageDriver::phase() const {
     case Phase::PauseOpen: return "stage: opening the pause menu";
     case Phase::Paused: return "stage: paused";
     case Phase::PauseClose: return "stage: closing the pause menu";
+    case Phase::HomeTour: return "stage: Home menu tour";
     case Phase::Probe: return "stage: lock-up probe";
     case Phase::Tail: return "stage: idling after the checks";
     case Phase::Done: return "done";
@@ -162,6 +195,7 @@ void StageDriver::next(Phase phase) {
     case Phase::Jump: PetariNative::EfbDump::mark("jump"); break;
     case Phase::Spin: PetariNative::EfbDump::mark("spin"); break;
     case Phase::Camera: PetariNative::EfbDump::mark("camera"); break;
+    case Phase::Paused: PetariNative::EfbDump::mark("pause"); break;
     default: PetariNative::EfbDump::mark("other"); break;
     }
     mPhase = phase;
@@ -576,9 +610,26 @@ void StageDriver::exercise(const Observation& o, Step& step) {
     case Phase::PauseClose:
         if (static_cast<unsigned long>(std::count(mSeen.begin(), mSeen.end(), "PauseMenu.Close")) > mPauseCloseCount) {
             check("pause_close", "ok", "PauseMenu.Close " + std::to_string(mPhaseFrames) + " frames after Plus");
-            next(mConfig.probe ? Phase::Probe : Phase::Tail);
+            next(mConfig.homeTour ? Phase::HomeTour : mConfig.probe ? Phase::Probe : Phase::Tail);
         } else if (mPhaseFrames >= kPauseMenuLimit) {
             finish(Result::Fail, "no PauseMenu.Close within " + std::to_string(kPauseMenuLimit) + " frames of Plus", step);
+        }
+        break;
+    case Phase::HomeTour:
+        // Each entry either marks the dumps (its button is unused) or taps its button.
+        if (mPhaseFrames >= kSettle && (mPhaseFrames - kSettle) % kTourGap == 0) {
+            if (mTourStep >= sizeof(kHomeTour) / sizeof(kHomeTour[0])) {
+                check("home_tour", "ok", "visited every Home menu page");
+                next(mConfig.probe ? Phase::Probe : Phase::Tail);
+                break;
+            }
+            const TourEntry& entry = kHomeTour[mTourStep++];
+            if (entry.mark != nullptr) {
+                PetariNative::EfbDump::mark(entry.mark);
+                note(std::string("home tour: ") + entry.mark);
+            } else {
+                tap(entry.button, entry.button == Button::Plus ? kPauseHold : kTapFrames, step);
+            }
         }
         break;
     case Phase::Warp: {
