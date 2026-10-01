@@ -15,6 +15,7 @@ enum class Mod : int {
     CollectStarBits,  // one button collects every Star Bit on screen
     ShootEnemy,       // one button fires a Star Bit at the nearest enemy on screen
     OdysseyMovement,  // Mario moves with Super Mario Odyssey's physics (docs/dev/ODYSSEY_MOVEMENT.md); no button
+    Cappy,            // Odyssey's cap throw and cap bounce (docs/dev/CAPPY.md); needs OdysseyMovement
     Count
 };
 
@@ -42,3 +43,5 @@ void resetForTesting();
 // mod is off its presses are dropped, so turning it on never fires a stale press.
 extern "C" bool petari_mod_take_press(int mod);
 extern "C" bool petari_mod_enabled(int mod);
+// Whether an input bound to the mod's button is held now (false while the mod is off).
+extern "C" bool petari_mod_held(int mod);

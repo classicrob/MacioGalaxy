@@ -141,6 +141,7 @@ struct CameraOptions {
 struct ModsEntry {
     char label[48] = {};
     bool on = false;
+    int needs = -1;  // index of a mod this one needs: on without it, the line says so
 };
 
 // One disc-file mod of the Mod folder page: its label (title, file count) and state.
@@ -293,6 +294,7 @@ private:
     bool mCameraChanged = false;
     char mCameraLabels[5][48] = {};
     void refreshCameraLabels();
+    void refreshModLabels();
     void changeCameraValue(int item, int delta);
     void changeLevelValue(int item, int delta);
 };

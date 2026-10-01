@@ -225,6 +225,16 @@ void Menu::setMods(const ModsEntry* entries, int count) {
     }
 }
 
+// "Cappy: On", or "Cappy: On (needs Odyssey movement)" while a mod it needs is off.
+void Menu::refreshModLabels() {
+    for (int i = 0; i < mModCount; i++) {
+        const int needs = mMods[i].needs;
+        const bool missing = mMods[i].on && needs >= 0 && needs < mModCount && !mMods[needs].on;
+        std::snprintf(mModLabels[i], sizeof(mModLabels[i]), "%s: %s%s%s%s", mMods[i].label, mMods[i].on ? "On" : "Off",
+                      missing ? " (needs " : "", missing ? mMods[needs].label : "", missing ? ")" : "");
+    }
+}
+
 void Menu::setCamera(const CameraOptions& options) {
     mCamera = options;
     mCamera.speed = std::clamp(mCamera.speed, 1, 5);
@@ -657,9 +667,7 @@ void Menu::activate(int index) {
             break;
         case kListMods:
             play(Sound::Select);
-            for (int i = 0; i < mModCount; i++) {
-                std::snprintf(mModLabels[i], sizeof(mModLabels[i]), "%s: %s", mMods[i].label, mMods[i].on ? "On" : "Off");
-            }
+            refreshModLabels();
             mPhase = Phase::Mods;
             mFocus = 0;
             mRepeatDir = 0;
@@ -768,8 +776,7 @@ void Menu::activate(int index) {
             play(Sound::Select);
             mMods[index].on = !mMods[index].on;
             mModToggles |= 1u << index;
-            std::snprintf(mModLabels[index], sizeof(mModLabels[index]), "%s: %s", mMods[index].label,
-                          mMods[index].on ? "On" : "Off");
+            refreshModLabels();  // a mod another one needs changes that one's line too
         } else {
             play(Sound::Cancel);
             mPhase = Phase::List;

@@ -18,6 +18,7 @@ const char* const kActionNames[kActionCount] = {
     "Two",     "DpadUp",    "DpadDown",  "DpadLeft",   "DpadRight", "NunchukC", "NunchukZ", "Shake",     "TiltHold",
     "PostureToggle", "Walk",   "Start", "ModCollectStarBits", "ModShootEnemy", "CameraOrbitHold", "CameraZoomIn",
     "CameraZoomOut", "CameraOrbitLeft", "CameraOrbitRight", "CameraPitchUp", "CameraPitchDown", "PhotoMode", "PhotoShot",
+    "ModCappyThrow",
 };
 
 const char* const kMouseNames[static_cast<int>(MouseButton::Count)] = {"Left", "Middle", "Right", "X1", "X2"};
@@ -239,6 +240,7 @@ std::vector<ControlsLine> controlsSummary(const Bindings& b) {
         {"Jump / confirm", joined(inputsOf(b, {Action::A}), " / "), padText(b, {Action::A})},
         {"Start (title: A and B)", joined(inputsOf(b, {Action::Start}), " / "), padText(b, {Action::Start})},
         {"Spin", joined(inputsOf(b, {Action::Shake}), " / "), padText(b, {Action::Shake})},
+        {"Cap throw (Cappy mod)", joined(inputsOf(b, {Action::ModCappyThrow}), " / "), padText(b, {Action::ModCappyThrow})},
         {"Crouch / ground pound", joined(inputsOf(b, {Action::NunchukZ}), " / "), padText(b, {Action::NunchukZ})},
         {"Star Pointer", "Mouse", "right stick (R3: center)"},
         {"Shoot Star Bits / back", joined(inputsOf(b, {Action::B}), " / "), padText(b, {Action::B})},
@@ -320,6 +322,7 @@ Bindings Bindings::defaults() {
     // Mods (off by default, native/MODS.md): keys the game does not use.
     b.bind(Action::ModCollectStarBits, Binding::key(Key::G));
     b.bind(Action::ModShootEnemy, Binding::key(Key::V));
+    b.bind(Action::ModCappyThrow, Binding::key(Key::R));
     // Odyssey camera mod (off by default): hold-to-orbit for mice without a
     // middle button (Command), and zoom keys.
     b.bind(Action::CameraOrbitHold, Binding::mouse(MouseButton::Middle));
@@ -354,6 +357,9 @@ Bindings Bindings::defaults() {
     // The only controller button left free; ModShootEnemy has no controller default.
     b.bind(Action::ModCollectStarBits, Binding::pad(PadButton::LeftStick));
     b.bind(Action::PhotoMode, Binding::pad(PadButton::RightStick));
+    // Cappy mod: RB, Spin's second button; while the mod is active RB throws and
+    // does not spin (setCappyClaimsShake). The left button still spins.
+    b.bind(Action::ModCappyThrow, Binding::pad(PadButton::RightShoulder));
     return b;
 }
 

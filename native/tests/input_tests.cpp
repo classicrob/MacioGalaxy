@@ -238,6 +238,7 @@ void testControlsSummary() {
         {"Jump / confirm", "Space / Right mouse", "bottom"},
         {"Start (title: A and B)", "Return / Keypad Enter", "top"},
         {"Spin", "F", "left / RB"},
+        {"Cap throw (Cappy mod)", "R", "RB"},
         {"Crouch / ground pound", "Shift", "LT"},
         {"Star Pointer", "Mouse", "right stick (R3: center)"},
         {"Shoot Star Bits / back", "Left mouse / Backspace", "right / RT"},
@@ -2021,6 +2022,62 @@ void testSdl3() {
 
 }  // namespace
 
+// Cappy mod (docs/dev/CAPPY.md): R and RB throw; while the mod is active RB
+// throws and does not spin (F and the left button still spin), and the game
+// reads whether the throw is held.
+void testCappyInput() {
+    namespace Mods = PetariNative::Mods;
+    using In::PadButton;
+    Mods::resetForTesting();
+    Rig rig;
+    In::setBindings(In::Bindings::defaults());
+    const int cappy = static_cast<int>(Mods::Mod::Cappy);
+    const In::Bindings d = In::Bindings::defaults();
+    check(hasBinding(d, In::Action::ModCappyThrow, In::Binding::key(In::Key::R)) &&
+              hasBinding(d, In::Action::ModCappyThrow, In::Binding::pad(PadButton::RightShoulder)),
+          "cap throw: R and RB by default");
+
+    In::padButtonEvent(PadButton::RightShoulder, true);
+    rig.frame();
+    check(In::boundState().spin, "Cappy off: RB still spins");
+    check(In::actionHeld(In::Action::ModCappyThrow) && !petari_mod_held(cappy), "held, but not for the game while the mod is off");
+    In::padButtonEvent(PadButton::RightShoulder, false);
+    rig.frames_(30);
+    check(!petari_mod_take_press(cappy), "a press while off is dropped");
+
+    Mods::setEnabled(Mods::Mod::Cappy, true);
+    In::padButtonEvent(PadButton::RightShoulder, true);
+    rig.frame();
+    check(In::boundState().spin, "Cappy on without Odyssey movement: RB still spins (Cappy is inert)");
+    In::padButtonEvent(PadButton::RightShoulder, false);
+    rig.frames_(30);
+    petari_mod_take_press(cappy);
+
+    Mods::setEnabled(Mods::Mod::OdysseyMovement, true);
+    In::padButtonEvent(PadButton::RightShoulder, true);
+    rig.frame();
+    check(!In::boundState().spin, "Cappy active: RB throws and does not spin");
+    check(petari_mod_take_press(cappy) && !petari_mod_take_press(cappy), "one throw press");
+    check(petari_mod_held(cappy), "held while RB is down");
+    In::padButtonEvent(PadButton::RightShoulder, false);
+    rig.frame();
+    check(!petari_mod_held(cappy), "released");
+    rig.frames_(30);
+    In::padButtonEvent(PadButton::West, true);
+    rig.frame();
+    check(In::boundState().spin, "the left button still spins");
+    In::padButtonEvent(PadButton::West, false);
+    rig.frames_(30);
+    In::keyEvent(In::Key::R, true, false);
+    rig.frame();
+    check(petari_mod_take_press(cappy) && petari_mod_held(cappy) && !In::boundState().spin, "R throws, held");
+    In::focusChanged(false);
+    check(!petari_mod_held(cappy), "losing focus lets go");
+    In::focusChanged(true);
+    In::keyEvent(In::Key::R, false, false);
+    Mods::resetForTesting();
+}
+
 void testMods() {
     namespace Mods = PetariNative::Mods;
     In::resetForTesting();
@@ -2299,6 +2356,7 @@ int main() {
     testCamera();
     testPhotoMode();
     testMods();
+    testCappyInput();
 #ifdef PETARI_INPUT_TEST_SDL3
     testSdl3();
 #endif

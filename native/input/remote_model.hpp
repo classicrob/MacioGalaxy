@@ -107,6 +107,8 @@ public:
 
     // A bound input went down since the last call (reconnects a remote).
     bool takeActivity();
+    // An input bound to the action is down now (and the window has focus).
+    bool actionHeld(Action action) const;
 
     Report nextReport(const PointerCalibration& calibration);
 

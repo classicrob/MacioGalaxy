@@ -13,12 +13,12 @@ namespace PetariNative::Mods {
 namespace {
 
 constexpr int kCount = static_cast<int>(Mod::Count);
-constexpr const char* kNames[kCount] = {"CollectStarBits", "ShootEnemy", "OdysseyMovement"};
+constexpr const char* kNames[kCount] = {"CollectStarBits", "ShootEnemy", "OdysseyMovement", "Cappy"};
 constexpr const char* kDescriptions[kCount] = {"Collect visible Star Bits", "Fire a Star Bit at the nearest enemy",
-                                               "Odyssey movement"};
+                                               "Odyssey movement", "Cappy"};
 // Input::Action::Count: the mod is a mode with no button of its own.
 constexpr Input::Action kActions[kCount] = {Input::Action::ModCollectStarBits, Input::Action::ModShootEnemy,
-                                            Input::Action::Count};
+                                            Input::Action::Count, Input::Action::ModCappyThrow};
 
 std::atomic<bool> gEnabled[kCount];
 std::mutex gFileMutex;
@@ -43,7 +43,7 @@ bool parseInto(const std::string& text, bool (&out)[kCount], std::string* error)
             if (key == kNames[i]) index = i;
         }
         if (index < 0 || (value != "on" && value != "off")) {
-            *error = "line " + std::to_string(number) + ": expected <CollectStarBits|ShootEnemy|OdysseyMovement>=on|off";
+            *error = "line " + std::to_string(number) + ": expected <CollectStarBits|ShootEnemy|OdysseyMovement|Cappy>=on|off";
             return false;
         }
         out[index] = value == "on";
@@ -164,6 +164,13 @@ extern "C" bool petari_mod_take_press(int mod) {
     if (Mods::kActions[mod] == Input::Action::Count) return false;  // no button
     const int presses = Input::takeActionPresses(Mods::kActions[mod]);
     return presses > 0 && Mods::enabled(static_cast<Mods::Mod>(mod));
+}
+
+extern "C" bool petari_mod_held(int mod) {
+    using namespace PetariNative;
+    if (mod < 0 || mod >= static_cast<int>(Mods::Mod::Count)) return false;
+    if (Mods::kActions[mod] == Input::Action::Count) return false;  // no button
+    return Mods::enabled(static_cast<Mods::Mod>(mod)) && Input::actionHeld(Mods::kActions[mod]);
 }
 
 extern "C" bool petari_mod_enabled(int mod) {
