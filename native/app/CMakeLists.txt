@@ -147,7 +147,7 @@ if(BUILD_TESTING)
 
     # Physical input is counted separately from the smoke driver's injected input.
     add_executable(petari_app_input_events_tests ${PETARI_REPO_ROOT}/native/tests/app_input_events_tests.cpp
-        input_events.cpp ${PETARI_REPO_ROOT}/native/input/bindings.cpp)
+        input_events.cpp ${PETARI_REPO_ROOT}/native/input/bindings.cpp ${PETARI_REPO_ROOT}/native/input/remap.cpp)
     target_include_directories(petari_app_input_events_tests PRIVATE ${PETARI_REPO_ROOT}/native/include
         ${PETARI_REPO_ROOT}/native/input/include)
     if(_petari_app_standalone)

@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdarg>
+#include <cstdlib>
 #include <cstring>
 #include <mutex>
 
@@ -34,6 +36,13 @@ constexpr float kControlsLinesHalfWidth = 0.8f;
 constexpr float kControlsBackTop = 0.68f;
 constexpr float kControlsBackHeight = 0.15f;
 constexpr float kControlsBackHalfWidth = 0.2f;
+
+// The remapper: the table, then its buttons.
+constexpr float kRemapTop = -0.62f;
+constexpr float kRemapBottom = 0.58f;
+constexpr float kRemapHalfWidth = 0.82f;
+constexpr float kRemapLabelShare = 0.32f;  // of the table width; four slots share the rest
+constexpr float kRemapButtonsTop = 0.65f;
 
 constexpr const char* kListLabels[] = {"Resume", "Controls", "Mods", "My Progress", "Restart from Title", "Quit"};
 constexpr int kListCount = 6;
@@ -84,6 +93,10 @@ void Menu::open() {
     mRepeatDir = 0;
     mRepeatTime = 0.0f;
     mPointerWasValid = false;
+    if (mRemapMode == RemapMode::Capturing && mBackend != nullptr) {
+        mBackend->cancelCapture();
+    }
+    mRemapMode = RemapMode::Browse;
     play(Sound::HomeButton);
 }
 
@@ -130,6 +143,11 @@ void Menu::update(const FrameInput& input) {
     case Phase::ModFolder:
     case Phase::Progress:
         break;
+    }
+
+    if (mPhase == Phase::Controls && mBackend != nullptr) {
+        updateRemap(input, pointerMoved);
+        return;
     }
 
     const int hovered = input.pointerValid ? itemAt(input.pointerX, input.pointerY) : -1;
@@ -184,18 +202,27 @@ void Menu::update(const FrameInput& input) {
         }
     }
 
+    const int steps = verticalStep(input);
+    for (int i = 0; i < std::abs(steps); i++) {
+        moveFocus(steps < 0 ? -1 : 1);
+    }
+}
+
+// Up/Down this frame as focus steps (negative: up), with hold repeat.
+int Menu::verticalStep(const FrameInput& input) {
     std::uint32_t dir = input.hold & (Button::Up | Button::Down);
     if (dir == (Button::Up | Button::Down)) {
         dir = 0;
     }
+    int steps = 0;
     if (dir != 0 && (input.trigger & dir)) {
         mRepeatDir = dir;
         mRepeatTime = 0.0f;
-        moveFocus(dir == Button::Up ? -1 : 1);
+        steps = 1;
     } else if (dir != 0 && dir == mRepeatDir) {
-        mRepeatTime += dt;
+        mRepeatTime += mConfig.frameDelta;
         while (mRepeatTime >= kRepeatDelayFrames) {
-            moveFocus(dir == Button::Up ? -1 : 1);
+            steps++;
             mRepeatTime -= kRepeatIntervalFrames;
         }
     } else {
@@ -204,6 +231,7 @@ void Menu::update(const FrameInput& input) {
         mRepeatDir = 0;
         mRepeatTime = 0.0f;
     }
+    return dir == Button::Up ? -steps : steps;
 }
 
 void Menu::setControls(const ControlsEntry* entries, int count) {
@@ -479,7 +507,41 @@ View Menu::view() const {
     const bool confirm = mConfirming != Selection::None;
     const bool controls = mPhase == Phase::Controls;
     const bool progressPage = mPhase == Phase::Progress;
-    if (controls) {
+    if (controls && mBackend != nullptr) {
+        view.title = "Controls";
+        view.message = mRemapMessage[0] != '\0' ? mRemapMessage
+                                                : "Choose a slot and press " PETARI_ICON_A " to change it.";
+        RemapView& remap = view.remap;
+        remap.active = true;
+        remap.totalRows = mRemapRowCount;
+        remap.firstRow = mRemapTop;
+        remap.rowCount = std::clamp(mRemapRowCount - mRemapTop, 0, kRemapVisibleRows);
+        for (int i = 0; i < remap.rowCount; i++) {
+            remap.rows[i] = mRemapRows[mRemapTop + i];
+        }
+        const bool rowShown = mRemapRow >= mRemapTop && mRemapRow < mRemapTop + remap.rowCount;
+        remap.focusRow = !mRemapOnButtons && rowShown ? mRemapRow - mRemapTop : -1;
+        remap.focusSlot = mRemapSlot;
+        remap.selectedRow = rowShown ? mRemapRow - mRemapTop : -1;
+        remap.selectedSlot = mRemapSlot;
+        remap.capturing = mRemapMode == RemapMode::Capturing;
+        remap.area = remapArea();
+        for (int r = 0; r < remap.rowCount; r++) {
+            for (int slot = 0; slot < kRemapSlots; slot++) {
+                remap.cells[r][slot] = remapCellRect(r, slot);
+            }
+        }
+        if (mRemapMode == RemapMode::Conflict) {
+            view.items[0].label = "Swap";
+            view.items[1].label = "Keep both";
+            view.items[2].label = "Cancel";
+        } else {
+            view.items[0].label = "Clear slot";
+            view.items[1].label = "Reset action";
+            view.items[2].label = mResetAllArmed ? "A again: reset all" : "Reset all";
+            view.items[3].label = "Back";
+        }
+    } else if (controls) {
         view.title = "Controls";
         view.message = "Change them in controls.txt in the game's user folder.";
         view.items[0].label = "Back";
@@ -502,7 +564,7 @@ View Menu::view() const {
         view.linesArea = {-kControlsLinesHalfWidth / ax, kControlsLinesTop + 0.2f, kControlsLinesHalfWidth / ax, 0.42f};
     } else if (mPhase == Phase::Mods) {
         view.title = "Mods";
-        view.message = "Off by default. Saved in mods.txt; keys in controls.txt.";
+        view.message = "Off by default. Saved in mods.txt; change their keys on the Controls page.";
         for (int i = 0; i < mModCount; i++) {
             view.items[i].label = mModLabels[i];
         }
@@ -568,7 +630,7 @@ View Menu::view() const {
         view.panel = {-kControlsHalfWidth / ax, kControlsTop, kControlsHalfWidth / ax,
                       itemRect(progressPage ? 3 : 0).y1 + kPanelBottomMargin};
         view.titleY = kControlsTitleY;
-        view.messageY = kControlsMessageY;
+        view.messageY = controls && mBackend != nullptr ? -0.705f : kControlsMessageY;
     } else {
         // Room for the title and a two-line message above the first item.
         const float firstItemTop = itemRect(0).y0;
@@ -582,12 +644,17 @@ View Menu::view() const {
         view.items[i].rect = itemRect(i);
         view.items[i].focused = i == mFocus;
     }
+    if (controls && mBackend != nullptr) {
+        for (int i = 0; i < view.itemCount; i++) {
+            view.items[i].focused = mRemapOnButtons && i == mRemapButton && mRemapMode != RemapMode::Capturing;
+        }
+    }
     return view;
 }
 
 int Menu::itemCount() const {
     if (mPhase == Phase::Controls) {
-        return 1;
+        return mBackend == nullptr ? 1 : mRemapMode == RemapMode::Conflict ? 3 : 4;
     }
     if (mPhase == Phase::Mods) {
         return modsBackIndex() + 1;
@@ -609,6 +676,13 @@ int Menu::itemCount() const {
 
 Rect Menu::itemRect(int index) const {
     const float ax = adjustX();
+    if (mPhase == Phase::Controls && mBackend != nullptr) {
+        // A row of buttons under the table: four (Clear, Reset action, Reset all, Back), or three
+        // for a conflict (Swap, Keep both, Cancel), centered.
+        const int count = itemCount();
+        const float left = -0.41f * 0.5f * static_cast<float>(count) + 0.02f + 0.41f * static_cast<float>(index);
+        return {left / ax, kRemapButtonsTop, (left + 0.37f) / ax, kRemapButtonsTop + 0.14f};
+    }
     if (mPhase == Phase::Controls) {
         return {-kControlsBackHalfWidth / ax, kControlsBackTop, kControlsBackHalfWidth / ax,
                 kControlsBackTop + kControlsBackHeight};
@@ -679,6 +753,16 @@ void Menu::activate(int index) {
             mPhase = Phase::Controls;
             mFocus = 0;
             mRepeatDir = 0;
+            if (mBackend != nullptr) {
+                refreshRemapRows();
+                mRemapMode = RemapMode::Browse;
+                mRemapRow = 0;
+                mRemapSlot = 0;
+                mRemapTop = 0;
+                mRemapOnButtons = false;
+                mResetAllArmed = false;
+                mBackend->notice(mRemapMessage, sizeof(mRemapMessage));
+            }
             break;
         case kListProgress:
             play(Sound::Select);
@@ -842,6 +926,10 @@ void Menu::back() {
 }
 
 void Menu::close() {
+    if (mRemapMode == RemapMode::Capturing && mBackend != nullptr) {
+        mBackend->cancelCapture();
+    }
+    mRemapMode = RemapMode::Browse;
     mPanelStart = view().panelOpacity;
     mPhase = Phase::Closing;
     mTime = 0.0f;
@@ -850,6 +938,10 @@ void Menu::close() {
 }
 
 void Menu::blackOut(Selection result) {
+    if (mRemapMode == RemapMode::Capturing && mBackend != nullptr) {
+        mBackend->cancelCapture();
+    }
+    mRemapMode = RemapMode::Browse;
     const View current = view();
     mPanelStart = current.panelOpacity;
     mBlackStart = current.blackOpacity;
@@ -862,6 +954,317 @@ void Menu::blackOut(Selection result) {
 void Menu::finish() {
     mPhase = Phase::Finished;
     event(Sound::EventEndMenu);
+}
+
+// --- The Controls page's remapper ---
+
+void Menu::setControlsBackend(ControlsBackend* backend) {
+    if (mRemapMode == RemapMode::Capturing && mBackend != nullptr) {
+        mBackend->cancelCapture();
+    }
+    mBackend = backend;
+    mRemapMode = RemapMode::Browse;
+    mRemapRowCount = 0;
+}
+
+void Menu::refreshRemapRows() {
+    mRemapRowCount = mBackend != nullptr ? std::clamp(mBackend->rowCount(), 0, kMaxRemapRows) : 0;
+    for (int i = 0; i < mRemapRowCount; i++) {
+        mRemapRows[i] = RemapRow{};
+        mBackend->row(i, &mRemapRows[i]);
+        mRemapRows[i].label[sizeof(mRemapRows[i].label) - 1] = '\0';
+        for (auto& slot : mRemapRows[i].slots) {
+            slot[sizeof(slot) - 1] = '\0';
+        }
+    }
+    mRemapRow = std::clamp(mRemapRow, 0, std::max(0, mRemapRowCount - 1));
+}
+
+void Menu::remapMessage(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    std::vsnprintf(mRemapMessage, sizeof(mRemapMessage), format, args);
+    va_end(args);
+}
+
+void Menu::scrollToRow() {
+    if (mRemapRow < mRemapTop) {
+        mRemapTop = mRemapRow;
+    } else if (mRemapRow >= mRemapTop + kRemapVisibleRows) {
+        mRemapTop = mRemapRow - kRemapVisibleRows + 1;
+    }
+    mRemapTop = std::clamp(mRemapTop, 0, std::max(0, mRemapRowCount - kRemapVisibleRows));
+}
+
+Rect Menu::remapArea() const {
+    const float ax = adjustX();
+    return {-kRemapHalfWidth / ax, kRemapTop, kRemapHalfWidth / ax, kRemapBottom};
+}
+
+// A slot of a shown row; the header takes the table's first row.
+Rect Menu::remapCellRect(int shownRow, int slot) const {
+    const Rect area = remapArea();
+    const float rowHeight = (area.y1 - area.y0) / static_cast<float>(kRemapVisibleRows + 1);
+    const float width = area.x1 - area.x0;
+    const float slotWidth = width * (1.0f - kRemapLabelShare) / static_cast<float>(kRemapSlots);
+    const float x0 = area.x0 + width * kRemapLabelShare + slotWidth * static_cast<float>(slot);
+    const float y0 = area.y0 + rowHeight * static_cast<float>(shownRow + 1);
+    return {x0 + slotWidth * 0.04f, y0 + rowHeight * 0.08f, x0 + slotWidth * 0.96f, y0 + rowHeight * 0.92f};
+}
+
+bool Menu::remapCellAt(float x, float y, int* row, int* slot) const {
+    const int shown = std::min(kRemapVisibleRows, mRemapRowCount - mRemapTop);
+    for (int r = 0; r < shown; r++) {
+        for (int s = 0; s < kRemapSlots; s++) {
+            if (remapCellRect(r, s).contains(x, y)) {
+                *row = mRemapTop + r;
+                *slot = s;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void Menu::leaveControls() {
+    play(Sound::Cancel);
+    mRemapMode = RemapMode::Browse;
+    mRemapMessage[0] = '\0';
+    mPhase = Phase::List;
+    mFocus = kListControls;
+    mRepeatDir = 0;
+}
+
+void Menu::activateRemapCell() {
+    if (mRemapRowCount == 0) {
+        return;
+    }
+    play(Sound::Select);
+    mResetAllArmed = false;
+    mRemapOnButtons = false;
+    mRemapMode = RemapMode::Capturing;
+    mCaptureFrames = 0.0f;
+    mBackend->beginCapture();
+    remapMessage("Press a key, mouse button or controller button for %s.  Escape: cancel", mRemapRows[mRemapRow].label);
+}
+
+void Menu::finishPlace(RemapOutcome outcome) {
+    const char* label = mRemapRows[mRemapRow].label;
+    switch (outcome) {
+    case RemapOutcome::Done:
+        play(Sound::Select);
+        remapMessage("%s: %s", label, mCapturedName);
+        break;
+    case RemapOutcome::Unchanged:
+        play(Sound::Cancel);
+        remapMessage("%s already has %s.", label, mCapturedName);
+        break;
+    case RemapOutcome::HomeUnreachable:
+        play(Sound::Cancel);
+        remapMessage("Not changed: this menu (" PETARI_ICON_HOME ") must keep a keyboard or mouse input.");
+        break;
+    case RemapOutcome::Conflict:
+        break;
+    }
+    refreshRemapRows();
+    char notice[160] = {};
+    mBackend->notice(notice, sizeof(notice));
+    if (notice[0] != '\0') {
+        remapMessage("%s", notice);
+    }
+}
+
+void Menu::activateRemapButton(int index) {
+    if (mRemapMode == RemapMode::Conflict) {
+        if (index == 2) {
+            play(Sound::Cancel);
+            remapMessage("Not changed.");
+        } else {
+            finishPlace(mBackend->place(mRemapRow, mRemapSlot, index == 0 ? RemapChoice::Swap : RemapChoice::KeepBoth,
+                                        mConflictWith, sizeof(mConflictWith)));
+        }
+        mRemapMode = RemapMode::Browse;
+        mRemapOnButtons = false;
+        mRemapButton = 0;
+        return;
+    }
+    if (index != 2) {
+        mResetAllArmed = false;
+    }
+    if (mRemapRowCount == 0 && index != 3) {
+        return;
+    }
+    const char* label = mRemapRowCount > 0 ? mRemapRows[mRemapRow].label : "";
+    RemapOutcome outcome = RemapOutcome::Unchanged;
+    switch (index) {
+    case 0:
+        outcome = mBackend->clearSlot(mRemapRow, mRemapSlot);
+        remapMessage(outcome == RemapOutcome::Done ? "%s: slot cleared." : "%s: that slot is already empty.", label);
+        break;
+    case 1:
+        outcome = mBackend->resetRow(mRemapRow);
+        remapMessage(outcome == RemapOutcome::Done ? "%s: back to the default." : "%s already has the default.", label);
+        break;
+    case 2:
+        if (!mResetAllArmed) {
+            play(Sound::Select);
+            mResetAllArmed = true;
+            remapMessage("Press " PETARI_ICON_A " again to put every control back to the default.");
+            return;
+        }
+        mResetAllArmed = false;
+        outcome = mBackend->resetAll();
+        remapMessage(outcome == RemapOutcome::Done ? "Every control is back to the default." : "Every control already has the default.");
+        break;
+    default:
+        leaveControls();
+        return;
+    }
+    if (outcome == RemapOutcome::HomeUnreachable) {
+        remapMessage("Not changed: this menu (" PETARI_ICON_HOME ") must keep a keyboard or mouse input.");
+    }
+    play(outcome == RemapOutcome::Done ? Sound::Select : Sound::Cancel);
+    refreshRemapRows();
+    char notice[160] = {};
+    mBackend->notice(notice, sizeof(notice));
+    if (notice[0] != '\0') {
+        remapMessage("%s", notice);
+    }
+}
+
+void Menu::updateRemap(const FrameInput& input, bool pointerMoved) {
+    if (mRemapMode == RemapMode::Capturing) {
+        // Everything pressed now goes to the capture, not to the menu.
+        const CaptureStatus status = mBackend->pollCapture(mCapturedName, sizeof(mCapturedName));
+        mCapturedName[sizeof(mCapturedName) - 1] = '\0';
+        if (status == CaptureStatus::Waiting) {
+            mCaptureFrames += mConfig.frameDelta;
+            if (mCaptureFrames >= kCaptureTimeoutFrames) {
+                mBackend->cancelCapture();
+                mRemapMode = RemapMode::Browse;
+                play(Sound::Cancel);
+                remapMessage("Nothing was pressed; not changed.");
+            }
+            return;
+        }
+        mRemapMode = RemapMode::Browse;
+        if (status == CaptureStatus::Cancelled) {
+            play(Sound::Cancel);
+            remapMessage("Not changed.");
+            return;
+        }
+        const RemapOutcome outcome =
+            mBackend->place(mRemapRow, mRemapSlot, RemapChoice::Check, mConflictWith, sizeof(mConflictWith));
+        mConflictWith[sizeof(mConflictWith) - 1] = '\0';
+        if (outcome == RemapOutcome::Conflict) {
+            play(Sound::Focus);
+            mRemapMode = RemapMode::Conflict;
+            mRemapOnButtons = true;
+            mRemapButton = 2;  // Cancel first: nothing changes by accident
+            remapMessage("%s is already %s. Swap them, keep both, or cancel?", mCapturedName, mConflictWith);
+            return;
+        }
+        finishPlace(outcome);
+        return;
+    }
+
+    if (input.trigger & Button::Home) {
+        play(Sound::ReturnApp);
+        close();
+        return;
+    }
+    int hoveredRow = -1, hoveredSlot = 0;
+    const bool overCell = input.pointerValid && mRemapMode == RemapMode::Browse &&
+                          remapCellAt(input.pointerX, input.pointerY, &hoveredRow, &hoveredSlot);
+    const int hoveredButton = input.pointerValid ? itemAt(input.pointerX, input.pointerY) : -1;
+    if (pointerMoved && overCell && (hoveredRow != mRemapRow || hoveredSlot != mRemapSlot || mRemapOnButtons)) {
+        mRemapRow = hoveredRow;
+        mRemapSlot = hoveredSlot;
+        mRemapOnButtons = false;
+        play(Sound::Focus);
+    } else if (pointerMoved && hoveredButton >= 0 && (!mRemapOnButtons || hoveredButton != mRemapButton)) {
+        mRemapOnButtons = true;
+        mRemapButton = hoveredButton;
+        play(Sound::Focus);
+    }
+
+    if (input.trigger & Button::Plus) {
+        if (mRemapMode == RemapMode::Conflict) {
+            activateRemapButton(2);
+        } else {
+            leaveControls();
+        }
+        return;
+    }
+    const bool a = (input.trigger & Button::A) != 0;
+    const bool b = (input.trigger & Button::B) != 0;
+    if (a || (b && (overCell || hoveredButton >= 0))) {
+        if (b && overCell) {
+            mRemapRow = hoveredRow;
+            mRemapSlot = hoveredSlot;
+            mRemapOnButtons = false;
+        } else if (b) {
+            mRemapOnButtons = true;
+            mRemapButton = hoveredButton;
+        }
+        if (mRemapOnButtons) {
+            activateRemapButton(mRemapButton);
+        } else {
+            activateRemapCell();
+        }
+        return;
+    }
+    if (b) {
+        if (mRemapMode == RemapMode::Conflict) {
+            activateRemapButton(2);
+        } else {
+            leaveControls();
+        }
+        return;
+    }
+
+    const std::uint32_t side = input.trigger & (Button::Left | Button::Right);
+    const int sideStep = side == Button::Left ? -1 : side == Button::Right ? 1 : 0;
+    const int steps = verticalStep(input);
+    if (mRemapMode == RemapMode::Conflict) {
+        // Only the three choices.
+        const int move = sideStep != 0 ? sideStep : (steps > 0 ? 1 : steps < 0 ? -1 : 0);
+        if (move != 0) {
+            mRemapButton = std::clamp(mRemapButton + move, 0, itemCount() - 1);
+            play(Sound::Focus);
+        }
+        return;
+    }
+    if (sideStep != 0) {
+        if (mRemapOnButtons) {
+            mRemapButton = std::clamp(mRemapButton + sideStep, 0, itemCount() - 1);
+        } else {
+            mRemapSlot = std::clamp(mRemapSlot + sideStep, 0, kRemapSlots - 1);
+        }
+        mResetAllArmed = mResetAllArmed && mRemapOnButtons && mRemapButton == 2;
+        play(Sound::Focus);
+        return;
+    }
+    for (int i = 0; i < std::abs(steps); i++) {
+        if (steps > 0) {
+            if (mRemapOnButtons) break;
+            if (mRemapRow + 1 < mRemapRowCount) {
+                mRemapRow++;
+            } else {
+                mRemapOnButtons = true;  // past the last row: the buttons
+                mRemapButton = std::min(mRemapSlot, itemCount() - 1);
+            }
+        } else if (mRemapOnButtons) {
+            mRemapOnButtons = false;
+        } else if (mRemapRow > 0) {
+            mRemapRow--;
+        }
+        play(Sound::Focus);
+    }
+    if (steps != 0) {
+        mResetAllArmed = false;
+        scrollToRow();
+    }
 }
 
 // --- Game instance and published view ---

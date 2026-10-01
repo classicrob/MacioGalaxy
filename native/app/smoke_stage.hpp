@@ -60,7 +60,9 @@ struct StageConfig {
     // PETARI_STAGE_HOME_TOUR=1: after the pause checks, open the native Home menu (Home) and visit
     // every page (list, Controls, Mods, Odyssey camera, Level Select, Mod folder, My Progress, the
     // Restart confirmation), marking "home-<page>" on each for the image dumps (PETARI_SURFACE_DUMP),
-    // then close it. The game's own pause menu is marked "pause" in any run.
+    // then close it. On Controls it remaps Cap throw to F (Spin's key) and chooses Swap, so the
+    // run's controls.txt ends with ModCappyThrow=Key:F and Shake=Key:R. The game's own pause menu
+    // is marked "pause" in any run.
     bool homeTour = false;
 };
 

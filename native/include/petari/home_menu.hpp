@@ -20,9 +20,9 @@
 //   result. While the menu is closed it has no effect.
 //
 // The menu offers Mac actions (Resume, Controls, Mods, Restart from Title, Quit) and
-// does not present Wii system features. Controls lists the keyboard and mouse
-// controls as currently bound (setControls; the bridge refreshes them from the
-// input layer each time the menu opens, so controls.txt remaps show). Rendering is a Dear ImGui overlay drawn in the
+// does not present Wii system features. Controls is a remapper over the input
+// layer's bindings when the bridge sets its ControlsBackend (always in the game),
+// else the read-only list of setControls. Rendering is a Dear ImGui overlay drawn in the
 // host frame (drawImGuiOverlay); the state machine itself has no rendering or
 // SDK dependencies.
 //
@@ -176,6 +176,69 @@ struct ControlsEntry {
     char pad[40] = {};
 };
 
+// --- The Controls page's remapping (native/CONTROLS.md "Changing controls") ---
+// With a ControlsBackend set, the Controls page lists every action with four
+// input slots (two keyboard/mouse, two controller) and edits them: A on a slot
+// captures the next pressed input, conflicts offer Swap / Keep both / Cancel,
+// and Clear, Reset action, Reset all and Back sit below the table. Without one
+// it shows the read-only summary of setControls.
+
+constexpr int kRemapSlots = 4;          // keyboard/mouse 0 and 1, controller 2 and 3
+constexpr int kRemapVisibleRows = 11;   // rows shown at once; the table scrolls
+constexpr int kMaxRemapRows = 48;
+constexpr float kCaptureTimeoutFrames = 600.0f;  // 10 s without a press cancels a capture
+
+struct RemapRow {
+    char label[48] = {};                   // may start with an icon (PETARI_ICON_*)
+    char slots[kRemapSlots][32] = {};      // input names, "" for an empty slot
+    bool conflict[kRemapSlots] = {};       // the input also drives another action (beyond the defaults' own sharing)
+    bool changed = false;                  // differs from the defaults
+};
+
+enum class CaptureStatus : std::uint8_t { Waiting, Captured, Cancelled };
+enum class RemapChoice : std::uint8_t { Check, Swap, KeepBoth };
+enum class RemapOutcome : std::uint8_t {
+    Done,             // applied (and saved)
+    Unchanged,
+    Conflict,         // RemapChoice::Check only: another action has the input; nothing changed
+    HomeUnreachable,  // refused: this menu would lose its last keyboard or mouse input
+};
+
+// What the page edits; the bridge implements it with the input layer
+// (petari/input_remap.hpp), tests with a fake. Called on the menu's thread.
+class ControlsBackend {
+public:
+    virtual ~ControlsBackend() = default;
+    virtual int rowCount() = 0;
+    virtual void row(int index, RemapRow* out) = 0;
+    virtual void beginCapture() = 0;
+    virtual void cancelCapture() = 0;
+    // Waiting until a press; Captured keeps the input for place() and names it in *name.
+    virtual CaptureStatus pollCapture(char* name, int size) = 0;
+    // Puts the captured input in a slot. Conflict: *other names the action that has it.
+    virtual RemapOutcome place(int row, int slot, RemapChoice choice, char* other, int size) = 0;
+    virtual RemapOutcome clearSlot(int row, int slot) = 0;
+    virtual RemapOutcome resetRow(int row) = 0;
+    virtual RemapOutcome resetAll() = 0;
+    // A standing message for the page ("" for none): an invalid controls.txt, a failed save.
+    virtual void notice(char* out, int size) = 0;
+};
+
+struct RemapView {
+    bool active = false;
+    int rowCount = 0;   // rows shown
+    int firstRow = 0;   // index of rows[0] among totalRows
+    int totalRows = 0;
+    RemapRow rows[kRemapVisibleRows];
+    int focusRow = -1;  // in rows[], -1 when the focus is on the buttons
+    int focusSlot = 0;
+    int selectedRow = -1;   // the row the buttons act on, in rows[] (-1: scrolled away)
+    int selectedSlot = 0;
+    bool capturing = false;  // focusRow/focusSlot is waiting for a press
+    Rect area;               // the table, header row included
+    Rect cells[kRemapVisibleRows][kRemapSlots];  // the slots of the shown rows (pointer targets)
+};
+
 struct ViewItem {
     const char* label = "";
     Rect rect;
@@ -202,6 +265,7 @@ struct View {
     int lineCount = 0;
     ControlsEntry lines[kMaxControls];
     Rect linesArea;
+    RemapView remap;  // the Controls page with a ControlsBackend
 };
 
 class Menu {
@@ -214,6 +278,8 @@ public:
     // The Controls page contents (at most kMaxControls lines; longer text is
     // cut). Kept across opens.
     void setControls(const ControlsEntry* entries, int count);
+    // Makes the Controls page a remapper (null: the read-only summary). Not owned.
+    void setControlsBackend(ControlsBackend* backend);
     // The Mods page toggles (at most kMaxMods). Kept across opens.
     void setMods(const ModsEntry* entries, int count);
     // Toggles the player activated since the last call: bit i is entry i,
@@ -312,6 +378,34 @@ private:
     char mLevelMessage[96] = {};
     void refreshLevelLabels();
     char mFooterKeys[4][32] = {};  // confirm, back, close, change
+    // The remapper (Controls page with a backend).
+    enum class RemapMode : std::uint8_t { Browse, Capturing, Conflict };
+    ControlsBackend* mBackend = nullptr;
+    RemapMode mRemapMode = RemapMode::Browse;
+    RemapRow mRemapRows[kMaxRemapRows];
+    int mRemapRowCount = 0;
+    int mRemapRow = 0;        // the focused (or last focused) row
+    int mRemapSlot = 0;
+    bool mRemapOnButtons = false;
+    int mRemapButton = 0;     // Clear, Reset action, Reset all, Back; or Swap, Keep both, Cancel
+    int mRemapTop = 0;        // first row shown
+    float mCaptureFrames = 0.0f;
+    bool mResetAllArmed = false;
+    char mCapturedName[32] = {};
+    char mConflictWith[48] = {};
+    char mRemapMessage[192] = {};
+    void refreshRemapRows();
+    void updateRemap(const FrameInput& input, bool pointerMoved);
+    void activateRemapCell();
+    void activateRemapButton(int index);
+    void finishPlace(RemapOutcome outcome);
+    void remapMessage(const char* format, ...);
+    void scrollToRow();
+    bool remapCellAt(float x, float y, int* row, int* slot) const;
+    Rect remapCellRect(int shownRow, int slot) const;
+    Rect remapArea() const;
+    int verticalStep(const FrameInput& input);
+    void leaveControls();
     CameraOptions mCamera;
     bool mCameraChanged = false;
     char mCameraLabels[5][48] = {};

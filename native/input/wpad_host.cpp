@@ -33,6 +33,7 @@
 
 #include "petari/host_allocation.hpp"
 #include "petari/input.hpp"
+#include "petari/input_remap.hpp"
 #include "petari/latency_probe.hpp"
 #include "petari/camera_settings.hpp"
 #include "remote_model.hpp"
@@ -725,9 +726,59 @@ bool actionHeld(Action action) {
     return model().actionHeld(action);
 }
 
+namespace {
+// Capture for the Home menu's remapping (input_remap.hpp). Guarded by gHostMutex.
+CaptureState gCapture = CaptureState::Idle;
+Binding gCaptured;
+bool gSwallowRelease = false;  // the captured press's release is not sent to the game either
+Binding gSwallowed;
+
+// True if the event belongs to a capture and must not reach the game. Caller holds gHostMutex.
+bool captureEvent(Binding input, bool down, bool repeat) {
+    if (gSwallowRelease && input == gSwallowed) {
+        if (!down) gSwallowRelease = false;
+        return true;  // its release, or OS repeats while it is held
+    }
+    if (gCapture != CaptureState::Waiting || !down) {
+        return false;  // releases of inputs held before the capture still reach the game
+    }
+    gSwallowRelease = true;
+    gSwallowed = input;
+    if (repeat) {
+        return true;
+    }
+    if (input.device == Binding::Device::Key && input.code == Key::Escape) {
+        gCapture = CaptureState::Cancelled;
+    } else {
+        gCapture = CaptureState::Captured;
+        gCaptured = input;
+    }
+    return true;
+}
+}  // namespace
+
+void beginCapture() {
+    std::lock_guard<std::mutex> lock(gHostMutex);
+    gCapture = CaptureState::Waiting;
+}
+
+void cancelCapture() {
+    std::lock_guard<std::mutex> lock(gHostMutex);
+    if (gCapture == CaptureState::Waiting) gCapture = CaptureState::Idle;
+}
+
+CaptureState captureState(Binding* input) {
+    std::lock_guard<std::mutex> lock(gHostMutex);
+    const CaptureState state = gCapture;
+    if (state == CaptureState::Captured && input != nullptr) *input = gCaptured;
+    if (state == CaptureState::Captured || state == CaptureState::Cancelled) gCapture = CaptureState::Idle;
+    return state;
+}
+
 void keyEvent(KeyCode code, bool down, bool repeat) {
     gHostActivity = true;
     std::lock_guard<std::mutex> lock(gHostMutex);
+    if (captureEvent(Binding::key(code), down, repeat)) return;
     if (down && !repeat) {
         countModPress(Binding::key(code));
         notePressForProbe(Binding::key(code));
@@ -740,6 +791,7 @@ void keyEvent(KeyCode code, bool down, bool repeat) {
 void mouseButtonEvent(MouseButton button, bool down) {
     gHostActivity = true;
     std::lock_guard<std::mutex> lock(gHostMutex);
+    if (captureEvent(Binding::mouse(button), down, false)) return;
     if (down) {
         countModPress(Binding::mouse(button));
         notePressForProbe(Binding::mouse(button));
@@ -752,6 +804,7 @@ void mouseButtonEvent(MouseButton button, bool down) {
 void padButtonEvent(PadButton button, bool down) {
     gHostActivity = true;
     std::lock_guard<std::mutex> lock(gHostMutex);
+    if (captureEvent(Binding::pad(button), down, false)) return;
     if (down) {
         countModPress(Binding::pad(button));
         notePressForProbe(Binding::pad(button));
@@ -934,6 +987,11 @@ void pumpReports(int count) {
 }
 
 void resetForTesting() {
+    {
+        std::lock_guard<std::mutex> lock(gHostMutex);
+        gCapture = CaptureState::Idle;
+        gSwallowRelease = false;
+    }
     {
         Interrupts guard;
         if (gAlarmRunning) {

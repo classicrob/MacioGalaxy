@@ -50,8 +50,10 @@ bool pauseMenuActive();
 
 // --- input_events.cpp ---
 namespace Events {
-// Loads remapped controls from a file written by Input::Bindings::serialize,
-// if it exists. Before the game starts.
+// Loads remapped controls (Input::Remap::load): the defaults when the file is
+// missing, and also when it is invalid (false, with *error saying why; the
+// game runs with the defaults). Remembers the file for the Home menu's saves.
+// Before the game starts.
 bool loadControls(const std::filesystem::path& file, std::string* error);
 // SDL events for the input layer. Returns true if consumed. Also counts them
 // as physical input (below); every event is still delivered unchanged.
