@@ -1,0 +1,130 @@
+# Cappy mod (design)
+
+An optional mod, **`Cappy`** (off by default), that gives Mario Super Mario
+Odyssey's cap throw, on top of the Odyssey movement mod
+(docs/dev/ODYSSEY_MOVEMENT.md). The target is SMO's signature air loop: jump,
+throw the cap in the air (a small hop), ground pound, dive into the hovering cap,
+bounce off it, and dive again. With the mod off the game is unchanged.
+
+Status: design (2026-10-01). Captures are out of scope.
+
+## Sources
+
+Letters as in the movement doc: **D** = OdysseyDecomp (`PlayerConst.cpp`,
+`PlayerCapActionHistory.cpp`), **C** = community measurement (smo.wiki
+[Cap throw](https://smo.wiki/Cap_throw) and [Cap bounce](https://smo.wiki/Cap_bounce),
+and the "Odyssey Movement Data v2" sheet, tabs "MCCT Data (Old)" and "Cap Throws
+and Roll Cancels"), **I** = our own choice where nothing is published.
+
+SMO's Cappy actor (`HackCap`, 189 functions) is not decompiled, and the values
+in its ActorParam file (`HackCapThrowParam`: throw height, speed, brake time,
+reach, endpoint stop time, return strength and speed) are not published
+anywhere. The placeholder stubs in closed decomp PRs #1290/#1292/#1295 are not
+real data and are not used. Cappy's flight therefore comes from the sheet's
+measured trajectories; Mario's side (throw frames, air hop, bounces) is in
+`PlayerConst` and matches the measurements.
+
+## Numbers
+
+Scale 1.0, as in the movement mod (both games' Mario is about 160 units tall
+and runs at 60 fps). All heights are along -gravity, all horizontal distances
+across it.
+
+### Mario's throw
+
+| What | Value | Source |
+|---|---|---|
+| Throw animation before Cappy leaves | ground 12 frames, air 8 | `SpinCapThrowFrame`, `SpinCapThrowFrameAir` (D); fully thrown at 34 / 30 = 12/8 + 21 + 1 (C) |
+| Press buffer | 10 frames | `PreInputFrameCapThrow` (D) |
+| Ground throw | speed ×0.95 a frame for 15 frames | `SpinBrakeFrame` 15, `SpinBrakeRate` 0.95 (D = C "5%/f for 15 frames") |
+| Air throw hop | up 6, gravity 0.3; horizontal speed capped at 7, side accel 0.3 (7 u/f in 24 frames); falls normally (gravity 1.5, cap 11) after 24 frames | `SpinAirJumpPower`, `GravitySpinAir`, `SpinAirSpeedMax` (D); measured 5.7 initial, peak 57 u at frame 19, falling after 24 f (C) |
+| Repeat air throws | no new hop while Mario is above the height of the last air throw (the up speed is not raised) | `PlayerCapActionHistory::recordLimitHeight` (D, structure only), I |
+| Jump / ground pound after a throw | ground 13 frames, air 9 | sheet "jump/GP lockout" (C) |
+
+### Cappy's flight
+
+The sheet measures the motion-control throw frame by frame; the button throw
+takes the same 21 frames once Cappy leaves (fully thrown 34 vs 29 frames from the
+press, the difference being Mario's wind-up), so its trajectory is used for both.
+
+| What | Value | Source |
+|---|---|---|
+| First frame | 182 ahead of Mario, 70 up | C |
+| Cruise | 32 u/f on frames 2–12 | C |
+| Brake | −3.2 u/f² on frames 13–21 (28.8 … 3.2), stop at 678 | C |
+| Hover, button held | until frame 122 after leaving ("at max length f22–122") | C |
+| Hover, button released | 10 frames, then return | I (unpublished endpoint stop time) |
+| Return | accelerate 2 u/f² to 40 u/f toward Mario's head, caught within 80 | I (unpublished return strength / speed) |
+| Size | radius 50 (Cappy rests 50 above the floor) | C |
+| Walls | a map polygon between this frame's and the next position stops the flight there (Cappy hovers at the wall) | C (SMO stops at walls within 30° of perpendicular; any wall here, v1) |
+| Path | a straight line along Mario's facing across gravity at the release, fixed in the world (Mario's later moves do not drag it) | C |
+
+### Cap bounce
+
+| What | Value | Source |
+|---|---|---|
+| Bounce from a dive | up 22, gravity 1.0, horizontal min(v, 16), cap 16 | `CapHeadSpringJumpPowerHigh`, `CapHeadSpringSpeedMax` (D); 231 u in 21 f (C) |
+| Regular bounce (jump or fall into Cappy) | up 25, gravity 1.0, horizontal min(v, 24), cap max(v, 14) | `TrampleHighJumpPower`/`Gravity` (D); 300 u in 24 f (C) |
+| Bounce from a ground pound | up 35, gravity 1.5, horizontal cap 14 | `TrampleHipDropJumpPower`/`Gravity` (D); 390.5 u (C) |
+| Contact | Mario's head or body sphere (r 40 at 110 up, r 50 at 75) touches a sphere of r 100 at Cappy; or his foot (r 40 at 40) is at most 70 above Cappy's catch point (20 above Cappy) and at least 20° above it. A ground-pound bounce needs the foot rule | C |
+| Conditions | Cappy hovering (fully thrown), the throw button held (released, Cappy just returns), Mario in the air | C |
+| One per airtime | refreshed on landing; a wall jump removes it until the next landing | C; `clearLandLimit` sets `mIsCapJumpPossible` (D) |
+| After a bounce | Cappy returns to Mario | C |
+
+A ground throw followed by a jump into the hovering cap is a regular bounce.
+
+## How it hooks into Galaxy
+
+- **Mod toggle `Cappy`** (`Mods::Mod::Cappy`, `mods.txt` `Cappy=on`), off by
+  default. It needs `OdysseyMovement` (the bounce loop is built on the mod's dive
+  and air model): with Cappy on and movement off, Cappy is inert and the Mods
+  page says so ("Cappy: On (needs Odyssey movement)"). Only normal Mario throws
+  (player mode 0, on foot or in the air, not swimming, riding, hanging or in a
+  cutscene): the same places Galaxy lets Mario spin (`MarioActor::updateSwingAction`).
+- **Input: a new action `ModCappyThrow`**, key **R** (free; next to the movement
+  keys), controller **RB**. RB is also Galaxy's second Spin button (X spins too):
+  while Cappy is active, an input bound to both Spin and Cap throw only throws;
+  with the mod off RB spins as before. Rebindable (`ModCappyThrow=Key:R,Pad:RightShoulder`).
+  Like SMO's Y, the throw key does the mod's Y moves where SMO does: during a
+  ground pound it dives, while crouching it rolls, while rolling it boosts.
+  Galaxy's Star Spin (F) is unchanged.
+- **The model** (`native/include/petari/cappy.hpp`, header-only, no game types):
+  Cappy's state machine (idle, wind-up, flying, hovering, returning) with the
+  distances above, the bounce contact test and the bounce availability rule.
+  Unit tests in `native/tests/cappy_tests.cpp`. The new air moves (air throw hop,
+  three bounces) are added to `odyssey_move.hpp`'s `Air` model, so they share the
+  movement mod's gravity-relative integration.
+- **Game side** (`src/Game/Player/MarioCappy.cpp`, native only): creates the cap
+  models at `MarioActor::initParts` when Cappy is on, reads the throw input in
+  `MarioActor::controlMain`, starts throws in `updateSwingAction`, steps Cappy
+  after `Mario::update`, and asks `MarioJump.cpp` to start the hop or a bounce
+  (those touch the movement mod's air state, which lives there).
+- **Visual.** Galaxy has a separate cap: `MarioHair.arc` (stationed, always
+  loaded), made for the star-return cutscene where Mario takes his cap off, holds
+  a cap model (`CapRoot`, material `Cap_v`) and hair (`Hair_v`, `Hair2_v`); the
+  cutscene hides Mario's own cap with `MR::hidePlayerJoint("Cap0")`. The mod uses
+  two `MarioParts` of it: the flying cap (hair materials hidden), spinning about
+  gravity's up axis, and the hair on Mario's head (cap material hidden), fixed to
+  his `Cap0` joint while Cappy is out, with `Cap0` hidden. Luigi has no hair model:
+  he keeps his cap and throws Mario's (a known limit).
+- **Created only with the mod on at stage load.** The two models are created
+  with Mario when the stage loads, so turning Cappy on takes effect at the next
+  stage load (changing the actor list mid-scene is not safe). With the mod off
+  nothing is created and nothing changes.
+- **Trace.** `PETARI_CAPPY_TRACE=1` logs Cappy's state, position and distance
+  each frame, and Mario's bounce eligibility (available, held, contact).
+
+## Plan
+
+1. This note.
+2. Throw, flight, hover and return, with the visual: model tests; then XFB
+   dumps of a ground throw and an air throw on the observatory.
+3. Cap bounce and the dive loop: a `cappy loop` harness task in
+   `native/app/smoke_movement.cpp` (jump, throw, ground pound, dive with the
+   throw held, bounce, ground pound, dive) and its XFB sequence; model tests for
+   the three bounces' heights (231 / 300 / 390.5).
+4. Nice to have: Cappy's hit sensor attacks enemies the way the Star Spin does
+   (Galaxy's spin-attack message), and collects coins and Star Bits it touches.
+
+The movement baseline (`native/tools/movement_baseline.py`) must still PASS with
+all mods off, and with OdysseyMovement on and Cappy off.
