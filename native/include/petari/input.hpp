@@ -252,6 +252,20 @@ void mouseMoved(float x, float y);
 // camera mod uses it: precise (fractional, trackpad or Magic Mouse) scrolling
 // orbits, whole wheel clicks zoom (camera.txt ScrollMode overrides).
 void mouseWheel(float x, float y);
+// The native menus' scrolling (the Home menu's Controls list). menuWheel takes
+// the wheel as the system reports it (SDL3's event.wheel.y without the FLIPPED
+// correction: + scrolls toward the top of a list), so macOS natural scrolling
+// is honoured; the SDL3 adapter calls it for every wheel event.
+void menuWheel(float y);
+// Rows to scroll since the last call (+ toward the top): a whole wheel notch is
+// 3 rows, precise (trackpad, Magic Mouse) scrolling 1 row per 2 units, with the
+// fraction carried over. And Page Up / Page Down presses (key repeats count)
+// since the last call (+ for Page Down). Any thread.
+struct MenuScroll {
+    int rows = 0;
+    int pages = 0;
+};
+MenuScroll takeMenuScroll();
 // Trackpad pinch: scale change since the last update (> 1 = zoom in).
 void pinch(float scale);
 // The mouse left the window: the remote points away from the screen.

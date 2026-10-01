@@ -103,7 +103,8 @@ bool buildWithGalaxyGlyphs(ImFontAtlas* atlas) {
 
 ImFontBuilderIO gGalaxyBuilder = {buildWithGalaxyGlyphs};
 
-constexpr std::uint32_t kIconBase = 0xE000;  // picture glyph c is U+E000 + (c - 0x20)
+constexpr std::uint32_t kIconBase = 0xE000;
+constexpr float kBottomBandTop = 0.9f;  // the pause layout's bottom band (KPAD y), the footer inside it  // picture glyph c is U+E000 + (c - 0x20)
 
 ImFont* addGalaxyFont(ImFontAtlas* atlas, const GalaxyFont::Font& font, const char* name, const GalaxyFont::Font* icons) {
     static const ImWchar kSpaceOnly[] = {0x20, 0x20, 0};  // the base font only carries the size; the glyphs are ours
@@ -318,8 +319,9 @@ void shade(ImDrawList* list, int start, ImVec2 min, ImVec2 max, ImU32 top, ImU32
 // game's pause bands and window frames.
 void galaxyPanel(ImDrawList* list, ImVec2 min, ImVec2 max, float rounding, float unit, float alpha) {
     const int start = list->VtxBuffer.Size;
-    list->AddRectFilled(min, max, color(0.0f, 0.0f, 0.0f, 0.9f * alpha), rounding);
-    shade(list, start, min, max, color(0.05f, 0.27f, 0.40f, 1.0f), color(0.01f, 0.09f, 0.20f, 1.0f));
+    // Nearly opaque: whatever the game shows (its own pause menu, if open) stays behind.
+    list->AddRectFilled(min, max, color(0.0f, 0.0f, 0.0f, 0.97f * alpha), rounding);
+    shade(list, start, min, max, color(0.03f, 0.34f, 0.45f, 1.0f), color(0.01f, 0.14f, 0.24f, 1.0f));
     list->AddRect(min, max, color(0.40f, 0.86f, 1.0f, 0.9f * alpha), rounding, 0, unit * 3.0f);
     const ImVec2 inset(unit * 4.0f, unit * 4.0f);
     list->AddRect(ImVec2(min.x + inset.x, min.y + inset.y), ImVec2(max.x - inset.x, max.y - inset.y),
@@ -382,18 +384,41 @@ void drawRemapTable(ImDrawList* list, ImFont* font, const ImageSpace& image, con
     std::snprintf(where, sizeof(where), "%d-%d of %d", remap.firstRow + 1, remap.firstRow + remap.rowCount, remap.totalRows);
     leftText(list, font, textSize * 0.85f, labelRight - areaMin.x - 2.0f * pad, ImVec2(areaMin.x + pad, headerY),
              color(0.75f, 0.88f, 1.0f, 0.85f * alpha), where);
-    // More rows above or below: small arrows at the table's right edge.
-    const float arrow = rowHeight * 0.22f;
-    const float arrowX = areaMax.x + pad * 1.6f;
-    if (remap.firstRow > 0) {
-        const float y = areaMin.y + rowHeight * 1.2f;
-        list->AddTriangleFilled(ImVec2(arrowX, y - arrow), ImVec2(arrowX - arrow, y + arrow * 0.6f),
-                                ImVec2(arrowX + arrow, y + arrow * 0.6f), color(0.60f, 0.92f, 1.0f, alpha));
+    // The scrollbar: arrow buttons at both ends, the track, and a capsule thumb
+    // (gold while dragged). Dimmed when every row fits.
+    const bool scrollable = remap.totalRows > remap.rowCount;
+    const float barAlpha = (scrollable ? 1.0f : 0.35f) * alpha;
+    const ImVec2 trackMin = image.point(remap.track.x0, remap.track.y0);
+    const ImVec2 trackMax = image.point(remap.track.x1, remap.track.y1);
+    const float barWidth = trackMax.x - trackMin.x;
+    list->AddRectFilled(trackMin, trackMax, color(0.0f, 0.05f, 0.12f, 0.45f * barAlpha), barWidth * 0.5f);
+    list->AddRect(trackMin, trackMax, color(0.40f, 0.86f, 1.0f, 0.45f * barAlpha), barWidth * 0.5f, 0, unit);
+    const ImVec2 thumbMin = image.point(remap.thumb.x0, remap.thumb.y0);
+    const ImVec2 thumbMax = image.point(remap.thumb.x1, remap.thumb.y1);
+    {
+        const int start = list->VtxBuffer.Size;
+        list->AddRectFilled(ImVec2(thumbMin.x + unit, thumbMin.y), ImVec2(thumbMax.x - unit, thumbMax.y),
+                            color(1.0f, 1.0f, 1.0f, barAlpha), barWidth * 0.5f);
+        if (remap.dragging) {
+            shade(list, start, thumbMin, thumbMax, color(1.0f, 1.0f, 0.93f, 1.0f), color(1.0f, 0.84f, 0.36f, 1.0f));
+        } else {
+            shade(list, start, thumbMin, thumbMax, color(1.0f, 1.0f, 1.0f, 1.0f), color(0.60f, 0.78f, 0.97f, 1.0f));
+        }
+        list->AddRect(ImVec2(thumbMin.x + unit, thumbMin.y), ImVec2(thumbMax.x - unit, thumbMax.y),
+                      remap.dragging ? color(0.98f, 0.80f, 0.22f, barAlpha) : color(0.22f, 0.74f, 1.0f, barAlpha), barWidth * 0.5f,
+                      0, unit * 1.5f);
     }
-    if (remap.firstRow + remap.rowCount < remap.totalRows) {
-        const float y = areaMax.y - rowHeight * 0.2f;
-        list->AddTriangleFilled(ImVec2(arrowX, y + arrow), ImVec2(arrowX + arrow, y - arrow * 0.6f),
-                                ImVec2(arrowX - arrow, y - arrow * 0.6f), color(0.60f, 0.92f, 1.0f, alpha));
+    for (int end = 0; end < 2; end++) {
+        const Rect& r = end == 0 ? remap.upArrow : remap.downArrow;
+        const ImVec2 min = image.point(r.x0, r.y0), max = image.point(r.x1, r.y1);
+        const ImVec2 c((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+        const float radius = std::min(max.x - min.x, max.y - min.y) * 0.5f;
+        list->AddCircleFilled(c, radius, color(0.20f, 0.55f, 0.75f, 0.7f * barAlpha));
+        list->AddCircle(c, radius, color(0.55f, 0.92f, 1.0f, barAlpha), 0, unit * 1.5f);
+        const bool more = end == 0 ? remap.firstRow > 0 : remap.firstRow + remap.rowCount < remap.totalRows;
+        const float t = radius * 0.5f, dir = end == 0 ? -1.0f : 1.0f;
+        list->AddTriangleFilled(ImVec2(c.x, c.y + dir * t), ImVec2(c.x - t, c.y - dir * t * 0.6f), ImVec2(c.x + t, c.y - dir * t * 0.6f),
+                                color(1.0f, 1.0f, 1.0f, (more ? 1.0f : 0.35f) * barAlpha));
     }
 
     const float pulse = 0.65f + 0.35f * std::sin(static_cast<float>(ImGui::GetTime()) * 6.0f);
@@ -583,7 +608,17 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
     const float unit = imageHeight / 720.0f;  // one pixel of a 720-line image
     list->PushClipRect(imageMin, imageMax, false);
 
-    if (view.dimOpacity > 0.0f) {
+    if (view.bands) {
+        // As the game's pause screen: translucent teal bands top and bottom, the scene
+        // clear between them.
+        const float a = view.dimOpacity * 1.6f;
+        const ImVec2 topMax(imageMax.x, image.point(0.0f, view.panel.y1).y);
+        const ImVec2 bottomMin(imageMin.x, image.point(0.0f, kBottomBandTop).y);
+        list->AddRectFilled(imageMin, topMax, color(0.03f, 0.43f, 0.53f, a));
+        list->AddRectFilled(bottomMin, imageMax, color(0.03f, 0.43f, 0.53f, a));
+        list->AddLine(ImVec2(imageMin.x, topMax.y), topMax, color(0.55f, 0.92f, 1.0f, a * 0.9f), unit * 2.0f);
+        list->AddLine(bottomMin, ImVec2(imageMax.x, bottomMin.y), color(0.55f, 0.92f, 1.0f, a * 0.9f), unit * 2.0f);
+    } else if (view.dimOpacity > 0.0f) {
         // The game's pause screen tints the scene deep teal rather than grey.
         list->AddRectFilled(imageMin, imageMax, color(0.0f, 0.16f, 0.26f, view.dimOpacity * 1.3f));
     }
@@ -593,7 +628,9 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
         const float rounding = imageHeight * 0.035f;
         const ImVec2 panelMin = image.point(view.panel.x0, view.panel.y0);
         const ImVec2 panelMax = image.point(view.panel.x1, view.panel.y1);
-        galaxyPanel(list, panelMin, panelMax, rounding, unit, alpha);
+        if (!view.bands) {
+            galaxyPanel(list, panelMin, panelMax, rounding, unit, alpha);
+        }
 
         const float panelCenterX = (panelMin.x + panelMax.x) * 0.5f;
         const float textWidth = (panelMax.x - panelMin.x) * 0.9f;
@@ -661,7 +698,7 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
         // game's own screens show them.
         if (view.footer != nullptr && view.footer[0] != '\0') {
             const ImVec2 bandMin = image.point(-1.0f, 0.915f);
-            list->AddRectFilledMultiColor(bandMin, imageMax, color(0.0f, 0.12f, 0.22f, 0.0f), color(0.0f, 0.12f, 0.22f, 0.0f),
+            if (!view.bands) list->AddRectFilledMultiColor(bandMin, imageMax, color(0.0f, 0.12f, 0.22f, 0.0f), color(0.0f, 0.12f, 0.22f, 0.0f),
                                           color(0.0f, 0.12f, 0.22f, 0.85f * alpha), color(0.0f, 0.12f, 0.22f, 0.85f * alpha));
             centeredText(list, font, imageHeight * 0.03f, imageWidth * 0.94f,
                          ImVec2((imageMin.x + imageMax.x) * 0.5f, image.point(0.0f, 0.958f).y),

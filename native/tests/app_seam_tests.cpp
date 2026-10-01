@@ -152,6 +152,9 @@ void movePointer(float x, float y) {
 void assertFocus() {
     calls.push_back("focus");
 }
+void menuWheel(float) {
+    calls.push_back("wheel");
+}
 void setImage(const Rect& image, float width, float height) {
     ++imageUpdates;
     lastImage = image;

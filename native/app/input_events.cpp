@@ -180,4 +180,8 @@ void movePointer(float x, float y) {
     Input::mouseMoved(x, y);
 }
 
+void menuWheel(float y) {
+    Input::menuWheel(y);
+}
+
 }  // namespace PetariNative::App::Events

@@ -88,6 +88,8 @@ constexpr std::uint32_t Plus = 1u << 4;
 constexpr std::uint32_t Home = 1u << 5;
 constexpr std::uint32_t Left = 1u << 6;   // change a value (Level Select)
 constexpr std::uint32_t Right = 1u << 7;
+constexpr std::uint32_t C = 1u << 8;      // Nunchuk C (controller LB): page up in the controls list
+constexpr std::uint32_t Z = 1u << 9;      // Nunchuk Z (controller LT): page down
 }  // namespace Button
 
 // One frame of controller input, all controllers combined.
@@ -98,6 +100,10 @@ struct FrameInput {
     // KPAD pointer position: -1..1 across the game image, y down.
     float pointerX = 0.0f;
     float pointerY = 0.0f;
+    // Host scrolling for lists (Input::takeMenuScroll): rows (wheel, trackpad) and
+    // pages (Page Up/Down), + toward later rows.
+    int scrollRows = 0;
+    int scrollPages = 0;
 };
 
 // HBM sound events, as HBMSoundCallback receives them (see revolution/hbm).
@@ -237,6 +243,10 @@ struct RemapView {
     bool capturing = false;  // focusRow/focusSlot is waiting for a press
     Rect area;               // the table, header row included
     Rect cells[kRemapVisibleRows][kRemapSlots];  // the slots of the shown rows (pointer targets)
+    // The scrollbar right of the table: arrows at both ends, the track between
+    // them, and the thumb (its size the shown fraction of the rows).
+    Rect upArrow, downArrow, track, thumb;
+    bool dragging = false;   // the thumb is held
 };
 
 struct ViewItem {
@@ -253,6 +263,9 @@ struct View {
     float panelOpacity = 0.0f;  // panel, text, and items
     float blackOpacity = 0.0f;  // full-image black, over everything
     Rect panel;
+    // The list and the confirmations: no panel; `panel` is a full-width band across
+    // the top (title and message), with a matching band along the bottom.
+    bool bands = false;
     const char* title = "";
     const char* message = "";  // may be empty
     char footer[192] = {};     // the buttons that work on this page, with icons; drawn along the image bottom
@@ -391,6 +404,11 @@ private:
     int mRemapTop = 0;        // first row shown
     float mCaptureFrames = 0.0f;
     bool mResetAllArmed = false;
+    bool mThumbDragging = false;
+    float mThumbGrab = 0.0f;  // pointer y minus the thumb's top when it was grabbed
+    void scrollRemapBy(int rows, bool moveFocus);
+    void scrollbarRects(Rect* up, Rect* down, Rect* track, Rect* thumb) const;
+    Rect remapPanel() const;
     char mCapturedName[32] = {};
     char mConflictWith[48] = {};
     char mRemapMessage[192] = {};
