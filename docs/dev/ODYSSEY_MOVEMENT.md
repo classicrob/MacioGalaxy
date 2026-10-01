@@ -87,6 +87,16 @@ Measured with the harness's landing tasks
 (`PETARI_MOVEMENT_ONLY="dive landing (stick held)"` and so on), each run alone
 from the start point.
 
+Slopes and planets (2026-10-01, harness with PETARI_STAGE / PETARI_STAGE_WARP,
+trace and XFB): on Good Egg's starting planet the roll follows the curve (back to
+back rolls, then a run at 16.5 facing forward), the dive lands running at 19.3
+and the long jump at 17.9. On Honeyhive's start path, rolls with the stick held
+run on and with it released skid to a stop; on Bowser's Star Reactor the roll
+climbs the curved carpet ramp (gravity turning with it) at an even decay until a
+lava tile damages Mario. No standing glide, wrong facing, speed jump or launch
+at gravity changes was seen. Good Egg's flip-panel cube and egg road could not
+be reached by warping (death cube; Pull-Star posts), so no cube face was tested.
+
 On Good Egg (EggStarGalaxy, planet gravity) with the mod on, the stage smoke
 passes and the same harness measured the standstill jumps 258.000 / 105.000,
 the ground-pound jump 513.500, the running jump 312.000 and the triple jump
@@ -270,9 +280,14 @@ playability run, before the next step.
   and when it ends runs on with a direction held (Galaxy's run target is kept
   following the stick during the roll) or plays Galaxy's brake skid; the long jump, backflip, sideflip, ground-pound jump, wall
   slide and wall jump use Galaxy's matching poses. No T-poses or wrong facing.
-- No ground-pound roll (SMO: Y on a ground-pound landing, 30 u/f) and no roll
-  speed gain on downhill slopes; the roll ends on a turn slide (stick reversed
-  after release) like Galaxy's run.
+- No ground-pound roll (SMO: Y on a ground-pound landing, 30 u/f). The roll
+  ends on a turn slide (stick reversed after release) like Galaxy's run.
+- Slopes: a roll gains SlopeRollingAccel (0.6) per frame downhill and loses
+  SlopeRollingAgainst (0.5) uphill, scaled by the slope (full at 30 degrees) and
+  by how much the heading runs down or up it (`rollSlopeChange`; SMO's slope code
+  is not decompiled, so the scaling is our reading). Measured on Honeyhive's start
+  path: 20 -> 22.5 u/f down 13-14 degrees, steady on the flat, 21.2 -> 18.6 up a
+  37-degree bank.
 - The wall slide replaces Galaxy's wall stick speed only: where Mario can cling
   is still Galaxy's rule (falling, stick toward the wall, a wall Galaxy allows).
   Holding the stick away lets go after 15 frames; Galaxy's 180-frame release is

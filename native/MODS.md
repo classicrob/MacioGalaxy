@@ -67,8 +67,9 @@ Known gaps in this version:
 - Galaxy has no animations for some SMO moves. The dive flies in Galaxy's
   long-jump leap, played quickly into its end pose (both arms swept back); the roll
   repeats the forward roll of a failed dive's landing back to back.
-- No ground-pound roll (SMO: Y on a ground-pound landing) and no roll speed-up
-  on downhill slopes.
+- No ground-pound roll (SMO: Y on a ground-pound landing). Rolls speed up
+  downhill and slow uphill with SMO's constants, but how SMO scales that by
+  slope is not decompiled, so it may differ a little.
 - Slopes and slides keep Galaxy's behaviour; Galaxy's own wall-jump surfaces
   decide where Mario can wall-slide (walls Galaxy does not let him cling to stay
   that way).

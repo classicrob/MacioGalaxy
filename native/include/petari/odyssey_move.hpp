@@ -96,6 +96,9 @@ constexpr float SlopeRollingMaxSpeed = 35.0f;
 constexpr float SlopeRollingSpeedEnd = 17.0f;
 constexpr float SlopeRollingBrake = 0.998f;
 constexpr int SlopeRollingReStartInterval = 15;
+constexpr float SlopeRollingAccel = 0.6f;          // downhill, per frame at full slope
+constexpr float SlopeRollingAgainst = 0.5f;        // uphill, per frame at full slope
+constexpr float SlopeRollingAnglePowerMax = 30.0f; // degrees: steeper counts as full slope
 }  // namespace Const
 
 // What an airborne move is; it selects the gravity, the hold-extend rule and the
@@ -379,6 +382,15 @@ inline void stepRoll(RollState& r, bool boostPressed, float bump = 23.0f) {
 inline float stepWallSlide(float down, int frame) {
     if (frame <= Const::WallKeepFrame) return 0.0f;
     return std::min(down + Const::GravityWallSlide, Const::FallSpeedMax);
+}
+
+// A roll on a slope (SMO's SlopeRolling* constants; its slope code is not
+// decompiled, so this is the documented reading): per frame, + Accel downhill or
+// - Against uphill, scaled by the slope (full at AnglePowerMax degrees) and by
+// how much of the roll's heading runs down (+1) or up (-1) the slope.
+inline float rollSlopeChange(float slopeDegrees, float downhillCos) {
+    const float power = std::clamp(slopeDegrees / Const::SlopeRollingAnglePowerMax, 0.0f, 1.0f) * std::clamp(downhillCos, -1.0f, 1.0f);
+    return power >= 0.0f ? Const::SlopeRollingAccel * power : Const::SlopeRollingAgainst * power;
 }
 
 // The game hooks' shared state (one player): MarioActor.cpp sets the Spin
