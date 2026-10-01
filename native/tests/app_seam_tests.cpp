@@ -225,6 +225,16 @@ std::uint64_t petari_gx_pipeline_manifest_failure_count() {
     return 0;
 }
 void petari_gx_pipeline_report() {}
+// The movement harness's Cappy tasks (src/Game/Player/MarioCappy.cpp).
+int petari_cappy_bounces() {
+    return 0;
+}
+int petari_cappy_state() {
+    return 0;
+}
+bool petari_mod_enabled(int) {
+    return false;
+}
 }
 
 namespace {

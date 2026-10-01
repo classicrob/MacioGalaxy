@@ -755,6 +755,13 @@ void Mario::updateWalkSpeed() {
             // (standing) frame while Mario moves on; hand over to the run.
             stopAnimation("飛び込み失敗回転着地", "基本");
         }
+        if (PetariNative::Odyssey::Live::capThrowBrake > 0) {
+            // Cappy mod: a ground throw slows Mario x0.95 a frame for 15 frames
+            // (SMO's SpinBrakeFrame/SpinBrakeRate), then the run picks up again.
+            --PetariNative::Odyssey::Live::capThrowBrake;
+            mWalkSpeed *= 0.95f;
+            return;
+        }
         mWalkSpeed = PetariNative::Odyssey::stepRun(mWalkSpeed * unit, stick) / unit;
         return;
     }

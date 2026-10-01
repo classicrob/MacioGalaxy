@@ -396,6 +396,10 @@ inline bool noSpinAir = false;  // in the mod's dive or long jump: Spin does not
 constexpr int SpinBufferFrames = 6;
 inline int spinBuffer = 0;
 inline int getUpFrames = 0;  // frames left of the forward-roll get-up after a dive landing (then the run animation)
+// Cappy mod (docs/dev/CAPPY.md): the air move in progress (MarioJump.cpp), and
+// the frames left of a ground throw's brake (MarioWalk.cpp).
+inline Air airKind = Air::None;
+inline int capThrowBrake = 0;
 }  // namespace Live
 
 }  // namespace PetariNative::Odyssey

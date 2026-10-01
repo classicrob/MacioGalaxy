@@ -10,6 +10,9 @@
 #include "Game/Player/MarioConst.hpp"
 #include "Game/Player/MarioNullBck.hpp"
 #include "Game/Player/MarioParts.hpp"
+#ifdef PETARI_NATIVE
+#include "Game/Player/MarioCappy.hpp"
+#endif
 #include "Game/Player/MarioState.hpp"
 #include "Game/Player/MarioSwim.hpp"
 #include "Game/Player/TornadoMario.hpp"
@@ -54,6 +57,9 @@ void MarioActor::initParts() {
     _994 = new MarioParts(this, "スピンチコ", "SpinTico", false, getBaseMtx(), nullptr);
     _994->initWithoutIter();
     _994->kill();
+#ifdef PETARI_NATIVE
+    petariCappyInit(this);  // Cappy mod: the cap models, only with the mod on
+#endif
 }
 
 void MarioActor::updateBeeWingAnimation() {
