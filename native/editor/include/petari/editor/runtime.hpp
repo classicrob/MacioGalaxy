@@ -11,4 +11,13 @@ namespace PetariEditor::Runtime {
 /// and Mario can be moved).
 void tick(bool playable);
 
+/// A same-stage rebuild with the editor's fast path (no lives counter, shader gate or wipe;
+/// ~0.3-0.5 s): with an edit session in Edit mode it is the editor's Reload (edits included, back
+/// in Edit after); without one, a plain restart of the stage (for test drivers). fromStart: at the
+/// mission's start instead of the restart point. False when a reload is already in flight or no
+/// stage is loaded. Game thread (GameScene::update).
+bool reloadScene(bool fromStart);
+/// True from reloadScene() (or the editor's Reload) until the new scene is playable.
+bool reloading();
+
 }  // namespace PetariEditor::Runtime

@@ -157,4 +157,35 @@ void reloadTestTick() {
     }
 }
 
+// PETARI_EDITOR_PLAIN_RELOAD_TEST=1 (no edit session): reloadScene(false) once the smoke's checks
+// are done; reloading() must go true, then false with the scene playable again.
+// Logs "[editor-reload] plain PASS" or "[editor-reload] plain FAIL: <reason>".
+bool reloadScene(bool fromStart);
+bool reloading();
+
+void plainReloadTestTick(bool playable) {
+    static const bool sOn = [] {
+        const char* p = std::getenv("PETARI_EDITOR_PLAIN_RELOAD_TEST");
+        return p != nullptr && p[0] == '1';
+    }();
+    static int sPhase = 0, sFrames = 0;
+    if (!sOn || sPhase == 3 || !PetariNative::SmokePhase::stageChecksDone.load()) return;
+    sFrames++;
+    if (sPhase == 0) {
+        if (!reloadScene(false) || !reloading()) {
+            std::fprintf(stderr, "[editor-reload] plain FAIL: reloadScene refused\n");
+            sPhase = 3;
+            return;
+        }
+        sPhase = 1;
+        sFrames = 0;
+    } else if (sPhase == 1 && !reloading()) {
+        std::fprintf(stderr, "[editor-reload] plain %s\n", playable ? "PASS" : "FAIL: done but not playable");
+        sPhase = 3;
+    } else if (sPhase == 1 && sFrames > 1800) {
+        std::fprintf(stderr, "[editor-reload] plain FAIL: still reloading after 30 s\n");
+        sPhase = 3;
+    }
+}
+
 }  // namespace PetariEditor::Runtime
