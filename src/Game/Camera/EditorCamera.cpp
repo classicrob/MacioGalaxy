@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's camera over the frozen scene (Game/Camera/EditorCamera.hpp).
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorPicking.hpp"
 #include "Game/AudioLib/AudSystem.hpp"
 #include "Game/AudioLib/AudWrap.hpp"
 #include "Game/System/GameSystemFunction.hpp"
@@ -9,13 +10,20 @@
 #include "Game/Util/MapUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
+#include <petari/editor/edit_api.hpp>
 #include <petari/editor_input.h>
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace {
+    // PETARI_EDITOR_PICK_TRACE=1: log what picking and zooming hit.
+    bool pickTrace() {
+        static const bool trace = std::getenv("PETARI_EDITOR_PICK_TRACE") != nullptr;
+        return trace;
+    }
     struct V {
         float x, y, z;
     };
@@ -109,10 +117,13 @@ namespace {
         gState.forward = forward;
     }
 
-    // Keeps the view level about the current up (no roll).
-    void levelView() {
-        const V right = normalized(cross(gState.forward, gState.up), V{1, 0, 0});
-        gState.forward = normalized(cross(gState.up, right), gState.forward);
+    // The view has no roll by construction (setView takes "right" from forward x up); only a view
+    // looking straight along the new up needs a nudge so "right" stays defined.
+    void keepViewDefined() {
+        if (std::fabs(dot(gState.forward, gState.up)) > 0.995f) {
+            const V side = normalized(cross(gState.up, V{0.3f, 0.5f, 0.8f}), V{1, 0, 0});
+            gState.forward = normalized(add(gState.forward, mul(side, 0.2f)), gState.forward);
+        }
     }
 
     void log(const char* when) {
@@ -160,6 +171,7 @@ namespace EditorCamera {
         AudWrap::getSystem()->enterPauseMenu();
         GameSystemFunction::onPauseBeginAllRumble();
         petari_editor_set_active(1);
+        PetariEditor::notifyEditEntered();  // Runtime loads the EditModel and binds actors on its next tick
         setView();
         log("enter");
     }
@@ -182,7 +194,7 @@ namespace EditorCamera {
         // Up turns toward the gravity at the pivot.
         if (dot(gState.up, gState.upTarget) < 0.99999f) {
             gState.up = normalized(add(gState.up, mul(sub(gState.upTarget, gState.up), kUpBlend)), gState.upTarget);
-            levelView();
+            keepViewDefined();
         }
         const V right = normalized(cross(gState.forward, gState.up), V{1, 0, 0});
         const float distance = std::fmax(length(sub(gState.pivot, gState.eye)), kMinDistance);
@@ -221,7 +233,12 @@ namespace EditorCamera {
         // Zoom toward what is under the cursor (it becomes the pivot), slowing near it; never through it.
         if (in.dolly != 0.0f) {
             V target;
-            if (!hitMap(gState.eye, cursorRay(in.cursorX, in.cursorY), &target)) target = gState.pivot;
+            const bool hit = hitMap(gState.eye, cursorRay(in.cursorX, in.cursorY), &target);
+            if (!hit) target = gState.pivot;
+            if (pickTrace()) {
+                std::fprintf(stderr, "[editor] dolly: hit %d target (%.0f %.0f %.0f) eye (%.0f %.0f %.0f)\n", hit ? 1 : 0, target.x, target.y,
+                             target.z, gState.eye.x, gState.eye.y, gState.eye.z);
+            }
             const V toTarget = sub(target, gState.eye);
             const float d = length(toTarget);
             float next = d * std::pow(0.85f, in.dolly);
@@ -232,15 +249,34 @@ namespace EditorCamera {
             }
         }
 
-        // Frame: Mario until there is a selection to frame (editor/picking).
+        // Frame: the selection, or Mario while nothing is selected. F again from the same place: closer.
         if (in.frame > 0) {
-            if (const TVec3f* mario = MR::getPlayerPos()) {
+            float center[3], radius = 0.0f;
+            if (EditorPicking::selectionBounds(center, &radius)) {
+                gState.pivot = {center[0], center[1], center[2]};
+                if (!in.worldUp) gState.upTarget = gravityUp(gState.pivot, gState.upTarget);
+                const float fit = std::fmax(radius, 50.0f) / std::tan(gState.fovy * 0.5f * kDeg) * 1.3f;
+                gState.eye = sub(gState.pivot, mul(gState.forward, fit));
+            } else if (const TVec3f* mario = MR::getPlayerPos()) {
                 gState.pivot = vt(*mario);
                 if (!in.worldUp) gState.upTarget = gravityUp(gState.pivot, gState.upTarget);
                 gState.eye = sub(gState.pivot, mul(gState.forward, 900.0f));
             }
         }
         setView();
+
+        // What is under the cursor, and clicks (Game/Camera/EditorPicking.hpp).
+        EditorPicking::View view;
+        const V r = normalized(cross(gState.forward, gState.up), V{1, 0, 0});
+        const V u = cross(r, gState.forward);
+        view.eye[0] = gState.eye.x, view.eye[1] = gState.eye.y, view.eye[2] = gState.eye.z;
+        view.forward[0] = gState.forward.x, view.forward[1] = gState.forward.y, view.forward[2] = gState.forward.z;
+        view.up[0] = u.x, view.up[1] = u.y, view.up[2] = u.z;
+        view.fovy = gState.fovy;
+        view.aspect = MR::getAspect();
+        view.cursorX = in.cursorX;
+        view.cursorY = in.cursorY;
+        EditorPicking::update(view);
         return false;
     }
 
@@ -252,12 +288,24 @@ namespace EditorCamera {
         GameSystemFunction::onPauseEndAllRumble();
         AudWrap::getSystem()->exitPauseMenu();
         gState.active = false;
+        EditorPicking::reset();
         petari_editor_set_active(0);
+        PetariEditor::notifyEditLeft();
         log("leave");
     }
 
     bool isActive() {
         return gState.active;
+    }
+
+    void abandon() {
+        if (!gState.active) return;
+        gState.active = false;
+        EditorPicking::reset();  // the old scene's actors are gone: drop them before anything looks
+        GameSystemFunction::onPauseEndAllRumble();
+        AudWrap::getSystem()->exitPauseMenu();
+        petari_editor_set_active(0);
+        log("abandon (the scene was rebuilt)");
     }
 }  // namespace EditorCamera
 #endif

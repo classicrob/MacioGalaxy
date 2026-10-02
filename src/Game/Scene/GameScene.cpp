@@ -44,6 +44,7 @@
 // native/platform/include/petari/platform/os_host.hpp
 extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorDraw.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
@@ -99,6 +100,7 @@ void GameScene::init() {
 #ifdef PETARI_NATIVE
     // Before any list is sized: the level editor's headroom follows the Mods-page switch.
     PetariEditor::Hooks::syncSwitch(PetariNative::EditorSettings::enabled());
+    EditorCamera::abandon();  // a scene rebuilt under Edit mode (a reload) starts outside it
 #endif
     SceneFunction::createHioBasicNode(this);
     SceneFunction::startStageFileLoad();
@@ -483,6 +485,9 @@ void GameScene::draw3D() const {
     MR::loadLightPlayer();
     CategoryList::execute(MR::DrawType_0x24);
     CategoryList::execute(MR::DrawType_0x3B);
+#ifdef PETARI_NATIVE
+    EditorDraw::draw3D();  // the level editor's selection and hover, before the Z buffer is cleared
+#endif
     MR::clearZBuffer();
 }
 
