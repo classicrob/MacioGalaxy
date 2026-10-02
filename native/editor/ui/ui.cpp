@@ -1,6 +1,8 @@
 // The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
 #include <petari/editor/ui.hpp>
 
+#include "edit_mode.hpp"
+
 #include <petari/home_menu.hpp>
 
 #include "imgui.h"
@@ -294,6 +296,7 @@ bool viewportRect(float* x, float* y, float* width, float* height) {
 }
 
 void drawFrame(float windowWidth, float windowHeight) {
+    updateEditMode(windowWidth, windowHeight);  // uses last frame's viewport
     gViewportValid = false;
     if (!gVisible || gFocus || !(windowWidth > 0.0f) || !(windowHeight > kToolbarHeight + kFooterHeight + 50.0f)) {
         if (gAreaSet) setArea(0, 0, 0, 0);  // the game takes the whole window again

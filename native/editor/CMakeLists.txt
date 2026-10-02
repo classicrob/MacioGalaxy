@@ -46,3 +46,6 @@ if(BUILD_TESTING)
     target_link_libraries(petari_editor_model_tests PRIVATE petari_editor_model petari_editor_core)
     add_test(NAME native_editor_model COMMAND petari_editor_model_tests)
 endif()
+
+# The panels, camera and gizmo (Dear ImGui; needs aurora's imgui target and the Home menu's fonts).
+add_subdirectory(ui)

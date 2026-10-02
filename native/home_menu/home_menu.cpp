@@ -707,11 +707,13 @@ Rect Menu::itemRect(int index) const {
     }
     // Six or more items (the Mods page) use a tighter column so they fit.
     const bool compact = itemCount() > 5;
-    const bool dense = itemCount() > 6;  // seven items: the Mods page with a Mod folder entry
-    // The dense column ends above the footer band (View::footer, from y 0.915).
-    const float spacing = dense ? 0.165f : compact ? 0.2f : kItemSpacing;
+    const bool dense = itemCount() > 6;    // seven or eight items
+    const bool denser = itemCount() > 8;   // the Mods page with every mod and a Mod folder entry
+    // The dense columns end above the footer band (View::footer, from y 0.915).
+    const float spacing = denser ? 0.135f : dense ? 0.165f : compact ? 0.2f : kItemSpacing;
     const float top = (dense ? -0.46f : compact ? -0.32f : kItemTop) + spacing * static_cast<float>(index);
-    return {-kItemHalfWidth / ax, top, kItemHalfWidth / ax, top + (dense ? 0.135f : compact ? 0.16f : kItemHeight)};
+    const float height = denser ? 0.115f : dense ? 0.135f : compact ? 0.16f : kItemHeight;
+    return {-kItemHalfWidth / ax, top, kItemHalfWidth / ax, top + height};
 }
 
 int Menu::itemAt(float x, float y) const {
