@@ -437,6 +437,7 @@ namespace {
 void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
+void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 
 bool reloadScene(bool fromStart) {
     Session& s = session();
@@ -476,6 +477,7 @@ void tick(bool playable) {
     syncTestTick();
     reloadTestTick();
     saveTestTick();
+    redrawTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)

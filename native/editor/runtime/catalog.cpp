@@ -72,6 +72,7 @@ namespace {
         if (e.has("placeable")) info.placeable = e["placeable"].asBool(true);
         if (e.has("keepable")) info.keepable = e["keepable"].asBool(false);
         if (e.has("appearSound")) info.appearSound = e["appearSound"].asString();
+        if (e.has("table")) info.table = e["table"].asString();
         if (e.has("thumbnailArchive")) info.thumbnailArchive = e["thumbnailArchive"].asString();
         if (e.has("thumbnailJoint")) info.thumbnailJoint = e["thumbnailJoint"].asString();
         if (e.has("curated")) info.curated = e["curated"].asBool(false);
@@ -271,6 +272,17 @@ std::vector< const ClassInfo* > search(const std::string& query, int limit) {
         out.push_back(info);
     }
     return out;
+}
+
+std::string tablePath(const ClassInfo& info, const std::string& layer) {
+    std::string table = info.table;
+    if (table.empty()) {
+        table = info.category == Category::Area     ? "jmp/placement/areaobjinfo"
+                : info.category == Category::Camera ? "jmp/placement/cameracubeinfo"
+                                                    : "jmp/placement/objinfo";
+    }
+    const size_t leaf = table.rfind('/');
+    return table.substr(0, leaf + 1) + layer + table.substr(leaf);
 }
 
 }  // namespace PetariEditor::Catalog
