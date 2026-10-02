@@ -2,7 +2,11 @@
 // synthesized-row registry.
 #include "petari/editor/runtime_hooks.hpp"
 
+#include <petari/smoke_phase.hpp>
+
 #include <atomic>
+#include <map>
+#include <string>
 #include <cstdlib>
 #include <vector>
 
@@ -85,6 +89,49 @@ const std::vector< Placed >& placed() {
 
 namespace {
     std::uint32_t gSceneSerial = 1;
+    bool gEditorReload = false;
+
+    std::string lowerPath(const char* pPath) {
+        std::string out(pPath);
+        for (char& c : out) {
+            c = static_cast< char >(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+        }
+        return out;
+    }
+    std::map< std::string, std::pair< std::string, std::vector< std::uint8_t > > >& overrides() {
+        static std::map< std::string, std::pair< std::string, std::vector< std::uint8_t > > > sOverrides;  // lower -> (path, bytes)
+        return sOverrides;
+    }
+}  // namespace
+
+void setArchiveOverride(const std::string& path, std::vector< std::uint8_t > bytes) {
+    overrides()[lowerPath(path.c_str())] = {path, std::move(bytes)};
+}
+
+void clearArchiveOverrides() {
+    overrides().clear();
+}
+
+const std::vector< std::uint8_t >* archiveOverride(const char* pPath) {
+    auto it = overrides().find(lowerPath(pPath));
+    return it == overrides().end() ? nullptr : &it->second.second;
+}
+
+std::vector< std::string > archiveOverridePaths() {
+    std::vector< std::string > out;
+    for (const auto& [key, entry] : overrides()) {
+        out.push_back(entry.first);
+    }
+    return out;
+}
+
+void setEditorReload(bool active) {
+    gEditorReload = active;
+    PetariNative::SmokePhase::editorReloading.store(active);
+}
+
+bool editorReload() {
+    return gEditorReload;
 }
 
 std::uint32_t sceneSerial() {

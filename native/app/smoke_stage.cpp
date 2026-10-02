@@ -463,6 +463,9 @@ Step StageDriver::step(const Observation& o) {
         }
         return step;
     }
+    if (!o.playerValid && PetariNative::SmokePhase::editorReloading.load()) {
+        return step;  // the level editor is rebuilding the scene
+    }
     if (!o.playerValid) {
         finish(Result::Fail, std::string("the player vanished while ") + phase(), step);
         return step;
