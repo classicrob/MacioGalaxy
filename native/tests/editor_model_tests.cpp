@@ -158,8 +158,6 @@ void testSynthetic() {
     const E::RowId takobo = findRow(*m, 1, "jmp/placement/layerb/objinfo", "Takobo");
     const E::RowId galaxyCoin = findRow(*m, 0, "jmp/placement/common/objinfo", "Coin");
     check(m->rowMissions(kuribo) == 0b01 && m->rowMissions(takobo) == 0b10 && m->rowMissions(galaxyCoin) == 0b11, "rows' missions");
-    E::Op add{"Add", {}, {}, {E::AddRow{}}, {}};
-    check(!m->apply(add, &error) && !error.empty(), "adding rows is refused until structural ops land");
 
     // Moving a zone's StageObjInfo row moves the zone.
     const E::RowId zoneRow = findRow(*m, 0, "jmp/placement/common/stageobjinfo", "TestZone");
@@ -173,6 +171,73 @@ void testSynthetic() {
 
 // A mod saved earlier is enabled: the game's view has its edit, the disc doesn't. The edit counts
 // as a change (so the next save keeps it), and reverting it goes back to the disc.
+// Adding (duplicate, new, into a layer the zone lacks), deleting, undo and redo, failures.
+void testStructure() {
+    std::map< std::string, F::Bytes > disc = syntheticDisc();
+    E::FileSource source = [&](const std::string& path) -> std::optional< F::Bytes > {
+        auto it = disc.find(path);
+        return it == disc.end() ? std::nullopt : std::optional< F::Bytes >(it->second);
+    };
+    std::string error;
+    std::unique_ptr< E::EditModel > m = E::EditModel::load("TestGalaxy", 1, source, &error);
+    const E::RowId kuribo = findRow(*m, 1, "jmp/placement/layera/objinfo", "Kuribo");
+    const E::RowId coin = findRow(*m, 1, "jmp/placement/layera/objinfo", "Coin");
+    m->takeChangedRows();
+
+    // Duplicate: a copy with a fresh l_id; the reserved id names it at once.
+    const E::RowId copy = E::newRowId();
+    E::AddRow dup;
+    dup.id = copy;
+    dup.zone = 1;
+    dup.table = "jmp/placement/layera/objinfo";
+    dup.copyOf = kuribo;
+    dup.cells.push_back({E::columnHash("pos_x"), E::Cell{E::CellType::Float, 0, 77.0f, {}}});
+    E::Op duplicate{"Duplicate Goomba", {}, {}, {dup}, {}};
+    check(m->apply(duplicate, &error), "duplicate: " + error);
+    check(m->state(copy) == E::RowState::Added && std::string(m->objectName(copy)) == "Kuribo", "the copy is an added Kuribo");
+    check(m->cell(copy, E::columnHash("l_id"))->i == 8 && m->cell(copy, E::columnHash("Obj_arg0"))->i == 2, "fresh l_id, args copied");
+    check(m->transform(copy).pos.x == 77.0f && m->originalCell(copy, E::columnHash("pos_x")) == nullptr, "override and no original");
+    check(m->rowMissions(copy) == 0b01 && m->takeChangedRows().count(copy) == 1, "missions and SceneSync see it");
+
+    // A new row in a layer table the zone lacks (layer C): the table is made from layer A's columns.
+    E::AddRow fresh;
+    fresh.zone = 1;
+    fresh.table = "jmp/placement/layerc/objinfo";
+    fresh.cells.push_back({E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, "StarPiece"}});
+    check(m->apply(E::Op{"Add Star Bit", {}, {}, {fresh}, {}}, &error), "new layer table: " + error);
+    auto archives = m->changedArchives();
+    check(archives.size() == 1, "one changed archive");
+    std::optional< F::Archive > saved = F::Archive::parse(archives[0].second);
+    check(saved && saved->has("jmp/placement/layerc/objinfo") && F::Table::parse(*saved->file("jmp/placement/layerc/objinfo"))->rowCount() == 1,
+          "the rebuilt archive has the new layer table");
+    check(F::Table::parse(*saved->file("jmp/placement/layera/objinfo"))->rowCount() == 3, "and layer A with the duplicate");
+
+    // Delete: gone from the table, still listed (Deleted) and readable; undo puts it back in place.
+    check(m->apply(E::Op{"Delete Coin", {}, {}, {}, {coin}}, &error), "delete");
+    check(m->state(coin) == E::RowState::Deleted && std::string(m->objectName(coin)) == "Coin", "a deleted row reads as it was");
+    int listed = 0;
+    m->forEachRow(1, 0, [&](E::RowId) { ++listed; });
+    check(listed == 3, "rows listed: Kuribo, the copy, and the deleted Coin");
+    check(m->undo() && m->state(coin) == E::RowState::Original && m->rowAt(1, 0, 1) == coin, "undo delete restores the row in place");
+    check(m->redo() && m->state(coin) == E::RowState::Deleted, "redo delete");
+
+    // Undo the adds: the copy disappears; redo brings it back with the same id and l_id.
+    check(m->jumpTo(0) && m->state(copy) == E::RowState::Original && m->objectName(copy) == nullptr, "undo add removes the row");
+    check(m->jumpTo(3) && m->state(copy) == E::RowState::Added && m->cell(copy, E::columnHash("l_id"))->i == 8, "redo add, same id");
+
+    // A failure part-way leaves nothing behind.
+    E::AddRow good = dup;
+    good.id = E::RowId{};
+    E::AddRow bad;
+    bad.zone = 1;
+    bad.table = "jmp/placement/common/nosuchtable";
+    const int size = m->historySize();
+    check(!m->apply(E::Op{"Bad", {}, {}, {good, bad}, {}}, &error) && m->historySize() == size, "a failed op records nothing");
+    int rows = 0;
+    m->forEachRow(1, 0, [&](E::RowId) { ++rows; });
+    check(rows == 3, "and its first add was taken back");
+}
+
 void testModOverDisc() {
     std::map< std::string, F::Bytes > disc = syntheticDisc();
     std::map< std::string, F::Bytes > modded = disc;
@@ -242,6 +307,7 @@ void testDisc() {
 int main() {
     testSynthetic();
     testModOverDisc();
+    testStructure();
     testDisc();
     std::printf("editor model: %d checks passed\n", checks);
     return 0;

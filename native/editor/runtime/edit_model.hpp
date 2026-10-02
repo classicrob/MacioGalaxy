@@ -6,6 +6,7 @@
 #include <petari/editor/formats/formats.hpp>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -96,7 +97,9 @@ private:
         Formats::Table current;
         std::vector< Column > columns;
         std::vector< std::vector< Cell > > cells;     // current, decoded [row][column]
-        std::vector< std::vector< Cell > > origCells;  // as on disc [row][column in original]
+        std::vector< std::vector< Cell > > origCells;  // as on disc [row][column in original]; empty for added rows
+        std::vector< RowId > ids;                      // stable ids, parallel to the rows
+        std::vector< bool > added;                     // rows added in this session
     };
     struct ZoneModel {
         std::string name;
@@ -104,6 +107,7 @@ private:
         Formats::Archive archive;
         Formats::Bytes discPlain;  // the disc's archive, decompressed (empty: same as `archive`, or a mod-only zone)
         std::vector< TableModel > tables;
+        bool filesAdded = false;  // a table was created (the archive is rebuilt, not patched)
         bool placed = false;
         Mtx34 world{};
     };
@@ -113,15 +117,32 @@ private:
         std::optional< Cell > before;  // nullopt: the column was added by this change
         Cell after;
     };
+    /// A row put into or taken out of a table: what undo and redo need to do it again exactly.
+    struct RowRecord {
+        RowId id;
+        int zone = 0, table = 0, index = 0;
+        Formats::Bytes record;
+        std::vector< Cell > cells, original;
+        bool added = false;
+    };
     struct Entry {
         std::uint64_t serial = 0;
         std::string label;
+        std::vector< RowRecord > inserted;  // applied first
         std::vector< Change > changes;
+        std::vector< RowRecord > removed;   // applied last
     };
 
     EditModel() = default;
     static RowId makeId(int zone, int table, int row);
     bool unpack(RowId id, int* pZone, int* pTable, int* pRow) const;
+    void insertRecord(const RowRecord& record);
+    RowRecord removeRecord(int zone, int table, int row);
+    int ensureTable(int zone, const std::string& path);
+    std::int32_t nextLinkId(int zone) const;
+    bool addRow(const AddRow& add, Entry* pEntry, std::string* pError);
+    void undoEntry(const Entry& entry);
+    void redoEntry(const Entry& entry);
     void writeCell(int zone, int table, int row, std::uint32_t column, const Cell& value);
     void computePlacement();
     std::uint64_t serialAtCursor() const { return mCursor > 0 ? mHistory[mCursor - 1].serial : 0; }
@@ -136,6 +157,8 @@ private:
     std::uint64_t mNextSerial = 1;
     std::uint64_t mRevision = 1;
     std::set< RowId > mChanged;
+    std::map< RowId, RowRecord > mDeleted;               // tombstones: deleted rows, for state() and undo
+    std::map< RowId, std::pair< int, int > > mNewRowHome;  // added rows' (zone, table)
     mutable std::string mNameScratch;
 };
 

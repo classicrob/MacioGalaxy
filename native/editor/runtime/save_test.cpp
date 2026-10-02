@@ -5,6 +5,8 @@
 // then "[editor-save] PASS" or "[editor-save] FAIL: <reason>".
 #include "runtime_core.hpp"
 
+#include <petari/host_allocation.hpp>
+
 #include <petari/editor_settings.hpp>
 #include <petari/smoke_phase.hpp>
 
@@ -28,6 +30,7 @@ namespace {
 }  // namespace
 
 void saveTestTick() {
+    PetariNative::HostAllocationScope host;  // test bookkeeping (the actors it checks are only read)
     static const char* const sModName = std::getenv("PETARI_EDITOR_SAVE_TEST");
     SaveState& s = gSave;
     if (sModName == nullptr || sModName[0] == '\0' || s.done) return;
