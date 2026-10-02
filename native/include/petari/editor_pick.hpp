@@ -27,12 +27,14 @@ void setHoverWanted(bool wanted);  // the pointer is over the viewport (not drag
 void click(Click mode);            // a click over the viewport
 void clearSelection();             // Esc, or Edit mode left
 void selectByName(const char* name);  // select the first object with this row or class name (search, tests)
+void selectRow(std::uint64_t row, Click mode);  // select a row's object (the Changes and Outliner lists)
 
 // Game, Edit nerve: the requests, then the answers.
 bool hoverWanted();
 Click takeClick();
 bool takeClear();
 bool takeSelectByName(char* name, int size);
+bool takeSelectRow(std::uint64_t* row, Click* mode);
 void publish(const Item* hover, const std::vector<Item>& selection);
 
 // UI: the last answers.

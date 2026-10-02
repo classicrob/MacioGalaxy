@@ -2,6 +2,7 @@
 // headless (no window, no renderer). The presenter's calls are recorded instead.
 #include <petari/editor/ui.hpp>
 
+
 #include "imgui.h"
 
 #include <cmath>
@@ -51,6 +52,7 @@ extern "C" void petari_present_set_content_area(float x, float y, float width, f
 extern "C" void petari_present_set_free_aspect(int enabled) {
     gArea.freeAspect = enabled;
 }
+
 
 int main() {
     ImGui::CreateContext();

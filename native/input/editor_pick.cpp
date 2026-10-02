@@ -13,6 +13,8 @@ std::atomic<bool> gHoverWanted{false};
 std::atomic<int> gClick{0};
 std::atomic<bool> gClear{false};
 std::atomic<bool> gByNameWanted{false};
+std::atomic<std::uint64_t> gRowWanted{0};
+std::atomic<int> gRowMode{0};
 char gByName[64] = {};
 std::mutex gMutex;
 bool gHoverValid = false;
@@ -29,6 +31,18 @@ void selectByName(const char* name) {
     std::snprintf(gByName, sizeof(gByName), "%s", name != nullptr ? name : "");
     gByNameWanted.store(true, std::memory_order_release);
 }
+void selectRow(std::uint64_t row, Click mode) {
+    gRowMode.store(static_cast<int>(mode), std::memory_order_relaxed);
+    gRowWanted.store(row, std::memory_order_release);
+}
+bool takeSelectRow(std::uint64_t* row, Click* mode) {
+    const std::uint64_t wanted = gRowWanted.exchange(0, std::memory_order_acquire);
+    if (wanted == 0) return false;
+    *row = wanted;
+    *mode = static_cast<Click>(gRowMode.load(std::memory_order_relaxed));
+    return true;
+}
+
 bool takeSelectByName(char* name, int size) {
     if (!gByNameWanted.exchange(false, std::memory_order_acquire)) return false;
     std::lock_guard<std::mutex> lock(gMutex);

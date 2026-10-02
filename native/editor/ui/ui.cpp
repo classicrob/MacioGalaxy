@@ -3,6 +3,8 @@
 
 #include "edit_mode.hpp"
 
+#include <petari/editor_pick.hpp>
+
 #include <petari/home_menu.hpp>
 
 #include "imgui.h"
@@ -213,8 +215,13 @@ void drawFooter(float width, float height) {
     const ImVec2 min(0, height - kFooterHeight);
     bandBackground(min, ImVec2(width, height), false);
     ImGui::SetCursorPosY((kFooterHeight - ImGui::GetTextLineHeight()) * 0.5f);
-    // The keys that work right now (the Home menu's footer convention); filled in by the tools.
-    ImGui::TextUnformatted("Tab  play     F  frame     Cmd+.  focus");
+    // The keys that work right now (the Home menu's footer convention), or the drag under way.
+    const PetariNative::EditorGizmo::View gizmo = PetariNative::EditorGizmo::view();
+    if (gizmo.dragging && gizmo.status[0] != '\0') {
+        ImGui::TextUnformatted(gizmo.status);
+    } else {
+        ImGui::TextUnformatted("Tab play    Click select    W E R move/rotate/scale    End drop to ground    F frame    Cmd+. focus");
+    }
     ImGui::End();
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();

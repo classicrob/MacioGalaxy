@@ -481,9 +481,11 @@ namespace EditorGizmo {
                                                                                                : "Moved");
                     }
                     gDrag.active = false;
+                    gDrag.handle = None;
                 }
             } else if (input.released) {
                 gDrag.active = false;
+                gDrag.handle = None;
             }
         }
         out.visible = mode != UI::Mode::Select;
