@@ -19,3 +19,11 @@ if(BUILD_TESTING)
     target_link_libraries(petari_editor_ui_tests PRIVATE petari_editor_ui)
     add_test(NAME native_editor_ui COMMAND petari_editor_ui_tests)
 endif()
+
+if(BUILD_TESTING)
+    # The transform math the gizmo uses (petari/editor/gizmo_math.hpp): Euler round trips, gravity
+    # frames, drags, snapping.
+    add_executable(petari_editor_gizmo_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/editor_gizmo_tests.cpp)
+    target_include_directories(petari_editor_gizmo_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+    add_test(NAME native_editor_gizmo COMMAND petari_editor_gizmo_tests)
+endif()
