@@ -1,0 +1,879 @@
+diff --git a/include/Game/NameObj/NameObjExecuteHolder.hpp b/include/Game/NameObj/NameObjExecuteHolder.hpp
+index 217580236..c8535cff4 100644
+--- a/include/Game/NameObj/NameObjExecuteHolder.hpp
++++ b/include/Game/NameObj/NameObjExecuteHolder.hpp
+@@ -27,6 +27,9 @@ public:
+     void connectToDraw();
+     void disconnectToDraw();
+ 
++#ifdef PETARI_NATIVE
++    friend class NameObjExecuteHolder;
++#endif
+ private:
+     /* 0x0 */ NameObj* mExecutedObj;
+     /* 0x4 */ s8 _4;
+@@ -57,6 +60,13 @@ public:
+     void requestMovementOn(int);
+     void requestMovementOff(int);
+     NameObjExecuteInfo* getConnectToSceneInfo(const NameObj*) const;
++#ifdef PETARI_NATIVE
++    // THROWAWAY editor spike: objects registered after the scene's load-time
++    // initConnectting (index >= from) get room in the load-sized lists and are
++    // connected the way load connects them.
++    s32 nativeExecuteCount() const { return mExecuteArraySize; }
++    void nativeLateConnect(s32 from);
++#endif
+ 
+ private:
+     /* 0x0C */ NameObjExecuteInfo* mExecuteArray;
+diff --git a/include/Game/Scene/EditorSpike.hpp b/include/Game/Scene/EditorSpike.hpp
+new file mode 100644
+index 000000000..1a54c15eb
+--- /dev/null
++++ b/include/Game/Scene/EditorSpike.hpp
+@@ -0,0 +1,20 @@
++#pragma once
++
++#ifdef PETARI_NATIVE
++#include <revolution.h>
++#include <cstdint>
++
++class StageDataHolder;
++
++// THROWAWAY level-editor spike (branch wt/editor-spike, never merged): creates,
++// moves, kills and re-creates actors at runtime from synthesized placement rows
++// in a running stage. Driven by PETARI_EDITOR_SPIKE=1; off, it does nothing.
++namespace EditorSpike {
++    // GameScene::update, every frame; actionNerve: the scene is in normal play.
++    void update(bool actionNerve);
++    // While true GameScene::update skips the scene's nerves (movement), as photo mode does.
++    bool isFrozen();
++    // StageDataHolder::findPlacedStageDataHolder: the zone of a synthesized row, or -1.
++    s32 findSyntheticZone(uintptr_t rowAddress);
++}  // namespace EditorSpike
++#endif
+diff --git a/native/app/smoke_stage.cpp b/native/app/smoke_stage.cpp
+index 5652769bf..dabfd17bb 100644
+--- a/native/app/smoke_stage.cpp
++++ b/native/app/smoke_stage.cpp
+@@ -10,6 +10,8 @@
+ #include <cstdlib>
+ #include <cstring>
+ 
++extern "C" int petari_editor_spike_go;
++
+ namespace PetariNative::App::Smoke {
+ 
+ namespace {
+@@ -462,6 +464,9 @@ Step StageDriver::step(const Observation& o) {
+         }
+         return step;
+     }
++    if (!o.playerValid && petari_editor_spike_go == 2) {
++        return step;  // THROWAWAY editor spike: a same-stage reload is in progress
++    }
+     if (!o.playerValid) {
+         finish(Result::Fail, std::string("the player vanished while ") + phase(), step);
+         return step;
+@@ -731,6 +736,7 @@ void StageDriver::exercise(const Observation& o, Step& step) {
+         break;
+     }
+     case Phase::Tail:
++        if (petari_editor_spike_go == 0) petari_editor_spike_go = 1;  // THROWAWAY editor spike: start once the checks are done
+         if (mPhaseFrames >= mConfig.tailFrames) {
+             finish(Result::Pass,
+                    "loaded, ready, pause menu opened and closed, " + std::to_string(mConfig.tailFrames) +
+diff --git a/src/Game/NameObj/NameObjExecuteHolder.cpp b/src/Game/NameObj/NameObjExecuteHolder.cpp
+index 0c6c8e709..bf93135e3 100644
+--- a/src/Game/NameObj/NameObjExecuteHolder.cpp
++++ b/src/Game/NameObj/NameObjExecuteHolder.cpp
+@@ -6,6 +6,13 @@
+ #include "Game/System/GameSystemSceneController.hpp"
+ #include "Game/Util/ObjUtil.hpp"
+ #include "Game/Util/SingletonHolder.hpp"
++#ifdef PETARI_NATIVE
++#include "Game/System/DrawBuffer.hpp"
++#include "Game/System/DrawBufferExecuter.hpp"
++#include "Game/System/DrawBufferGroup.hpp"
++#include "Game/System/DrawBufferHolder.hpp"
++#include <cstdio>
++#endif
+ 
+ namespace {
+     NameObjExecuteHolder* getNameObjExecuteHolder() {
+@@ -420,3 +427,87 @@ NameObjExecuteHolder::NameObjExecuteHolder(int size)
+     : NameObj("connectToScene情報保持"), mExecuteArray(), mExecuteArrayMaxSize(size), mExecuteArraySize(), _18(), _19(), _1A(), _1B(), _1C() {
+     mExecuteArray = new NameObjExecuteInfo[mExecuteArrayMaxSize];
+ }
++
++#ifdef PETARI_NATIVE
++namespace {
++    // Room for every object counted into a category (old arrays are left in the solid scene heap).
++    void growCategory(NameObjCategoryList* pList, int category) {
++        NameObjCategoryList::CategoryInfo& rInfo = pList->mCategoryInfo[category];
++        MR::AssignableArray< NameObj* >& rArray = rInfo.mNameObjArr.mArray;
++        s32 need = rInfo.mNameObjArr.size() + 1;
++        if (static_cast< s32 >(rInfo.mCheck) > need) {
++            need = rInfo.mCheck;
++        }
++        if (need <= rArray.mMaxSize) {
++            return;
++        }
++        s32 newMax = need + need / 2 + 16;
++        NameObj** pNew = new NameObj*[newMax];
++        for (s32 i = 0; i < rInfo.mNameObjArr.size(); i++) {
++            pNew[i] = rArray.mArr[i];
++        }
++        std::fprintf(stderr, "[editor-spike] grew category list %d: %d -> %d\n", category, static_cast< int >(rArray.mMaxSize),
++                     static_cast< int >(newMax));
++        rArray.mArr = pNew;
++        rArray.mMaxSize = newMax;
++    }
++
++    void growExecuter(DrawBufferExecuter* pExec) {
++        if (pExec->mActors == nullptr) {
++            pExec->allocateActorListBuffer();
++            std::fprintf(stderr, "[editor-spike] new draw executor %s: %d actors\n", pExec->mName, static_cast< int >(pExec->mMaxNumActors));
++            return;
++        }
++        if (pExec->mDrawBufferCount <= pExec->mMaxNumActors) {
++            return;
++        }
++        s32 newMax = pExec->mDrawBufferCount + pExec->mDrawBufferCount / 2 + 4;
++        LiveActor** pActors = new LiveActor*[newMax];
++        for (s32 i = 0; i < pExec->mNumActors; i++) {
++            pActors[i] = pExec->mActors[i];
++        }
++        pExec->mActors = pActors;
++        pExec->mMaxNumActors = newMax;
++        DrawBuffer* pBuffer = pExec->mDrawBuffer;
++        pBuffer->_8 = newMax;
++        for (s32 d = 0; d < pBuffer->mNumShapeDrawers; d++) {
++            DrawBufferShapeDrawer* pDrawer = pBuffer->mShapeDrawers[d];
++            s32 newPackets = newMax * pDrawer->_8;
++            PacketInfo** pPackets = new PacketInfo*[newPackets];
++            for (s32 i = 0; i < newPackets; i++) {
++                if (i < pDrawer->mMaxPackets) {
++                    pPackets[i] = pDrawer->mPackets[i];
++                } else {
++                    pPackets[i] = new PacketInfo();
++                    pPackets[i]->mShapePacket = nullptr;
++                    pPackets[i]->mLightLoader = nullptr;
++                    pPackets[i]->mLightCtrl = nullptr;
++                }
++            }
++            pDrawer->mPackets = pPackets;
++            pDrawer->mMaxPackets = newPackets;
++        }
++        std::fprintf(stderr, "[editor-spike] grew draw executor %s to %d actors\n", pExec->mName, static_cast< int >(newMax));
++    }
++}  // namespace
++
++void NameObjExecuteHolder::nativeLateConnect(s32 from) {
++    NameObjListExecutor* pListExecutor = SingletonHolder< GameSystem >::get()->mSceneController->getNameObjListExecutor();
++    for (s32 i = from; i < mExecuteArraySize; i++) {
++        NameObjExecuteInfo& rInfo = mExecuteArray[i];
++        if (rInfo.mMovementType != -1) {
++            growCategory(pListExecutor->mMovementList, rInfo.mMovementType);
++        }
++        if (rInfo.mCalcAnimType != -1) {
++            growCategory(pListExecutor->mCalcAnimList, rInfo.mCalcAnimType);
++        }
++        if (rInfo.mDrawType != -1) {
++            growCategory(pListExecutor->mDrawList, rInfo.mDrawType);
++        }
++        if (rInfo.mDrawBufferType != -1) {
++            growExecuter(pListExecutor->mBufferHolder->mBufferGroups[rInfo.mDrawBufferType].mExecutors[rInfo._A]);
++        }
++        rInfo.initConnectting();
++    }
++}
++#endif
+diff --git a/src/Game/Scene/EditorSpike.cpp b/src/Game/Scene/EditorSpike.cpp
+new file mode 100644
+index 000000000..ddb27c9fd
+--- /dev/null
++++ b/src/Game/Scene/EditorSpike.cpp
+@@ -0,0 +1,610 @@
++#ifdef PETARI_NATIVE
++#include "Game/Scene/EditorSpike.hpp"
++#include "Game/LiveActor/AllLiveActorGroup.hpp"
++#include "Game/LiveActor/ClippingActorHolder.hpp"
++#include "Game/LiveActor/ClippingDirector.hpp"
++#include "Game/LiveActor/ViewGroupCtrl.hpp"
++#include "Game/NameObj/NameObjExecuteHolder.hpp"
++#include "Game/Scene/SceneObjHolder.hpp"
++#include "Game/LiveActor/LiveActor.hpp"
++#include "Game/NameObj/ModelChangableObjFactory.hpp"
++#include "Game/NameObj/NameObjFactory.hpp"
++#include "Game/Scene/StageDataHolder.hpp"
++#include "Game/Util/FileUtil.hpp"
++#include "Game/Util/JMapInfo.hpp"
++#include "Game/Util/JMapUtil.hpp"
++#include "Game/Util/LiveActorUtil.hpp"
++#include "Game/Util/PlayerUtil.hpp"
++#include "Game/Util/SceneUtil.hpp"
++#include "Game/Util/SequenceUtil.hpp"
++#include <JSystem/JGadget/hashcode.hpp>
++#include <petari/screenshot.hpp>
++
++#include <chrono>
++#include <cmath>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <strings.h>
++#include <string>
++#include <vector>
++
++extern "C" int petari_editor_spike_go = 0;
++
++namespace {
++    struct V {
++        f32 x, y, z;
++    };
++    V add(V a, V b) { return {a.x + b.x, a.y + b.y, a.z + b.z}; }
++    V mul(V a, f32 s) { return {a.x * s, a.y * s, a.z * s}; }
++    f32 len(V a) { return std::sqrt(a.x * a.x + a.y * a.y + a.z * a.z); }
++    V norm(V a, V fallback) {
++        f32 l = len(a);
++        return l > 1e-4f ? mul(a, 1.0f / l) : fallback;
++    }
++
++    struct SyntheticRow {
++        std::vector< u8 > bytes;
++        JMapInfo* info;
++        s32 zone;
++    };
++
++    struct Spawned {
++        std::string name;
++        LiveActor* actor;  // the first LiveActor the creator registered (nullptr: none)
++        s32 actorCount;    // LiveActors registered by this creation (children included)
++        SyntheticRow* row;
++    };
++
++    std::vector< SyntheticRow* > gRows;  // never freed: actors may keep their JMapInfoIter
++    std::vector< Spawned > gSpawned;
++    bool gEnabled = false;
++    bool gChecked = false;
++    bool gFrozen = false;
++    s32 gFrame = -1;  // frames since the first normal-play frame
++    s32 gNextLid = 9000;
++    char gShotDir[512] = {};
++    double gReloadStart = 0;
++    s32 gReloadFrame = 0;
++    V gMovedExistingFrom = {0, 0, 0};
++    LiveActor* gMovedExisting = nullptr;
++
++    double nowMs() {
++        return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now().time_since_epoch()).count();
++    }
++
++    void shot(const char* label) {
++        if (gShotDir[0] == '\0') {
++            return;
++        }
++        char path[1024];
++        std::snprintf(path, sizeof(path), "%s/%s.png", gShotDir, label);
++        bool ok = PetariNative::Screenshot::request(path);
++        std::fprintf(stderr, "[editor-spike] frame %d shot %s %s\n", gFrame, label, ok ? "requested" : "BUSY");
++    }
++
++    // ---- BCSV row synthesis --------------------------------------------------------------
++
++    void writeBE32(u8* p, u32 v) {
++        p[0] = v >> 24;
++        p[1] = v >> 16;
++        p[2] = v >> 8;
++        p[3] = v;
++    }
++
++    const JMapItem* findItem(const JMapInfo& rInfo, const char* pKey) {
++        s32 i = rInfo.searchItemInfo(pKey);
++        return i < 0 ? nullptr : &rInfo.mData->mItems[i];
++    }
++
++    bool setInt(SyntheticRow* pRow, const char* pKey, s32 value) {
++        const JMapItem* pItem = findItem(*pRow->info, pKey);
++        if (pItem == nullptr) {
++            return false;
++        }
++        u8* pCell = pRow->bytes.data() + static_cast< s32 >(pRow->info->mData->mDataOffset) + static_cast< u16 >(pItem->mOffsData);
++        u32 mask = pItem->mMask;
++        u32 shifted = (static_cast< u32 >(value) << pItem->mShift) & mask;
++        switch (pItem->mType) {
++        case JMAP_VALUE_TYPE_LONG:
++        case JMAP_VALUE_TYPE_LONG_2: {
++            u32 old = PetariNative::readU32BE(reinterpret_cast< const char* >(pCell));
++            writeBE32(pCell, (old & ~mask) | shifted);
++            return true;
++        }
++        case JMAP_VALUE_TYPE_SHORT: {
++            u16 old = PetariNative::readU16BE(reinterpret_cast< const char* >(pCell));
++            u16 v = static_cast< u16 >((old & ~mask) | shifted);
++            pCell[0] = v >> 8;
++            pCell[1] = v;
++            return true;
++        }
++        case JMAP_VALUE_TYPE_BYTE:
++            pCell[0] = static_cast< u8 >((pCell[0] & ~mask) | shifted);
++            return true;
++        default:
++            return false;
++        }
++    }
++
++    bool setFloat(SyntheticRow* pRow, const char* pKey, f32 value) {
++        const JMapItem* pItem = findItem(*pRow->info, pKey);
++        if (pItem == nullptr || pItem->mType != JMAP_VALUE_TYPE_FLOAT) {
++            return false;
++        }
++        u32 bits;
++        std::memcpy(&bits, &value, 4);
++        writeBE32(pRow->bytes.data() + static_cast< s32 >(pRow->info->mData->mDataOffset) + static_cast< u16 >(pItem->mOffsData), bits);
++        return true;
++    }
++
++    // A one-row table with rSource's schema and row `index`'s values, every string re-pooled;
++    // `pName` (if set) replaces the name column. Registered so findPlacedStageDataHolder
++    // answers `zone` for it.
++    SyntheticRow* makeRow(const JMapInfo& rSource, s32 index, const char* pName, s32 zone) {
++        const JMapData* pData = rSource.mData;
++        const s32 dataOffset = pData->mDataOffset;
++        const u32 entrySize = pData->mEntrySize;
++        const s32 numFields = pData->mNumFields;
++
++        SyntheticRow* pRow = new SyntheticRow();
++        pRow->zone = zone;
++        std::vector< u8 >& b = pRow->bytes;
++        b.assign(reinterpret_cast< const u8* >(pData), reinterpret_cast< const u8* >(pData) + dataOffset);
++        const u8* pSrcRow = reinterpret_cast< const u8* >(getEntryAddress(pData, dataOffset, index));
++        b.insert(b.end(), pSrcRow, pSrcRow + entrySize);
++        writeBE32(b.data(), 1);  // mNumEntries
++
++        // String pool after the single row; re-point every STRING_PTR cell.
++        std::string pool;
++        for (s32 i = 0; i < numFields; i++) {
++            const JMapItem& rItem = pData->mItems[i];
++            if (rItem.mType != JMAP_VALUE_TYPE_STRING_PTR) {
++                continue;
++            }
++            const char* pValue = "";
++            rSource.getValueFast(index, i, &pValue);
++            if (pName != nullptr && rItem.mHash == JGadget::getHashCode("name")) {
++                pValue = pName;
++            }
++            writeBE32(b.data() + dataOffset + static_cast< u16 >(rItem.mOffsData), static_cast< u32 >(pool.size()));
++            pool.append(pValue);
++            pool.push_back('\0');
++        }
++        b.insert(b.end(), pool.begin(), pool.end());
++        while (b.size() % 32 != 0) {
++            b.push_back('@');
++        }
++
++        pRow->info = new JMapInfo();
++        pRow->info->attach(b.data());
++        pRow->info->setName("ObjInfo");
++        gRows.push_back(pRow);
++        return pRow;
++    }
++
++    // ---- finding a template row ----------------------------------------------------------
++
++    bool findTemplate(const StageDataHolder* pHolder, const char* pName, const JMapInfo** ppInfo, s32* pIndex, const JMapInfo** ppAnyObjInfo) {
++        for (const JMapInfo* pInfo = pHolder->mPlacementObjs.begin(); pInfo != pHolder->mPlacementObjs.end(); pInfo++) {
++            if (strcasecmp(pInfo->getName(), "ObjInfo") != 0 || !pInfo->dataExists()) {
++                continue;
++            }
++            if (*ppAnyObjInfo == nullptr && pInfo->getNumEntries() > 0) {
++                *ppAnyObjInfo = pInfo;
++            }
++            for (s32 i = 0; i < pInfo->getNumEntries(); i++) {
++                const char* pRowName = "";
++                MR::getObjectName(&pRowName, JMapInfoIter(pInfo, i));
++                if (strcasecmp(pRowName, pName) == 0) {
++                    *ppInfo = pInfo;
++                    *pIndex = i;
++                    return true;
++                }
++            }
++        }
++        for (s32 i = 0; i < pHolder->mStageDataHolderCount; i++) {
++            if (findTemplate(pHolder->mStageDataArray[i], pName, ppInfo, pIndex, ppAnyObjInfo)) {
++                return true;
++            }
++        }
++        return false;
++    }
++
++    // ---- create ----------------------------------------------------------------------------
++
++    void neutralizeLinks(SyntheticRow* pRow) {
++        static const char* const sLinks[] = {"SW_APPEAR", "SW_DEAD", "SW_A",           "SW_B",       "SW_SLEEP",    "SW_AWAKE",
++                                             "SW_PARAM",  "CastId",  "GroupId",    "DemoGroupId", "ClippingGroupId",
++                                             "ViewGroupId", "MessageId", "CameraSetId", "MapParts_ID", "ParentID"};
++        for (const char* pKey : sLinks) {
++            setInt(pRow, pKey, -1);
++        }
++    }
++
++    Spawned spawn(const char* pName, V pos, s32 arg0Delta) {
++        Spawned result = {pName, nullptr, 0, nullptr};
++        StageDataHolder* pRoot = MR::getStageDataHolder();
++        const JMapInfo* pInfo = nullptr;
++        const JMapInfo* pAny = nullptr;
++        s32 index = -1;
++        bool cloned = findTemplate(pRoot, pName, &pInfo, &index, &pAny);
++        if (!cloned) {
++            if (pAny == nullptr) {
++                std::fprintf(stderr, "[editor-spike] %s: no ObjInfo schema to copy\n", pName);
++                return result;
++            }
++            pInfo = pAny;
++            index = 0;
++        }
++
++        const double t0 = nowMs();
++        // Same zone as the template (its rail and zone-local data resolve there); world -> zone-local.
++        const s32 zone = MR::getPlacedZoneId(JMapInfoIter(pInfo, index));
++        const TPos3f* pMtx = MR::getZonePlacementMtx(JMapInfoIter(pInfo, index));
++        V d = {pos.x - pMtx->mMtx[0][3], pos.y - pMtx->mMtx[1][3], pos.z - pMtx->mMtx[2][3]};
++        pos = {pMtx->mMtx[0][0] * d.x + pMtx->mMtx[1][0] * d.y + pMtx->mMtx[2][0] * d.z,
++               pMtx->mMtx[0][1] * d.x + pMtx->mMtx[1][1] * d.y + pMtx->mMtx[2][1] * d.z,
++               pMtx->mMtx[0][2] * d.x + pMtx->mMtx[1][2] * d.y + pMtx->mMtx[2][2] * d.z};
++        SyntheticRow* pRow = makeRow(*pInfo, index, cloned ? nullptr : pName, zone);
++        result.row = pRow;
++        neutralizeLinks(pRow);
++        setInt(pRow, "l_id", gNextLid++);
++        setFloat(pRow, "pos_x", pos.x);
++        setFloat(pRow, "pos_y", pos.y);
++        setFloat(pRow, "pos_z", pos.z);
++        if (!cloned) {
++            for (int i = 0; i < 8; i++) {
++                char key[16];
++                std::snprintf(key, sizeof(key), "Obj_arg%d", i);
++                setInt(pRow, key, -1);
++            }
++            setInt(pRow, "ShapeModelNo", -1);
++            setFloat(pRow, "dir_x", 0);
++            setFloat(pRow, "dir_y", 0);
++            setFloat(pRow, "dir_z", 0);
++            setFloat(pRow, "scale_x", 1);
++            setFloat(pRow, "scale_y", 1);
++            setFloat(pRow, "scale_z", 1);
++        }
++        JMapInfoIter iter(pRow->info, 0);
++        if (arg0Delta != 0) {
++            s32 arg0 = -1;
++            MR::getJMapInfoArg0NoInit(iter, &arg0);
++            setInt(pRow, "Obj_arg0", arg0 + arg0Delta);
++        }
++
++        s32 shapeId = -1;
++        MR::getJMapInfoShapeIdWithInit(iter, &shapeId);
++        CreatorFuncPtr creator = shapeId != -1 ? MR::getModelChangableObjCreator(pName) : NameObjFactory::getCreator(pName);
++        if (creator == nullptr) {
++            std::fprintf(stderr, "[editor-spike] %s: no creator\n", pName);
++            return result;
++        }
++
++        AllLiveActorGroup* pGroup = MR::getAllLiveActorGroup();
++        const s32 before = pGroup->getObjNum();
++        NameObjExecuteHolder* pExecHolder = MR::getSceneObj< NameObjExecuteHolder >(SceneObj_NameObjExecuteHolder);
++        const s32 execBefore = pExecHolder->nativeExecuteCount();
++        const double t1 = nowMs();
++        MR::setCurrentPlacementZoneId(MR::getPlacedZoneId(iter));
++        MR::startInitLiveActorSystemInfo();
++        NameObj* pObj = creator(MR::getJapaneseObjectName(pName));
++        pObj->init(iter);
++        MR::initLiveActorSystemInfo(iter);
++        pObj->initAfterPlacement();
++        MR::clearCurrentPlacementZoneId();
++        // Late connect: load-sized lists grow, new entries connect as at load; clipping view groups.
++        pExecHolder->nativeLateConnect(execBefore);
++        ClippingActorHolder* pClip = MR::getClippingDirector()->mActorHolder;
++        pClip->mViewGroupCtrl->initViewGroup(pClip->_10);
++        pClip->mViewGroupCtrl->initViewGroup(pClip->_18);
++        pClip->mViewGroupCtrl->initViewGroup(pClip->_1C);
++        pClip->mViewGroupCtrl->initViewGroup(pClip->_14);
++        const double t2 = nowMs();
++
++        result.actorCount = pGroup->getObjNum() - before;
++        if (result.actorCount > 0) {
++            result.actor = pGroup->getActor(before);
++        }
++        std::fprintf(stderr,
++                     "[editor-spike] frame %d CREATED %s (%s row, zone %d) -> %d LiveActor(s), row %.3f ms, create+init %.3f ms, "
++                     "actors now %d\n",
++                     gFrame, pName, cloned ? "cloned" : "synthesized", static_cast< int >(MR::getPlacedZoneId(iter)),
++                     static_cast< int >(result.actorCount), t1 - t0, t2 - t1, static_cast< int >(pGroup->getObjNum()));
++        return result;
++    }
++
++    void report(const Spawned& rSpawned, const char* pWhat) {
++        LiveActor* a = rSpawned.actor;
++        if (a == nullptr) {
++            std::fprintf(stderr, "[editor-spike] frame %d %s %s: no LiveActor\n", gFrame, pWhat, rSpawned.name.c_str());
++            return;
++        }
++        std::fprintf(stderr,
++                     "[editor-spike] frame %d %s %s pos (%.1f, %.1f, %.1f) grav (%.2f, %.2f, %.2f) dead %d hidden %d clipped %d "
++                     "draw %d\n",
++                     gFrame, pWhat, rSpawned.name.c_str(), a->mPosition.x, a->mPosition.y, a->mPosition.z, a->mGravity.x,
++                     a->mGravity.y, a->mGravity.z, MR::isDead(a), MR::isHiddenModel(a), MR::isClipped(a), MR::isValidDraw(a));
++    }
++
++    std::vector< std::string > splitNames(const char* pEnv, const char* pDefault) {
++        const char* p = std::getenv(pEnv);
++        if (p == nullptr) {
++            p = pDefault;
++        }
++        std::vector< std::string > out;
++        std::string cur;
++        for (; *p != '\0'; p++) {
++            if (*p == ',') {
++                if (!cur.empty()) {
++                    out.push_back(cur);
++                }
++                cur.clear();
++            } else {
++                cur.push_back(*p);
++            }
++        }
++        if (!cur.empty()) {
++            out.push_back(cur);
++        }
++        return out;
++    }
++
++    V playerPos() {
++        TVec3f* p = MR::getPlayerPos();
++        return {p->x, p->y, p->z};
++    }
++    V playerUp() {
++        const TVec3f* g = MR::getPlayerGravity();
++        return norm({-g->x, -g->y, -g->z}, V{0, 1, 0});
++    }
++    V playerFront() {
++        TVec3f f;
++        MR::getPlayerFrontVec(&f);
++        return norm({f.x, f.y, f.z}, V{0, 0, 1});
++    }
++
++    LiveActor* nearestExisting(V at) {
++        AllLiveActorGroup* pGroup = MR::getAllLiveActorGroup();
++        LiveActor* best = nullptr;
++        f32 bestDist = 3000.0f;
++        for (s32 i = 0; i < pGroup->getObjNum(); i++) {
++            LiveActor* a = pGroup->getActor(i);
++            bool ours = false;
++            for (const Spawned& s : gSpawned) {
++                ours = ours || s.actor == a;
++            }
++            if (ours || MR::isDead(a) || MR::isHiddenModel(a)) {
++                continue;
++            }
++            f32 d = len(add({a->mPosition.x, a->mPosition.y, a->mPosition.z}, mul(at, -1.0f)));
++            if (d > 50.0f && d < bestDist) {
++                best = a;
++                bestDist = d;
++            }
++        }
++        return best;
++    }
++}  // namespace
++
++namespace EditorSpike {
++    bool isFrozen() {
++        return gFrozen;
++    }
++
++    s32 findSyntheticZone(uintptr_t rowAddress) {
++        for (SyntheticRow* pRow : gRows) {
++            uintptr_t begin = reinterpret_cast< uintptr_t >(pRow->bytes.data());
++            if (begin <= rowAddress && rowAddress < begin + pRow->bytes.size()) {
++                return pRow->zone;
++            }
++        }
++        return -1;
++    }
++
++    void update(bool actionNerve) {
++        if (!gChecked) {
++            gChecked = true;
++            const char* p = std::getenv("PETARI_EDITOR_SPIKE");
++            gEnabled = p != nullptr && p[0] == '1';
++            if (const char* d = std::getenv("PETARI_EDITOR_SPIKE_SHOTS")) {
++                std::snprintf(gShotDir, sizeof(gShotDir), "%s", d);
++            }
++        }
++        if (!gEnabled) {
++            return;
++        }
++        if (gFrame < 0) {
++            if (!actionNerve || petari_editor_spike_go == 0) {
++                return;
++            }
++            gFrame = 0;
++            std::fprintf(stderr, "[editor-spike] start: first normal-play frame\n");
++        }
++        const s32 f = gFrame++;
++        if (petari_editor_spike_go == 2) {
++            if ((f - gReloadFrame) % 60 == 0) {
++                V p = playerPos();
++                std::fprintf(stderr, "[editor-spike] reload wait frame +%d (%.0f ms): action %d, player (%.0f, %.0f, %.0f)\n",
++                             static_cast< int >(f - gReloadFrame), nowMs() - gReloadStart, actionNerve, p.x, p.y, p.z);
++            }
++            if ((f - gReloadFrame) % 300 == 0) {
++                shot("09-reload-wait");
++            }
++            if (actionNerve) {
++                std::fprintf(stderr, "[editor-spike] frame %d RELOADED: normal play again after %.0f ms, %d frames\n", f,
++                             nowMs() - gReloadStart, static_cast< int >(f - gReloadFrame));
++                petari_editor_spike_go = 3;
++                shot("09-after-reload");
++            }
++            return;
++        }
++        if (petari_editor_spike_go == 3) {
++            return;
++        }
++        const V mario = playerPos();
++        const V up = playerUp();
++        const V front = playerFront();
++
++        if (f == 120) {
++            shot("00-before");
++        }
++        if (f == 130) {
++            std::fprintf(stderr, "[editor-spike] mario (%.1f, %.1f, %.1f) up (%.2f, %.2f, %.2f) front (%.2f, %.2f, %.2f)\n", mario.x,
++                         mario.y, mario.z, up.x, up.y, up.z, front.x, front.y, front.z);
++            std::vector< std::string > names = splitNames("PETARI_EDITOR_SPIKE_NAMES", "Takobo,Coin,SuperSpinDriver");
++            for (size_t i = 0; i < names.size(); i++) {
++                V pos = add(add(mario, mul(front, 400.0f + 250.0f * i)), mul(up, 250.0f));
++                gSpawned.push_back(spawn(names[i].c_str(), pos, 0));
++            }
++        }
++        if (f > 130 && f % 30 == 0 && f <= 900) {
++            for (const Spawned& s : gSpawned) {
++                report(s, "state");
++            }
++        }
++        if (f == 160) {
++            shot("01-spawned");
++        }
++        if (f == 300) {
++            shot("02-later");
++        }
++        if (f == 320) {
++            gFrozen = true;
++            std::fprintf(stderr, "[editor-spike] frame %d FREEZE\n", f);
++        }
++        if (f == 330) {
++            for (Spawned& s : gSpawned) {
++                if (s.actor != nullptr) {
++                    s.actor->mPosition.x += up.x * 400.0f;
++                    s.actor->mPosition.y += up.y * 400.0f;
++                    s.actor->mPosition.z += up.z * 400.0f;
++                    report(s, "moved-frozen");
++                }
++            }
++            gMovedExisting = nearestExisting(mario);
++            if (gMovedExisting != nullptr) {
++                gMovedExistingFrom = {gMovedExisting->mPosition.x, gMovedExisting->mPosition.y, gMovedExisting->mPosition.z};
++                gMovedExisting->mPosition.x += up.x * 400.0f;
++                gMovedExisting->mPosition.y += up.y * 400.0f;
++                gMovedExisting->mPosition.z += up.z * 400.0f;
++                std::fprintf(stderr, "[editor-spike] frame %d moved existing actor '%s' from (%.1f, %.1f, %.1f)\n", f,
++                             gMovedExisting->mName, gMovedExistingFrom.x, gMovedExistingFrom.y, gMovedExistingFrom.z);
++            }
++        }
++        if (f == 345) {
++            shot("03-frozen-moved");
++        }
++        if (f == 360) {
++            for (const Spawned& s : gSpawned) {
++                report(s, "still-frozen");
++            }
++            gFrozen = false;
++            std::fprintf(stderr, "[editor-spike] frame %d RESUME\n", f);
++        }
++        if (f == 400) {
++            shot("04-resumed");
++            if (gMovedExisting != nullptr) {
++                std::fprintf(stderr, "[editor-spike] frame %d existing '%s' now (%.1f, %.1f, %.1f)\n", f, gMovedExisting->mName,
++                             gMovedExisting->mPosition.x, gMovedExisting->mPosition.y, gMovedExisting->mPosition.z);
++            }
++        }
++        if (f == 420 && !gSpawned.empty() && gSpawned[0].actor != nullptr) {
++            gSpawned[0].actor->kill();
++            report(gSpawned[0], "killed");
++        }
++        if (f == 440) {
++            shot("05-killed");
++        }
++        if (f == 460 && !gSpawned.empty()) {
++            V pos = add(add(mario, mul(front, 400.0f)), mul(up, 250.0f));
++            Spawned again = spawn(gSpawned[0].name.c_str(), pos, 1);
++            report(again, "recreated(arg0+1)");
++            gSpawned.push_back(again);
++        }
++        if (f == 500) {
++            shot("06-recreated");
++        }
++        if (f == 520) {
++            for (const std::string& name : splitNames("PETARI_EDITOR_SPIKE_LOAD", "")) {
++                char arc[256];
++                bool named = MR::makeObjectArchiveFileNameFromPrefix(arc, sizeof(arc), name.c_str(), false);
++                bool loaded = MR::isLoadedObjectOrLayoutArchive(name.c_str());
++                std::fprintf(stderr, "[editor-spike] frame %d LOAD %s: archive %s, resident %d\n", f, name.c_str(), named ? arc : "?",
++                             loaded);
++                const double t0 = nowMs();
++                // The game's own per-object archive list, mounted now and waited for.
++                JMapInfo* pInfo = nullptr;
++                const JMapInfo* pAny = nullptr;
++                const JMapInfo* pTemplate = nullptr;
++                s32 index = -1;
++                bool cloned = findTemplate(MR::getStageDataHolder(), name.c_str(), &pTemplate, &index, &pAny);
++                SyntheticRow* pRow = makeRow(cloned ? *pTemplate : *pAny, cloned ? index : 0, cloned ? nullptr : name.c_str(), 0);
++                (void)pInfo;
++                NameObjFactory::requestMountObjectArchives(name.c_str(), JMapInfoIter(pRow->info, 0));
++                MR::receiveAllRequestedFile();
++                const double t1 = nowMs();
++                std::fprintf(stderr, "[editor-spike] frame %d LOADED %s in %.1f ms, resident %d\n", f, name.c_str(), t1 - t0,
++                             MR::isLoadedObjectOrLayoutArchive(name.c_str()));
++                V pos = add(add(mario, mul(front, -500.0f)), mul(up, 250.0f));
++                Spawned s = spawn(name.c_str(), pos, 0);
++                gSpawned.push_back(s);
++            }
++        }
++        if (f == 600) {
++            shot("07-loaded");
++        }
++        if (f == 700) {
++            const char* pStress = std::getenv("PETARI_EDITOR_SPIKE_STRESS");
++            int n = pStress != nullptr ? std::atoi(pStress) : 0;
++            const double t0 = nowMs();
++            V side = norm({front.y * up.z - front.z * up.y, front.z * up.x - front.x * up.z, front.x * up.y - front.y * up.x}, V{1, 0, 0});
++            for (int i = 0; i < n; i++) {
++                V pos = add(add(add(mario, mul(front, 300.0f + 120.0f * (i / 10))), mul(side, -540.0f + 120.0f * (i % 10))), mul(up, 150.0f));
++                Spawned s = spawn("Coin", pos, 0);
++                (void)s;
++            }
++            if (n > 0) {
++                std::fprintf(stderr, "[editor-spike] frame %d STRESS %d Coins in %.1f ms, actors now %d\n", f, n, nowMs() - t0,
++                             static_cast< int >(MR::getAllLiveActorGroup()->getObjNum()));
++            }
++        }
++        if (f == 730) {
++            shot("08-stress");
++        }
++        if (f == 900) {
++            std::fprintf(stderr, "[editor-spike] DONE (%d rows synthesized)\n", static_cast< int >(gRows.size()));
++        }
++        // Edit a row of the loaded archive in place, then a same-stage restart (the miss path):
++        // does the edit survive (file cache), and how long does the reload take?
++        if (f == 950 && std::getenv("PETARI_EDITOR_SPIKE_RELOAD") != nullptr) {
++            const JMapInfo* pInfo = nullptr;
++            const JMapInfo* pAny = nullptr;
++            s32 index = -1;
++            if (findTemplate(MR::getStageDataHolder(), "Takobo", &pInfo, &index, &pAny)) {
++                JMapInfoIter iter(pInfo, index);
++                s32 lid = -1;
++                iter.getValue< s32 >("l_id", &lid);
++                f32 y = 0;
++                iter.getValue< f32 >("pos_y", &y);
++                const JMapItem* pItem = findItem(*pInfo, "pos_y");
++                u8* pCell = const_cast< u8* >(reinterpret_cast< const u8* >(getEntryAddress(pInfo->mData, pInfo->mData->mDataOffset, index))) +
++                            static_cast< u16 >(pItem->mOffsData);
++                f32 ny = y + 1000.0f;
++                u32 bits;
++                std::memcpy(&bits, &ny, 4);
++                writeBE32(pCell, bits);
++                std::fprintf(stderr, "[editor-spike] frame %d IN-PLACE EDIT Takobo l_id %d pos_y %.1f -> %.1f (archive memory)\n", f, lid, y, ny);
++            }
++            gRows.clear();  // their memory goes with the scene heap
++            gSpawned.clear();
++            petari_editor_spike_go = 2;
++            gReloadStart = nowMs();
++            gReloadFrame = f;
++            std::fprintf(stderr, "[editor-spike] frame %d RELOAD requested (same stage, miss path)\n", f);
++            MR::requestChangeStageAfterMiss();
++        }
++    }
++}  // namespace EditorSpike
++#endif
+diff --git a/src/Game/Scene/GameScene.cpp b/src/Game/Scene/GameScene.cpp
+index 073b83a9c..6721154bd 100644
+--- a/src/Game/Scene/GameScene.cpp
++++ b/src/Game/Scene/GameScene.cpp
+@@ -47,6 +47,7 @@ extern "C" void petari_os_preemption_point(void);
+ #include "Game/System/GalaxyMoveArgument.hpp"
+ #include "Game/System/GameSequenceFunction.hpp"
+ #include <petari/player_launch.hpp>
++#include "Game/Scene/EditorSpike.hpp"
+ // StorySequenceExecutor.cpp
+ bool petariDirectStageMove(GalaxyMoveArgument* pMoveArgument, const char* pStage, s32 selected, const char* pLabel);
+ #endif
+@@ -185,9 +186,16 @@ void GameScene::update() {
+         PhotoCamera::start();
+         setNerve(GET_NERVE(GameScene, GameScenePhotoMode));
+     }
++#endif
++#ifdef PETARI_NATIVE
++    EditorSpike::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));
++    if (!EditorSpike::isFrozen()) {
+ #endif
+     mPauseCtrl->updateNerve();
+     updateNerve();
++#ifdef PETARI_NATIVE
++    }
++#endif
+ 
+ #ifdef PETARI_NATIVE
+     // Home menu Level Select: warp once normal play allows a pause (no demo,
+diff --git a/src/Game/Scene/StageDataHolder.cpp b/src/Game/Scene/StageDataHolder.cpp
+index e5fe9fae8..e010f1046 100644
+--- a/src/Game/Scene/StageDataHolder.cpp
++++ b/src/Game/Scene/StageDataHolder.cpp
+@@ -1,4 +1,7 @@
+ #include "Game/Scene/StageDataHolder.hpp"
++#ifdef PETARI_NATIVE
++#include "Game/Scene/EditorSpike.hpp"
++#endif
+ #include "Game/NameObj/NameObjFactory.hpp"
+ #include "Game/Scene/PlacementInfoOrdered.hpp"
+ #include "Game/Scene/SceneObjHolder.hpp"
+@@ -353,6 +356,12 @@ const StageDataHolder* StageDataHolder::findPlacedStageDataHolder(const JMapInfo
+     s32 data = (s32)rIter.mInfo->mData + rIter.mInfo->mData->mDataOffset + rIter.mInfo->mData->mEntrySize * rIter.mIndex;
+ #endif
+ 
++#ifdef PETARI_NATIVE
++    if (s32 syntheticZone = EditorSpike::findSyntheticZone(data); syntheticZone >= 0) {
++        return MR::getStageDataHolder()->getStageDataHolderFromZoneId(syntheticZone);
++    }
++#endif
++
+     if (_E4 <= data && data < _E8) {
+         return this;
+     }
+diff --git a/src/Game/System/FunctionAsyncExecutor.cpp b/src/Game/System/FunctionAsyncExecutor.cpp
+index 6d75de6c5..8e8457914 100644
+--- a/src/Game/System/FunctionAsyncExecutor.cpp
++++ b/src/Game/System/FunctionAsyncExecutor.cpp
+@@ -123,6 +123,13 @@ void FunctionAsyncExecutor::waitForEnd(const char* pName) {
+         cur++;
+     }
+ 
++#ifdef PETARI_NATIVE
++    // THROWAWAY editor spike: startOnMainThread ran the function inline (no task was queued).
++    if (cur == lst) {
++        OSUnlockMutex(&MR::MutexHolder< 2 >::sMutex);
++        return;
++    }
++#endif
+     FunctionAsyncExecInfo* info = *cur;
+     OSUnlockMutex(&MR::MutexHolder< 2 >::sMutex);
+     OSReceiveMessage(&info->mQueue, &info->mMessage, OS_MESSAGE_BLOCK);

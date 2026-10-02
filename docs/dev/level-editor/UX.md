@@ -892,7 +892,8 @@ three steps and a live preview on the right (the game renders the template).
    - *Copy a galaxy*: any galaxy from the game, as a starting point (the copy
      is yours; the original is untouched).
 2. **Look and sound**: the sky (the game's skyboxes as thumbnails), the music
-   (the game's tracks, with a play button to preview), lighting presets
+   ("music and sounds like Gusty Garden": a galaxy whose soundtrack and sound
+   banks the new one borrows, with a play button to preview; TECH.md 5.7), lighting presets
    (taken from galaxies: "Good Egg day", "Ghostly night"...).
 3. **Name and place**
    - Name (shown in Level Select and the star list), in English; other languages
@@ -1021,6 +1022,7 @@ fixes**:
 | Game limits | "161 camera areas: the game allows 160" (also switch, death, water and warp areas 64, BGM areas 32, pipe and tower areas 4, gravity fields 128) | Show them · Merge suggestions |
 | Missing required link | "Launch Star #45 needs a path; without one the game crashes when it loads" (each class's required links come from the object catalog) | Draw · Pick · Delete the object |
 | Switches used up | "No free galaxy-wide switch numbers (1000–1127)" | Show unused links |
+| Too many galaxies | "64 galaxies is the game's limit (48 from the disc plus mods)" | Show mod galaxies |
 | Mission has no start | "Mission 3 has no start point" | Place at play marker |
 
 Checks are quiet: a badge and the tab, never a modal. Errors (things that will
@@ -1079,6 +1081,10 @@ by mod X; your edits win while editing").
 - **Needs**: other mods it relies on (Odyssey movement, Cappy) as checkboxes;
   shown to whoever installs it.
 - **Checks**: errors listed with "Fix" links; warnings summarised.
+- **Where it plays**: edits to existing galaxies work anywhere the mod is
+  installed. A *new* galaxy needs Petari (the original game has no way to add
+  galaxies without code patches), and the sheet says so on a line of its own
+  when the mod contains one.
 - **Export .zip**: writes `<Name>-<version>.zip` to a folder you choose (the
   usual save panel, Downloads by default) and reveals it in Finder.
 
@@ -1225,8 +1231,10 @@ same kind, Missions, Delete, See examples).
 - **Q7. Compare key.** Hold-to-compare wants a key you can hold. Backquote is
   the Home menu. Proposal: hold **`\`** to compare, `Cmd+\` to toggle the
   change tint.
-- **Q8. Names in other languages.** New galaxy and mission names: English only
-  in v1, or every language the disc has?
+- **Q8. Names in other languages.** New galaxy and mission names can be given
+  in each of the disc's three languages, falling back to English (TECH.md 5.7).
+  Should the sheet ask for all three, or English only with the others under
+  Advanced (proposed)?
 - **Q9. Supernova.** SMGCommunity's new editor (MIT, early alpha) already uses
   Petari as its reference for simulating objects. Should our catalog and
   formats aim to be shareable with it, or stay independent?
