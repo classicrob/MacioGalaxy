@@ -207,6 +207,7 @@ if(PETARI_BUILD_GX_PROBE)
 endif()
 
 add_subdirectory(native/home_menu)
+add_subdirectory(native/editor)  # the level editor (docs/dev/level-editor/TECH.md)
 target_link_libraries(petari_game_objects PRIVATE petari_home_menu)
 if(TARGET petari_link_check)
     target_link_libraries(petari_link_check PRIVATE petari_home_menu petari_sdk_mem)
