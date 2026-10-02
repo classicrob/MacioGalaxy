@@ -7,6 +7,7 @@
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
+#include <petari/editor/runtime.hpp>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
 
@@ -38,6 +39,7 @@ namespace {
         double since = 0;
         s32 serialBefore = 0;
         bool leftScene = false;  // the old scene went away (not in normal play) at least once
+        bool isReload = false;   // done when PetariEditor::Runtime::reloading() clears
     };
     bool gHavePending = false;
     Pending gPending;
@@ -115,6 +117,22 @@ namespace {
             gFramesPlayable = 0;
             return false;
         }
+        if (w[0] == "reload") {
+            const bool fromStart = w.size() >= 2 && w[1] == "start";
+            if (!PetariEditor::Runtime::reloadScene(fromStart)) {
+                reply(name, "error a reload is in flight or no stage is loaded");
+                return true;
+            }
+            gPending = Pending{};
+            gPending.name = name;
+            gPending.what = line;
+            gPending.stage = EditorScene::stageName() != nullptr ? EditorScene::stageName() : "";
+            gPending.since = nowMs();
+            gPending.isReload = true;
+            gHavePending = true;
+            gFramesPlayable = 0;
+            return false;
+        }
         reply(name, "error unknown command: " + line);
         return true;
     }
@@ -141,6 +159,18 @@ namespace TestServer {
             return;
         }
         const bool playable = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isPlayerDead();
+        if (gHavePending && gPending.isReload) {
+            if (!PetariEditor::Runtime::reloading()) {
+                char text[160];
+                std::snprintf(text, sizeof(text), "ok %s in %.0f ms", statusText().c_str(), nowMs() - gPending.since);
+                reply(gPending.name, text);
+                gHavePending = false;
+            } else if (nowMs() - gPending.since > 60000) {
+                reply(gPending.name, "error timeout waiting for the reload");
+                gHavePending = false;
+            }
+            return;
+        }
         if (gHavePending) {
             const s32 serial = static_cast< s32 >(PetariEditor::Hooks::sceneSerial());
             gPending.leftScene = gPending.leftScene || serial != gPending.serialBefore || !actionNerve;

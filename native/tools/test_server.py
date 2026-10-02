@@ -2,7 +2,7 @@
 """Persistent test server client: one background Petari stays up and takes commands (src/Game/Scene/TestServer.cpp).
 
   native/tools/test_server.py start --app <Petari> [--stage EggStarGalaxy --scenario 1] [--dir build/test-server/<name>]
-  native/tools/test_server.py send  --dir <dir> status | warp <Stage> [<scenario>] | quit
+  native/tools/test_server.py send  --dir <dir> status | warp <Stage> [<scenario>] | reload [start] | quit
   native/tools/test_server.py stop  --dir <dir>
 
 `start` boots once (warm shader seed, PETARI_FAST_BOOT=1) through build/locked-app.sh and returns when the app answers `status`;
