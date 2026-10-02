@@ -217,16 +217,19 @@ def record_for(job, index, item, parsed, stalled, exit_status, batch_size):
 # --- running the app -----------------------------------------------------------------------------------
 
 def run_process(command, env, log_path, total_seconds, stall_seconds):
-    """Runs command, returns (exit_status, stalled). The stall watchdog starts once the driver has begun
-    (before that the total alarm applies); a stalled process is killed as a group."""
+    """Runs command, returns (exit_status, stalled, startup_seconds): startup is launch (lock wait included) to the
+    driver's first frame, None if it never began. The stall watchdog starts once the driver has begun (before that
+    the total alarm applies); a stalled process is killed as a group."""
     with log_path.open("wb") as stream:
         proc = subprocess.Popen(command, env=env, stdout=stream, stderr=subprocess.STDOUT, start_new_session=True)
         stalled = False
         began = None
+        launched = time.time()
+        startup = None
         deadline = time.time() + total_seconds + 3600  # the lock wait is not counted against the run
         while True:
             try:
-                return proc.wait(timeout=5), stalled
+                return proc.wait(timeout=1 if began is None else 5), stalled, startup
             except subprocess.TimeoutExpired:
                 pass
             if time.time() > deadline:
@@ -234,6 +237,7 @@ def run_process(command, env, log_path, total_seconds, stall_seconds):
             elif log_path.stat().st_size > 0 and began is None:
                 if b"[class-sweep] start:" in log_path.read_bytes()[-2_000_000:]:
                     began = time.time()
+                    startup = began - launched
             elif began is not None:
                 if time.time() - log_path.stat().st_mtime > stall_seconds:
                     stalled = True
@@ -244,10 +248,18 @@ def run_process(command, env, log_path, total_seconds, stall_seconds):
                     except ProcessLookupError:
                         break
                     try:
-                        return proc.wait(timeout=10), True
+                        return proc.wait(timeout=10), True, startup
                     except subprocess.TimeoutExpired:
                         continue
-                return proc.wait(), True
+                return proc.wait(), True, startup
+
+
+def warm_args(app, user=None):
+    import warm_seed
+    a = argparse.Namespace(app=Path(app), seed_root=str(main_checkout() / "build/shader-seed"), stages=warm_seed.DEFAULT_STAGES,
+                           owner="class-sweep", timeout=900, idle=900, force=False, user=user)
+    a.sha = warm_seed.sha256_of(a.app)
+    return a
 
 
 def run_batch(args, stage, scenario, jobs, batch_dir, tag):
@@ -275,10 +287,18 @@ def run_batch(args, stage, scenario, jobs, batch_dir, tag):
     env = dict(os.environ, **env_extra)
     env.update(PETARI_LOCK_CLASS="functional", PETARI_CLASS_SWEEP_JOBS=str(jobs_file),
                PETARI_CLASS_SWEEP_OBSERVE=str(args.observe))
+    if not args.no_warm_seed:
+        # Warm shader seed (native/tools/warm_seed.py): published on first use for this build; the run's databases are
+        # private copy-on-write clones, so batches stay isolated.
+        import warm_seed
+        seed = warm_seed.ensure(warm_args(a.app))
+        warm_seed.prepare(warm_args(a.app, user=user))
+        env["PETARI_SHADER_SEED_DIR"] = str(seed)
     full = [str(main / "build/locked-app.sh"), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die",
             str(args.timeout)] + command
     log = batch_dir / f"{tag}.log"
-    status, stalled = run_process(full, env, log, args.timeout, args.stall)
+    status, stalled, startup = run_process(full, env, log, args.timeout, args.stall)
+    (batch_dir / f"{tag}.startup").write_text("%s\n" % ("none" if startup is None else f"{startup:.1f}"))
     # The private shader/Dawn cache is ~1.9 GB per process and worthless afterwards: only logs, jobs and Crashes stay.
     subprocess.run(["rm", "-rf", str(user / "cache")], check=False)
     parsed = parse_log(log.read_text(errors="replace"))
@@ -768,6 +788,7 @@ def main():
         p.add_argument("--stall", type=int, default=120, help="seconds without log output, once the driver runs, before a hang")
         p.add_argument("--rerun", action="store_true", help="discard recorded results")
         p.add_argument("--keep-logs", action="store_true")
+        p.add_argument("--no-warm-seed", action="store_true", help="start every process cold (no shader seed)")
     args = parser.parse_args()
     sys.exit(args.fn(args) or 0)
 
