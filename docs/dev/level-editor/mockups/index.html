@@ -1,0 +1,1062 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Petari Level Editor: mockup</title>
+<!--
+  Clickable mockup of the in-game level editor (docs/dev/level-editor/UX.md).
+  Self-contained: no network, no libraries. The viewport backgrounds are real game
+  frames that are NOT in the repository; regenerate them with capture-viewports.sh
+  (see README.md). Without them the viewport shows a painted stand-in.
+-->
+<style>
+:root {
+  /* The Home menu palette (native/home_menu/imgui_overlay.cpp) */
+  --panel-top: #085773;
+  --panel-bottom: #03243d;
+  --rim: rgba(102, 219, 255, .6);
+  --rim-strong: #66dbff;
+  --band: rgba(89, 204, 255, .22);
+  --head-ink: #99ebff;
+  --ink: #e6f4ff;
+  --ink-2: #bfe0ff;
+  --ink-3: #7fa9c9;
+  --gold: #facc38;
+  --gold-soft: #ffd66b;
+  --gold-ink: #4d2b05;
+  --orange: #ff8c40;
+  --red: #ff5a5a;
+  --green: #59d973;
+  --capsule-top: #ffffff;
+  --capsule-bottom: #99c7f7;
+  --capsule-rim: #38bdff;
+  --capsule-ink: #334057;
+  --deep: #00293f;
+  --galaxy: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", system-ui, sans-serif;
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: radial-gradient(ellipse at 50% 0%, #142a4a 0%, #070c18 70%); color: var(--ink); font: 13px/1.35 var(--ui); overflow: hidden; }
+button { font: inherit; color: inherit; }
+
+/* ---------- mockup navigation (outside the "app") ---------- */
+#nav { height: 46px; display: flex; align-items: center; gap: 6px; padding: 0 16px; }
+#nav .brand { font: 800 15px var(--galaxy); letter-spacing: .02em; margin-right: 10px; color: #fff; text-shadow: 0 1px 0 #02213a; white-space: nowrap; }
+#nav .brand small { font: 500 11px var(--ui); color: var(--ink-3); margin-left: 6px; }
+#nav button { background: rgba(255,255,255,.06); border: 1px solid rgba(102,219,255,.25); border-radius: 999px; padding: 4px 11px; cursor: pointer; font: 700 12px var(--galaxy); color: var(--ink-2); white-space: nowrap; }
+#nav button:hover { border-color: var(--rim-strong); color: #fff; }
+#nav button.on { background: linear-gradient(#fffbe8, #ffd65c); color: var(--gold-ink); border-color: var(--gold); box-shadow: 0 0 10px rgba(250,204,56,.45); }
+#nav .hint { margin-left: auto; color: var(--ink-3); font-size: 11px; white-space: nowrap; }
+
+/* ---------- the window ---------- */
+#win { --w: min(calc(100vw - 32px), calc((100vh - 62px) * 1.6)); width: var(--w); height: calc(var(--w) / 1.6); margin: 0 auto; border-radius: 11px; overflow: hidden; position: relative; box-shadow: 0 30px 80px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.08); display: grid; grid-template-rows: 28px 46px 1fr 30px; background: #02121f; }
+.titlebar { display: flex; align-items: center; gap: 8px; padding: 0 12px; background: linear-gradient(#0d2236, #0a1a2b); border-bottom: 1px solid rgba(0,0,0,.5); font-size: 12px; color: var(--ink-3); }
+.lights { display: flex; gap: 7px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.lights i:nth-child(1) { background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.titlebar .t { flex: 1; text-align: center; margin-right: 50px; }
+
+/* panels: Home menu panel look */
+.panel { background: linear-gradient(180deg, rgba(8,87,115,.96), rgba(3,36,61,.97)); }
+.toolbar { display: flex; align-items: center; gap: 6px; padding: 0 10px; border-bottom: 1px solid var(--rim); box-shadow: inset 0 -1px 0 rgba(255,255,255,.06); position: relative; z-index: 3; }
+.crumb { display: flex; align-items: center; gap: 6px; font: 800 14px var(--galaxy); color: #fff; text-shadow: 0 1px 1px #00182b; white-space: nowrap; }
+.crumb .sep { color: var(--ink-3); font-weight: 400; }
+.crumb .zone { color: var(--head-ink); font-weight: 700; }
+.crumb .unsaved { font: 500 11px var(--ui); color: var(--gold-soft); margin-left: 4px; }
+.tb-sep { width: 1px; height: 24px; background: rgba(102,219,255,.25); margin: 0 4px; }
+.tool { width: 30px; height: 30px; border-radius: 8px; border: 1px solid transparent; background: transparent; display: grid; place-items: center; cursor: pointer; color: var(--ink-2); position: relative; }
+.tool:hover { background: rgba(255,255,255,.08); border-color: rgba(102,219,255,.35); }
+.tool.on { background: rgba(250,204,56,.16); border-color: var(--gold); color: var(--gold-soft); }
+.tool svg { width: 18px; height: 18px; }
+.tool .k { position: absolute; right: 1px; bottom: -1px; font: 600 8px var(--ui); color: var(--ink-3); }
+.mission { display: flex; align-items: center; gap: 3px; background: rgba(0,20,36,.45); border: 1px solid rgba(102,219,255,.3); border-radius: 999px; padding: 2px; }
+.mission .lbl { font: 700 11px var(--galaxy); color: var(--ink-3); padding: 0 6px 0 8px; }
+.chip { border: 1px solid rgba(102,219,255,.35); background: rgba(255,255,255,.05); border-radius: 999px; padding: 2px 8px; font: 700 11px var(--galaxy); color: var(--ink-2); cursor: pointer; white-space: nowrap; }
+.chip:hover { border-color: var(--rim-strong); color: #fff; }
+.chip.on { background: linear-gradient(#fffbe8, #ffd65c); color: var(--gold-ink); border-color: var(--gold); }
+.chip.c { color: #c9b6ff; } .chip.h { color: #9ff0c8; }
+.chip.on.c, .chip.on.h { color: var(--gold-ink); }
+.spacer { flex: 1; }
+.capsule { border-radius: 999px; border: 1.5px solid var(--capsule-rim); background: linear-gradient(var(--capsule-top), var(--capsule-bottom)); color: var(--capsule-ink); font: 800 13px var(--galaxy); padding: 4px 14px; cursor: pointer; box-shadow: inset 0 1px 0 rgba(255,255,255,.8), 0 1px 3px rgba(0,0,0,.4); white-space: nowrap; }
+.capsule:hover { filter: brightness(1.05); }
+.capsule.gold { background: linear-gradient(#fffbed, #ffd65c); border-color: var(--gold); color: var(--gold-ink); box-shadow: 0 0 12px rgba(250,204,56,.5), inset 0 1px 0 #fff; }
+.capsule.small { padding: 2px 10px; font-size: 11.5px; }
+.capsule .kc { font: 600 10px var(--ui); opacity: .65; margin-left: 5px; }
+.badge-warn { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 3px 9px; border: 1px solid rgba(255,140,64,.6); background: rgba(255,140,64,.14); color: #ffc49b; font: 700 12px var(--galaxy); cursor: pointer; }
+.badge-warn.ok { border-color: rgba(89,217,115,.6); background: rgba(89,217,115,.12); color: #a9f0b9; }
+
+/* main */
+.main { display: grid; grid-template-columns: 262px 1fr 304px; min-height: 0; position: relative; }
+.dock { display: flex; flex-direction: column; min-height: 0; position: relative; z-index: 2; transition: transform .18s ease, opacity .18s; }
+.dock.left { border-right: 1px solid var(--rim); }
+.dock.right { border-left: 1px solid var(--rim); }
+.tabs { display: flex; gap: 2px; padding: 6px 6px 0; border-bottom: 1px solid rgba(102,219,255,.3); }
+.tab { flex: 1; text-align: center; padding: 5px 2px 6px; font: 800 12px var(--galaxy); color: var(--ink-3); border-radius: 8px 8px 0 0; cursor: pointer; border: 1px solid transparent; border-bottom: 0; position: relative; white-space: nowrap; }
+.tab:hover { color: #fff; }
+.tab.on { color: #fff; background: var(--band); border-color: rgba(102,219,255,.4); text-shadow: 0 1px 1px #00182b; }
+.tab .n { display: inline-block; min-width: 15px; padding: 0 4px; margin-left: 3px; border-radius: 999px; background: var(--orange); color: #2b1100; font: 700 10px var(--ui); }
+.dock-body { flex: 1; overflow: auto; min-height: 0; padding: 6px 0 10px; }
+.dock-body::-webkit-scrollbar { width: 8px; } .dock-body::-webkit-scrollbar-thumb { background: rgba(153,199,247,.35); border-radius: 4px; }
+.search { margin: 4px 8px 6px; display: flex; align-items: center; gap: 6px; background: rgba(0,16,30,.55); border: 1px solid rgba(102,219,255,.35); border-radius: 8px; padding: 5px 8px; color: var(--ink-3); }
+.search input { all: unset; flex: 1; color: var(--ink); font: 13px var(--ui); }
+.search .kc { font-size: 10px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px; padding: 0 4px; }
+.sec { margin: 6px 0 2px; padding: 3px 10px; background: var(--band); color: var(--head-ink); font: 800 11.5px var(--galaxy); letter-spacing: .02em; display: flex; align-items: center; gap: 6px; text-shadow: 0 1px 1px #00182b; }
+.sec .r { margin-left: auto; font: 500 10.5px var(--ui); color: var(--ink-3); }
+
+/* outliner */
+.tree .row { display: flex; align-items: center; gap: 6px; padding: 2.5px 10px; cursor: pointer; color: var(--ink-2); white-space: nowrap; }
+.tree .row:hover { background: rgba(255,255,255,.06); }
+.tree .row.sel { background: rgba(250,204,56,.14); color: #fff; box-shadow: inset 2px 0 0 var(--gold); }
+.tree .row .ic { width: 14px; height: 14px; flex: none; }
+.tree .row .raw { color: var(--ink-3); font: 10.5px var(--mono); }
+.tree .row .dot { width: 6px; height: 6px; border-radius: 50%; margin-left: auto; flex: none; }
+.tree .row .dot.chg { background: var(--gold); } .tree .row .dot.add { background: var(--green); }
+.tree .row.dim { opacity: .35; }
+.tree .row.l1 { padding-left: 22px; } .tree .row.l2 { padding-left: 36px; }
+.tree .zone { font: 800 12px var(--galaxy); color: #fff; }
+.tree .zone .raw { font: 10px var(--mono); }
+.tree .cat { color: var(--ink-3); font: 700 11px var(--galaxy); }
+
+/* viewport */
+.viewport { position: relative; overflow: hidden; background: #6aa8d8 linear-gradient(180deg, #8cc8f0 0%, #d5e6ee 40%, #a9c4cf 55%, #3d7a2e 56%, #2f6a22 80%, #6b4422 81%); cursor: default; }
+.viewport .bg { position: absolute; inset: 0; background-size: cover; background-position: center; transition: filter .2s; }
+.viewport.editing::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 0 2px rgba(250,204,56,.85), inset 0 0 22px rgba(250,204,56,.25); pointer-events: none; z-index: 5; }
+.viewport svg.ov { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; }
+.vchip { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 3px 12px; border-radius: 999px; font: 800 11.5px var(--galaxy); letter-spacing: .08em; background: rgba(2,3,8,.62); border: 1px solid var(--gold); color: var(--gold-soft); white-space: nowrap; }
+.vchip.play { border-color: var(--rim-strong); color: #dff6ff; letter-spacing: .02em; }
+.compass { position: absolute; right: 10px; top: 10px; z-index: 6; width: 74px; height: 74px; }
+.vtoast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 6; background: rgba(5,8,20,.84); border: 1px solid rgba(89,217,115,.9); border-radius: 999px; padding: 5px 8px 5px 14px; display: flex; gap: 10px; align-items: center; font: 600 12.5px var(--ui); white-space: nowrap; }
+.vtoast.info { border-color: var(--rim-strong); }
+.vis { position: absolute; left: 10px; top: 10px; z-index: 6; display: flex; flex-direction: column; gap: 4px; }
+.vis button { width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(102,219,255,.35); background: rgba(3,36,61,.82); color: var(--ink-2); cursor: pointer; display: grid; place-items: center; position: relative; }
+.vis button.on { border-color: var(--gold); color: var(--gold-soft); background: rgba(60,48,8,.75); }
+.vis button svg { width: 16px; height: 16px; }
+.vis button .k { position: absolute; right: 2px; bottom: 0; font: 600 8px var(--ui); color: var(--ink-3); }
+.vis button:hover::after { content: attr(data-tip); position: absolute; left: 36px; top: 4px; background: rgba(3,20,36,.95); border: 1px solid var(--rim); border-radius: 6px; padding: 2px 8px; white-space: nowrap; font: 600 11px var(--ui); color: var(--ink); }
+.hot { cursor: pointer; }
+.hot .hl { opacity: 0; transition: opacity .1s; }
+.hot:hover .hl { opacity: 1; }
+.pip { position: absolute; right: 10px; bottom: 10px; z-index: 6; width: 30%; aspect-ratio: 16/9; border: 2px solid var(--rim-strong); border-radius: 8px; overflow: hidden; background-size: cover; background-position: 30% 40%; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.pip .cap { position: absolute; left: 0; right: 0; top: 0; padding: 3px 8px; font: 700 11px var(--galaxy); background: rgba(3,36,61,.85); color: var(--head-ink); display: flex; }
+.pip .cap span { margin-left: auto; font: 500 10px var(--ui); color: var(--ink-3); }
+.popover { position: absolute; z-index: 8; background: linear-gradient(180deg, rgba(8,87,115,.98), rgba(3,36,61,.98)); border: 1px solid var(--rim-strong); border-radius: 10px; padding: 8px; box-shadow: 0 10px 30px rgba(0,0,0,.5); min-width: 220px; }
+.popover h4 { margin: 0 0 6px; font: 800 12.5px var(--galaxy); color: #fff; }
+.popover .opt { display: flex; align-items: center; gap: 8px; padding: 5px 8px; border-radius: 6px; cursor: pointer; color: var(--ink-2); }
+.popover .opt:hover, .popover .opt.on { background: rgba(250,204,56,.16); color: #fff; box-shadow: inset 0 0 0 1px rgba(250,204,56,.6); }
+.popover .opt small { color: var(--ink-3); margin-left: auto; font-size: 10.5px; font-family: var(--mono); }
+
+/* inspector */
+.insp-head { display: flex; gap: 10px; padding: 10px 10px 8px; align-items: center; }
+.thumb { width: 52px; height: 52px; border-radius: 10px; flex: none; background: radial-gradient(circle at 35% 30%, #2d8fb3, #08304d 75%); border: 1px solid rgba(102,219,255,.45); display: grid; place-items: center; overflow: hidden; }
+.thumb svg { width: 40px; height: 40px; }
+.insp-head .nm { font: 800 16px var(--galaxy); color: #fff; text-shadow: 0 1px 1px #00182b; display: flex; align-items: center; gap: 6px; }
+.insp-head .sub { color: var(--ink-3); font-size: 11px; margin-top: 2px; }
+.insp-head .sub code { font: 10.5px var(--mono); color: var(--ink-2); }
+.insp-head .star { margin-left: auto; color: var(--gold); cursor: pointer; font-size: 15px; }
+.field { display: grid; grid-template-columns: 98px 1fr 10px; gap: 6px; align-items: center; padding: 3px 10px; position: relative; }
+.field:hover { background: rgba(255,255,255,.05); }
+.field label { color: var(--ink-2); font-size: 12px; cursor: ew-resize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.field .ctl { display: flex; gap: 4px; align-items: center; min-width: 0; }
+.num { display: flex; align-items: center; background: rgba(0,16,30,.55); border: 1px solid rgba(102,219,255,.22); border-radius: 6px; padding: 2px 6px; font: 12px var(--ui); font-variant-numeric: tabular-nums; color: var(--ink); min-width: 0; flex: 1; }
+.num b { font-weight: 600; color: var(--ink-3); font-size: 10px; margin-right: 4px; }
+.num.x, .num.y, .num.z { padding: 2px 4px; font-size: 11.5px; overflow: hidden; } .num.x b { color: #ff8a8a; } .num.y b { color: #8ae68a; } .num.z b { color: #8ab8ff; }
+.num .u { color: var(--ink-3); font-size: 10.5px; margin-left: auto; padding-left: 4px; }
+.num.def { color: var(--ink-3); font-style: italic; }
+.sel { appearance: none; background: rgba(0,16,30,.55) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2399ebff' fill='none' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 7px center; border: 1px solid rgba(102,219,255,.3); border-radius: 6px; padding: 2px 22px 2px 7px; color: var(--ink); font: 12px var(--ui); flex: 1; cursor: pointer; min-width: 0; }
+.tog { width: 30px; height: 17px; border-radius: 999px; background: rgba(0,16,30,.6); border: 1px solid rgba(102,219,255,.35); position: relative; cursor: pointer; flex: none; }
+.tog::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--ink-3); transition: .15s; }
+.tog.on { background: rgba(250,204,56,.35); border-color: var(--gold); }
+.tog.on::after { left: 15px; background: var(--gold); }
+.slider { flex: 1; height: 4px; border-radius: 2px; background: rgba(153,199,247,.25); position: relative; }
+.slider i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--rim-strong); }
+.slider i::after { content: ""; position: absolute; right: -6px; top: -4px; width: 12px; height: 12px; border-radius: 50%; background: linear-gradient(#fff, #bfe0ff); border: 1px solid var(--capsule-rim); }
+.chg { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 6px rgba(250,204,56,.7); cursor: pointer; }
+.swatches { display: flex; gap: 3px; }
+.swatches i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); cursor: pointer; display: block; }
+.swatches i.on { outline: 2px solid var(--gold); outline-offset: 1px; }
+.missions { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; }
+.link { display: grid; grid-template-columns: 112px 1fr; gap: 6px; align-items: center; padding: 3px 10px; }
+.link label { color: var(--ink-2); font-size: 12px; }
+.socket { display: flex; align-items: center; gap: 6px; background: rgba(0,16,30,.55); border: 1px solid rgba(102,219,255,.22); border-radius: 999px; padding: 2px 4px 2px 3px; min-width: 0; cursor: pointer; }
+.socket:hover { border-color: var(--rim-strong); }
+.socket .pin { width: 13px; height: 13px; border-radius: 50%; flex: none; border: 2px solid currentColor; }
+.socket .pin.out { background: currentColor; }
+.socket .txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; color: var(--ink); }
+.socket .txt em { color: var(--ink-3); font-style: normal; }
+.socket .x { color: var(--ink-3); padding: 0 4px; }
+.socket.empty .txt { color: var(--ink-3); font-style: italic; }
+.adv { padding: 4px 10px; color: var(--ink-3); font: 11px var(--mono); display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; }
+.adv span:nth-child(even) { color: var(--ink-2); text-align: right; }
+.help { border-top: 1px solid var(--rim); padding: 8px 10px 10px; background: rgba(0,20,36,.55); min-height: 86px; }
+.help .h { font: 800 12.5px var(--galaxy); color: var(--head-ink); }
+.help p { margin: 3px 0 0; color: var(--ink-2); font-size: 12px; }
+.help code { font: 10.5px var(--mono); color: var(--ink-3); }
+
+/* browser */
+.cats { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 8px 6px; }
+.scopes { display: flex; gap: 4px; padding: 0 8px 4px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 4px 8px; }
+.card { border-radius: 10px; border: 1px solid rgba(102,219,255,.3); background: radial-gradient(circle at 50% 35%, rgba(45,143,179,.55), rgba(3,36,61,.7) 75%); padding: 4px 4px 5px; cursor: grab; text-align: center; position: relative; }
+.card:hover { border-color: var(--rim-strong); box-shadow: 0 0 10px rgba(102,219,255,.35); }
+.card.on { border-color: var(--gold); box-shadow: 0 0 10px rgba(250,204,56,.45); }
+.card svg { width: 100%; height: 48px; display: block; }
+.card .cn { font: 700 11px var(--galaxy); color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .fav { position: absolute; right: 5px; top: 3px; color: var(--gold); font-size: 11px; }
+.card .cloud { position: absolute; left: 5px; top: 3px; font-size: 10px; color: var(--ink-3); }
+.detail { margin: 8px; border: 1px solid rgba(102,219,255,.35); border-radius: 10px; padding: 8px; background: rgba(0,20,36,.45); }
+.detail .t { font: 800 14px var(--galaxy); color: #fff; display: flex; gap: 6px; align-items: baseline; }
+.detail .t code { font: 10.5px var(--mono); color: var(--ink-3); font-weight: 400; }
+.detail p { margin: 4px 0 6px; color: var(--ink-2); }
+.need { display: inline-block; border-radius: 999px; padding: 1px 7px; margin: 0 3px 3px 0; font: 600 10.5px var(--ui); border: 1px solid rgba(255,214,107,.5); color: var(--gold-soft); }
+.need.none { border-color: rgba(89,217,115,.5); color: #a9f0b9; }
+.ex { display: flex; justify-content: space-between; padding: 3px 6px; border-radius: 6px; color: var(--ink-2); cursor: pointer; font-size: 12px; }
+.ex:hover { background: rgba(255,255,255,.06); }
+.ex span { color: var(--ink-3); }
+
+/* checks / changes */
+.issue { margin: 4px 8px; border-radius: 10px; border: 1px solid rgba(255,140,64,.45); background: rgba(255,140,64,.07); padding: 7px 8px; cursor: pointer; }
+.issue.err { border-color: rgba(255,90,90,.6); background: rgba(255,90,90,.08); }
+.issue.on { box-shadow: 0 0 0 1px var(--gold), 0 0 12px rgba(250,204,56,.3); }
+.issue.fixed { border-color: rgba(89,217,115,.5); background: rgba(89,217,115,.07); opacity: .7; }
+.issue .it { display: flex; gap: 6px; font-weight: 600; color: #fff; font-size: 12.5px; }
+.issue .it .sv { flex: none; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font: 800 10px var(--ui); background: var(--orange); color: #2b1100; margin-top: 1px; }
+.issue.err .it .sv { background: var(--red); color: #2b0000; }
+.issue.fixed .it .sv { background: var(--green); color: #022b0a; }
+.issue p { margin: 3px 0 6px 22px; color: var(--ink-2); font-size: 11.5px; }
+.issue .fx { margin-left: 22px; display: flex; gap: 5px; flex-wrap: wrap; }
+.chgrow { display: flex; gap: 8px; align-items: center; padding: 3px 10px; color: var(--ink-2); cursor: pointer; }
+.chgrow:hover { background: rgba(255,255,255,.06); }
+.chgrow .m { width: 16px; text-align: center; font-weight: 800; }
+.chgrow .m.a { color: var(--green); } .chgrow .m.c { color: var(--gold); } .chgrow .m.r { color: var(--red); }
+.chgrow small { color: var(--ink-3); margin-left: auto; font-size: 10.5px; }
+.chgrow .rv { font-size: 10.5px; color: var(--ink-3); border: 1px solid rgba(255,255,255,.18); border-radius: 999px; padding: 0 6px; }
+
+/* gravity stack */
+.gstack .g { display: flex; align-items: center; gap: 8px; padding: 5px 10px; cursor: grab; border-left: 3px solid transparent; }
+.gstack .g:hover { background: rgba(255,255,255,.05); }
+.gstack .g.win { border-left-color: var(--gold); background: rgba(250,204,56,.08); }
+.gstack .g .sw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.gstack .g .gn { color: #fff; font-size: 12.5px; }
+.gstack .g .gn small { display: block; color: var(--ink-3); font: 10.5px var(--mono); }
+.gstack .g .pr { margin-left: auto; color: var(--ink-3); font-size: 11px; text-align: right; }
+.grip { color: var(--ink-3); letter-spacing: -2px; }
+
+/* footer: the Home menu footer band */
+.footer { display: flex; align-items: center; gap: 16px; padding: 0 12px; background: linear-gradient(rgba(8,110,135,.9), rgba(3,60,85,.95)); border-top: 1px solid rgba(140,235,255,.8); font: 600 12px var(--ui); color: #e8f8ff; white-space: nowrap; overflow: hidden; position: relative; z-index: 3; }
+.footer .k { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 5px; background: linear-gradient(#ffffff, #cfe6fb); color: #23324a; font: 800 10.5px var(--ui); margin-right: 5px; box-shadow: 0 1px 0 #6aa0c8; }
+.footer .k.ab { border-radius: 50%; min-width: 18px; padding: 0; background: radial-gradient(circle at 40% 35%, #fff, #c7cfd9); }
+.footer .mem { margin-left: auto; display: flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.footer .bar { width: 90px; height: 7px; border-radius: 4px; background: rgba(0,16,30,.6); overflow: hidden; border: 1px solid rgba(102,219,255,.35); }
+.footer .bar i { display: block; height: 100%; background: linear-gradient(90deg, #59d973, #c6e85a); }
+
+/* sheets (dialogs) */
+.scrim { position: absolute; inset: 74px 0 0 0; background: rgba(0,41,66,.62); backdrop-filter: blur(2px); z-index: 20; display: none; align-items: flex-start; justify-content: center; padding-top: 26px; }
+.scrim.on { display: flex; }
+.sheet { width: min(820px, 92%); max-height: calc(100% - 50px); overflow: auto; border-radius: 14px; border: 2px solid rgba(102,219,255,.85); background: linear-gradient(180deg, #08607e, #03243d); box-shadow: 0 0 0 1px rgba(255,255,255,.12) inset, 0 30px 70px rgba(0,0,0,.6); }
+.sheet .st { text-align: center; padding: 14px 16px 8px; font: 900 26px var(--galaxy); color: #fff; letter-spacing: .02em; text-shadow: 0 2px 0 #02213a, 0 0 2px #02213a, 0 0 18px rgba(102,219,255,.5); -webkit-text-stroke: .6px #0b2a45; }
+.steps { display: flex; justify-content: center; gap: 6px; padding-bottom: 10px; }
+.steps .chip { font-size: 12px; padding: 3px 12px; }
+.sheet .body { padding: 6px 18px 12px; }
+.sheet .foot { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 10px 18px 14px; border-top: 1px solid rgba(102,219,255,.3); }
+.sheet .foot .note { margin-right: auto; color: var(--ink-3); font-size: 11.5px; }
+.tpl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.tcard { border-radius: 12px; border: 1px solid rgba(102,219,255,.35); background: rgba(0,20,36,.45); padding: 8px; cursor: pointer; }
+.tcard:hover { border-color: var(--rim-strong); }
+.tcard.on { border-color: var(--gold); box-shadow: 0 0 14px rgba(250,204,56,.4); }
+.tcard svg { width: 100%; height: 92px; display: block; border-radius: 8px; background: radial-gradient(ellipse at 50% 30%, #12345e, #050b1c); }
+.tcard .tn { font: 800 13.5px var(--galaxy); color: #fff; margin-top: 6px; }
+.tcard p { margin: 2px 0 0; color: var(--ink-3); font-size: 11.5px; }
+.strip { display: flex; gap: 8px; margin-top: 12px; padding: 8px; border-radius: 10px; background: rgba(0,20,36,.4); border: 1px solid rgba(102,219,255,.2); align-items: center; overflow-x: auto; }
+.strip .lab { font: 800 12px var(--galaxy); color: var(--head-ink); margin-right: 4px; white-space: nowrap; }
+.pl { flex: none; width: 66px; text-align: center; cursor: pointer; border-radius: 8px; padding: 3px; border: 1px solid transparent; }
+.pl:hover { border-color: var(--rim); } .pl.on { border-color: var(--gold); }
+.pl svg { width: 52px; height: 52px; }
+.pl div { font: 700 10.5px var(--galaxy); color: var(--ink-2); }
+.form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+.form .f { display: flex; flex-direction: column; gap: 4px; }
+.form .f.full { grid-column: 1 / -1; }
+.form .f > label { font: 800 12px var(--galaxy); color: var(--head-ink); }
+.form input, .form textarea, .form select { background: rgba(0,16,30,.6); border: 1px solid rgba(102,219,255,.35); border-radius: 8px; padding: 6px 9px; color: var(--ink); font: 13px var(--ui); }
+.form textarea { resize: none; height: 62px; }
+.form .help2 { color: var(--ink-3); font-size: 11px; }
+.domes { display: flex; gap: 5px; flex-wrap: wrap; }
+.shot { border-radius: 10px; overflow: hidden; border: 2px solid rgba(255,255,255,.7); aspect-ratio: 16/9; background-size: cover; background-position: center; position: relative; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+.shot .re { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 5px; }
+.tree2 { font: 11.5px var(--mono); color: var(--ink-2); background: rgba(0,16,30,.5); border-radius: 8px; padding: 8px 10px; border: 1px solid rgba(102,219,255,.2); white-space: pre; line-height: 1.45; }
+.okline { color: #a9f0b9; font-size: 12px; } .wline { color: #ffc49b; font-size: 12px; }
+
+/* play mode */
+#win.playing .dock { opacity: 0; pointer-events: none; }
+#win.playing .dock.left { transform: translateX(-30px); }
+#win.playing .dock.right { transform: translateX(30px); }
+#win.playing .main { grid-template-columns: 0 1fr 0; }
+#win.playing .toolbar > *:not(.playgroup) { opacity: .25; pointer-events: none; }
+.main { transition: grid-template-columns .2s ease; }
+
+/* small screens: keep it usable */
+@media (max-height: 760px) { #win { grid-template-rows: 24px 40px 1fr 26px; } .main { grid-template-columns: 236px 1fr 280px; } }
+</style>
+</head>
+<body>
+<div id="nav">
+  <div class="brand">Petari Level Editor <small>clickable mockup · UX.md</small></div>
+  <button data-screen="edit">1 Edit view</button>
+  <button data-screen="browser">2 Object browser</button>
+  <button data-screen="links">3 Properties &amp; links</button>
+  <button data-screen="gravity">4 Gravity</button>
+  <button data-screen="camera">5 Camera</button>
+  <button data-screen="newgalaxy">6 New galaxy</button>
+  <button data-screen="checks">7 Checks &amp; changes</button>
+  <button data-screen="share">8 Share</button>
+  <button data-screen="play">9 Play-test</button>
+  <span class="hint">Click objects, fields and tabs · <b>Tab</b> plays / edits</span>
+</div>
+
+<div id="win">
+  <div class="titlebar"><div class="lights"><i></i><i></i><i></i></div><div class="t" id="wintitle">Petari: Gusty Garden Galaxy (editing "Bunny Garden Remix")</div></div>
+
+  <div class="toolbar panel" id="toolbar">
+    <div class="crumb"><span id="crumbGalaxy">Gusty Garden Galaxy</span><span class="sep">▸</span><span class="zone" id="crumbZone">Puffball planet</span><span class="unsaved">● Unsaved</span></div>
+    <div class="tb-sep"></div>
+    <div class="mission" id="missionPicker">
+      <span class="lbl">Mission</span>
+      <span class="chip on" data-m="all">All</span>
+      <span class="chip" data-m="1" title="Bunnies in the Wind">1</span>
+      <span class="chip" data-m="2" title="The Dirty Tricks of Major Burrows">2</span>
+      <span class="chip" data-m="3" title="Gusty Garden's Gravity Scramble">3</span>
+      <span class="chip c" data-m="4" title="Major Burrows's Daredevil Run">4C</span>
+      <span class="chip c" data-m="5" title="Purple Coins on the Puzzle Cube">5C</span>
+      <span class="chip h" data-m="6" title="The Golden Chomp">6H</span>
+    </div>
+    <div class="tb-sep"></div>
+    <button class="tool" data-tool="select" title="Select (Q)"><svg viewBox="0 0 20 20"><path d="M4 2l12 8-5.5 1.2L13 17l-2.2 1-2.6-5.7L4 16z" fill="currentColor"/></svg><span class="k">Q</span></button>
+    <button class="tool on" data-tool="move" title="Move (W)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 2v16M2 10h16M10 2l-2.5 2.5M10 2l2.5 2.5M10 18l-2.5-2.5M10 18l2.5-2.5M2 10l2.5-2.5M2 10l2.5 2.5M18 10l-2.5-2.5M18 10l-2.5 2.5"/></svg><span class="k">W</span></button>
+    <button class="tool" data-tool="rotate" title="Rotate (E)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 10a6 6 0 1 1-2-4.5"/><path d="M15 2v4h-4"/></svg><span class="k">E</span></button>
+    <button class="tool" data-tool="scale" title="Scale (R)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="9" width="8" height="8"/><path d="M9 3h8v8M17 3l-7 7"/></svg><span class="k">R</span></button>
+    <button class="tool" data-tool="pen" title="Path pen (P)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 16c3-8 9-1 14-11"/><circle cx="3" cy="16" r="1.6" fill="currentColor"/><circle cx="17" cy="5" r="1.6" fill="currentColor"/></svg><span class="k">P</span></button>
+    <div class="tb-sep"></div>
+    <button class="tool on" title="Frame: Gravity (,) · up = away from gravity"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="10" cy="14" r="4"/><path d="M10 9V2M7.5 4.5L10 2l2.5 2.5"/></svg></button>
+    <button class="tool on" title="Snap to surface (Cmd+1)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 15c5-4 11-4 16 0"/><rect x="7" y="6" width="6" height="6" rx="1"/></svg></button>
+    <button class="tool" title="Grid (Cmd+3) · [ ] size"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 7h16M2 13h16M7 2v16M13 2v16"/></svg></button>
+    <div class="spacer"></div>
+    <button class="tool" title="Undo (Cmd+Z)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 4L3 8l4 4"/><path d="M3 8h9a5 5 0 0 1 0 10H8"/></svg></button>
+    <button class="tool" title="Redo (Cmd+Shift+Z)"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M13 4l4 4-4 4"/><path d="M17 8H8a5 5 0 0 0 0 10h4"/></svg></button>
+    <button class="capsule small" id="reloadBtn" title="Reload (Cmd+R): rebuild the world from your layout; applies pending changes" style="border-color:#5aa8ff">⟳ Reload <span style="color:#1f5fbf">· 1 pending</span></button>
+    <span class="badge-warn" id="checkBadge" title="Checks">⚠ 3</span>
+    <button class="capsule small" id="shareBtn" title="Share (Cmd+Shift+E)">Share</button>
+    <span class="playgroup" style="display:flex;gap:6px;align-items:center">
+      <button class="capsule gold" id="playBtn">▶ Play <span class="kc">Tab</span></button>
+    </span>
+  </div>
+
+  <div class="main" id="main">
+    <!-- left dock -->
+    <div class="dock left panel" id="leftDock">
+      <div class="tabs" id="leftTabs">
+        <div class="tab on" data-ltab="outliner">Outliner</div>
+        <div class="tab" data-ltab="browser">Browser</div>
+        <div class="tab" data-ltab="checks">Checks<span class="n" id="checksN">3</span></div>
+        <div class="tab" data-ltab="changes">Changes</div>
+      </div>
+      <div class="dock-body" id="leftBody"></div>
+    </div>
+
+    <!-- viewport -->
+    <div class="viewport editing" id="viewport">
+      <div class="bg" id="bg"></div>
+      <svg class="ov" id="ov" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"></svg>
+      <div class="vchip" id="vchip">EDITING</div>
+      <div class="vis" id="vis"></div>
+      <svg class="compass" id="compass" viewBox="0 0 80 80"></svg>
+      <div id="vextra"></div>
+    </div>
+
+    <!-- right dock -->
+    <div class="dock right panel" id="rightDock">
+      <div class="dock-body" id="inspector" style="padding-top:0"></div>
+      <div class="help" id="help"></div>
+    </div>
+  </div>
+
+  <div class="footer" id="footer"></div>
+
+  <div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
+</div>
+
+<script>
+'use strict';
+// ------------------------------------------------------------------------------------------
+// Viewport backgrounds: real game frames, kept out of the repo (README.md: capture-viewports.sh).
+const SHOTS = {
+  gusty: '../../../../build/level-editor-ux/viewport-gusty.jpg',
+  spacejunk: '../../../../build/level-editor-ux/viewport-spacejunk.jpg',
+  goodegg: '../../../../build/level-editor-ux/viewport-goodegg.jpg',
+};
+const FALLBACK = {
+  gusty: 'linear-gradient(180deg,#8cc8f0 0%,#d5e6ee 40%,#a9c4cf 52%,#3d7a2e 53%,#2f6a22 74%,#6b4422 75%,#a9c4cf 95%)',
+  spacejunk: 'radial-gradient(circle at 70% 25%, #fff 0 1%, transparent 2%), radial-gradient(ellipse at 50% 70%, #2a3446 0 22%, transparent 23%), linear-gradient(#02030a, #0c0a1e 60%, #2a1234)',
+  goodegg: 'linear-gradient(180deg,#0b1640 0%,#1a4fb3 30%,#2a8ad8 33%,#5fbf3a 45%,#3f9a2a 75%,#e3a73c 76%)',
+};
+const FX = { gusty: 0.3, spacejunk: 0.3, goodegg: 0.5 };
+function fitView() {
+  const r = $('viewport').getBoundingClientRect();
+  if (!r.width || !r.height) return;
+  const a = r.width / r.height, fx = FX[state.scene] ?? 0.5;
+  let vw = 1920, vh = 1080, x0 = 0, y0 = 0;
+  if (a < 16 / 9) { vw = 1080 * a; x0 = (1920 - vw) * fx; } else { vh = 1920 / a; y0 = (1080 - vh) * 0.5; }
+  $('ov').setAttribute('viewBox', `${x0} ${y0} ${vw} ${vh}`);
+  $('ov').setAttribute('preserveAspectRatio', 'none');
+  $('bg').style.backgroundPosition = `${fx * 100}% 50%`;
+}
+window.addEventListener('resize', fitView);
+function setBg(key) {
+  const bg = document.getElementById('bg');
+  const img = new Image();
+  img.onload = () => { bg.style.backgroundImage = `url("${SHOTS[key]}")`; };
+  img.onerror = () => { bg.style.backgroundImage = FALLBACK[key]; };
+  bg.style.backgroundImage = FALLBACK[key];
+  img.src = SHOTS[key];
+}
+
+// ------------------------------------------------------------------------------------------
+// Icons (drawn for the mockup; in the game, thumbnails are rendered from the game's models)
+const ICON = {
+  rabbit: `<svg viewBox="0 0 48 48"><ellipse cx="24" cy="32" rx="9" ry="10" fill="#f4efe6"/><circle cx="24" cy="21" r="7" fill="#fbf7ef"/><path d="M19 15l-4-11 6 9M29 15l4-11-6 9" fill="#f6d34a" stroke="#c99a1c"/><circle cx="21.5" cy="20" r="1.1" fill="#222"/><circle cx="26.5" cy="20" r="1.1" fill="#222"/><path d="M15 33h18" stroke="#f2c637" stroke-width="3"/></svg>`,
+  crystal: `<svg viewBox="0 0 48 48"><path d="M24 4l11 9v22l-11 9-11-9V13z" fill="#5fe0b0" fill-opacity=".75" stroke="#c9fff0"/><path d="M19 18l3 5-4 2zM27 25l4 3-3 4zM22 30l2 5-4-1z" fill="#ffd34a"/><path d="M26 15l4 2-2 4z" fill="#b36cff"/></svg>`,
+  starbit: `<svg viewBox="0 0 48 48"><path d="M24 8l4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1z" fill="#c57bff" stroke="#f1d7ff"/></svg>`,
+  flower: `<svg viewBox="0 0 48 48"><g fill="#fff"><circle cx="16" cy="22" r="5"/><circle cx="24" cy="18" r="5"/><circle cx="32" cy="22" r="5"/></g><g fill="#a77bff"><circle cx="18" cy="32" r="5"/><circle cx="30" cy="32" r="5"/></g><g fill="#ffd34a"><circle cx="24" cy="27" r="4"/></g></svg>`,
+  planet: `<svg viewBox="0 0 48 48"><ellipse cx="24" cy="27" rx="19" ry="10" fill="#8b5a2b"/><ellipse cx="24" cy="22" rx="19" ry="9" fill="#3f9a2a"/><ellipse cx="24" cy="18" rx="9" ry="5" fill="#c9a8ff"/></svg>`,
+  goomba: `<svg viewBox="0 0 48 48"><path d="M8 28c0-12 7-20 16-20s16 8 16 20z" fill="#8b4a22"/><rect x="15" y="27" width="18" height="10" rx="4" fill="#f1d3a1"/><ellipse cx="17" cy="39" rx="6" ry="3.5" fill="#3a1f10"/><ellipse cx="31" cy="39" rx="6" ry="3.5" fill="#3a1f10"/><ellipse cx="19" cy="21" rx="3" ry="4" fill="#fff"/><ellipse cx="29" cy="21" rx="3" ry="4" fill="#fff"/><circle cx="19.5" cy="22" r="1.6"/><circle cx="28.5" cy="22" r="1.6"/><path d="M15 16l6 3M33 16l-6 3" stroke="#2a1205" stroke-width="2"/></svg>`,
+  coin: `<svg viewBox="0 0 48 48"><ellipse cx="24" cy="24" rx="12" ry="15" fill="#f6c21a" stroke="#fff3a6" stroke-width="2"/><rect x="21.5" y="15" width="5" height="18" rx="2" fill="#d99a06"/></svg>`,
+  star: `<svg viewBox="0 0 48 48"><path d="M24 4l6 13 14 1-11 9 4 14-13-8-13 8 4-14L4 18l14-1z" fill="#ffd93b" stroke="#fff6b8" stroke-width="1.5"/><ellipse cx="20" cy="22" rx="1.6" ry="3" fill="#222"/><ellipse cx="28" cy="22" rx="1.6" ry="3" fill="#222"/></svg>`,
+  launch: `<svg viewBox="0 0 48 48"><ellipse cx="24" cy="26" rx="19" ry="7" fill="none" stroke="#9ce8ff" stroke-width="2.5"/><path d="M24 7l5 10 11 1-8 7 2 11-10-6-10 6 2-11-8-7 11-1z" fill="#ffe05a" stroke="#fff"/></svg>`,
+  oneup: `<svg viewBox="0 0 48 48"><path d="M8 26c0-11 7-18 16-18s16 7 16 18z" fill="#2bb34a"/><circle cx="17" cy="17" r="4" fill="#fff"/><circle cx="31" cy="17" r="4" fill="#fff"/><circle cx="24" cy="12" r="3" fill="#fff"/><rect x="14" y="25" width="20" height="13" rx="5" fill="#f6e2c0"/></svg>`,
+  pipe: `<svg viewBox="0 0 48 48"><rect x="12" y="16" width="24" height="26" fill="#2fa83a"/><rect x="9" y="10" width="30" height="9" rx="2" fill="#3cc84a" stroke="#1d6e25"/></svg>`,
+  qcoin: `<svg viewBox="0 0 48 48"><ellipse cx="24" cy="24" rx="12" ry="15" fill="#f6c21a"/><text x="24" y="31" font-size="20" text-anchor="middle" font-weight="900" fill="#fff">?</text></svg>`,
+  sling: `<svg viewBox="0 0 48 48"><path d="M24 8l5 10 11 1-8 7 2 11-10-6-10 6 2-11-8-7 11-1z" fill="#57c8ff" stroke="#e6f8ff"/></svg>`,
+  chomp: `<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="16" fill="#222"/><path d="M12 28l24 0-3 6H15z" fill="#fff"/><circle cx="18" cy="18" r="4" fill="#fff"/><circle cx="18" cy="18" r="2"/></svg>`,
+  gravity: `<svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="9" fill="#2bd3ff" fill-opacity=".35" stroke="#66dbff"/><circle cx="24" cy="24" r="18" fill="none" stroke="#66dbff" stroke-dasharray="3 3"/><path d="M24 4v8M24 44v-8M4 24h8M44 24h-8" stroke="#66dbff" stroke-width="2"/></svg>`,
+  camera: `<svg viewBox="0 0 48 48"><rect x="8" y="16" width="24" height="18" rx="3" fill="#cfe6fb"/><path d="M32 22l9-5v16l-9-5z" fill="#cfe6fb"/><circle cx="20" cy="25" r="5" fill="#23324a"/></svg>`,
+  sw: `<svg viewBox="0 0 48 48"><rect x="10" y="28" width="28" height="8" rx="2" fill="#7a8aa0"/><ellipse cx="24" cy="27" rx="10" ry="4" fill="#ff5a5a"/></svg>`,
+  path: `<svg viewBox="0 0 48 48"><path d="M6 36C14 8 32 40 42 12" fill="none" stroke="#ffd66b" stroke-width="3"/><circle cx="6" cy="36" r="3" fill="#fff"/><circle cx="42" cy="12" r="3" fill="#fff"/></svg>`,
+  mario: `<svg viewBox="0 0 48 48"><circle cx="24" cy="15" r="8" fill="#e8322a"/><rect x="17" y="22" width="14" height="14" rx="3" fill="#2a4fd8"/><circle cx="24" cy="19" r="5" fill="#f5c79a"/></svg>`,
+  area: `<svg viewBox="0 0 48 48"><path d="M10 16l14-7 14 7v16l-14 7-14-7z" fill="#66dbff" fill-opacity=".15" stroke="#66dbff" stroke-dasharray="3 2"/></svg>`,
+};
+const ic = (k) => ICON[k] || ICON.area;
+
+// ------------------------------------------------------------------------------------------
+// The scene: real placements from PuffballZone (Gusty Garden's start planet), at screen spots
+const OBJ = {
+  rabbit44: { name: 'Star Bunny', raw: 'Rabbit', icon: 'rabbit', zone: 'Puffball planet', id: 44, missions: ['1'], box: [1258, 462, 1350, 615], cat: 'NPCs',
+    fields: [
+      ['Colour', 'swatch', 0, 'Which colour stripe the bunny wears (the "MoonRabbit" texture frame).', 'Obj_arg0', '0'],
+      ['Behaviour', 'select', 'Talks, then hides', 'What the bunny does: <b>Waits</b> (follows its path if it has one), <b>Talks, then hides</b>, <b>Hops up</b> or <b>Long-jumps away</b> when Mario comes close.', 'Obj_arg1', '0', ['Waits / follows path', 'Talks, then hides', 'Hops up', 'Long-jumps away']],
+      ['Says', 'msg', '“The wind here is so strong! Catch us if you can!”', 'Text shown when Mario talks to the bunny. Edit it here; stored in the galaxy’s messages.', 'MessageId', '1'],
+    ],
+    links: [ ['When caught', 'out', 30, 'Bunny caught', 'Rabbit writes <code>SW_DEAD</code> when it is caught.', 'SW_DEAD'],
+             ['Appears when', 'in', null, null, 'Rabbit reads <code>SW_APPEAR</code>: hidden until the switch is on.', 'SW_APPEAR'] ],
+    adv: [['l_id', 44], ['Obj_arg0', 0], ['Obj_arg1', 1], ['MessageId', 1], ['SW_APPEAR', -1], ['SW_DEAD', 30], ['CameraSetId', -1], ['ViewGroupId', -1], ['pos', '-256.6, 556.1, -366.0']] },
+  rabbit21: { name: 'Star Bunny', raw: 'Rabbit', icon: 'rabbit', zone: 'Puffball planet', id: 21, missions: ['1'], box: [728, 140, 796, 250], cat: 'NPCs' },
+  crystal6: { name: 'Crystal (small)', raw: 'CrystalCageS', icon: 'crystal', zone: 'Puffball planet', id: 6, missions: ['all'], box: [252, 238, 420, 435], cat: 'Blocks and breakables',
+    fields: [
+      ['Shows shards', 'toggle', false, 'Whether the broken pieces stay visible after the crystal shatters.', 'Obj_arg0', '-1'],
+      ['Riddle sound', 'toggle', false, 'Plays the “a secret” jingle when it breaks.', 'Obj_arg1', '-1'],
+      ['Inside', 'select', 'Star Bits ×4', 'What is trapped inside and pops out when it breaks.', 'Obj_arg7', '4', ['Nothing', 'Coin', 'Star Bits ×4', '1-Up Mushroom', 'Power Star']],
+    ],
+    links: [ ['When broken', 'out', 13, 'Crystal 1 broken', 'CrystalCage writes <code>SW_DEAD</code> when it shatters.', 'SW_DEAD'],
+             ['Wakes when', 'in', null, null, 'Reads <code>SW_A</code>.', 'SW_A'] ],
+    adv: [['l_id', 6], ['Obj_arg7', 4], ['SW_DEAD', 13], ['SW_A', -1], ['pos', '-47.8, 306.6, -1170.8']] },
+  spot20: { name: 'Star Bit spot', raw: 'StarPieceSpot', icon: 'starbit', zone: 'Puffball planet', id: 20, missions: ['all'], box: [415, 250, 495, 330], ghost: true, cat: 'Collectibles',
+    fields: [['Star Bits', 'num', 4, 'How many Star Bits burst out.', 'Obj_arg0', '4']],
+    links: [ ['Appears when', 'in', 13, 'Crystal 1 broken', 'StarPieceSpot reads <code>SW_APPEAR</code>.', 'SW_APPEAR'] ],
+    adv: [['l_id', 20], ['Obj_arg0', 4], ['SW_APPEAR', 13]] },
+  launch99: { name: 'Launch Star', raw: 'SuperSpinDriver', icon: 'launch', zone: 'Puffball planet', id: 45, missions: ['1'], box: [1215, 135, 1315, 235], ghost: true, added: true, cat: 'Launchers',
+    fields: [['Colour', 'select', 'Yellow', 'Launch Star colour (yellow, green or pink).', 'Obj_arg0', '-1', ['Yellow', 'Green', 'Pink']], ['Flight path', 'msg', 'Path 2 · to Dandelion hill', 'Where it sends Mario.', 'CommonPath_ID', '2']],
+    links: [ ['Appears when', 'in', 30, 'Bunny caught', 'Reads <code>SW_APPEAR</code>.', 'SW_APPEAR'] ],
+    adv: [['l_id', 45], ['SW_APPEAR', 30], ['CommonPath_ID', 2]] },
+  flowers1: { name: 'Flower patch', raw: 'FlowerGroup', icon: 'flower', zone: 'Puffball planet', id: 1, missions: ['all'], box: [700, 230, 1100, 470], cat: 'Effects and decoration' },
+  flowers2: { name: 'Blue flower patch', raw: 'FlowerBlueGroup', icon: 'flower', zone: 'Puffball planet', id: 2, missions: ['all'], box: [1110, 250, 1460, 470], cat: 'Effects and decoration' },
+  planet: { name: 'Puffball planet', raw: 'PuffballPlanetA', icon: 'planet', zone: 'Puffball planet', id: 0, missions: ['all'], box: [140, 470, 1760, 1010], cat: 'Planets and terrain',
+    fields: [['Model variant', 'select', 'A (flowers)', 'Which version of the planet model.', 'ShapeModelNo', '-1', ['A (flowers)']]],
+    links: [['Gravity', 'out', null, '2 disk gravities', 'Fields that hold Mario on this planet.', 'planetobjinfo']], adv: [['l_id', 0]] },
+};
+const OUTLINE = [
+  ['zone', 'Puffball planet', 'PuffballZone'],
+  ['cat', 'Planets and terrain'], ['obj', 'planet'],
+  ['cat', 'NPCs'], ['obj', 'rabbit44'], ['obj', 'rabbit21'],
+  ['cat', 'Enemies'], ['fake', 'goomba', 'Goomba', 'Kuribo', ['1']], ['fake', 'goomba', 'Goomba', 'Kuribo', ['1']], ['fake', 'goomba', 'Goomba', 'Kuribo', ['1']],
+  ['cat', 'Collectibles'], ['obj', 'spot20'], ['fake', 'starbit', 'Star Bit spot', 'StarPieceSpot', ['1']],
+  ['cat', 'Blocks and breakables'], ['obj', 'crystal6'], ['fake', 'crystal', 'Crystal (small)', 'CrystalCageS', ['1']], ['fake', 'crystal', 'Crystal (small)', 'CrystalCageS', ['1']],
+  ['cat', 'Launchers'], ['obj', 'launch99'],
+  ['cat', 'Effects and decoration'], ['obj', 'flowers1'], ['obj', 'flowers2'],
+  ['cat', 'Gravity'], ['fake', 'gravity', 'Disk gravity', 'GlobalDiskGravity', ['all']], ['fake', 'gravity', 'Disk gravity', 'GlobalDiskGravity', ['all']],
+  ['cat', 'Camera areas'], ['fake', 'camera', 'Camera area · cylinder', 'CubeCameraCylinder', ['all']],
+  ['zone', 'Dandelion hill', 'DandelionHillZone'],
+  ['zone', 'Question flower garden', 'QuestionFlowerGardenZone'],
+  ['zone', 'Rabbit maze', 'RabbitMazeZone'],
+  ['zone', 'Doughnut planet', 'DoughnutZone'],
+  ['zone', 'Inside the sphere', 'SphereInsideZone', 'shared'],
+];
+
+const state = { screen: 'edit', sel: 'rabbit44', ltab: 'outliner', mission: 'all', vis: { gravity: 'sel', links: 'sel', cameras: 'off', paths: 'sel', areas: 'off' }, playing: false, trail: false, fixed: {}, tpl: 'one', step: 1, scene: 'gusty', hoverHelp: null, card: 'goomba', popover: false };
+
+// ------------------------------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+const svgNS = 'http://www.w3.org/2000/svg';
+const inMission = (o) => state.mission === 'all' || o.missions.includes('all') || o.missions.includes(state.mission);
+const switchColour = (n) => ({ 13: '#ff7ad9', 30: '#7cf0ff', 7: '#b6ff6a' }[n] || '#ffd66b');
+
+function renderOutliner() {
+  let h = `<div class="search"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l5 5"/></svg><input placeholder="Filter: name, kind, switch…"><span class="kc">⌘F</span></div><div class="tree">`;
+  let open = true;
+  for (const r of OUTLINE) {
+    if (r[0] === 'zone') {
+      open = r[1] === 'Puffball planet';
+      h += `<div class="row zone">${open ? '▾' : '▸'} ${r[1]} <span class="raw">${r[2]}</span>${r[3] ? '<span class="dot" title="Shared with Good Egg" style="background:#66dbff"></span>' : ''}</div>`;
+    } else if (!open) continue;
+    else if (r[0] === 'cat') h += `<div class="row l1 cat">${r[1]}</div>`;
+    else if (r[0] === 'obj') {
+      const o = OBJ[r[1]];
+      const dim = !inMission(o) ? ' dim' : '';
+      const dot = o.added ? '<span class="dot add" title="Added"></span>' : (r[1] === 'rabbit44' ? '<span class="dot chg" title="Changed"></span>' : '');
+      h += `<div class="row l2${state.sel === r[1] ? ' sel' : ''}${dim}" data-sel="${r[1]}"><span class="ic">${ic(o.icon)}</span>${o.name} <span class="raw">#${o.id}</span>${dot}</div>`;
+    } else {
+      const dim = state.mission !== 'all' && !r[4].includes('all') && !r[4].includes(state.mission) ? ' dim' : '';
+      h += `<div class="row l2${dim}"><span class="ic">${ic(r[1])}</span>${r[2]} <span class="raw">${r[3]}</span></div>`;
+    }
+  }
+  h += `</div><div class="sec">Switches <span class="r">named in this project</span></div><div class="tree">
+    <div class="row l1"><span class="dot" style="background:${switchColour(13)};margin:0"></span> 13 · Crystal 1 broken <span class="raw" style="margin-left:auto">1 → 1</span></div>
+    <div class="row l1"><span class="dot" style="background:${switchColour(30)};margin:0"></span> 30 · Bunny caught <span class="raw" style="margin-left:auto">1 → 1</span></div>
+    <div class="row l1"><span class="dot" style="background:#ff8c40;margin:0"></span> 7 · <i style="color:#ffc49b">nobody turns it on</i> <span class="raw" style="margin-left:auto">0 → 2</span></div></div>`;
+  return h;
+}
+
+const CARDS = [
+  ['goomba', 'Goomba', 'Kuribo', 'Enemies', 'Walks toward Mario when it sees him. A stomp or a spin defeats it.', [], '214× in 23 galaxies', true, false],
+  ['coin', 'Coin', 'Coin', 'Collectibles', 'One coin. Restores a wedge of health.', [], '1,890× in 41 galaxies', true, false],
+  ['launch', 'Launch Star', 'SuperSpinDriver', 'Launchers', 'Spin next to it to fly along its path to a target.', ['a path'], '96× in 38 galaxies', true, false],
+  ['star', 'Power Star', 'PowerStar', 'Collectibles', 'The mission’s star. Which star it is comes from the mission.', ['a mission'], '121× in 42 galaxies', false, false],
+  ['rabbit', 'Star Bunny', 'Rabbit', 'NPCs', 'Talks or hops away; can turn on a switch when caught.', ['a message'], '31× in 4 galaxies', false, false],
+  ['crystal', 'Crystal (small)', 'CrystalCageS', 'Blocks and breakables', 'Breaks with a spin; can hold Star Bits or an item.', [], '88× in 19 galaxies', false, false],
+  ['oneup', '1-Up Mushroom', 'BenefitItemOneUp', 'Collectibles', 'An extra life.', [], '64× in 30 galaxies', false, false],
+  ['qcoin', '? Coin', 'QuestionCoin', 'Collectibles', 'Collecting it turns on its switch.', ['a switch'], '57× in 21 galaxies', false, false],
+  ['sling', 'Sling Star', 'SpinDriver', 'Launchers', 'A small launcher for short hops.', ['a target'], '73× in 25 galaxies', false, true],
+  ['pipe', 'Warp Pipe', 'EarthenPipe', 'Platforms', 'Mario can enter it and pop out of its partner.', ['a partner'], '40× in 18 galaxies', false, false],
+  ['chomp', 'Chain Chomp', 'Wanwan', 'Enemies', 'Lunges at Mario from its stake.', [], '22× in 6 galaxies', false, true],
+  ['planet', 'Puffball planet', 'PuffballPlanetA', 'Planets and terrain', 'A flowered floating island with disk gravity.', [], '1× in 1 galaxy', false, false],
+];
+function renderBrowser() {
+  const c = CARDS.find((k) => k[0] === state.card) || CARDS[0];
+  let h = `<div class="search"><svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="6"/><path d="M13 13l5 5"/></svg><input placeholder="Search objects (goomba, launch, fire…)"><span class="kc">Space</span></div>
+  <div class="scopes"><span class="chip">In this galaxy</span><span class="chip on">All</span><span class="chip">★ Favourites</span><span class="chip">Recent</span></div>
+  <div class="cats">${['Enemies', 'Collectibles', 'Launchers', 'Platforms', 'Planets', 'Blocks', 'NPCs', 'Gravity', 'Areas', 'Cameras', 'Logic'].map((x, i) => `<span class="chip${i === 0 ? '' : ''}" style="font-size:10.5px;padding:1px 7px">${x}</span>`).join('')}</div>
+  <div class="cards">${CARDS.map((k) => `<div class="card${k[0] === state.card ? ' on' : ''}" data-card="${k[0]}" draggable="true">${k[7] ? '<span class="fav">★</span>' : ''}${k[8] ? '<span class="cloud" title="Not loaded in this galaxy yet">☁</span>' : ''}${ic(k[0])}<div class="cn">${k[1]}</div></div>`).join('')}</div>
+  <div class="detail"><div class="t">${c[1]} <code>${c[2]}</code><span style="margin-left:auto;color:var(--gold)">${c[7] ? '★' : '☆'}</span></div>
+    <p>${c[4]}</p>
+    <div>${c[5].length ? c[5].map((n) => `<span class="need">needs ${n}</span>`).join('') : '<span class="need none">needs nothing</span>'}<span style="color:var(--ink-3);font-size:11px">${c[6]}</span></div>
+    <div class="sec" style="margin:8px -8px 4px">See an example</div>
+    <div class="ex">Good Egg · Bean planets <span>6×</span></div><div class="ex">Honeyhive · Honey hill <span>11×</span></div><div class="ex">Gusty Garden · Puffball <span>3×</span></div>
+    <div style="display:flex;gap:6px;margin-top:6px"><button class="capsule small">Use these settings</button><button class="capsule small">Place</button></div>
+  </div>`;
+  return h;
+}
+
+const ISSUES = [
+  ['w', 'Switch 7: nobody turns it on', '2 objects wait for it (a Sling Star and a ? Coin block in Dandelion hill). They will never appear.', ['Pick a sender', 'Remove the links'], 'sw7'],
+  ['e', '3 Coins are outside every gravity field', 'Mario can’t reach them; they float away from the planet’s underside.', ['Drop to ground', 'Add a field here'], 'coins'],
+  ['w', 'Launch Star has no flight path', 'Launch Star #45 (added) needs a path to fly along.', ['Draw a path', 'Pick a path'], 'launch'],
+];
+function renderChecks() {
+  let h = `<div class="sec">Checks <span class="r">running as you edit</span></div>`;
+  ISSUES.forEach((it, i) => {
+    const fixed = state.fixed[i];
+    h += `<div class="issue ${it[0] === 'e' ? 'err' : ''}${fixed ? ' fixed' : ''}${state.issue === i ? ' on' : ''}" data-issue="${i}">
+      <div class="it"><span class="sv">${fixed ? '✓' : (it[0] === 'e' ? '!' : '⚠')}</span>${fixed ? 'Fixed: ' : ''}${it[1]}</div>
+      <p>${it[2]}</p>${fixed ? '' : `<div class="fx">${it[3].map((f, j) => `<button class="capsule small${j === 0 ? ' gold' : ''}" data-fix="${i}">${f}</button>`).join('')}</div>`}</div>`;
+  });
+  h += `<div style="padding:8px 12px;color:var(--ink-3);font-size:11.5px">Click a problem to select and frame it. Warnings never block saving; errors ask before sharing.</div>`;
+  return h;
+}
+function renderChanges() {
+  const rows = [['a', 'Launch Star', '#45 · Mission 1', 'launch99'], ['c', 'Star Bunny', 'Says, When caught', 'rabbit44'], ['c', 'Crystal (small)', 'Position', 'crystal6'], ['a', 'Coin ×8', 'ring · Mission 1'], ['r', 'Goomba', '#15'], ['c', 'Disk gravity', 'Range 1200 → 1500']];
+  let h = `<div class="sec">Puffball planet <span class="r">6 changes</span></div>`;
+  for (const r of rows) h += `<div class="chgrow" ${r[3] ? `data-sel="${r[3]}"` : ''}><span class="m ${r[0]}">${{ a: '+', c: '●', r: '−' }[r[0]]}</span>${r[1]}<small>${r[2]}</small><span class="rv">Revert</span></div>`;
+  h += `<div class="sec">Dandelion hill <span class="r">2 changes</span></div>
+    <div class="chgrow"><span class="m c">●</span>Power Star<small>Position</small><span class="rv">Revert</span></div>
+    <div class="chgrow"><span class="m a">+</span>Sling Star<small>#31</small><span class="rv">Revert</span></div>
+    <div style="display:flex;gap:6px;padding:10px"><button class="capsule small">Show changes <span class="kc">⌘\\</span></button><button class="capsule small">Hold to compare <span class="kc">\\</span></button></div>`;
+  return h;
+}
+function renderGravityStack() {
+  return `<div class="sec">Gravity at the probe <span class="r">drag to reorder</span></div><div class="gstack">
+    <div class="g win"><span class="grip">⋮⋮</span><span class="sw" style="background:#66dbff"></span><span class="gn">Plane gravity in box<small>GlobalPlaneGravityInBox #3</small></span><span class="pr">wins<br>priority 15</span></div>
+    <div class="g"><span class="grip">⋮⋮</span><span class="sw" style="background:#b98cff"></span><span class="gn">Point gravity · bubble cluster<small>GlobalPointGravity #7</small></span><span class="pr">overlaps<br>priority 10</span></div>
+    <div class="g"><span class="grip">⋮⋮</span><span class="sw" style="background:#5ee08f"></span><span class="gn">Point gravity · relay planet<small>GlobalPointGravity #1</small></span><span class="pr">out of range<br>priority 0</span></div></div>
+    <div class="sec">All fields in this zone</div><div class="tree">
+    ${['Plane gravity in box · top', 'Plane gravity in box · bottom', 'Plane gravity in box · north', 'Plane gravity in box · south', 'Plane gravity in box · east', 'Point gravity · bubble cluster', 'Point gravity · relay planet', 'Point gravity · lone asteroid'].map((n, i) => `<div class="row l1${i === 0 ? ' sel' : ''}"><span class="ic">${ic('gravity')}</span>${n}</div>`).join('')}</div>
+    <div style="padding:8px 10px;color:var(--ink-3);font-size:11.5px"><b style="color:var(--red)">Red</b> ground has no gravity: Mario would fall into space there.</div>`;
+}
+
+function renderLeft() {
+  const body = $('leftBody');
+  const t = state.ltab;
+  document.querySelectorAll('#leftTabs .tab').forEach((e) => e.classList.toggle('on', e.dataset.ltab === t));
+  if (state.screen === 'gravity' && t === 'outliner') { body.innerHTML = renderGravityStack(); return; }
+  body.innerHTML = t === 'browser' ? renderBrowser() : t === 'checks' ? renderChecks() : t === 'changes' ? renderChanges() : renderOutliner();
+}
+
+// ------------------------------------------------------------------------------------------
+function fieldHTML(f, i) {
+  const [label, kind, val, , raw, def, opts] = f;
+  let ctl = '';
+  if (kind === 'swatch') ctl = `<div class="swatches">${['#f2c637', '#ff7d7d', '#7ad1ff', '#9cf08f', '#d7a3ff'].map((c, j) => `<i style="background:${c}" class="${j === val ? 'on' : ''}"></i>`).join('')}</div>`;
+  else if (kind === 'select') ctl = `<select class="sel">${opts.map((o) => `<option${o === val ? ' selected' : ''}>${o}</option>`).join('')}</select>`;
+  else if (kind === 'toggle') ctl = `<span class="tog${val ? ' on' : ''}"></span>`;
+  else if (kind === 'msg') ctl = `<span class="num" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">${val}</span>`;
+  else ctl = `<span class="num">${val}<span class="u">${f[7] || ''}</span></span>`;
+  const changed = (state.sel === 'rabbit44' && label === 'Says');
+  return `<div class="field" data-help="${i}"><label>${label}</label><div class="ctl">${ctl}</div>${changed ? '<span class="chg" title="Changed from the disc: click to revert"></span>' : '<span></span>'}</div>`;
+}
+function renderInspector() {
+  const o = OBJ[state.sel];
+  const el = $('inspector');
+  if (state.screen === 'gravity') { el.innerHTML = gravityInspector(); renderHelp(); return; }
+  if (state.screen === 'camera') { el.innerHTML = cameraInspector(); renderHelp(); return; }
+  if (!o) { el.innerHTML = `<div style="padding:30px 16px;color:var(--ink-3);text-align:center">Nothing selected.<br>Click an object, or press <b>Space</b> to add one.</div>`; renderHelp(); return; }
+  const pos = { rabbit44: ['-257', '556', '-366'], crystal6: ['-48', '307', '-1171'], spot20: ['-51', '343', '-1157'], launch99: ['812', '403', '-640'], planet: ['0', '0', '0'] }[state.sel] || ['0', '0', '0'];
+  let h = `<div class="insp-head"><div class="thumb">${ic(o.icon)}</div><div style="min-width:0;flex:1"><div class="nm">${o.name}<span class="star">${state.sel === 'rabbit44' ? '★' : '☆'}</span></div><div class="sub"><code>${o.raw}</code> · ${o.zone} · #${o.id}${o.added ? ' · <span style="color:var(--green)">added</span>' : ''}</div></div></div>
+  <div class="sec">Transform <span class="r">gravity frame</span></div>
+  <div class="field" data-help="pos"><label>Position</label><div class="ctl"><span class="num x"><b>X</b>${pos[0]}</span><span class="num y"><b>Y</b>${pos[1]}</span><span class="num z"><b>Z</b>${pos[2]}</span></div><span></span></div>
+  <div class="field" data-help="height"><label>↳ Above ground</label><div class="ctl"><span class="num">0<span class="u">u</span></span><label style="width:auto;cursor:default">Heading</label><span class="num">135<span class="u">°</span></span></div><span></span></div>
+  <div class="field" data-help="scale"><label>Scale</label><div class="ctl"><span class="num">1.00</span><span style="color:var(--gold-soft)">⛓</span></div><span></span></div>`;
+  if (o.fields) { h += `<div class="sec">Behaviour</div>`; o.fields.forEach((f, i) => { h += fieldHTML(f, i); }); }
+  h += `<div class="sec">Appears in <span class="r">missions</span></div><div class="missions">${['All', '1', '2', '3', '4C', '5C', '6H'].map((m) => { const on = o.missions.includes('all') ? m === 'All' : o.missions.includes(m); return `<span class="chip${on ? ' on' : ''}${m.endsWith('C') ? ' c' : m.endsWith('H') ? ' h' : ''}">${m}</span>`; }).join('')}</div>`;
+  if (o.links) {
+    h += `<div class="sec">Links <span class="r">drag a socket onto an object</span></div>`;
+    o.links.forEach((l, i) => {
+      const empty = l[2] === null && !l[3];
+      const col = l[2] ? switchColour(l[2]) : 'var(--ink-3)';
+      const txt = empty ? 'none' : (l[2] ? `Switch ${l[2]} <em>“${l[3]}”</em>` : l[3]);
+      h += `<div class="link" data-help="L${i}"><label>${l[0]}</label><div class="socket${empty ? ' empty' : ''}" style="color:${col}"><span class="pin ${l[1]}"></span><span class="txt">${txt}</span><span class="x">${empty ? '⊙' : '⨯'}</span></div></div>`;
+    });
+  }
+  if (o.adv) h += `<div class="sec" style="cursor:pointer">Advanced ▾ <span class="r">raw fields</span></div><div class="adv">${o.adv.map((a) => `<span>${a[0]}</span><span>${a[1]}</span>`).join('')}</div>`;
+  el.innerHTML = h;
+  renderHelp();
+}
+function gravityInspector() {
+  return `<div class="insp-head"><div class="thumb">${ic('gravity')}</div><div><div class="nm">Plane gravity in box</div><div class="sub"><code>GlobalPlaneGravityInBox</code> · Junk block · #3</div></div></div>
+  <div class="sec">Shape</div>
+  <div class="field" data-help="g0"><label>Size</label><div class="ctl"><span class="num x"><b>W</b>2400</span><span class="num y"><b>H</b>1600</span><span class="num z"><b>D</b>2400</span></div><span class="chg"></span></div>
+  <div class="field" data-help="g1"><label>Range</label><div class="ctl"><div class="slider"><i style="width:55%"></i></div><span class="num" style="flex:none;width:68px">1500<span class="u">u</span></span></div><span class="chg"></span></div>
+  <div class="field" data-help="g2"><label>Falloff (distant)</label><div class="ctl"><div class="slider"><i style="width:22%"></i></div><span class="num" style="flex:none;width:68px">300<span class="u">u</span></span></div><span></span></div>
+  <div class="field" data-help="g3"><label>Pull</label><div class="ctl"><select class="sel"><option>Toward the plane</option><option>Away (inverse)</option></select></div><span></span></div>
+  <div class="field" data-help="g4"><label>Priority</label><div class="ctl"><span class="num">15</span><span style="color:var(--ink-3);font-size:11px;white-space:nowrap">2nd of 3 here</span></div><span></span></div>
+  <div style="display:flex;gap:6px;padding:8px 10px"><button class="capsule small gold">Fit to planet</button><button class="capsule small">Test fall <span class="kc">T</span></button></div>
+  <div class="sec">Appears in</div><div class="missions"><span class="chip on">All</span><span class="chip">1</span><span class="chip">2</span><span class="chip">3</span></div>
+  <div class="sec">Advanced ▸ <span class="r">Range, Distant, Priority, Inverse…</span></div>`;
+}
+function cameraInspector() {
+  return `<div class="insp-head"><div class="thumb">${ic('camera')}</div><div><div class="nm">Camera area</div><div class="sub"><code>CubeCameraCylinder</code> · Puffball planet · #1</div></div></div>
+  <div class="sec">Area</div>
+  <div class="field" data-help="c0"><label>Shape</label><div class="ctl"><select class="sel"><option>Cylinder</option><option>Box</option><option>Sphere</option></select></div><span></span></div>
+  <div class="field" data-help="c1"><label>Radius · height</label><div class="ctl"><span class="num">2900<span class="u">u</span></span><span class="num">3625<span class="u">u</span></span></div><span></span></div>
+  <div class="field" data-help="c2"><label>Priority</label><div class="ctl"><span class="num">4</span></div><span></span></div>
+  <div class="sec">Camera it gives</div>
+  <div class="field" data-help="c3"><label>Kind</label><div class="ctl"><select class="sel"><option>Follow, planet (keeps the planet's up)</option><option>Fixed shot</option><option>Rail</option><option>Follow, ground</option></select></div><span></span></div>
+  <div class="field" data-help="c4"><label>Distance</label><div class="ctl"><div class="slider"><i style="width:48%"></i></div><span class="num" style="flex:none;width:68px">1800<span class="u">u</span></span></div><span class="chg"></span></div>
+  <div class="field" data-help="c5"><label>Angle above</label><div class="ctl"><div class="slider"><i style="width:30%"></i></div><span class="num" style="flex:none;width:68px">28<span class="u">°</span></span></div><span></span></div>
+  <div class="field" data-help="c6"><label>Turns with Mario</label><div class="ctl"><span class="tog on"></span></div><span></span></div>
+  <div style="display:flex;gap:6px;padding:8px 10px;flex-wrap:wrap"><button class="capsule small gold">Look through <span class="kc">0</span></button><button class="capsule small">Set from view</button></div>`;
+}
+const HELP = {
+  pos: ['Position', 'Where the object stands, in the zone’s space. Drag the label to scrub; type +100 or *2.', 'pos_x, pos_y, pos_z'],
+  height: ['Above ground · heading', 'Height above the ground along gravity, and the way it faces on the surface. Edit these instead of X/Y/Z on a planet.', 'computed from pos and dir'],
+  scale: ['Scale', 'Size. The chain keeps all three axes equal.', 'scale_x, scale_y, scale_z'],
+  g0: ['Size', 'The box the plane gravity fills. Drag the faces of the box in the viewport.', 'scale_x/y/z × 1000'],
+  g1: ['Range', 'How far beyond the box the gravity still pulls. The dashed shell in the viewport.', 'Range (default -1: infinite)'],
+  g2: ['Falloff (distant)', 'A band at the edge where the pull fades. The faint inner shell.', 'Distant'],
+  g3: ['Pull', 'Toward the plane, or away from it (for the inside of a hollow shape).', 'Inverse'],
+  g4: ['Priority', 'When fields overlap, the higher priority wins. Reorder the list on the left instead of typing numbers.', 'Priority'],
+  c0: ['Shape', 'The volume Mario must be inside for this camera to take over.', 'CubeCameraCylinder / Box / Sphere'],
+  c1: ['Size', 'Radius and height of the cylinder.', 'scale_x, scale_y × 1000'],
+  c2: ['Priority', 'When camera areas overlap, the higher one wins.', 'Obj_arg2'],
+  c3: ['Kind', 'What the camera does. Each kind has its own settings below.', 'camera type in the galaxy’s camera file'],
+  c4: ['Distance', 'How far behind Mario the camera sits.', 'dist'],
+  c5: ['Angle above', 'How far above Mario the camera looks down from.', 'angleA'],
+  c6: ['Turns with Mario', 'Whether the camera swings round as Mario turns.', 'flag'],
+};
+function renderHelp() {
+  const el = $('help');
+  let k = state.hoverHelp;
+  const o = OBJ[state.sel];
+  let t, p, raw;
+  if (k != null && HELP[k]) [t, p, raw] = HELP[k];
+  else if (k != null && o && o.fields && o.fields[k]) { const f = o.fields[k]; t = f[0]; p = f[3]; raw = `${f[4]} (default ${f[5]})`; }
+  else if (k != null && String(k).startsWith('L') && o && o.links) { const l = o.links[+k.slice(1)]; t = l[0]; p = l[4] + (l[1] === 'out' ? ' Drag the socket onto objects that should react.' : ' Drag the socket onto the object that turns it on.'); raw = l[5]; }
+  else if (state.screen === 'camera') { t = 'Camera area'; p = 'Mario at the play marker sees the preview in the corner. Drag the marker (M) to try other spots; 0 looks through this camera in the main view. Camera changes are pending until you Reload or Play.'; raw = 'cameracubeinfo + the galaxy’s camera file'; }
+  else if (state.screen === 'gravity') { t = 'Gravity view'; p = 'Hover the world to probe it: the arrow points where gravity pulls; the label names the winning field. Red ground has no gravity.'; raw = 'planetobjinfo'; }
+  else { t = o ? o.name : 'Inspector'; p = o ? 'Hover any field for help. Gold dots mark values changed from the disc; click one to revert it.' : 'Select something to see its settings.'; raw = o ? o.raw : ''; }
+  el.innerHTML = `<div class="h">${t}</div><p>${p}</p>${raw ? `<p><code>Raw: ${raw}</code></p>` : ''}`;
+}
+
+// ------------------------------------------------------------------------------------------
+// Viewport overlay
+function el(tag, attrs, parent) { const e = document.createElementNS(svgNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+function defs(svg) {
+  svg.innerHTML = `<defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="2"/></filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="currentColor"/></marker>
+    <pattern id="hatch" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="14" height="14" fill="rgba(185,140,255,.10)"/><line x1="0" y1="0" x2="0" y2="14" stroke="rgba(185,140,255,.55)" stroke-width="3"/></pattern>
+    <radialGradient id="diskg" cx="50%" cy="50%"><stop offset="0" stop-color="#66dbff" stop-opacity=".0"/><stop offset=".75" stop-color="#66dbff" stop-opacity=".10"/><stop offset="1" stop-color="#66dbff" stop-opacity=".28"/></radialGradient>
+  </defs><style>
+    .dash { animation: flow 1.1s linear infinite; } @keyframes flow { to { stroke-dashoffset: -28; } }
+    .part { animation: fall 1.6s linear infinite; } @keyframes fall { from { opacity: 0; transform: translateY(-40px); } 20% { opacity: 1; } 80% { opacity: 1; } to { opacity: 0; transform: translateY(40px); } }
+    .partu { animation: rise 1.6s linear infinite; } @keyframes rise { from { opacity: 0; transform: translateY(40px); } 20% { opacity: 1; } 80% { opacity: 1; } to { opacity: 0; transform: translateY(-40px); } }
+    .pulse { animation: pulse 1.4s ease-in-out infinite; } @keyframes pulse { 50% { opacity: .35; } }
+    text { font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif; }
+  </style>`;
+}
+function label(svg, x, y, text, color, opts = {}) {
+  const g = el('g', {}, svg);
+  const w = text.length * (opts.size || 22) * 0.52 + 26;
+  el('rect', { x: x - w / 2, y: y - 19, width: w, height: 34, rx: 17, fill: 'rgba(3,20,36,.86)', stroke: color, 'stroke-width': 2 }, g);
+  const t = el('text', { x, y: y + 6, 'text-anchor': 'middle', 'font-size': opts.size || 22, 'font-weight': 800, fill: opts.ink || '#fff' }, g);
+  t.textContent = text;
+  return g;
+}
+function selectionMark(svg, b, color = '#facc38', dashed = false) {
+  const [x0, y0, x1, y1] = b; const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  el('ellipse', { cx, cy, rx: (x1 - x0) / 2 + 14, ry: (y1 - y0) / 2 + 14, fill: 'none', stroke: color, 'stroke-width': 5, filter: 'url(#glow)', 'stroke-dasharray': dashed ? '10 8' : 'none', opacity: .95 }, svg);
+}
+function gizmo(svg, x, y) {
+  const g = el('g', {}, svg);
+  el('ellipse', { cx: x, cy: y, rx: 120, ry: 34, fill: 'rgba(250,204,56,.08)', stroke: '#facc38', 'stroke-width': 3, 'stroke-dasharray': '2 0', opacity: .9 }, g); // tangent-plane ring (heading)
+  el('line', { x1: x, y1: y, x2: x, y2: y - 190, stroke: '#5fe36a', 'stroke-width': 7, 'marker-end': 'url(#arrow)', color: '#5fe36a' }, g);
+  el('line', { x1: x, y1: y, x2: x + 150, y2: y + 24, stroke: '#ff5a5a', 'stroke-width': 7, 'marker-end': 'url(#arrow)', color: '#ff5a5a' }, g);
+  el('line', { x1: x, y1: y, x2: x - 110, y2: y + 30, stroke: '#5a9bff', 'stroke-width': 7, 'marker-end': 'url(#arrow)', color: '#5a9bff' }, g);
+  el('circle', { cx: x, cy: y, r: 13, fill: '#66dbff', stroke: '#fff', 'stroke-width': 3 }, g);
+  const t = el('text', { x: x + 16, y: y - 120, 'font-size': 17, fill: '#c9ffcf', 'font-weight': 800 }, g); t.textContent = 'up (gravity)';
+}
+function playMarker(svg, x, y) {
+  const g = el('g', { opacity: .9 }, svg);
+  el('ellipse', { cx: x, cy: y, rx: 46, ry: 13, fill: 'rgba(102,219,255,.25)', stroke: '#66dbff', 'stroke-width': 2.5, 'stroke-dasharray': '6 5' }, g);
+  label(svg, x, y + 46, '▶ Play marker', '#66dbff', { size: 18 });
+}
+function wire(svg, a, b, color, text, bend = -120) {
+  const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2 + bend;
+  const d = `M${a[0]} ${a[1]} Q${mx} ${my} ${b[0]} ${b[1]}`;
+  el('path', { d, fill: 'none', stroke: 'rgba(0,0,0,.45)', 'stroke-width': 10 }, svg);
+  el('path', { d, fill: 'none', stroke: color, 'stroke-width': 5, 'stroke-dasharray': '16 12', class: 'dash', 'stroke-linecap': 'round' }, svg);
+  el('circle', { cx: a[0], cy: a[1], r: 10, fill: color, stroke: '#fff', 'stroke-width': 3 }, svg);
+  el('circle', { cx: b[0], cy: b[1], r: 10, fill: 'rgba(3,20,36,.9)', stroke: color, 'stroke-width': 4 }, svg);
+  if (text) label(svg, (a[0] + 2 * mx + b[0]) / 4, (a[1] + 2 * my + b[1]) / 4, text, color, { size: 19 });
+}
+function ghost(svg, o) {
+  const [x0, y0, x1, y1] = o.box; const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  const g = el('g', { opacity: .85 }, svg);
+  el('circle', { cx, cy, r: (x1 - x0) / 2, fill: 'rgba(255,255,255,.10)', stroke: o.added ? '#59d973' : '#fff', 'stroke-width': 3, 'stroke-dasharray': '7 6' }, g);
+  const fo = el('foreignObject', { x: cx - 32, y: cy - 32, width: 64, height: 64 }, g);
+  fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:64px;height:64px;opacity:.85">${ic(o.icon).replace('<svg ', '<svg width="64" height="64" ')}</div>`;
+}
+function hotspot(svg, key) {
+  const o = OBJ[key];
+  const [x0, y0, x1, y1] = o.box;
+  const g = el('g', { class: 'hot', 'data-sel': key, opacity: inMission(o) ? 1 : .25 }, svg);
+  if (key === 'planet') {
+    el('path', { d: 'M150 600 C 200 420, 600 330, 950 330 C 1300 330, 1720 420, 1760 640 C 1760 760, 1640 960, 1250 1000 C 1000 1020, 700 1020, 450 980 C 260 930, 140 800, 150 600 Z', fill: 'rgba(0,0,0,0)', class: 'hl', stroke: '#66dbff', 'stroke-width': 4 }, g);
+    return;
+  }
+  el('ellipse', { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, rx: (x1 - x0) / 2 + 10, ry: (y1 - y0) / 2 + 10, fill: 'rgba(0,0,0,0)', class: 'hl', stroke: '#66dbff', 'stroke-width': 4 }, g);
+}
+function compass() {
+  const c = $('compass');
+  c.innerHTML = `<circle cx="40" cy="40" r="34" fill="rgba(3,36,61,.85)" stroke="rgba(102,219,255,.6)"/>
+    <ellipse cx="40" cy="44" rx="24" ry="8" fill="none" stroke="rgba(153,199,247,.35)"/>
+    <line x1="40" y1="40" x2="62" y2="46" stroke="#ff8a8a" stroke-width="2"/><line x1="40" y1="40" x2="22" y2="49" stroke="#8ab8ff" stroke-width="2"/>
+    <line x1="40" y1="40" x2="40" y2="64" stroke="#facc38" stroke-width="4"/><path d="M34 60l6 8 6-8z" fill="#facc38"/>
+    <line x1="40" y1="40" x2="44" y2="14" stroke="#8ae68a" stroke-width="2" opacity=".6"/>
+    <text x="40" y="78" text-anchor="middle" font-size="8" fill="#99ebff" font-weight="700">UP: GRAVITY</text>`;
+}
+const VIS = [['gravity', '1', 'Gravity', '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="4"/><circle cx="10" cy="10" r="8" stroke-dasharray="2 2"/></svg>'],
+  ['areas', '2', 'Areas', '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 7l7-4 7 4v7l-7 4-7-4z" stroke-dasharray="2 1.5"/></svg>'],
+  ['cameras', '3', 'Camera areas', '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="6" width="11" height="9" rx="1.5"/><path d="M13 9l5-3v9l-5-3"/></svg>'],
+  ['paths', '4', 'Paths', '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 15c4-10 8 2 16-10"/></svg>'],
+  ['links', '5', 'Links (switch wires)', '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="4" cy="14" r="2.2"/><circle cx="16" cy="6" r="2.2"/><path d="M6 13c4-1 5-5 8-6" stroke-dasharray="2 1.5"/></svg>']];
+function renderVis() {
+  $('vis').innerHTML = VIS.map(([k, n, tip, svg]) => `<button data-vis="${k}" class="${state.vis[k] !== 'off' ? 'on' : ''}" data-tip="${tip}: ${{ off: 'off', sel: 'selection', all: 'all' }[state.vis[k]]}">${svg}<span class="k">${n}</span></button>`).join('');
+}
+
+function renderViewport() {
+  const svg = $('ov'); defs(svg);
+  const extra = $('vextra'); extra.innerHTML = '';
+  const s = state.screen;
+  if (s === 'gravity') return renderGravityViewport(svg, extra);
+  if (s === 'play') {
+    $('vchip').className = 'vchip play'; $('vchip').textContent = 'Play-test · Tab to edit';
+    if (!state.playing) { $('vchip').className = 'vchip'; $('vchip').textContent = 'EDITING'; }
+  } else { $('vchip').className = 'vchip'; $('vchip').textContent = 'EDITING'; }
+  if (state.playing) { $('viewport').classList.remove('editing'); $('compass').style.display = 'none'; $('vis').style.display = 'none'; return; }
+  $('viewport').classList.add('editing'); $('compass').style.display = ''; $('vis').style.display = '';
+
+  // gravity (selection only: the planet's disk fields when the planet is selected)
+  if (state.vis.gravity === 'all' || (state.vis.gravity === 'sel' && state.sel === 'planet')) {
+    el('ellipse', { cx: 950, cy: 600, rx: 1050, ry: 470, fill: 'url(#diskg)', stroke: '#66dbff', 'stroke-width': 3, 'stroke-dasharray': '14 10', opacity: .9 }, svg);
+    for (let i = 0; i < 9; i++) { const x = 330 + i * 160; el('path', { d: `M${x} 150 v60`, stroke: '#66dbff', 'stroke-width': 5, 'marker-end': 'url(#arrow)', color: '#66dbff', class: 'part', style: `animation-delay:${i * 0.17}s` }, svg); }
+    label(svg, 1620, 210, 'Disk gravity ×2 · pulls toward the disk', '#66dbff', { size: 19 });
+  }
+  // camera areas
+  if (state.vis.cameras !== 'off' || s === 'camera') {
+    el('ellipse', { cx: 980, cy: 230, rx: 620, ry: 120, fill: 'rgba(255,214,107,.06)', stroke: '#ffd66b', 'stroke-width': 3, 'stroke-dasharray': '10 8' }, svg);
+    el('path', { d: 'M360 230 L360 860 M1600 230 L1600 860', stroke: '#ffd66b', 'stroke-width': 3, 'stroke-dasharray': '10 8' }, svg);
+    el('ellipse', { cx: 980, cy: 860, rx: 620, ry: 120, fill: 'none', stroke: '#ffd66b', 'stroke-width': 3, 'stroke-dasharray': '10 8', opacity: .5 }, svg);
+    label(svg, 980, 120, '🎥 Camera area · follow (planet) · priority 4', '#ffd66b', { size: 19 });
+  }
+  // mario's trail after a play-test
+  if (state.trail) {
+    el('path', { d: 'M1003 650 C 1040 600, 1100 560, 1150 600 C 1180 520, 1230 470, 1290 560', fill: 'none', stroke: '#fff', 'stroke-width': 5, 'stroke-dasharray': '2 12', 'stroke-linecap': 'round' }, svg);
+    el('path', { d: 'M1290 560 C 1350 420, 1450 380, 1520 330', fill: 'none', stroke: '#facc38', 'stroke-width': 5, 'stroke-dasharray': '2 12', 'stroke-linecap': 'round' }, svg);
+    label(svg, 1350, 420, 'jump · 346 high', '#ffffff', { size: 17 });
+  }
+  // ghosts: dead / hidden objects and the added Launch Star
+  ghost(svg, OBJ.spot20);
+  if (inMission(OBJ.launch99)) ghost(svg, OBJ.launch99);
+  // links
+  const showLinks = (k) => state.vis.links === 'all' || (state.vis.links === 'sel' && (state.sel === k || s === 'links'));
+  if (showLinks('crystal6') || showLinks('spot20')) wire(svg, [336, 300], [455, 290], switchColour(13), 'Switch 13 · Crystal 1 broken', -90);
+  if ((showLinks('rabbit44') || showLinks('launch99')) && inMission(OBJ.launch99)) wire(svg, [1304, 470], [1265, 238], switchColour(30), 'Switch 30 · Bunny caught', 0);
+  // hotspots
+  for (const k of ['planet', 'flowers1', 'flowers2', 'crystal6', 'rabbit21', 'rabbit44', 'spot20', 'launch99']) hotspot(svg, k);
+  // selection + gizmo
+  const o = OBJ[state.sel];
+  if (o && s !== 'camera') {
+    if (state.sel === 'planet') { el('path', { d: 'M150 600 C 200 420, 600 330, 950 330 C 1300 330, 1720 420, 1760 640 C 1760 760, 1640 960, 1250 1000 C 1000 1020, 700 1020, 450 980 C 260 930, 140 800, 150 600 Z', fill: 'none', stroke: '#facc38', 'stroke-width': 6, filter: 'url(#glow)' }, svg); }
+    else selectionMark(svg, o.box, '#facc38', !!o.ghost);
+    const [x0, , x1, y1] = o.box;
+    if (state.sel !== 'planet') gizmo(svg, (x0 + x1) / 2, y1 - 6);
+  }
+  playMarker(svg, 1003, 662);
+  if (s === 'links' && state.popover) {
+    extra.innerHTML = `<div class="popover" style="left:3%;top:58%"><h4>How should the Launch Star react to Switch 30?</h4>
+      <div class="opt on">Appear when it turns on <small>SW_APPEAR</small></div><div class="opt">Wake up when it turns on <small>SW_AWAKE</small></div><div class="opt">Disappear when it turns on <small>SW_DEAD*</small></div>
+      <div style="color:var(--ink-3);font-size:11px;padding:4px 8px 0">Only the switches Launch Star reads are offered. Switch 30 was picked for you.</div></div>`;
+  }
+  if (s === 'camera') {
+    extra.innerHTML = `<div class="pip" id="pip"><div class="cap">Camera preview · Mario at the play marker<span>live</span></div></div>`;
+    const img = new Image(); img.onload = () => { $('pip').style.backgroundImage = `url("${SHOTS.gusty}")`; $('pip').style.backgroundSize = '180%'; $('pip').style.backgroundPosition = '52% 62%'; }; img.onerror = () => { $('pip').style.backgroundImage = FALLBACK.gusty; }; img.src = SHOTS.gusty;
+  }
+  if (s === 'browser') {
+    // a Goomba being dragged in from the browser: it lands on the ground, upright for gravity
+    const g = el('g', { opacity: .9 }, svg);
+    el('ellipse', { cx: 640, cy: 712, rx: 60, ry: 16, fill: 'rgba(250,204,56,.25)', stroke: '#facc38', 'stroke-width': 3 }, g);
+    el('line', { x1: 640, y1: 560, x2: 640, y2: 700, stroke: '#facc38', 'stroke-width': 3, 'stroke-dasharray': '6 6' }, g);
+    const fo = el('foreignObject', { x: 590, y: 600, width: 100, height: 100 }, g);
+    fo.innerHTML = `<div xmlns="http://www.w3.org/1999/xhtml" style="opacity:.85">${ic('goomba').replace('<svg ', '<svg width="100" height="100" ')}</div>`;
+    label(svg, 640, 770, 'Goomba · lands here, upright', '#facc38', { size: 18 });
+  }
+  if (s === 'checks' && state.issue === 1 && !state.fixed[1]) {
+    for (const [x, y] of [[560, 1040], [640, 1060], [720, 1050]]) { el('circle', { cx: x, cy: y - 30, r: 22, fill: 'rgba(255,90,90,.2)', stroke: '#ff5a5a', 'stroke-width': 4, class: 'pulse' }, svg); }
+    label(svg, 640, 960, 'No gravity here', '#ff5a5a', { size: 19 });
+  }
+}
+function renderGravityViewport(svg, extra) {
+  $('vchip').className = 'vchip'; $('vchip').textContent = 'EDITING · GRAVITY VIEW';
+  $('viewport').classList.add('editing'); $('compass').style.display = ''; $('vis').style.display = '';
+  // The junk block's top face in the Space Junk frame, and the plane-gravity box above it
+  const L = [290, 705], B = [860, 568], R = [1420, 738], F = [985, 945], up = 380;
+  const U = (p) => [p[0], p[1] - up];
+  const pts = (a) => a.map((p) => p.join(' ')).join(' L');
+  el('clipPath', { id: 'boxclip' }, svg.querySelector('defs')).innerHTML = `<path d="M${pts([L, U(L), U(B), U(R), R, F])} Z"/>`;
+  el('path', { d: `M${pts([L, U(L), U(B), U(R), R, F])} Z`, fill: 'rgba(102,219,255,.10)' }, svg);
+  el('path', { d: `M${pts([U(L), U(B), U(R), U(F)])} Z`, fill: 'rgba(102,219,255,.08)', stroke: '#66dbff', 'stroke-width': 3, 'stroke-dasharray': '12 9' }, svg);
+  for (const p of [L, B, R, F]) el('line', { x1: p[0], y1: p[1], x2: p[0], y2: p[1] - up, stroke: '#66dbff', 'stroke-width': 3, 'stroke-dasharray': '12 9', opacity: .8 }, svg);
+  el('path', { d: `M${pts([L, B, R, F])} Z`, fill: 'none', stroke: '#66dbff', 'stroke-width': 3 }, svg);
+  // flow arrows above the face (bilinear points on the face quad)
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  let n = 0;
+  for (const u of [0.18, 0.42, 0.66, 0.88]) for (const v of [0.2, 0.5, 0.8]) {
+    const p = lerp(lerp(L, B, u), lerp(F, R, u), v);
+    el('path', { d: `M${p[0]} ${p[1] - 250} v60`, stroke: '#66dbff', 'stroke-width': 5, 'marker-end': 'url(#arrow)', color: '#66dbff', class: 'part', style: `animation-delay:${(n++ * 0.13) % 1.6}s` }, svg);
+  }
+  // point gravity around the bubble cluster: its overlap with the box loses (hatched)
+  el('circle', { cx: 130, cy: 150, r: 360, fill: 'rgba(185,140,255,.10)', stroke: '#b98cff', 'stroke-width': 3, 'stroke-dasharray': '12 9' }, svg);
+  el('circle', { cx: 130, cy: 150, r: 360, fill: 'url(#hatch)', 'clip-path': 'url(#boxclip)' }, svg);
+  for (let i = 0; i < 6; i++) { const a = -0.2 + i / 6 * 1.9; el('path', { d: `M${130 + Math.cos(a) * 330} ${150 + Math.sin(a) * 330} L${130 + Math.cos(a) * 260} ${150 + Math.sin(a) * 260}`, stroke: '#b98cff', 'stroke-width': 5, 'marker-end': 'url(#arrow)', color: '#b98cff' }, svg); }
+  label(svg, 560, 470, 'Point gravity · loses inside the box (priority 10)', '#b98cff', { size: 17 });
+  // dead zone: the block's east side has no field
+  el('path', { d: 'M1420 738 L985 945 L1000 1080 L1440 860 Z', fill: 'rgba(255,90,90,.33)', stroke: '#ff5a5a', 'stroke-width': 3, class: 'pulse' }, svg);
+  label(svg, 1225, 1030, 'No gravity: Mario falls into space', '#ff5a5a', { size: 17 });
+  // selection: face handles
+  el('path', { d: `M${pts([L, U(L), U(B), U(R), R])}`, fill: 'none', stroke: '#facc38', 'stroke-width': 4, filter: 'url(#glow)', opacity: .9 }, svg);
+  const top = lerp(lerp(U(L), U(B), 0.5), lerp(U(F), U(R), 0.5), 0.5);
+  for (const p of [top, lerp(U(L), U(B), 0.5), lerp(U(B), U(R), 0.5), lerp(L, U(L), 0.5), lerp(R, U(R), 0.5)]) el('rect', { x: p[0] - 11, y: p[1] - 11, width: 22, height: 22, rx: 5, fill: '#facc38', stroke: '#fff', 'stroke-width': 3 }, svg);
+  // probe at the cursor
+  const px = 1150, py = 690;
+  el('circle', { cx: px, cy: py, r: 9, fill: '#fff' }, svg);
+  el('path', { d: `M${px} ${py - 70} v58`, stroke: '#fff', 'stroke-width': 6, 'marker-end': 'url(#arrow)', color: '#fff' }, svg);
+  label(svg, px - 20, py - 100, 'Plane gravity in box #3 · priority 15 · beats 1', '#66dbff', { size: 17 });
+  // test-fall ball
+  el('path', { d: 'M700 110 C 705 260, 712 420, 720 610', fill: 'none', stroke: '#ffd66b', 'stroke-width': 4, 'stroke-dasharray': '3 10', 'stroke-linecap': 'round' }, svg);
+  el('circle', { cx: 720, cy: 615, r: 13, fill: '#ffd66b', stroke: '#fff', 'stroke-width': 3 }, svg);
+  label(svg, 700, 80, 'Test fall (T)', '#ffd66b', { size: 17 });
+}
+// ------------------------------------------------------------------------------------------
+// Footer: the keys that work right now
+function renderFooter() {
+  const K = (k, t, ab) => `<span><span class="k${ab ? ' ab' : ''}">${k}</span>${t}</span>`;
+  let keys;
+  const s = state.screen;
+  if (state.playing) keys = [K('Tab', 'back to Edit'), K('Esc', 'pause'), K('WASD', 'move'), K('Space', 'jump')];
+  else if (s === 'gravity') keys = [K('Drag', 'face handles resize'), K('T', 'test fall'), K('⌥', 'probe in mid-air'), K('1', 'gravity view'), K('F', 'frame field')];
+  else if (s === 'browser') keys = [K('Drag', 'place on the ground'), K('Click', 'stamp mode'), K('Space', 'quick add at cursor'), K('Esc', 'cancel')];
+  else if (s === 'links') keys = [K('Drag socket', 'link to an object'), K('⊙', 'pick'), K('Delete', 'break a selected wire'), K('5', 'all wires')];
+  else if (s === 'camera') keys = [K('0', 'look through'), K('M', 'move Mario for the preview'), K('3', 'camera areas'), K('F', 'frame')];
+  else keys = [K('Click', 'select'), K('Drag', 'move on ground'), K('G', 'grab, then X Y Z'), K('End', 'drop to ground'), K('F', 'frame'), K('⌘D', 'duplicate'), K('Tab', 'play')];
+  $('footer').innerHTML = keys.join('') + `<span class="mem" title="Stage memory use against the game's headroom">Memory <span class="bar"><i style="width:64%"></i></span> 64%</span>`;
+}
+
+// ------------------------------------------------------------------------------------------
+// Sheets
+function sheetNewGalaxy() {
+  const step = state.step;
+  const tpls = [
+    ['empty', 'Empty space', 'A sky, a start point, nothing else.', `<svg viewBox="0 0 160 92"><circle cx="20" cy="20" r="1" fill="#fff"/><circle cx="120" cy="30" r="1" fill="#fff"/><circle cx="70" cy="70" r="1" fill="#fff"/><circle cx="140" cy="76" r="1" fill="#fff"/><path d="M80 52l3 5h6l-5 4 2 6-6-4-6 4 2-6-5-4h6z" fill="#66dbff" opacity=".8"/></svg>`],
+    ['one', 'One planet', 'A planet of your choice, with its gravity.', `<svg viewBox="0 0 160 92"><circle cx="80" cy="50" r="28" fill="#3f9a2a"/><ellipse cx="80" cy="50" rx="44" ry="44" fill="none" stroke="#66dbff" stroke-dasharray="3 3"/><circle cx="72" cy="40" r="6" fill="#59c13a"/></svg>`],
+    ['starter', 'Starter', 'Hub planet, a Launch Star to two planets and a Power Star, wired.', `<svg viewBox="0 0 160 92"><circle cx="40" cy="56" r="18" fill="#3f9a2a"/><circle cx="110" cy="30" r="12" fill="#c98a3a"/><circle cx="128" cy="70" r="10" fill="#8aa0c0"/><path d="M50 40 Q80 10 100 28" stroke="#ffd66b" stroke-dasharray="3 3" fill="none"/><path d="M110 10l2 4h4l-3 3 1 4-4-2-4 2 1-4-3-3h4z" fill="#ffd93b"/></svg>`],
+    ['copy', 'Copy a galaxy', 'Any galaxy from the game, as your starting point.', `<svg viewBox="0 0 160 92"><rect x="30" y="18" width="70" height="50" rx="6" fill="#103a5c" stroke="#66dbff"/><rect x="58" y="28" width="70" height="50" rx="6" fill="#0d4f73" stroke="#66dbff"/><circle cx="92" cy="54" r="12" fill="#3f9a2a"/></svg>`],
+  ];
+  let body = '';
+  if (step === 1) {
+    body = `<div class="tpl">${tpls.map((t) => `<div class="tcard${state.tpl === t[0] ? ' on' : ''}" data-tpl="${t[0]}">${t[3]}<div class="tn">${t[1]}</div><p>${t[2]}</p></div>`).join('')}</div>
+      <div class="strip"><span class="lab">Planet</span>${[['Grass sphere', '#3f9a2a'], ['Puffball', '#5fbf3a'], ['Stone cube', '#8a8f99'], ['Honey hive', '#e8b23a'], ['Ice disk', '#9fe0ff'], ['Lava rock', '#c0442a'], ['Donut', '#d99a5a'], ['Bean', '#6fc04a']].map((p, i) => `<div class="pl${i === 1 ? ' on' : ''}"><svg viewBox="0 0 52 52">${i === 2 ? `<rect x="12" y="12" width="28" height="28" rx="4" fill="${p[1]}"/>` : i === 6 ? `<circle cx="26" cy="26" r="17" fill="${p[1]}"/><circle cx="26" cy="26" r="7" fill="#0b1830"/>` : i === 4 ? `<ellipse cx="26" cy="28" rx="20" ry="8" fill="${p[1]}"/>` : `<circle cx="26" cy="26" r="17" fill="${p[1]}"/>`}</svg><div>${p[0]}</div></div>`).join('')}</div>
+      <p style="color:var(--ink-3);font-size:11.5px;margin:10px 2px 0">Thumbnails are rendered from the game's models on your Mac the first time you open this. Each planet comes with the gravity the game gives it.</p>`;
+  } else if (step === 2) {
+    body = `<div class="form"><div class="f full"><label>Sky</label><div class="domes">${['Starry night', 'Gusty clouds', 'Good Egg day', 'Space junk', 'Ghostly fog', 'Lava glow', 'Ice blue'].map((s, i) => `<span class="chip${i === 1 ? ' on' : ''}">${s}</span>`).join('')}</div></div>
+      <div class="f"><label>Music</label><select><option>Gusty Garden ▶</option><option>Good Egg ▶</option><option>Space Junk ▶</option><option>Buoy Base ▶</option><option>Toy Time ▶</option></select><span class="help2">Press ▶ to preview the track.</span></div>
+      <div class="f"><label>Lighting</label><select><option>Gusty Garden, day</option><option>Good Egg, day</option><option>Ghostly, night</option><option>Melty Molten</option></select><span class="help2">Taken from a galaxy in the game.</span></div></div>`;
+  } else {
+    body = `<div class="form"><div class="f"><label>Name</label><input value="Pipe Dream Galaxy"><span class="help2">Shown in Level Select and the star list. Internal name: <code>PipeDreamGalaxy</code> (Advanced).</span></div>
+      <div class="f"><label>Missions</label><input value="3"><span class="help2">One Power Star each. Name them now or later.</span></div>
+      <div class="f full"><label>Where it appears in Level Select</label><div class="domes">${['★ Mod galaxies', 'Terrace', 'Fountain', 'Kitchen', 'Bedroom', 'Engine Room', 'Garden'].map((d, i) => `<span class="chip${i === 0 ? ' on' : ''}" style="${i ? 'opacity:.4;cursor:default' : ''}">${d}</span>`).join('')}</div><span class="help2">Observatory domes come later; v1 lists mod galaxies in their own group at the end of Level Select. Stars go in the mod's own save.</span></div>
+      <div class="f full"><label>Mission names</label><input value="1 · Over the green pipes"><input value="2 · The bunny's secret" style="margin-top:4px"><input value="3 · Dream of a star" style="margin-top:4px"></div></div>`;
+  }
+  return `<div class="st">New Galaxy</div><div class="steps">${['1 Start from', '2 Look and sound', '3 Name and place'].map((t, i) => `<span class="chip${step === i + 1 ? ' on' : ''}" data-step="${i + 1}">${t}</span>`).join('')}</div>
+    <div class="body">${body}</div>
+    <div class="foot"><span class="note">You can change all of this later.</span><button class="capsule" data-close>Cancel</button>${step > 1 ? '<button class="capsule" data-step="' + (step - 1) + '">Back</button>' : ''}${step < 3 ? `<button class="capsule gold" data-step="${step + 1}">Next</button>` : '<button class="capsule gold" data-close>Create galaxy</button>'}</div>`;
+}
+function sheetShare() {
+  return `<div class="st">Share</div><div class="body" style="padding-top:4px">
+    <div style="display:grid;grid-template-columns:1.05fr 1fr;gap:18px">
+      <div><div class="shot" id="shareShot"><div class="re"><button class="capsule small">Retake</button><button class="capsule small">Photo mode…</button></div></div>
+        <div style="margin-top:12px" class="form"><div class="f full"><label>What it changes</label><div class="tree2">Gusty Garden Galaxy
+  Puffball planet       6 changes
+  Dandelion hill        2 changes
+New galaxy: Pipe Dream  3 missions</div></div></div></div>
+      <div class="form" style="grid-template-columns:1fr 90px;align-content:start">
+        <div class="f"><label>Name</label><input value="Bunny Garden Remix"></div><div class="f"><label>Version</label><input value="1.0"></div>
+        <div class="f full"><label>Author</label><input value="robb"></div>
+        <div class="f full"><label>Description</label><textarea>Catch the Star Bunnies to open a new Launch Star, plus a brand-new galaxy of pipes.</textarea></div>
+        <div class="f full"><label>Needs</label><div class="domes"><span class="chip on">Odyssey movement</span><span class="chip">Cappy</span></div><span class="help2">Shown to whoever installs it.</span></div>
+        <div class="f full"><label>Checks</label><div class="okline">✓ No errors</div><div class="wline">⚠ 2 warnings · <a style="color:inherit" href="#" data-goto="checks">review</a></div></div>
+      </div></div></div>
+    <div class="foot"><span class="note">Bunny-Garden-Remix-1.0.zip · 212 KB · your changes only, applied to each player's own disc</span><button class="capsule" data-close>Cancel</button><button class="capsule gold" id="exportBtn">Export .zip</button></div>`;
+}
+function openSheet(kind) {
+  $('scrim').classList.add('on');
+  $('sheet').innerHTML = kind === 'share' ? sheetShare() : sheetNewGalaxy();
+  if (kind === 'share') {
+    const img = new Image(); img.onload = () => { $('shareShot').style.backgroundImage = `url("${SHOTS.gusty}")`; }; img.onerror = () => { $('shareShot').style.backgroundImage = FALLBACK.gusty; }; img.src = SHOTS.gusty;
+  }
+  state.sheet = kind;
+}
+function closeSheet() { $('scrim').classList.remove('on'); state.sheet = null; }
+
+// ------------------------------------------------------------------------------------------
+function toast(html, cls = '') {
+  const t = document.createElement('div'); t.className = 'vtoast ' + cls; t.innerHTML = html;
+  $('vextra').appendChild(t); setTimeout(() => t.remove(), 4200);
+}
+function renderAll() {
+  document.querySelectorAll('#nav button').forEach((b) => b.classList.toggle('on', b.dataset.screen === state.screen));
+  $('win').classList.toggle('playing', state.playing);
+  $('playBtn').innerHTML = state.playing ? '■ Edit <span class="kc">Tab</span>' : '▶ Play <span class="kc">Tab</span>';
+  const open = ISSUES.filter((_, i) => !state.fixed[i]).length;
+  $('checkBadge').textContent = open ? `⚠ ${open}` : '✓ 0'; $('checkBadge').classList.toggle('ok', !open);
+  $('checksN').textContent = open; $('checksN').style.display = open ? '' : 'none';
+  document.querySelectorAll('#missionPicker .chip').forEach((c) => c.classList.toggle('on', c.dataset.m === state.mission));
+  $('crumbGalaxy').textContent = state.scene === 'spacejunk' ? 'Space Junk Galaxy' : 'Gusty Garden Galaxy';
+  $('crumbZone').textContent = state.scene === 'spacejunk' ? 'Junk block' : 'Puffball planet';
+  setBg(state.scene);
+  renderLeft(); renderInspector(); renderVis(); compass(); renderViewport(); renderFooter(); fitView();
+}
+function go(screen) {
+  closeSheet();
+  state.screen = screen; state.vis = { gravity: 'sel', links: 'sel', cameras: 'off', paths: 'sel', areas: 'off' }; state.trail = false; state.playing = false; state.popover = false; state.hoverHelp = null; state.scene = 'gusty'; state.issue = null;
+  if (screen === 'edit') { state.ltab = 'outliner'; state.sel = 'rabbit44'; state.vis.links = 'sel'; state.vis.cameras = 'off'; state.vis.gravity = 'sel'; }
+  if (screen === 'browser') { state.ltab = 'browser'; state.sel = null; }
+  if (screen === 'links') { state.ltab = 'outliner'; state.sel = 'rabbit44'; state.vis.links = 'all'; state.popover = true; }
+  if (screen === 'gravity') { state.ltab = 'outliner'; state.scene = 'spacejunk'; state.vis.gravity = 'all'; }
+  if (screen === 'camera') { state.ltab = 'outliner'; state.sel = null; state.vis.cameras = 'all'; }
+  if (screen === 'checks') { state.ltab = 'checks'; state.sel = null; state.issue = 1; }
+  if (screen === 'play') { state.ltab = 'outliner'; state.sel = 'rabbit44'; state.playing = true; }
+  renderAll();
+  if (screen === 'newgalaxy') { state.step = 1; openSheet('new'); }
+  if (screen === 'share') openSheet('share');
+  if (screen === 'play') toast('★ Play-test from the play marker (layout reloaded behind the star wipe) · your save is not touched', 'info');
+}
+function togglePlay() {
+  if (state.sheet) return;
+  state.playing = !state.playing;
+  if (!state.playing) { state.trail = true; if (state.screen === 'play') state.screen = 'edit'; }
+  renderAll();
+  setTimeout(fitView, 230);
+  if (state.playing) toast('★ Play-test from the play marker (layout reloaded behind the star wipe) · your save is not touched', 'info');
+  else toast(`Back to Edit · Mario's trail is shown <button class="capsule small">Edit here <span class="kc">⌘↩</span></button>`);
+}
+
+// ------------------------------------------------------------------------------------------
+// Events
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-screen],[data-sel],[data-ltab],[data-m],[data-vis],[data-card],[data-issue],[data-fix],[data-step],[data-tpl],[data-close],[data-goto],#playBtn,#shareBtn,#reloadBtn,#checkBadge,#exportBtn,[data-tool]');
+  if (!t) return;
+  if (t.dataset.screen) return go(t.dataset.screen);
+  if (t.id === 'playBtn') return togglePlay();
+  if (t.id === 'shareBtn') return openSheet('share');
+  if (t.id === 'reloadBtn') { t.innerHTML = '⟳ Reload'; toast('Reloaded from your layout · camera and selection kept', 'info'); return; }
+  if (t.id === 'checkBadge') { state.ltab = 'checks'; return renderAll(); }
+  if (t.id === 'exportBtn') { closeSheet(); toast('Saved Bunny-Garden-Remix-1.0.zip to Downloads <button class="capsule small">Show in Finder</button>'); return; }
+  if (t.dataset.close !== undefined) { closeSheet(); if (state.screen === 'newgalaxy') toast('Created Pipe Dream Galaxy · 3 missions'); return; }
+  if (t.dataset.goto) { e.preventDefault(); go(t.dataset.goto); return; }
+  if (t.dataset.step) { state.step = +t.dataset.step; $('sheet').innerHTML = sheetNewGalaxy(); return; }
+  if (t.dataset.tpl) { state.tpl = t.dataset.tpl; $('sheet').innerHTML = sheetNewGalaxy(); return; }
+  if (t.dataset.tool) { document.querySelectorAll('[data-tool]').forEach((b) => b.classList.toggle('on', b === t)); return; }
+  if (t.dataset.fix !== undefined) { e.stopPropagation(); state.fixed[+t.dataset.fix] = true; renderAll(); toast('Fixed · Cmd+Z to undo'); return; }
+  if (t.dataset.issue !== undefined) { state.issue = +t.dataset.issue; if (state.issue === 2) state.sel = 'launch99'; else if (state.issue === 1) state.sel = null; renderAll(); return; }
+  if (t.dataset.card) { state.card = t.dataset.card; renderLeft(); return; }
+  if (t.dataset.ltab) { state.ltab = t.dataset.ltab; renderLeft(); return; }
+  if (t.dataset.m) { state.mission = t.dataset.m; renderAll(); return; }
+  if (t.dataset.vis) { const k = t.dataset.vis; state.vis[k] = { off: 'sel', sel: 'all', all: 'off' }[state.vis[k]]; renderVis(); renderViewport(); return; }
+  if (t.dataset.sel) { state.sel = t.dataset.sel; state.popover = false; state.hoverHelp = null; renderAll(); return; }
+});
+$('ov').addEventListener('click', (e) => { if (!e.target.closest('[data-sel]') && state.screen !== 'gravity') { state.sel = null; renderAll(); } });
+document.addEventListener('mouseover', (e) => {
+  const f = e.target.closest('[data-help]');
+  const k = f ? f.dataset.help : null;
+  const key = k != null && /^\d+$/.test(k) ? +k : k;
+  if (key !== state.hoverHelp) { state.hoverHelp = key; renderHelp(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches('input,textarea,select')) return;
+  if (e.key === 'Tab') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'Escape') { if (state.sheet) closeSheet(); else { state.sel = null; renderAll(); } }
+  else if (/^[1-5]$/.test(e.key) && !e.metaKey) { const k = VIS[+e.key - 1][0]; state.vis[k] = { off: 'sel', sel: 'all', all: 'off' }[state.vis[k]]; renderVis(); renderViewport(); }
+  else if (e.key === 'b' || e.key === 'B') { state.ltab = 'browser'; renderLeft(); }
+});
+go('edit');
+</script>
+</body>
+</html>
