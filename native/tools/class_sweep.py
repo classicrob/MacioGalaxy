@@ -207,6 +207,8 @@ def record_for(job, index, item, parsed, stalled, exit_status, batch_size):
             return base
         phase = "observe" if item["created"] else "create"
         base.update(status=fail_status(parsed["crash"], stalled, phase), phase=phase, exit=exit_status)
+        if base["status"] == "crash" and parsed["crash"] is None and exit_status == 1:
+            base["status"] = "kills-player"  # the smoke ended the run: Mario died, no crash report
         base["crash"] = parsed["crash"]
         return base
     return None
@@ -590,7 +592,7 @@ def build_catalog(args, stages):
             metrics = r.get("metrics") or {}
             if metrics.get("archives") not in (None, "-") and not entry["archives"]:
                 entry["archives"] = metrics["archives"].split(",")
-            res = {"status": r["status"]}
+            res = {"status": "kills-player" if r["status"] == "crash" and not r.get("crash") and r.get("exit") == 1 else r["status"]}
             for key in ("phase", "note_batch"):
                 if r.get(key):
                     res[key] = r[key]
