@@ -222,6 +222,12 @@ if(PETARI_BUILD_GX_PROBE)
     add_subdirectory(native/movie)
     target_link_libraries(petari_sdk_helpers PUBLIC petari_movie)
     add_subdirectory(native/app EXCLUDE_FROM_ALL)
+    # The player app itself belongs in `all`: its libraries are built by other targets, so without this a plain
+    # `cmake --build` reported everything built but left a stale Petari.app (it needed `--target petari`).
+    # The rest of native/app (its test executables) stays out of `all`; see petari_tests below.
+    if(TARGET petari)
+        set_target_properties(petari PROPERTIES EXCLUDE_FROM_ALL FALSE)
+    endif()
     # native/app (and a few tests) stay out of `all`: `--target petari_tests`
     # builds every test executable registered with ctest that `all` skips.
     add_custom_target(petari_tests)
