@@ -105,6 +105,7 @@ add_library(petari_input STATIC
     bindings.cpp
     camera_input.cpp
     editor_input.cpp
+    editor_pick.cpp
     mods.cpp
     remap.cpp
     remote_model.cpp

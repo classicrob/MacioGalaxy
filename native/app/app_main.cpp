@@ -30,6 +30,7 @@
 #include <petari/progress.hpp>
 #include <petari/camera_input.h>
 #include <petari/camera_settings.hpp>
+#include <petari/editor_pick.hpp>
 #include <petari/editor_settings.hpp>
 #include <petari/efb_dump_mark.hpp>
 #include <petari/input.hpp>
@@ -367,11 +368,15 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 Editor::cursor(0.0f, 0.0f);
                 if (t == 2) Editor::repivot();
                 if (t >= 2 && t < 62) Editor::orbit(1.5f, 0.0f);    // 90 degrees about the pivot
-                if (t >= 62 && t < 92) Editor::orbit(0.0f, 0.5f);   // and 15 degrees higher
+                if (t >= 62 && t < 92) Editor::orbit(0.0f, -0.5f);  // and 15 degrees higher (drag down: the camera rises)
                 if (t >= 100 && t < 120) Editor::dolly(0.15f);      // closer
-                if (t >= 130 && t < 150) Editor::pan(0.01f, 0.0f);  // a fifth of the view sideways
-                if (t == 170) Editor::frame();
+                // Hover the centre (the ground the zoom went toward), click it, frame the selection.
+                if (t >= 120 && t < 250) PetariNative::EditorPick::setHoverWanted(true);
+                if (t == 125) PetariNative::EditorPick::click(PetariNative::EditorPick::Click::Replace);
+                if (t == 140) Editor::frame();
+                if (t >= 170 && t < 190) Editor::pan(0.01f, 0.0f);  // a fifth of the view sideways
                 if (t == 250) {
+                    PetariNative::EditorPick::setHoverWanted(false);
                     std::fputs("[editor-test] LevelEditor tap (leave)\n", stderr);
                     Editor::toggle();
                     editorStep = 400;

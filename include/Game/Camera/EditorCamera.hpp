@@ -14,5 +14,8 @@ namespace EditorCamera {
     bool update();
     void end();
     bool isActive();
+    // A new GameScene: Edit mode ends without restoring a view (the old scene is gone); the editor's own
+    // view is kept for re-entry. No-op when not editing.
+    void abandon();
 }  // namespace EditorCamera
 #endif
