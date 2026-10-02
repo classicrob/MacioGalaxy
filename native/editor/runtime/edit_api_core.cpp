@@ -107,6 +107,11 @@ namespace Core {
         session().status.errorSerial++;
     }
 
+    void reportNotice(const std::string& message) {
+        session().status.notice = message;
+        session().status.noticeSerial++;
+    }
+
     void runUiSeamHook() {
         if (session().uiSeamHook != nullptr) {
             session().uiSeamHook();
