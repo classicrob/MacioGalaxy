@@ -1,6 +1,7 @@
 // The level editor's M1 panels (panels.hpp).
 #include "panels.hpp"
 
+#include <petari/editor/catalog.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/home_menu.hpp>
 
@@ -9,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cctype>
 #include <cstring>
 
@@ -65,7 +67,11 @@ void section(const char* title, const char* right = nullptr) {
 
 std::string rowName(const ModelView& model, RowId row) {
     const char* name = model.objectName(row);
-    if (name != nullptr && name[0] != '\0') return name;
+    if (name != nullptr && name[0] != '\0') {
+        // The catalog's name for the class ("Goomba" for Kuribo), else the placement name.
+        const Catalog::ClassInfo* info = Catalog::find(name);
+        return info != nullptr && !info->displayName.empty() ? info->displayName : std::string(name);
+    }
     int zone = 0, table = 0;
     if (model.locate(row, &zone, &table)) {
         const char* path = model.tablePath(zone, table);
@@ -336,7 +342,7 @@ void noteHelp(const Column& column, const ModelView& model, RowId row) {
 }
 
 // One editable field; edits go to every selected row that has the column.
-void field(const ModelView& model, const std::vector< RowId >& rows, const Column& column) {
+void field(const ModelView& model, const std::vector< RowId >& rows, const Column& column, const Catalog::ClassInfo* info = nullptr) {
     const RowId primary = rows.front();
     const Cell* current = model.cell(primary, column.hash);
     if (current == nullptr) return;
@@ -376,6 +382,15 @@ void field(const ModelView& model, const std::vector< RowId >& rows, const Colum
         break;
     }
     noteHelp(column, model, primary);
+    // What the class does with a switch or link field (the catalog's roles), after the raw name.
+    if (info != nullptr && ImGui::IsItemHovered()) {
+        for (const Catalog::Switch& sw : info->switches) {
+            if (sw.field == label) gHelp += std::string(sw.role == Catalog::SwitchRole::Read ? "  · reads: " : "  · turns on: ") + sw.help;
+        }
+        for (const Catalog::Link& link : info->links) {
+            if (link.field == label && link.required) gHelp += "  · required: the object needs this link";
+        }
+    }
     if (commit && (!sameCell(edited, *current) || mixed)) enqueueOp(setCellOp(model, rows, column.hash, edited));
     ImGui::SameLine();
     if (changed) {
@@ -385,6 +400,102 @@ void field(const ModelView& model, const std::vector< RowId >& rows, const Colum
         ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(at.x + 6.0f, at.y + ImGui::GetFrameHeight() * 0.5f), 4.0f,
                                                     ImGui::ColorConvertFloat4ToU32(kGold));
         if (ImGui::IsItemHovered()) gHelp = label + ": changed from the disc's " + cellText(*original) + ". Click to put it back.";
+    } else {
+        ImGui::Dummy(ImVec2(12.0f, 1.0f));
+    }
+    ImGui::PopID();
+}
+
+// The class all the rows share (the named settings need one), else null.
+const Catalog::ClassInfo* sharedClass(const ModelView& model, const std::vector< RowId >& rows) {
+    const std::uint32_t nameColumn = columnHash("name");
+    const Catalog::ClassInfo* shared = nullptr;
+    for (RowId row : rows) {
+        const Cell* name = model.cell(row, nameColumn);
+        const Catalog::ClassInfo* info = name != nullptr ? Catalog::find(name->s.c_str()) : nullptr;
+        if (info == nullptr || (shared != nullptr && info != shared)) return nullptr;
+        shared = info;
+    }
+    return shared;
+}
+
+// One named setting (Obj_arg<n> from the catalog): a combo for enums, a checkbox for bools, else a number with
+// its unit. -1 is "the class's default" and shows as such. Edits go to every selected row, as raw fields do.
+void argField(const ModelView& model, const std::vector< RowId >& rows, const Catalog::Arg& arg) {
+    char raw[16];
+    std::snprintf(raw, sizeof(raw), "Obj_arg%d", arg.index);
+    const std::uint32_t hash = columnHash(raw);
+    const RowId primary = rows.front();
+    const Cell* current = model.cell(primary, hash);
+    if (current == nullptr) return;
+    bool mixed = false;
+    for (RowId row : rows) {
+        const Cell* other = model.cell(row, hash);
+        mixed = mixed || (other != nullptr && !sameCell(*other, *current));
+    }
+    const Cell* original = model.originalCell(primary, hash);
+    const bool changed = original != nullptr && !sameCell(*original, *current);
+    const std::string label = arg.name.empty() ? std::string(raw) : arg.name;
+    const std::int32_t value = current->i;
+    auto help = [&] {
+        if (!ImGui::IsItemHovered()) return;
+        gHelp = label + (arg.help.empty() ? "" : ": " + arg.help) + "  (" + raw + "; " + argValueText(arg, value) +
+                (original != nullptr ? ", disc " + argValueText(arg, original->i) : "") + ")";
+    };
+    ImGui::PushID(static_cast< int >(hash));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted(label.c_str());
+    help();
+    ImGui::SameLine(120.0f);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 18.0f);
+    std::int32_t edited = value;
+    bool commit = false;
+    switch (arg.type) {
+    case Catalog::ArgType::Enum: {
+        const std::string preview = mixed ? "Mixed" : argValueText(arg, value);
+        if (ImGui::BeginCombo("##v", preview.c_str())) {
+            if (ImGui::Selectable(("Default (" + argValueText(arg, arg.defaultValue) + ")").c_str(), value == -1)) edited = -1, commit = true;
+            for (const Catalog::EnumChoice& choice : arg.choices) {
+                if (choice.value == -1) continue;  // listed as the default above
+                if (ImGui::Selectable(choice.label.c_str(), !mixed && choice.value == value)) edited = choice.value, commit = true;
+            }
+            ImGui::EndCombo();
+        }
+        break;
+    }
+    case Catalog::ArgType::Bool: {
+        bool on = (value == -1 ? arg.defaultValue : value) > 0;
+        if (ImGui::Checkbox(mixed ? "Mixed" : value == -1 ? "(default)" : "##v", &on)) edited = on ? 1 : 0, commit = true;
+        break;
+    }
+    default:
+        ImGui::InputInt("##v", &edited, 0, 0);
+        commit = ImGui::IsItemDeactivatedAfterEdit();
+        if (!arg.unit.empty() || value == -1) {
+            // The unit, or the default the class uses, inside the field's right end.
+            const std::string hint = value == -1 ? "default " + argValueText(arg, arg.defaultValue) : arg.unit;
+            const ImVec2 end = ImGui::GetItemRectMax();
+            const ImVec2 size = ImGui::CalcTextSize(hint.c_str());
+            ImGui::GetWindowDrawList()->AddText(ImVec2(end.x - size.x - 6.0f, end.y - ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.y),
+                                                ImGui::ColorConvertFloat4ToU32(kDim), hint.c_str());
+        }
+        break;
+    }
+    help();
+    if (commit && (edited != value || mixed)) {
+        Cell cell = *current;
+        cell.i = edited;
+        Op op = setCellOp(model, rows, hash, cell);
+        op.label = "Set " + label + (rows.size() > 1 ? " on " + std::to_string(rows.size()) + " objects" : "");
+        enqueueOp(std::move(op));
+    }
+    ImGui::SameLine();
+    if (changed) {
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        if (ImGui::InvisibleButton("revert", ImVec2(12.0f, ImGui::GetFrameHeight()))) enqueueOp(revertCellOp(model, rows, hash));
+        ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(at.x + 6.0f, at.y + ImGui::GetFrameHeight() * 0.5f), 4.0f,
+                                                    ImGui::ColorConvertFloat4ToU32(kGold));
+        if (ImGui::IsItemHovered()) gHelp = label + ": changed from the disc's " + argValueText(arg, original->i) + ". Click to put it back.";
     } else {
         ImGui::Dummy(ImVec2(12.0f, 1.0f));
     }
@@ -471,6 +582,16 @@ std::string cellText(const Cell& cell) {
     }
 }
 
+std::string argValueText(const Catalog::Arg& arg, std::int32_t value) {
+    for (const Catalog::EnumChoice& choice : arg.choices) {
+        if (choice.value == value) return choice.label;
+    }
+    if (value == -1 && arg.type != Catalog::ArgType::Enum) return "default";
+    if (arg.type == Catalog::ArgType::Bool) return value > 0 ? "on" : "off";
+    if (arg.type == Catalog::ArgType::Enum) return value == -1 ? "default" : std::to_string(value) + " (unlisted)";
+    return std::to_string(value) + (arg.unit.empty() ? "" : " " + arg.unit);
+}
+
 std::string columnLabel(const Column& column) {
     if (column.name != nullptr && column.name[0] != '\0') return column.name;
     char text[16];
@@ -521,6 +642,8 @@ std::vector< Change > collectChanges(const ModelView& model) {
             model.forEachRow(zone, table, [&](RowId row) {
                 const RowState state = model.state(row);
                 if (state == RowState::Original) return;
+                // Added, then deleted: nothing changed (a deleted row with no disc values was never on the disc).
+                if (state == RowState::Deleted && !columns.empty() && model.originalCell(row, columns.front().hash) == nullptr) return;
                 Change change;
                 change.row = row;
                 change.state = state;
@@ -562,6 +685,17 @@ std::vector< RowId > selectedRows() {
     return rows;
 }
 
+void deleteSelection() {
+    const ModelView* model = PetariEditor::model();
+    const std::vector< RowId > rows = selectedRows();
+    if (model == nullptr || rows.empty()) return;
+    Op op;
+    op.deletes = rows;
+    op.label = rows.size() == 1 ? "Deleted " + rowName(*model, rows.front()) : "Deleted " + std::to_string(rows.size()) + " objects";
+    enqueueOp(std::move(op));
+    Pick::clearSelection();
+}
+
 bool canUndo() {
     const ModelView* model = PetariEditor::model();
     return model != nullptr && model->historyCursor() > 0;
@@ -588,19 +722,30 @@ void drawGalaxyWindow(const char* title) {
         if (model == nullptr) {
             ImGui::TextDisabled("Loading the galaxy...");
         } else if (ImGui::BeginTabBar("galaxy")) {
-            if (ImGui::BeginTabItem("Outliner")) {
+            // PETARI_EDITOR_TAB=<Outliner|Browser|Changes|History>: open that tab once (screenshots, tests).
+            static const char* sOpen = std::getenv("PETARI_EDITOR_TAB");
+            auto flags = [&](const char* name) {
+                if (sOpen == nullptr || std::strcmp(sOpen, name) != 0) return ImGuiTabItemFlags_None;
+                sOpen = nullptr;
+                return ImGuiTabItemFlags_SetSelected;
+            };
+            if (ImGui::BeginTabItem("Outliner", nullptr, flags("Outliner"))) {
                 ImGui::TextColored(kDim, "%s  ·  mission %d", model->galaxy(), model->scenario());
                 drawOutliner(*model, selectedRows());
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Browser", nullptr, flags("Browser"))) {
+                drawBrowser(*model);
                 ImGui::EndTabItem();
             }
             const int changeCount = static_cast< int >(collectChanges(*model).size());
             char changesLabel[32];
             std::snprintf(changesLabel, sizeof(changesLabel), changeCount > 0 ? "Changes (%d)###changes" : "Changes###changes", changeCount);
-            if (ImGui::BeginTabItem(changesLabel)) {
+            if (ImGui::BeginTabItem(changesLabel, nullptr, flags("Changes"))) {
                 drawChanges(*model);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("History")) {
+            if (ImGui::BeginTabItem("History", nullptr, flags("History"))) {
                 drawHistory(*model);
                 ImGui::EndTabItem();
             }
@@ -639,11 +784,40 @@ void drawInspectorWindow(const char* title) {
                 ImGui::SetWindowFontScale(1.0f);
                 ImGui::PopFont();
             }
-            ImGui::TextColored(kDim, "%s  ·  %s", model->zoneName(zone), model->tablePath(zone, table));
+            const char* className = model->objectName(primary);
+            if (className != nullptr && className[0] != '\0' && rowName(*model, primary) != className) {
+                ImGui::TextColored(kDim, "%s  ·  %s  ·  %s", className, model->zoneName(zone), model->tablePath(zone, table));
+            } else {
+                ImGui::TextColored(kDim, "%s  ·  %s", model->zoneName(zone), model->tablePath(zone, table));
+            }
             const RowState state = model->state(primary);
             if (state != RowState::Original) {
                 ImGui::SameLine();
                 ImGui::TextColored(stateColor(state), state == RowState::Added ? "added" : state == RowState::Deleted ? "deleted" : "changed");
+            }
+            // Appears in (UX section 12): the missions this object is part of.
+            if (const int missions = model->missionCount(); missions > 0) {
+                section("Appears in", "missions");
+                const std::uint32_t bits = model->rowMissions(primary);
+                for (int mission = 1; mission <= missions; mission++) {
+                    if (mission > 1) ImGui::SameLine(0.0f, 4.0f);
+                    const bool in = (bits & (1u << (mission - 1))) != 0;
+                    ImGui::PushStyleColor(ImGuiCol_Button, in ? ImVec4(0.98f, 0.80f, 0.22f, 0.80f) : ImVec4(1.0f, 1.0f, 1.0f, 0.06f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, in ? ImVec4(0.30f, 0.17f, 0.02f, 1.0f) : kDim);
+                    char label[16];
+                    std::snprintf(label, sizeof(label), "%d##m%d", mission, mission);
+                    ImGui::SmallButton(label);
+                    ImGui::PopStyleColor(2);
+                    if (ImGui::IsItemHovered()) {
+                        const char* name = model->missionName(mission);
+                        ImGui::SetTooltip("%s: %s", name != nullptr && name[0] != '\0' ? name : "Mission", in ? "appears" : "does not appear");
+                        gHelp = "Which missions this object appears in (its layer). Changing it comes with mission editing.";
+                    }
+                }
+                if (bits == 0) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(kDim, "in no mission");
+                }
             }
             if (model->hasTransform(primary)) {
                 section("Transform", "row space");
@@ -651,11 +825,23 @@ void drawInspectorWindow(const char* title) {
                 transformRow(*model, rows, "Rotation", "dir_", 0.5f);
                 transformRow(*model, rows, "Scale", "scale_", 0.01f);
             }
-            section("Fields", rows.size() > 1 ? "edits apply to all" : "raw");
-            for (const Column& column : model->columns(zone, table)) {
-                if (isTransformColumn(column.name)) continue;
-                field(*model, rows, column);
+            // Settings (UX section 8): the class's named args from the catalog, then every raw field folded below.
+            const Catalog::ClassInfo* info = sharedClass(*model, rows);
+            bool named = false;
+            if (info != nullptr && !info->args.empty()) {
+                section("Settings", rows.size() > 1 ? "edits apply to all" : "named");
+                for (const Catalog::Arg& arg : info->args) argField(*model, rows, arg);
+                named = true;
             }
+            if (named) ImGui::Spacing();
+            if (!named || ImGui::CollapsingHeader("All fields")) {
+                if (!named) section("Fields", rows.size() > 1 ? "edits apply to all" : "raw");
+                for (const Column& column : model->columns(zone, table)) {
+                    if (isTransformColumn(column.name)) continue;
+                    field(*model, rows, column, info);
+                }
+            }
+            if (gHelp.empty() && info != nullptr && !info->description.empty()) gHelp = info->displayName + ": " + info->description;
         }
         // The help strip at the foot: the hovered field (UX section 8).
         const float strip = ImGui::GetTextLineHeightWithSpacing() * 2.5f;

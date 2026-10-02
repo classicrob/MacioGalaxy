@@ -20,6 +20,13 @@ bool visible();
 void setFocusMode(bool focus);
 bool focusMode();
 
+// The Browser's thumbnails (UX section 7): the host reads a game copy back (petari_present_take_readback:
+// 1 ready, 0 pending, -1 rgba too small with width/height set) and makes an ImGui texture of it
+// (aurora_imgui_add_texture). Unset: the cards keep their initials tiles.
+using ThumbnailReadback = int (*)(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height);
+using ThumbnailTexture = unsigned long long (*)(unsigned width, unsigned height, const void* rgba);  // an ImTextureID
+void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture);
+
 // Draws the editor frame: toolbar, dock (Outliner, Inspector) and footer. Call between
 // aurora_begin_frame and aurora_end_frame, before the Home menu overlay, every frame.
 // windowWidth/Height are the ImGui display size (window points).

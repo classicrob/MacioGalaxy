@@ -209,7 +209,37 @@ void drawToolbar(float width) {
     ImGui::BeginDisabled(!canRedo());
     if (ImGui::Button("Redo")) redo();
     ImGui::EndDisabled();
-    ImGui::SameLine(0.0f, 16.0f);
+    ImGui::SameLine(0.0f, 24.0f);
+    // Missions (UX section 12): the one being edited in gold; another reloads into it.
+    if (const ModelView* model = PetariEditor::model(); model != nullptr && model->missionCount() > 0) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(ImVec4(0.6f, 0.92f, 1.0f, 1.0f), "Mission");
+        for (int mission = 1; mission <= model->missionCount(); mission++) {
+            ImGui::SameLine(0.0f, 4.0f);
+            char label[8];
+            std::snprintf(label, sizeof(label), "%d", mission);
+            const bool current = mission == model->scenario();
+            if (current) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.98f, 0.80f, 0.22f, 0.85f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.17f, 0.02f, 1.0f));
+            }
+            if (ImGui::Button(label) && !current) {
+                Command command{Command::Kind::SwitchScenario};
+                command.index = mission;
+                enqueue(std::move(command));
+            }
+            if (current) ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered()) {
+                const char* name = model->missionName(mission);
+                ImGui::SetTooltip("%s%s", name != nullptr && name[0] != '\0' ? name : "Mission", current ? " (editing)" : " (click to edit it)");
+            }
+        }
+        ImGui::SameLine(0.0f, 10.0f);
+        bool ghosts = PetariNative::EditorGizmo::showGhosts();
+        if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
+        ImGui::SameLine(0.0f, 16.0f);
+    }
     const float buttonHeight = 26.0f;
     const Status& state = status();
     // Reload: rebuild the scene from the layout, applying pending changes (UX section 3).
@@ -308,6 +338,27 @@ void buildDefaultLayout(ImGuiID dock, ImVec2 size) {
     ImGui::DockBuilderDockWindow(kOutliner, left);
     ImGui::DockBuilderDockWindow(kInspector, right);
     ImGui::DockBuilderFinish(dock);
+}
+
+// A toast at the top of the viewport for 4 s when a command failed (Runtime's status().lastError).
+void drawToast() {
+    static std::uint64_t sSerial = 0;
+    static std::string sText;
+    static double sUntil = 0.0;
+    const Status& state = status();
+    if (state.errorSerial != sSerial) {
+        sSerial = state.errorSerial;
+        sText = state.lastError;
+        sUntil = ImGui::GetTime() + 4.0;
+    }
+    if (sText.empty() || ImGui::GetTime() > sUntil) return;
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    const ImVec2 size = ImGui::CalcTextSize(sText.c_str());
+    const float cx = gViewport.x + gViewport.w * 0.5f, top = gViewport.y + 12.0f;
+    const ImVec2 min(cx - size.x * 0.5f - 14.0f, top), max(cx + size.x * 0.5f + 14.0f, top + size.y + 10.0f);
+    list->AddRectFilled(min, max, rgba(0.05f, 0.03f, 0.03f, 0.88f), (max.y - min.y) * 0.5f);
+    list->AddRect(min, max, rgba(1.0f, 0.55f, 0.25f, 1.0f), (max.y - min.y) * 0.5f, 0, 1.5f);
+    list->AddText(ImVec2(min.x + 14.0f, min.y + 5.0f), rgba(1, 1, 1, 1), sText.c_str());
 }
 
 void setArea(float x, float y, float w, float h) {
@@ -411,6 +462,7 @@ void drawFrame(float windowWidth, float windowHeight) {
         gViewport = {central->Pos.x, central->Pos.y, central->Size.x, central->Size.y};
         gViewportValid = true;
         setArea(gViewport.x, gViewport.y, gViewport.w, gViewport.h);
+        drawToast();
     }
 }
 
