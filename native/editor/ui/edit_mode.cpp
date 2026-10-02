@@ -194,8 +194,8 @@ void drawPickMarks(const Area& area) {
         ImVec2 c;
         float r;
         if (!toScreen(item, &c, &r)) continue;
-        list->AddCircle(c, r + 3.0f, rgba(0.98f, 0.80f, 0.22f, 0.35f), 0, 7.0f);
-        list->AddCircle(c, r, rgba(0.98f, 0.80f, 0.22f, 1.0f), 0, 2.5f);
+        // The model has its own outline in the scene (EditorDraw); the ring only hints at the bounds.
+        list->AddCircle(c, r, rgba(0.98f, 0.80f, 0.22f, 0.30f), 0, 1.5f);
         label(ImVec2(c.x, c.y + r + 6.0f), item.name, rgba(0.98f, 0.80f, 0.22f, 1.0f));
     }
     Pick::Item hover;
