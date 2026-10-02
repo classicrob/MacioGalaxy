@@ -16,6 +16,9 @@
 #include "Game/System/UserFile.hpp"
 #include "Game/Util/SingletonHolder.hpp"
 #include <cstdio>
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 namespace {
     SaveDataHandleSequence* getSaveDataHandleSequence() NO_INLINE {
@@ -76,6 +79,11 @@ namespace GameDataFunction {
         s32 powerStarNumMax = 0;
 
         for (ScenarioDataIter iter = MR::makeBeginScenarioDataIter(); !iter.isEnd(); iter.goNext()) {
+#ifdef PETARI_NATIVE
+            if (PetariNative::Platform::ModGalaxy::find(iter.makeAccessor().getName()) != nullptr) {
+                continue;  // mod galaxies are outside the game's total (TECH.md 5.7)
+            }
+#endif
             powerStarNumMax += iter.makeAccessor().getPowerStarNum();
         }
 

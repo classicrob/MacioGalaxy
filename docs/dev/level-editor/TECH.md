@@ -684,7 +684,11 @@ The Checks run on the EditModel at every op (cheap, incremental) and block savin
   - plays the star get;
   - returns to the Comet Observatory (`GrandGalaxyNo` 0);
   - saves (see the S8 row in 7 for the restart check).
-- The save sidecar, Level Select's Mod galaxies group and the remaining caps are M4 work (new-galaxies.md marks them *Proposed*).
+- Since then:
+  - **Level Select / `--stage`** list mod galaxies in their own section.
+  - **The save sidecar** is done, as JSON rather than `.bin` (`<user>/mods-saves/<Mod>.json`, so it is readable and mergeable). `GameData.bin` keeps only the disc's galaxies.
+  - The comet null guard, the pause star-list cap, and leaving mod stars out of the game's totals are done.
+- What remains is M4 work: `SPN1` in the sidecar, the 8-mission and 7-star editor Checks (new-galaxies.md marks them *Proposed*).
 
 **`galaxy.json`** (in the mod, user-made, so no Nintendo data):
 - name and short name per language
@@ -972,3 +976,9 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - Overrides stay for the session, so a death or a Level Select warp into the galaxy also shows the edits.
   - The EditModel reads the unmodded disc as its originals (`DVD::mountInfo().filesDirectory`). A saved mod's edits then count as changes and stay in the next save.
   - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.
+- **Catalog and Checks** (`editor/catalog`):
+  - `native/editor/catalog/generated.json` comes from `native/editor/tools/gen_catalog.py`, a decomp scan of all 1,183 factory classes: args and their types, switches, rail-capable, archives, category. It folds in the class sweep's `sweep.json` when present (required links).
+  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 152 most-placed classes. These were researched against the decomp in our own words; no community data.
+  - Both are embedded in the binary. The user's `<user>/editor/catalog/*.json` override them, and planets come from the disc's PlanetMapDataTable at session start.
+  - The Checks engine (`runtime/checks.cpp`) reports only problems the edits introduce. The galaxy as loaded is the baseline, so vanilla Good Egg shows 0.
+  - Kinds: unknown classes; missing required links; paths that don't exist or have fewer than 2 points; switch ids out of range or unused by the class; a zone switch only one row uses; duplicate l_ids. Most come with fix Ops or a UI fix kind.

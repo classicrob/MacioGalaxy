@@ -153,6 +153,13 @@ namespace {
             GalaxyStatusAccessor accessor = iter.makeAccessor();
             bool open = accessor.getPowerStarNum() == 0 ? false : MR::isOnGameEventFlagGalaxyOpen(accessor.getName());
 
+#ifdef PETARI_NATIVE
+            // The last page is kept for the race times: mod galaxies (up to 64 parsed) would
+            // otherwise run the list past its 75 rows (the disc opens at most 42).
+            if (open && availableGalaxies >= MAX_ITEMS - ITEMS_PER_PAGE) {
+                open = false;
+            }
+#endif
             if (open) {
                 galaxyAccessors[availableGalaxies] = iter.makeAccessor();
                 availableGalaxies++;

@@ -136,6 +136,9 @@ void SaveDataHandler::storeUserFile(const UserFile* pUserFile) {
     SaveDataUserFileInfo gameFileInfo;
     fileAccessor.makeUserFileInfo(&gameFileInfo, pUserFile->getGameDataName());
     pUserFile->makeGameDataBinary(gameFileInfo.mData, gameFileInfo.mDataSize);
+#ifdef PETARI_NATIVE
+    pUserFile->nativeSaveModGalaxies();  // mod galaxies' progress, beside the save (TECH.md 5.7)
+#endif
 
     SaveDataUserFileInfo configFileInfo;
     fileAccessor.makeUserFileInfo(&configFileInfo, pUserFile->getConfigDataName());

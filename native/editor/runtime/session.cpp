@@ -4,13 +4,16 @@
 
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
+#include "checks.hpp"
 #include "save_mod.hpp"
+#include <petari/editor/catalog.hpp>
 
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/host_allocation.hpp>
 #include <petari/platform/dvd.hpp>
+#include <petari/platform/mod_folder.hpp>
 #include <revolution/dvd.h>
 
 #include <chrono>
@@ -45,6 +48,8 @@ namespace {
         double reloadStartMs = 0;
         bool teleportPending = false;
         bool plainReload = false;  // reloadScene() without an edit session
+        std::uint64_t checkedRevision = 0;
+        std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
 
     Session& session() {
@@ -89,6 +94,25 @@ namespace {
         Session& s = session();
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
+        std::string catalogError;
+        if (!Catalog::loadWithUser(PetariNative::Platform::ModFolder::userDirectory().string(), &catalogError)) {
+            Core::reportError("Catalog: " + catalogError);
+        }
+        s.checkedRevision = 0;
+        // Planet classes: the names PlanetMapDataTable lists on this disc.
+        if (std::optional< Formats::Bytes > raw = readDisc("/ObjectData/PlanetMapDataTable.arc")) {
+            if (std::optional< Formats::Archive > archive = Formats::Archive::parse(*raw)) {
+                for (const std::string& file : archive->files()) {
+                    std::optional< Formats::Table > table = Formats::Table::parse(*archive->file(file));
+                    const int column = table ? table->column(Formats::jmapHash("PlanetName")) : -1;
+                    std::vector< std::string > names;
+                    for (int r = 0; column >= 0 && r < table->rowCount(); r++) {
+                        names.push_back(table->get(r, column).s);
+                    }
+                    Catalog::addPlanets(names);
+                }
+            }
+        }
         s.model = EditModel::load(pStage, scenario, readDisc, &error, readUnmoddedDisc);
         s.actors.clear();
         s.pending.clear();
@@ -477,6 +501,26 @@ void tick(bool playable) {
     }
     if (!changed.empty()) {
         EditorScene::flushConnectionRequests();  // Edit mode is frozen: no movement step to do it
+    }
+    if (s.model->revision() != s.checkedRevision) {
+        PetariNative::HostAllocationScope host;
+        std::vector< Check > all = computeChecks(*s.model);
+        if (s.checkedRevision == 0) {
+            // The first pass is the galaxy as loaded: quirks of the shipped data (a class the game
+            // ignores, a switch only one object uses) are its own, not the user's.
+            s.baselineChecks.clear();
+            for (const Check& c : all) {
+                s.baselineChecks.insert(c.key);
+            }
+        }
+        std::vector< Check >& shown = Core::mutableChecks();
+        shown.clear();
+        for (Check& c : all) {
+            if (!s.baselineChecks.count(c.key)) {
+                shown.push_back(std::move(c));
+            }
+        }
+        s.checkedRevision = s.model->revision();
     }
     updateStatus();
     Core::runUiSeamHook();

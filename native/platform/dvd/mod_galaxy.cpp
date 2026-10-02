@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <deque>
 #include <fstream>
 #include <iterator>
@@ -488,6 +489,156 @@ void reject(const char* pName, const char* pReason) {
         pGalaxy->rejected = true;
         std::fprintf(stderr, "[mods] galaxy registry: %s rejected: %s\n", pName, pReason);
     }
+}
+
+namespace {
+    std::filesystem::path gSaveDirectory;
+
+    std::filesystem::path sidecarPath(const std::string& mod) {
+        return gSaveDirectory / (mod + ".json");
+    }
+
+    bool readSidecar(const std::string& mod, Json* pOut) {
+        std::ifstream stream(sidecarPath(mod), std::ios::binary);
+        if (!stream) {
+            return false;
+        }
+        const std::string text((std::istreambuf_iterator< char >(stream)), std::istreambuf_iterator< char >());
+        return Parser(text).parse(*pOut) && pOut->kind == Json::Object;
+    }
+
+    std::string number(double value) {
+        char buffer[32];
+        std::snprintf(buffer, sizeof(buffer), "%.0f", value);
+        return buffer;
+    }
+}  // namespace
+
+void setSaveDirectory(const std::filesystem::path& directory) {
+    std::lock_guard< std::mutex > lock(gMutex);
+    gSaveDirectory = directory;
+}
+
+bool saveRecords(const std::string& userFile, const std::vector< GalaxyRecord >& records, std::string* pError) {
+    std::map< std::string, std::vector< const GalaxyRecord* > > byMod;
+    {
+        std::lock_guard< std::mutex > lock(gMutex);
+        if (gSaveDirectory.empty()) {
+            return true;
+        }
+        for (const GalaxyRecord& record : records) {
+            if (const Galaxy* pGalaxy = findLocked(record.galaxy.c_str())) {
+                byMod[pGalaxy->mod].push_back(&record);
+            }
+        }
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(gSaveDirectory, ec);
+    for (const auto& [mod, modRecords] : byMod) {
+        // Keep the other user files' entries; replace this one's galaxies.
+        Json root;
+        std::map< std::string, std::map< std::string, std::string > > files;  // file -> galaxy -> JSON object text
+        if (readSidecar(mod, &root)) {
+            if (const Json* pFiles = root.get("files"); pFiles != nullptr && pFiles->kind == Json::Object) {
+                for (const auto& [file, galaxies] : pFiles->o) {
+                    for (const auto& [galaxy, entry] : galaxies.o) {
+                        const Json* pStars = entry.get("stars");
+                        const Json* pVisited = entry.get("visited");
+                        const Json* pCoins = entry.get("coins");
+                        std::string coins;
+                        for (std::size_t c = 0; pCoins != nullptr && c < pCoins->a.size(); c++) {
+                            coins += (c ? ", " : "") + number(pCoins->a[c].n);
+                        }
+                        files[file][galaxy] = "{ \"stars\": " + number(pStars ? pStars->n : 0) + ", \"visited\": " +
+                                              number(pVisited ? pVisited->n : 0) + ", \"coins\": [" + coins + "] }";
+                    }
+                }
+            }
+        }
+        for (const GalaxyRecord* pRecord : modRecords) {
+            std::string coins;
+            for (int c = 0; c < 8; c++) {
+                coins += (c ? ", " : "") + std::to_string(pRecord->coins[c]);
+            }
+            files[userFile][pRecord->galaxy] = "{ \"stars\": " + std::to_string(pRecord->stars) + ", \"visited\": " +
+                                               std::to_string(pRecord->visited) + ", \"coins\": [" + coins + "] }";
+        }
+        std::string text = "{\n  \"format\": 1,\n  \"files\": {";
+        bool firstFile = true;
+        for (const auto& [file, galaxies] : files) {
+            text += std::string(firstFile ? "" : ",") + "\n    \"" + file + "\": {";
+            bool firstGalaxy = true;
+            for (const auto& [galaxy, entry] : galaxies) {
+                text += std::string(firstGalaxy ? "" : ",") + "\n      \"" + galaxy + "\": " + entry;
+                firstGalaxy = false;
+            }
+            text += "\n    }";
+            firstFile = false;
+        }
+        text += "\n  }\n}\n";
+        // Write a temporary file, then rename it over the sidecar (no torn file on a crash).
+        const std::filesystem::path path = sidecarPath(mod);
+        const std::filesystem::path temp = path.string() + ".tmp";
+        {
+            std::ofstream stream(temp, std::ios::binary | std::ios::trunc);
+            stream << text;
+            if (!stream) {
+                *pError = "cannot write " + temp.string();
+                return false;
+            }
+        }
+        std::filesystem::rename(temp, path, ec);
+        if (ec) {
+            *pError = "cannot replace " + path.string() + ": " + ec.message();
+            return false;
+        }
+    }
+    return true;
+}
+
+std::vector< GalaxyRecord > loadRecords(const std::string& userFile) {
+    std::vector< GalaxyRecord > records;
+    std::vector< std::string > mods;
+    {
+        std::lock_guard< std::mutex > lock(gMutex);
+        if (gSaveDirectory.empty()) {
+            return records;
+        }
+        for (const Galaxy& galaxy : gGalaxies) {
+            if (!galaxy.rejected && std::find(mods.begin(), mods.end(), galaxy.mod) == mods.end()) {
+                mods.push_back(galaxy.mod);
+            }
+        }
+    }
+    for (const std::string& mod : mods) {
+        Json root;
+        if (!readSidecar(mod, &root)) {
+            continue;
+        }
+        const Json* pFiles = root.get("files");
+        const Json* pFile = pFiles != nullptr ? pFiles->get(userFile.c_str()) : nullptr;
+        if (pFile == nullptr || pFile->kind != Json::Object) {
+            continue;
+        }
+        for (const auto& [galaxy, entry] : pFile->o) {
+            const Galaxy* pGalaxy = find(galaxy.c_str());
+            if (pGalaxy == nullptr || pGalaxy->mod != mod) {
+                continue;  // a galaxy the mod no longer has, or another mod's
+            }
+            GalaxyRecord record;
+            record.galaxy = galaxy;
+            const Json* pStars = entry.get("stars");
+            const Json* pVisited = entry.get("visited");
+            const Json* pCoins = entry.get("coins");
+            record.stars = static_cast< std::uint8_t >(pStars != nullptr ? pStars->n : 0);
+            record.visited = static_cast< std::uint8_t >(pVisited != nullptr ? pVisited->n : 0);
+            for (std::size_t c = 0; pCoins != nullptr && c < pCoins->a.size() && c < 8; c++) {
+                record.coins[c] = static_cast< std::uint16_t >(pCoins->a[c].n);
+            }
+            records.push_back(record);
+        }
+    }
+    return records;
 }
 
 std::uint16_t saveKey(const char* pName) {
