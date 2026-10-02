@@ -14,6 +14,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
 
 namespace PetariEditor::Ui {
@@ -63,7 +64,9 @@ struct Thumbnail {
     const void* copy = nullptr;  // published, being read back
     ImVec2 uv0{0, 0}, uv1{1, 1};  // the drawn part, squared
     int waited = 0;              // frames since requested
+    int attempts = 1;
     bool failed = false;
+    int retryAt = 0;             // gFrame: an empty drawing is tried again (pipelines compile on first use)
 };
 std::map< std::string, Thumbnail > gThumbnails;
 ThumbnailReadback gReadback = nullptr;
@@ -71,9 +74,12 @@ ThumbnailTexture gMakeTexture = nullptr;
 std::vector< unsigned char > gRgba;
 constexpr int kThumbnailsInFlight = 3;
 constexpr int kThumbnailTimeout = 90;  // frames
+constexpr int kThumbnailAttempts = 3;
+int gFrame = 0;
 
 void serviceThumbnails() {
     if (gReadback == nullptr) return;
+    gFrame++;
     char name[64];
     const void* copy = nullptr;
     while (Pick::takeThumbnail(name, sizeof(name), &copy)) {
@@ -94,7 +100,10 @@ void serviceThumbnails() {
                 thumb.copy = nullptr;
                 float uv[4];
                 if (!thumbnailCrop(gRgba.data(), width, height, uv)) {
-                    thumb.failed = true;  // drawn empty (a model that needs its own draw pass)
+                    // Drawn empty: its shaders may still have been compiling (Aurora skips those draws); try
+                    // again in a second, a few times, before keeping the initials.
+                    thumb.failed = true;
+                    thumb.retryAt = thumb.attempts < kThumbnailAttempts ? gFrame + 60 : 0;
                     continue;
                 }
                 thumb.uv0 = ImVec2(uv[0], uv[1]);
@@ -109,11 +118,16 @@ void serviceThumbnails() {
 
 // Asks for a card's thumbnail when it is on screen and few are in flight.
 void wantThumbnail(const BrowserEntry& entry) {
-    if (gReadback == nullptr || entry.examples.empty() || gThumbnails.count(entry.className) != 0) return;
+    if (gReadback == nullptr || entry.examples.empty()) return;
+    auto existing = gThumbnails.find(entry.className);
+    const bool retry = existing != gThumbnails.end() && existing->second.failed && existing->second.retryAt != 0 && gFrame >= existing->second.retryAt;
+    if (existing != gThumbnails.end() && !retry) return;
     int inFlight = 0;
     for (const auto& [className, thumb] : gThumbnails) inFlight += thumb.texture == 0 && !thumb.failed;
     if (inFlight >= kThumbnailsInFlight) return;
-    gThumbnails[entry.className] = Thumbnail{};
+    Thumbnail next;
+    next.attempts = retry ? existing->second.attempts + 1 : 1;
+    gThumbnails[entry.className] = next;
     std::uint64_t rows[Pick::kThumbnailExamples] = {};
     const int count = std::min(static_cast< int >(entry.examples.size()), Pick::kThumbnailExamples);
     for (int i = 0; i < count; i++) rows[i] = entry.examples[i].v;
@@ -142,7 +156,8 @@ void drawInitials(ImDrawList* list, const BrowserEntry& entry, ImVec2 min, ImVec
 bool card(const BrowserEntry& entry, bool selected, float size) {
     ImGui::PushID(entry.className.c_str());
     const ImVec2 min = ImGui::GetCursorScreenPos();
-    const bool clicked = ImGui::InvisibleButton("card", ImVec2(size, size + ImGui::GetTextLineHeight() + 6.0f));
+    const float lineHeight = ImGui::GetTextLineHeight();
+    const bool clicked = ImGui::InvisibleButton("card", ImVec2(size, size + lineHeight * 2.0f + 4.0f));
     const bool hovered = ImGui::IsItemHovered();
     // Drag a card onto the viewport to place it (edit_mode.cpp places it where the button comes up).
     if (!entry.examples.empty() && ImGui::BeginDragDropSource()) {
@@ -173,12 +188,15 @@ bool card(const BrowserEntry& entry, bool selected, float size) {
                             countSize.y * 0.5f);
         list->AddText(at, IM_COL32(200, 230, 255, 230), count);
     }
-    // The name, clipped to the card.
-    list->PushClipRect(ImVec2(min.x, max.y), ImVec2(max.x, max.y + ImGui::GetTextLineHeight() + 6.0f), true);
-    const ImVec2 nameSize = ImGui::CalcTextSize(entry.displayName.c_str());
-    list->AddText(ImVec2(min.x + std::max(0.0f, (size - nameSize.x) * 0.5f), max.y + 3.0f), IM_COL32(230, 245, 255, 255),
-                  entry.displayName.c_str());
-    list->PopClipRect();
+    // The name below, on up to two lines (the tooltip has it whole).
+    const std::vector< std::string > lines = cardLabelLines(entry.displayName, size + 6.0f, [](const std::string& text) {
+        return ImGui::CalcTextSize(text.c_str()).x;
+    });
+    for (size_t i = 0; i < lines.size(); i++) {
+        const float width = ImGui::CalcTextSize(lines[i].c_str()).x;
+        list->AddText(ImVec2(min.x + (size - width) * 0.5f, max.y + 2.0f + lineHeight * static_cast< float >(i)), IM_COL32(230, 245, 255, 255),
+                      lines[i].c_str());
+    }
     ImGui::PopID();
     return clicked;
 }
@@ -296,7 +314,18 @@ void drawBrowser(const ModelView& model) {
     for (size_t i = 0; i < shown.size(); i++) {
         if (i % perRow != 0) ImGui::SameLine(0.0f, gap);
         if (card(*shown[i], shown[i]->className == gSelectedClass, size)) gSelectedClass = shown[i]->className;
-        if (ImGui::IsItemHovered() && !shown[i]->description.empty()) ImGui::SetTooltip("%s", shown[i]->description.c_str());
+        if (ImGui::IsItemHovered()) {
+            const BrowserEntry& entry = *shown[i];
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(entry.displayName.c_str());
+            if (entry.className != entry.displayName) ImGui::TextDisabled("%s", entry.className.c_str());
+            if (!entry.description.empty()) {
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
+                ImGui::TextUnformatted(entry.description.c_str());
+                ImGui::PopTextWrapPos();
+            }
+            ImGui::EndTooltip();
+        }
     }
     if (shown.empty()) ImGui::TextDisabled("Nothing matches.");
     ImGui::EndChild();
@@ -333,6 +362,35 @@ void drawBrowser(const ModelView& model) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each click in the viewport places a copy of the first example, settings included. Or drag the card onto the viewport.");
         }
     }
+}
+
+std::vector< std::string > cardLabelLines(const std::string& text, float width, const std::function< float(const std::string&) >& measure) {
+    if (measure(text) <= width) return {text};
+    // Break points: after a space, or before a capital that follows a lower-case letter or digit ("Benefit|Item").
+    std::vector< size_t > breaks;
+    for (size_t i = 1; i < text.size(); i++) {
+        const unsigned char c = static_cast< unsigned char >(text[i]), p = static_cast< unsigned char >(text[i - 1]);
+        if (p == ' ' || (std::isupper(c) && (std::islower(p) || std::isdigit(p)))) breaks.push_back(i);
+    }
+    auto trim = [](std::string s) {
+        while (!s.empty() && s.back() == ' ') s.pop_back();
+        return s;
+    };
+    auto ellipsize = [&](std::string s) {
+        if (measure(s) <= width) return s;
+        while (!s.empty() && measure(s + "...") > width) s.pop_back();
+        return trim(s) + "...";
+    };
+    // The longest first line that fits, broken at a break point; else at the last character that fits.
+    size_t split = 0;
+    for (size_t at : breaks) {
+        if (measure(trim(text.substr(0, at))) <= width) split = at;
+    }
+    if (split == 0) {
+        split = 1;
+        while (split < text.size() && measure(text.substr(0, split + 1)) <= width) split++;
+    }
+    return {trim(text.substr(0, split)), ellipsize(text.substr(split))};
 }
 
 bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, float uv[4]) {

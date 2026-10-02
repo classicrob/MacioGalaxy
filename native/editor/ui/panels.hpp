@@ -3,8 +3,10 @@
 // seams) and edit only through PetariEditor::enqueue. Internal to petari_editor_ui.
 #pragma once
 
+#include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -24,6 +26,9 @@ void redo();
 
 bool sameCell(const Cell& a, const Cell& b);
 std::string cellText(const Cell& cell);
+// A named setting's value in words: the enum's label, "on"/"off", or the number with its unit; -1 is "default"
+// unless the enum names it.
+std::string argValueText(const Catalog::Arg& arg, std::int32_t value);
 // The field's label: its known name, else its hash as 0x%08x.
 std::string columnLabel(const Column& column);
 
@@ -67,6 +72,9 @@ void drawBrowser(const ModelView& model);
 std::uint64_t armedPlacement();
 void disarmPlacement();
 extern const char* const kPlacePayload;
+// A card's name on at most two lines of `width`: split after a space or at a CamelCase boundary, the second
+// line ellipsized if it still doesn't fit. measure: a string's width.
+std::vector< std::string > cardLabelLines(const std::string& text, float width, const std::function< float(const std::string&) >& measure);
 // A thumbnail's drawn part (alpha > 0) as a padded square, in UVs (u0, v0, u1, v1); false if nothing was drawn.
 bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, float uv[4]);  // ImGui drag-and-drop payload: a card dragged onto the viewport
 
