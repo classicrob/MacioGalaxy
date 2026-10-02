@@ -279,6 +279,8 @@ def run_batch(args, stage, scenario, jobs, batch_dir, tag):
             str(args.timeout)] + command
     log = batch_dir / f"{tag}.log"
     status, stalled = run_process(full, env, log, args.timeout, args.stall)
+    # The private shader/Dawn cache is ~1.9 GB per process and worthless afterwards: only logs, jobs and Crashes stay.
+    subprocess.run(["rm", "-rf", str(user / "cache")], check=False)
     parsed = parse_log(log.read_text(errors="replace"))
     records = []
     for index, job in enumerate(jobs):
