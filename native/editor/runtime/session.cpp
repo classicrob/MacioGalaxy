@@ -5,6 +5,7 @@
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
 #include "save_mod.hpp"
+#include "terrain_sync.hpp"
 
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -134,6 +135,7 @@ namespace {
             bound++;
         }
         s.boundScene = Hooks::sceneSerial();
+        TerrainSync::sceneBound(*s.model);  // brush rows: placement made nothing for them
         std::fprintf(stderr, "[editor] bound %d rows to their actors\n", bound);
         if (Core::uiCallbacks().sceneRebuilt != nullptr) {
             Core::uiCallbacks().sceneRebuilt();
@@ -141,6 +143,7 @@ namespace {
     }
 
     void retireRow(RowId id) {
+        TerrainSync::retireBrush(id);  // nothing unless the row was a brush
         Session& s = session();
         auto it = s.actors.find(id);
         if (it != s.actors.end()) {
@@ -162,6 +165,18 @@ namespace {
         }
         const std::string path = m.tablePath(zone, table);
         const int layer = m.tableLayer(zone, table);
+        if (TerrainSync::isBrush(m.objectName(id))) {
+            // Terrain brushes are shown by terrain parts (terrain_sync.cpp), not the factory.
+            const bool shown = m.state(id) != RowState::Deleted && m.zonePlaced(zone) && layer >= 0 &&
+                               (m.activeLayers(zone, m.scenario()) & (1u << layer));
+            if (shown) {
+                TerrainSync::syncBrush(m, id);
+            } else {
+                retireRow(id);
+            }
+            s.pending.erase(id);
+            return;
+        }
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo");
         if (!live) {
             s.pending.insert(id);
@@ -398,6 +413,7 @@ namespace {
 void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
+void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 
 bool reloadScene(bool fromStart) {
     Session& s = session();
@@ -437,6 +453,7 @@ void tick(bool playable) {
     syncTestTick();
     reloadTestTick();
     saveTestTick();
+    brushTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     if (mode() != Mode::Off && pStage != nullptr) {

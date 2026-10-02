@@ -25,7 +25,34 @@ namespace EditorTerrain {
         /// mid-scene, TECH.md 2.3).
         void setCollision(void* pKcl, const void* pPa);
 
-        TPos3f mBaseMtx;  // translation and rotation, from mPosition and mRotation
+        /// The scale the collision and model were built at (a brush row's scale). While mScale
+        /// differs (a gizmo scale preview), the model and collision stretch by mScale / this.
+        void setBuiltScale(const TVec3f& rScale);
+
+        /// The model drawn with this part's matrix (a ModelObj from createModel), replacing and
+        /// retiring the previous one.
+        void setModel(LiveActor* pModel);
+
+        /// A gravity field in the part's own space that follows its matrix (the brush's fit).
+        /// The scene's gravity manager holds 128 and never unregisters (TECH.md 2.4), so the part
+        /// keeps one field and changes it in place; a different kind retires the old one.
+        struct GravityShape {
+            enum class Kind { None, Cube, Point, Segment } kind = Kind::None;
+            TVec3f center, half, a, b;
+            u32 activeFaces = 0x3F;
+            f32 radius = 0.0f;
+            f32 range = 0.0f;
+        };
+        /// False when a new field is needed and the scene has no room for it.
+        bool setGravity(const GravityShape& rShape);
+
+        void retire();  // dead, hidden, no collision, gravity off; with its model
+
+        TPos3f mBaseMtx;  // TR from mPosition and mRotation, times the preview stretch
+        TVec3f mBuiltScale;
+        LiveActor* mModel;
+        PlanetGravity* mGravity;
+        GravityShape::Kind mGravityKind;
     };
 
     /// Creates a part at `rPos` (world space, zone 0) with the given collision, and connects it to
@@ -41,6 +68,9 @@ namespace EditorTerrain {
     /// `pMtx` (e.g. a Part's mBaseMtx, so the model follows it), in the Planet draw buffer.
     /// Connected like createPart. Null and *ppError on failure.
     LiveActor* createModel(const char* pName, const char* pModelName, MtxPtr pMtx, const char** ppError);
+
+    /// Room left in the scene's gravity manager (128 fields, never unregistered).
+    s32 gravityRoom();
 
     /// Gravity fitted to a brush, as the placement rows GlobalCubeGravity and GlobalPointGravity
     /// would make it (GravityCreator), registered with the scene's gravity manager. The manager
