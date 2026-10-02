@@ -12,6 +12,7 @@ Each editor topic branch (`editor/<topic>`) is tested in a clean worktree and me
 | 3 | `editor/dock-viewport`: spike S4, the docked viewport (ImGui dockspace, presenter content area, free aspect) | `level-editor` | `8e1570d3a` | build ok incl. the app; 113/113; `native_editor_ui`, `native_home_menu`, `native_movement_baseline` |
 | 4 | `editor/camera-input`: Edit mode, the editor camera and the Tab toggle behind the Mods-page "Level editor" switch (stacked on dock-viewport and edit-api, both already in) | `level-editor` | `a46175439` | build ok incl. the app; 113/113; `native_input` (new testLevelEditor), `native_editor_ui`, `native_home_menu`, `native_movement_baseline` |
 | 5 | `editor/runtime-hooks`: the spike's engine hooks, productised, off unless the editor is on (stacked on edit-model, already in) | `level-editor` | `364c38a7a` | build ok incl. the app; 113/113 |
+| 6 | `editor/scene-sync`: SceneSync, the editor runtime in the frame (session, row/actor binding, command drain, live re-creation of changed rows); based on level-editor `424853073` | `level-editor` | `b7cf48af9` | build ok incl. the app; 113/113 |
 
 ## Notes
 
@@ -28,3 +29,4 @@ Each editor topic branch (`editor/<topic>`) is tested in a clean worktree and me
 - Live `movement_baseline.py --mods both` under `PETARI_LOCK_CLASS=quiet` (runtime worker): the
   `level-editor` tip at `424853073` (PRs 1-5) passes mods off and on; `editor/scene-sync`
   (merged with that tip) passes mods off and on.
+- PR 6: the worker also ran editor_sync_smoke.py and editor_hooks_smoke.py (PASS) and the live movement_baseline under the quiet lock (off PASS, on PASS); the integrator did not run apps.
