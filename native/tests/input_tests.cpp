@@ -7,6 +7,7 @@
 // Wii's 200 Hz reports against a 60 Hz game loop.
 
 #include "petari/editor_input.h"
+#include "petari/editor_pick.hpp"
 #include <chrono>
 #include "petari/editor_settings.hpp"
 #include <revolution/kpad.h>
@@ -2479,6 +2480,30 @@ void testLevelEditor() {
     In::resetForTesting();
 }
 
+// The level editor's picking handshake (petari/editor_pick.hpp): the UI asks, the game answers.
+void testEditorPick() {
+    namespace Pick = PetariNative::EditorPick;
+    Pick::resetForTesting();
+    check(!Pick::hoverWanted() && Pick::takeClick() == Pick::Click::None && !Pick::takeClear(), "nothing asked at first");
+    Pick::setHoverWanted(true);
+    Pick::click(Pick::Click::Toggle);
+    check(Pick::hoverWanted() && Pick::takeClick() == Pick::Click::Toggle, "a Cmd-click is a toggle");
+    check(Pick::takeClick() == Pick::Click::None, "a click is answered once");
+    Pick::Item hover;
+    check(!Pick::hover(&hover) && Pick::selection().empty(), "no answers before the game publishes");
+    Pick::Item planet;
+    std::snprintf(planet.name, sizeof(planet.name), "%s", "PuffballPlanetA");
+    planet.radius = 1511.0f;
+    Pick::publish(&planet, {planet});
+    check(Pick::hover(&hover) && std::string(hover.name) == "PuffballPlanetA" && Pick::selection().size() == 1,
+          "the game's answers reach the UI");
+    Pick::clearSelection();
+    check(Pick::takeClear() && !Pick::takeClear(), "Esc clears once");
+    Pick::publish(nullptr, {});
+    check(!Pick::hover(&hover) && Pick::selection().empty(), "nothing under the pointer, nothing selected");
+    Pick::resetForTesting();
+}
+
 int main() {
     __OSThreadInit();
     testBindings();
@@ -2502,6 +2527,7 @@ int main() {
     testCamera();
     testPhotoMode();
     testLevelEditor();
+    testEditorPick();
     testMods();
     testCappyInput();
 #ifdef PETARI_INPUT_TEST_SDL3

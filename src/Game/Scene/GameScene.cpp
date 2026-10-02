@@ -44,6 +44,7 @@
 // native/platform/include/petari/platform/os_host.hpp
 extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorDraw.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
@@ -100,6 +101,7 @@ void GameScene::init() {
 #ifdef PETARI_NATIVE
     // Before any list is sized: the level editor's headroom follows the Mods-page switch.
     PetariEditor::Hooks::syncSwitch(PetariNative::EditorSettings::enabled());
+    EditorCamera::abandon();  // a scene rebuilt under Edit mode (a reload) starts outside it
 #endif
     SceneFunction::createHioBasicNode(this);
     SceneFunction::startStageFileLoad();
@@ -207,7 +209,7 @@ void GameScene::update() {
     }
 #endif
 #ifdef PETARI_NATIVE
-    PetariEditor::Runtime::tick();  // the level editor's commands and SceneSync; nothing while it is off
+    PetariEditor::Runtime::tick(isPermitToPauseMenu());  // the level editor's commands and SceneSync; nothing while it is off
     EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
     EditorTerrainTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_TERRAIN_TEST
 #endif
@@ -485,6 +487,9 @@ void GameScene::draw3D() const {
     MR::loadLightPlayer();
     CategoryList::execute(MR::DrawType_0x24);
     CategoryList::execute(MR::DrawType_0x3B);
+#ifdef PETARI_NATIVE
+    EditorDraw::draw3D();  // the level editor's selection and hover, before the Z buffer is cleared
+#endif
     MR::clearZBuffer();
 }
 
@@ -556,7 +561,12 @@ void GameScene::startStagePlayFirst() {
 }
 
 void GameScene::startStagePlayRetry() {
-    MR::openWipeCircle();
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Hooks::editorReload()) {
+        MR::forceOpenWipeFade();  // the level editor's reload: no circle
+    } else
+#endif
+        MR::openWipeCircle();
 
     if (MR::isEqualStageName("SurfingLv1Galaxy") && MR::getPlayerRestartIdInfo()->_0 == 1) {
         MR::stopSubBGM(0);

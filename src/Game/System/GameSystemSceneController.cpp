@@ -1,4 +1,8 @@
 #include "Game/System/GameSystemSceneController.hpp"
+#ifdef PETARI_NATIVE
+#include "Game/Editor/EditorScene.hpp"
+#include <petari/editor/runtime_hooks.hpp>
+#endif
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/NameObj/NameObjHolder.hpp"
 #include "Game/Scene/IntermissionScene.hpp"
@@ -152,6 +156,9 @@ void GameSystemSceneController::destroyScene() {
     delete pScene;
 
     mObjHolder->clearArray();
+#ifdef PETARI_NATIVE
+    EditorReload::dropOverriddenArchives();  // the level editor's edited archives: re-injected by the next build
+#endif
 
     if (stopSound) {
         MR::stopAllSound(0);
@@ -217,7 +224,10 @@ void GameSystemSceneController::startScene() {
         // Frame statistics: the frame holding this wait is a loading frame.
         PetariNative::FrameTelemetry::Scope stagePrepTiming{PetariNative::FrameTelemetry::StagePrepWait};
         petari_os_begin_host_blocking();
-        petari_gx_pipeline_stage_wait();
+        // The level editor's reload of the same stage: its pipelines are already built.
+        if (!PetariEditor::Hooks::editorReload()) {
+            petari_gx_pipeline_stage_wait();
+        }
         petari_os_end_host_blocking();
     }
 #endif

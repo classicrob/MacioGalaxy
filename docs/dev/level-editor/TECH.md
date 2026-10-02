@@ -945,3 +945,12 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - `EditorScene::createFromRow` / `retire` are the game-side operations. They refuse past the actor and execute limits, minus a margin of 64.
   - `PetariEditor::` is routed to the host allocator (`native/src/host_allocation.cpp`), so the EditModel and session survive scene reloads. Game objects the editor creates still come from the scene heap.
   - Live check: `native/tools/editor_hooks_smoke.py` (Good Egg, editor off then on).
+- **Reload and Play** (`editor/fast-reload`; S3):
+  - `destroyScene` drops the archives the editor overrides (`EditorReload::dropOverriddenArchives`, with a new `ArchiveHolder::nativeRemove`).
+  - `StageFileLoader::startLoadingStageFile` injects the model's archive bytes onto the scene heap, so nothing is read from disc.
+  - The restart is a type-5 galaxy move from the restart point (or the mission start). For an editor reload it skips the lives counter, the shader gate and the circle wipe (a fade instead), and clears the already-done flags, so collected items come back.
+  - Measured on Good Egg: **265-493 ms** from the request to normal play (the design target was ~2 s).
+  - Play: if edits are pending, reload, then `leaveEdit` and teleport to the play marker; if not, `leaveEdit` and teleport at once. Reload from Edit ends with `resumeEdit`.
+  - Overrides stay for the session, so a death or a Level Select warp into the galaxy also shows the edits.
+  - The EditModel reads the unmodded disc as its originals (`DVD::mountInfo().filesDirectory`). A saved mod's edits then count as changes and stay in the next save.
+  - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.
