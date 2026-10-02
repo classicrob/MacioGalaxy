@@ -240,7 +240,8 @@ std::optional< MaterialClone > cloneMaterial(const Bytes& donor, const std::stri
     return clone;
 }
 
-ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const std::string& jointName) {
+ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const ModelOptions& options) {
+    const std::string& jointName = options.jointName;
     ModelResult result;
     const std::size_t vertexCount = mesh.positions.size();
     if (mesh.triangleCount() == 0 || mesh.indices.size() % 3 != 0) {
@@ -308,7 +309,20 @@ ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const st
         }
         vtx.place(positions, 0x0C, 0x20);
         vtx.place(normals, 0x10, 0x20);
-        vtx.place(Bytes{0xFF, 0xFF, 0xFF, 0xFF}, 0x18, 0x20);
+        Bytes colors;
+        if (options.bakeLight) {
+            const float length = std::sqrt(options.sun.x * options.sun.x + options.sun.y * options.sun.y + options.sun.z * options.sun.z);
+            const Vec3 sun = length > 0.0f ? Vec3{options.sun.x / length, options.sun.y / length, options.sun.z / length} : Vec3{0, 1, 0};
+            for (std::size_t i = 0; i < vertexCount; i++) {
+                const Vec3& n = mesh.normals[i];
+                const float lit = options.ambient + options.diffuse * std::max(0.0f, n.x * sun.x + n.y * sun.y + n.z * sun.z);
+                const std::uint8_t level = static_cast< std::uint8_t >(std::clamp(lit, 0.0f, 1.0f) * 255.0f + 0.5f);
+                colors.insert(colors.end(), {level, level, level, 0xFF});
+            }
+        } else {
+            colors = {0xFF, 0xFF, 0xFF, 0xFF};
+        }
+        vtx.place(colors, 0x18, 0x20);
         vtx.place(uvs, 0x20, 0x20);
         blocks.push_back(vtx.finish());
     }
@@ -390,7 +404,7 @@ ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const st
                 const std::uint16_t v = static_cast< std::uint16_t >(mesh.indices[i]);
                 append16(dl, v);  // POS
                 append16(dl, v);  // NRM
-                append16(dl, 0);  // CLR0: the single white entry
+                append16(dl, options.bakeLight ? v : 0);  // CLR0: per vertex, or the single white entry
                 append16(dl, v);  // TEX0
             }
         }

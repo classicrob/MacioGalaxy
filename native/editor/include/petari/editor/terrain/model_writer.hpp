@@ -7,8 +7,11 @@
 // .bmd wherever it takes .bdl (ResourceHolder's model extensions), and a .bmd needs no MDL3
 // (precompiled material display lists): J3D builds them from MAT3 at load.
 //
-// Vertices: POS (f32 xyz), NRM (f32 xyz), CLR0 (one white RGBA8 entry), TEX0 (f32 st), each
-// indexed with u16; triangles as GX_DRAW_TRIANGLES, split every 65,535 vertices.
+// Vertices: POS (f32 xyz), NRM (f32 xyz), CLR0 (RGBA8), TEX0 (f32 st), each indexed with u16;
+// triangles as GX_DRAW_TRIANGLES, split every 65,535 vertices.
+//
+// Shading: most disc planet materials are lit by vertex colour ("_v" materials), so CLR0 carries
+// a baked light term per vertex (ambient + diffuse from a fixed sun); without it a brush is flat.
 #include <petari/editor/formats/formats.hpp>
 #include <petari/editor/terrain/mesh.hpp>
 #include <optional>
@@ -40,7 +43,15 @@ struct ModelResult {
     int triangles = 0;
 };
 
+struct ModelOptions {
+    std::string jointName = "root";
+    bool bakeLight = true;               // CLR0 = ambient + diffuse * max(0, N . sun); else one white entry
+    Vec3 sun = {0.45f, 0.80f, 0.40f};    // towards the light (normalised by the writer)
+    float ambient = 0.55f;
+    float diffuse = 0.45f;
+};
+
 /// Builds the model. The mesh needs normals and UVs per position (the brushes make them).
-ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const std::string& jointName = "root");
+ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const ModelOptions& options = ModelOptions());
 
 }  // namespace PetariEditor::Terrain

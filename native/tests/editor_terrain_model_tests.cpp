@@ -20,6 +20,7 @@
 #include <JSystem/JKernel/JKRExpHeap.hpp>
 #include <JSystem/JUtility/JUTNameTab.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -85,6 +86,14 @@ static bool loadAndCheck(const Bytes& model, const T::Mesh& mesh, const std::str
         expect(pData->getVertexData().getVtxNum() == mesh.positions.size(), "vertex count");
         const f32* pPositions = static_cast< const f32* >(pData->getVertexData().getVtxPosArray());
         expect(pPositions != nullptr && pPositions[0] == mesh.positions[0].x && pPositions[2] == mesh.positions[0].z, "positions (host order)");
+        // The baked light (CLR0 per vertex): a face towards the sun is lit more than one away.
+        const GXColor* pColors = pData->getVertexData().getVtxColorArray(0);
+        u8 brightest = 0, darkest = 255;
+        for (std::size_t i = 0; pColors != nullptr && i < mesh.positions.size(); i++) {
+            brightest = std::max(brightest, pColors[i].r);
+            darkest = std::min(darkest, pColors[i].r);
+        }
+        expect(pColors != nullptr && brightest > darkest + 60 && darkest >= 130, "baked vertex light (ambient + sun)");
         const f32* pUvs = static_cast< const f32* >(pData->getVertexData().getVtxTexCoordArray(0));
         expect(pUvs != nullptr && pUvs[1] == mesh.uvs[1], "UVs (host order)");
         J3DShape* pShape = pData->getShapeNodePointer(0);
