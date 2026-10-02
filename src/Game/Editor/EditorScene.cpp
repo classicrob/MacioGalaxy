@@ -110,6 +110,18 @@ namespace EditorScene {
         return true;
     }
 
+    void flushConnectionRequests() {
+        // The order of SceneFunction::executeMovementList.
+        MR::executeRequirementConnectMovement();
+        MR::executeRequirementConnectDraw();
+        MR::executeRequirementDisconnectMovement();
+        MR::executeRequirementDisconnectDraw();
+    }
+
+    bool isConnectedToDraw(const LiveActor* pActor) {
+        return executeHolder()->isConnectToDraw(pActor);
+    }
+
     s32 mountedArchiveCount() {
         return SingletonHolder< FileLoader >::get()->mArchiveHolder->mEntries.size();
     }

@@ -435,8 +435,16 @@ void tick(bool playable) {
         s.teleportPending = false;
     }
     drain();
-    for (RowId id : s.model->takeChangedRows()) {
+    std::set< RowId > changed;
+    {
+        PetariNative::HostAllocationScope host;
+        changed = s.model->takeChangedRows();
+    }
+    for (RowId id : changed) {
         syncRow(id);
+    }
+    if (!changed.empty()) {
+        EditorScene::flushConnectionRequests();  // Edit mode is frozen: no movement step to do it
     }
     updateStatus();
     Core::runUiSeamHook();

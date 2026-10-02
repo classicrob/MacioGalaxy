@@ -31,6 +31,13 @@ namespace EditorScene {
     /// memory stays (nothing is freed mid-scene; TECH.md 2.3).
     void retire(LiveActor* pActor);
 
+    /// Carries out the connect/disconnect requests that creating and retiring made. The scene does
+    /// this in its movement step, which a frozen (Edit mode) scene doesn't run: a retired actor
+    /// would stay drawn until Play.
+    void flushConnectionRequests();
+    /// True while the object is in the scene's draw lists.
+    bool isConnectedToDraw(const LiveActor* pActor);
+
     /// Live actors and the limit, for capacity checks.
     s32 liveActorCount();
     s32 liveActorLimit();

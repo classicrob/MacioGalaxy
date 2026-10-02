@@ -9,6 +9,7 @@
 
 #include <petari/host_allocation.hpp>
 
+#include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include <petari/editor_settings.hpp>
@@ -43,6 +44,7 @@ namespace {
     }
 
     struct State {
+        LiveActor* originalActor = nullptr;
         int frame = -1, phase = 0, phaseFrame = 0;
         bool done = false;
         RowId takobo;
@@ -91,9 +93,18 @@ void reloadTestTick() {
         s.takobo = findRow("SoramameZone", "jmp/placement/layera/objinfo", "Takobo", true);
         if (!s.takobo.valid()) return finish("FAIL: no bound Takobo");
         s.original = actorForRow(s.takobo)->mPosition;
+        s.originalActor = actorForRow(s.takobo);
         enqueue(setFloat("Move Octoomba", s.takobo, "pos_y", m->transform(s.takobo).pos.y + 300.0f));
         if (RowId start = findRow("EggStarGalaxy", "jmp/start/common/startinfo", "Mario", false); start.valid())
             enqueue(setFloat("Move start", start, "pos_y", m->transform(start).pos.y));  // same value: a pending no-op edit
+        s.phase = 10;  // first: the live re-create in the frozen scene, then Reload
+        s.phaseFrame = 0;
+        return;
+    case 10:
+        if (s.phaseFrame < 3) return;
+        // Edit mode is frozen (no movement step): the replaced actor must still leave the draw lists.
+        if (EditorScene::isConnectedToDraw(s.originalActor)) return finish("FAIL: the replaced Octoomba is still drawn in Edit mode");
+        std::fprintf(stderr, "[editor-reload] frozen re-create: the old actor left the draw lists\n");
         enqueue(Command{Command::Kind::Reload});
         s.phase = 1;
         s.phaseFrame = 0;
