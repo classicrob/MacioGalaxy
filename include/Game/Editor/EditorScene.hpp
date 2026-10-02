@@ -65,6 +65,10 @@ namespace EditorReload {
     /// StageFileLoader::startLoadingStageFile: put the editor's archive bytes in place of the
     /// listed stage files it overrides (on the scene heap; dropped with the scene).
     void injectOverriddenArchives(const char* const* ppFiles, int count);
+    /// FileLoader::requestMountArchive: an archive the editor overrides or generated
+    /// (Hooks::setArchiveOverride) is mounted from its bytes, not read from the disc. False when
+    /// the path has no override, is already loaded, or no archive slot is left.
+    bool injectOverriddenArchive(const char* pPath);
     /// A same-stage restart (the miss path's move, without the miss): at the restart point, or
     /// at the mission's start when fromStart.
     void requestReload(bool fromStart);

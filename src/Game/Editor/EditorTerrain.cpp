@@ -15,14 +15,9 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/LiveActor/ModelObj.hpp"
-#include "Game/System/ArchiveHolder.hpp"
-#include "Game/System/FileLoader.hpp"
-#include "Game/Util/MemoryUtil.hpp"
-#include "Game/Util/SingletonHolder.hpp"
-#include <JSystem/JKernel/JKRSolidHeap.hpp>
-#include <cstdio>
-#include <cstring>
-#include <strings.h>
+#include <petari/editor/runtime_hooks.hpp>
+#include <petari/host_allocation.hpp>
+#include <vector>
 
 namespace EditorTerrain {
     Part::Part(const char* pName) : LiveActor(pName) {
@@ -87,50 +82,13 @@ namespace EditorTerrain {
         return pPart;
     }
 
-    namespace {
-        const s32 kInjectedMax = 16;
-        char sInjected[kInjectedMax][64];
-        s32 sInjectedCount = 0;
-    }  // namespace
-
     void injectArchive(const char* pPath, const void* pBytes, u32 size) {
-        FileLoader* pLoader = SingletonHolder< FileLoader >::get();
-        if (pLoader->isLoaded(pPath)) {
-            return;  // already served (or loaded from the disc) in this scene
-        }
-        if (sInjectedCount >= kInjectedMax && !isInjectedArchive(pPath)) {
-            return;
-        }
-        const s32 mounted = pLoader->mArchiveHolder->mEntries.size();
-        if (mounted >= pLoader->mArchiveHolder->mEntries.capacity()) {
-            std::fprintf(stderr, "[editor-terrain] cannot serve %s: the game's %d mounted archives are in use\n", pPath, mounted);
-            return;
-        }
-        // As EditorReload::injectOverriddenArchives: the file, then its archive, on the scene heap
-        // (both go when the scene ends). A path that is not on the disc is told apart by name in
-        // FileHolder::findEntry (native).
-        JKRHeap* pHeap = MR::getSceneHeapGDDR3();
-        u8* pData = new (pHeap, 32) u8[size];
-        std::memcpy(pData, pBytes, size);
-        OSLockMutex(&pLoader->mMutex);
-        pLoader->mFileHolder->add(pPath, pHeap, pData);
-        OSUnlockMutex(&pLoader->mMutex);
-        pLoader->createAndAddArchive(pData, pHeap, pPath);
-        if (!isInjectedArchive(pPath)) {
-            snprintf(sInjected[sInjectedCount++], sizeof(sInjected[0]), "%s", pPath);
-        }
-        std::fprintf(stderr, "[editor-terrain] served %s from memory: %u bytes; mounted archives %d of %d\n", pPath, size,
-                     pLoader->mArchiveHolder->mEntries.size(), pLoader->mArchiveHolder->mEntries.capacity());
-    }
-
-    bool isInjectedArchive(const char* pPath) {
-        for (s32 i = 0; i < sInjectedCount; i++) {
-            if (strcasecmp(sInjected[i], pPath) == 0) {
-                // Only while the scene that loaded it lives (it goes with the scene heap).
-                return SingletonHolder< FileLoader >::get()->isLoaded(pPath);
-            }
-        }
-        return false;
+        // The editor's archive registry (also reload's edited stages): the next mount of the path
+        // (ModelObj, placement) takes these bytes (EditorReload::injectOverriddenArchive), and
+        // MR::isFileExist answers for it. Overrides last for the session.
+        PetariNative::HostAllocationScope host;
+        const u8* pData = static_cast< const u8* >(pBytes);
+        PetariEditor::Hooks::setArchiveOverride(pPath, std::vector< u8 >(pData, pData + size));
     }
 
     LiveActor* createModel(const char* pName, const char* pModelName, MtxPtr pMtx, const char** ppError) {

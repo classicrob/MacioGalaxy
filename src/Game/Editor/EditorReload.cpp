@@ -2,6 +2,7 @@
 // The level editor's reload from the model (TECH.md 2.6): edited stage archives replace the
 // cached ones in the next scene build, through a same-stage restart without the miss.
 #include "Game/Editor/EditorScene.hpp"
+#include "Game/System/ArchiveHolder.hpp"
 #include "Game/System/FileLoader.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
@@ -37,21 +38,35 @@ namespace EditorReload {
         }
     }
 
-    void injectOverriddenArchives(const char* const* ppFiles, int count) {
+    bool injectOverriddenArchive(const char* pPath) {
+        const std::vector< u8 >* pBytes = PetariEditor::Hooks::archiveOverride(pPath);
         FileLoader* pLoader = SingletonHolder< FileLoader >::get();
+        if (pBytes == nullptr || pLoader->isLoaded(pPath)) {
+            return false;
+        }
+        // ArchiveHolder holds 0x180 and adds unchecked (Good Egg mounts about 350).
+        const s32 mounted = pLoader->mArchiveHolder->mEntries.size();
+        if (mounted >= pLoader->mArchiveHolder->mEntries.capacity()) {
+            std::fprintf(stderr, "[editor] cannot serve %s: the game's %d mounted archives are in use\n", pPath, mounted);
+            return false;
+        }
+        // The file, then its archive, on the scene heap (both go with the scene). A path that is
+        // not on the disc (a new archive) is told apart by name in FileHolder::findEntry.
         JKRHeap* pHeap = MR::getSceneHeapGDDR3();
+        u8* pData = new (pHeap, 32) u8[pBytes->size()];
+        std::memcpy(pData, pBytes->data(), pBytes->size());
+        OSLockMutex(&pLoader->mMutex);
+        pLoader->mFileHolder->add(pPath, pHeap, pData);
+        OSUnlockMutex(&pLoader->mMutex);
+        pLoader->createAndAddArchive(pData, pHeap, pPath);
+        std::fprintf(stderr, "[editor] %s from the editor (%u bytes; %d of %d archives mounted)\n", pPath,
+                     static_cast< unsigned >(pBytes->size()), mounted + 1, pLoader->mArchiveHolder->mEntries.capacity());
+        return true;
+    }
+
+    void injectOverriddenArchives(const char* const* ppFiles, int count) {
         for (int i = 0; i < count; i++) {
-            const std::vector< u8 >* pBytes = PetariEditor::Hooks::archiveOverride(ppFiles[i]);
-            if (pBytes == nullptr || pLoader->isLoaded(ppFiles[i])) {
-                continue;
-            }
-            u8* pData = new (pHeap, 32) u8[pBytes->size()];
-            std::memcpy(pData, pBytes->data(), pBytes->size());
-            OSLockMutex(&pLoader->mMutex);
-            pLoader->mFileHolder->add(ppFiles[i], pHeap, pData);
-            OSUnlockMutex(&pLoader->mMutex);
-            pLoader->createAndAddArchive(pData, pHeap, ppFiles[i]);
-            std::fprintf(stderr, "[editor] reload: %s from the edit (%u bytes)\n", ppFiles[i], static_cast< unsigned >(pBytes->size()));
+            injectOverriddenArchive(ppFiles[i]);
         }
     }
 
