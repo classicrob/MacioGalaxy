@@ -21,7 +21,7 @@ if(APPLE)
 endif()
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC runtime/edit_api_core.cpp)
+add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp)
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_core PUBLIC petari_native_config)
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)

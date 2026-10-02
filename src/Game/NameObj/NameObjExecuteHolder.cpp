@@ -6,6 +6,12 @@
 #include "Game/System/GameSystemSceneController.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
+#ifdef PETARI_NATIVE
+#include "Game/System/DrawBuffer.hpp"
+#include "Game/System/DrawBufferExecuter.hpp"
+#include "Game/System/DrawBufferGroup.hpp"
+#include "Game/System/DrawBufferHolder.hpp"
+#endif
 
 namespace {
     NameObjExecuteHolder* getNameObjExecuteHolder() {
@@ -420,3 +426,84 @@ NameObjExecuteHolder::NameObjExecuteHolder(int size)
     : NameObj("connectToScene情報保持"), mExecuteArray(), mExecuteArrayMaxSize(size), mExecuteArraySize(), _18(), _19(), _1A(), _1B(), _1C() {
     mExecuteArray = new NameObjExecuteInfo[mExecuteArrayMaxSize];
 }
+
+#ifdef PETARI_NATIVE
+namespace {
+    // Room for every object counted into a category. The old array stays in the solid scene heap.
+    void growCategory(NameObjCategoryList* pList, int category) {
+        NameObjCategoryList::CategoryInfo& rInfo = pList->mCategoryInfo[category];
+        MR::AssignableArray< NameObj* >& rArray = rInfo.mNameObjArr.mArray;
+        s32 need = rInfo.mNameObjArr.size() + 1;
+        if (static_cast< s32 >(rInfo.mCheck) > need) {
+            need = rInfo.mCheck;
+        }
+        if (need <= rArray.mMaxSize) {
+            return;
+        }
+        const s32 newMax = need + need / 2 + 16;
+        NameObj** pNew = new NameObj*[newMax];
+        for (s32 i = 0; i < rInfo.mNameObjArr.size(); i++) {
+            pNew[i] = rArray.mArr[i];
+        }
+        rArray.mArr = pNew;
+        rArray.mMaxSize = newMax;
+    }
+
+    // A draw executor created after load has no lists; one that outgrew its headroom grows.
+    void growExecuter(DrawBufferExecuter* pExec) {
+        if (pExec->mActors == nullptr) {
+            pExec->allocateActorListBuffer();
+            return;
+        }
+        if (pExec->mDrawBufferCount <= pExec->mMaxNumActors) {
+            return;
+        }
+        const s32 newMax = pExec->mDrawBufferCount + pExec->mDrawBufferCount / 2 + 4;
+        LiveActor** pActors = new LiveActor*[newMax];
+        for (s32 i = 0; i < pExec->mNumActors; i++) {
+            pActors[i] = pExec->mActors[i];
+        }
+        pExec->mActors = pActors;
+        pExec->mMaxNumActors = newMax;
+        DrawBuffer* pBuffer = pExec->mDrawBuffer;
+        pBuffer->_8 = newMax;
+        for (s32 d = 0; d < pBuffer->mNumShapeDrawers; d++) {
+            DrawBufferShapeDrawer* pDrawer = pBuffer->mShapeDrawers[d];
+            const s32 newPackets = newMax * pDrawer->_8;
+            PacketInfo** pPackets = new PacketInfo*[newPackets];
+            for (s32 i = 0; i < newPackets; i++) {
+                if (i < pDrawer->mMaxPackets) {
+                    pPackets[i] = pDrawer->mPackets[i];
+                } else {
+                    pPackets[i] = new PacketInfo();
+                    pPackets[i]->mShapePacket = nullptr;
+                    pPackets[i]->mLightLoader = nullptr;
+                    pPackets[i]->mLightCtrl = nullptr;
+                }
+            }
+            pDrawer->mPackets = pPackets;
+            pDrawer->mMaxPackets = newPackets;
+        }
+    }
+}  // namespace
+
+void NameObjExecuteHolder::nativeLateConnect(s32 from) {
+    NameObjListExecutor* pListExecutor = SingletonHolder< GameSystem >::get()->mSceneController->getNameObjListExecutor();
+    for (s32 i = from; i < mExecuteArraySize; i++) {
+        NameObjExecuteInfo& rInfo = mExecuteArray[i];
+        if (rInfo.mMovementType != -1) {
+            growCategory(pListExecutor->mMovementList, rInfo.mMovementType);
+        }
+        if (rInfo.mCalcAnimType != -1) {
+            growCategory(pListExecutor->mCalcAnimList, rInfo.mCalcAnimType);
+        }
+        if (rInfo.mDrawType != -1) {
+            growCategory(pListExecutor->mDrawList, rInfo.mDrawType);
+        }
+        if (rInfo.mDrawBufferType != -1) {
+            growExecuter(pListExecutor->mBufferHolder->mBufferGroups[rInfo.mDrawBufferType].mExecutors[rInfo._A]);
+        }
+        rInfo.initConnectting();
+    }
+}
+#endif
