@@ -905,3 +905,10 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - `native/editor/runtime/`: the EditModel, ops, SceneSync, reload, save.
   - `native/editor/ui/`: panels, camera, gizmo, picking.
   - Game-side hooks in `src/` stay `PETARI_NATIVE` and do nothing while the editor is off.
+- **Engine hooks** (`editor/runtime-hooks`; `native/editor/include/petari/editor/runtime_hooks.hpp`, `src/Game/Editor/EditorScene.cpp`):
+  - The spike's four hooks are productised. All are no-ops while the editor is off (`Hooks::enabled()`, set by the Mods-page switch or `PETARI_EDITOR=1`).
+  - Headroom at load is `count + count/2 + 16` per category list and draw executor, with growth as the fallback. `DrawBuffer::init` now takes the executor's allocated size (identical when off).
+  - The `waitForEnd` guard is unconditional: it only changes a path that read past the list.
+  - `EditorScene::createFromRow` / `retire` are the game-side operations. They refuse past the actor and execute limits, minus a margin of 64.
+  - `PetariEditor::` is routed to the host allocator (`native/src/host_allocation.cpp`), so the EditModel and session survive scene reloads. Game objects the editor creates still come from the scene heap.
+  - Live check: `native/tools/editor_hooks_smoke.py` (Good Egg, editor off then on).

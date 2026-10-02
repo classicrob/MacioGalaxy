@@ -4,6 +4,7 @@
 #include "Game/Util/LightUtil.hpp"
 #include <algorithm>
 #ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
 #include <petari/game_compat.hpp>
 #endif
 
@@ -14,10 +15,13 @@ DrawBufferExecuter::DrawBufferExecuter(const char* pName, J3DModel* pModel, s32 
 
 void DrawBufferExecuter::allocateActorListBuffer() {
     s32 count = mDrawBufferCount;
+#ifdef PETARI_NATIVE
+    count = static_cast< s32 >(PetariEditor::Hooks::withHeadroom(count));  // the level editor's room; unchanged when off
+#endif
     if (count != 0) {
         mActors = new LiveActor*[count];
         mMaxNumActors = count;
-        mDrawBuffer->init(mDrawBufferCount);
+        mDrawBuffer->init(count);  // natively count may include the editor's headroom
     }
 }
 

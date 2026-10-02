@@ -2,6 +2,7 @@
 // frame seam feeds it observations and applies its presses.
 
 #include "smoke_stage.hpp"
+#include <petari/smoke_phase.hpp>
 #include <petari/efb_dump_mark.hpp>
 
 #include <algorithm>
@@ -731,6 +732,7 @@ void StageDriver::exercise(const Observation& o, Step& step) {
         break;
     }
     case Phase::Tail:
+        PetariNative::SmokePhase::stageChecksDone.store(true);
         if (mPhaseFrames >= mConfig.tailFrames) {
             finish(Result::Pass,
                    "loaded, ready, pause menu opened and closed, " + std::to_string(mConfig.tailFrames) +

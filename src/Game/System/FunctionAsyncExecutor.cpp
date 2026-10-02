@@ -123,6 +123,15 @@ void FunctionAsyncExecutor::waitForEnd(const char* pName) {
         cur++;
     }
 
+#ifdef PETARI_NATIVE
+    // startOnMainThread ran the function inline and queued nothing (a resource holder created
+    // on the main thread during play, as the level editor does): nothing to wait for. On the
+    // Wii this read past the list.
+    if (cur == lst) {
+        OSUnlockMutex(&MR::MutexHolder< 2 >::sMutex);
+        return;
+    }
+#endif
     FunctionAsyncExecInfo* info = *cur;
     OSUnlockMutex(&MR::MutexHolder< 2 >::sMutex);
     OSReceiveMessage(&info->mQueue, &info->mMessage, OS_MESSAGE_BLOCK);

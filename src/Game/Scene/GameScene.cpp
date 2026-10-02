@@ -46,6 +46,8 @@ extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/PhotoCamera.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
+#include "Game/Editor/EditorScene.hpp"
+#include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
 // StorySequenceExecutor.cpp
 bool petariDirectStageMove(GalaxyMoveArgument* pMoveArgument, const char* pStage, s32 selected, const char* pLabel);
@@ -81,6 +83,9 @@ GameScene::GameScene()
 }
 
 GameScene::~GameScene() {
+#ifdef PETARI_NATIVE
+    PetariEditor::Hooks::sceneDestroyed();
+#endif
     MR::destroySceneMessage();
     NPCFunction::deleteNPCData();
     MR::onStarPointerSceneOut();
@@ -185,6 +190,9 @@ void GameScene::update() {
         PhotoCamera::start();
         setNerve(GET_NERVE(GameScene, GameScenePhotoMode));
     }
+#endif
+#ifdef PETARI_NATIVE
+    EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
 #endif
     mPauseCtrl->updateNerve();
     updateNerve();
