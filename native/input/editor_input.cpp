@@ -26,6 +26,7 @@ std::atomic<int> gToggles{0}, gEnters{0}, gLeaves{0}, gFrames{0}, gRepivots{0};
 std::atomic<float> gOrbitYaw{0}, gOrbitPitch{0}, gLookYaw{0}, gLookPitch{0}, gPanRight{0}, gPanUp{0}, gDolly{0};
 std::atomic<float> gMoveRight{0}, gMoveForward{0}, gMoveUp{0}, gSpeed{1}, gCursorX{0}, gCursorY{0};
 std::atomic<bool> gWorldUp{false};
+std::atomic<int> gPlayFrom{0};
 
 void request() {
     gRequestTime.store(nowNs(), std::memory_order_relaxed);
@@ -81,6 +82,7 @@ void cursor(float x, float y) {
 void frame() { gFrames.fetch_add(1, std::memory_order_relaxed); }
 void setWorldUp(bool world) { gWorldUp.store(world, std::memory_order_relaxed); }
 bool worldUp() { return gWorldUp.load(std::memory_order_relaxed); }
+void setPlayFrom(int from) { gPlayFrom.store(from, std::memory_order_relaxed); }
 
 void resetForTesting() {
     gActive.store(false);
@@ -122,6 +124,7 @@ extern "C" void petari_editor_take_input(PetariEditorInput* out) {
     out->cursorY = S::gCursorY.load(std::memory_order_relaxed);
     out->frame = S::gFrames.exchange(0, std::memory_order_relaxed);
     out->worldUp = S::worldUp() ? 1 : 0;
+    out->playFrom = S::gPlayFrom.load(std::memory_order_relaxed);
 }
 
 extern "C" void petari_editor_set_active(int active) {

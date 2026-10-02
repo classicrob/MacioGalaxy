@@ -61,6 +61,22 @@ namespace {
         return *gSelected;
     }
 
+    // The selection's rows, parallel to selected() (an invalid id for actors without a row).
+    std::vector< PetariEditor::RowId >* gSelectedRows = nullptr;
+    std::vector< PetariEditor::RowId >& selectedRows() {
+        if (gSelectedRows == nullptr) {
+            PetariNative::HostAllocationScope host;
+            gSelectedRows = new std::vector< PetariEditor::RowId >();
+        }
+        return *gSelectedRows;
+    }
+    // Keeps the rows in step after the selection changed by actor.
+    void syncRows(const std::vector< LiveActor* >& selection) {
+        std::vector< PetariEditor::RowId >& rows = selectedRows();
+        rows.clear();
+        for (LiveActor* actor : selection) rows.push_back(PetariEditor::rowForActor(actor));
+    }
+
     struct Hit {
         LiveActor* actor = nullptr;
         V center{0, 0, 0};
@@ -198,13 +214,36 @@ namespace EditorPicking {
         std::vector< LiveActor* >& selection = selected();
         // A cleared selection (Esc, or a rebuilt scene whose actors are gone) is dropped before any
         // stored actor is looked at.
-        if (Pick::takeClear()) selection.clear();
-        // Selected actors that died (a re-create, a delete) leave the selection.
+        if (Pick::takeClear()) {
+            selection.clear();
+            selectedRows().clear();
+        }
+        // Back in Edit (after a play-test or a reload): the selection comes back by its rows.
+        if (selection.empty() && !selectedRows().empty()) {
+            std::vector< PetariEditor::RowId > kept = selectedRows();
+            selectedRows().clear();
+            for (PetariEditor::RowId row : kept) {
+                LiveActor* actor = PetariEditor::actorForRow(row);
+                if (pickable(actor)) {
+                    selection.push_back(actor);
+                    selectedRows().push_back(row);
+                }
+            }
+        }
+        // A selected actor that died was usually re-created from its edited row (Runtime's SceneSync):
+        // the selection follows the row to the new actor. Otherwise (deleted) it leaves the selection.
+        std::vector< PetariEditor::RowId >& rows = selectedRows();
+        rows.resize(selection.size());
         for (size_t i = 0; i < selection.size();) {
+            if (!pickable(selection[i]) && rows[i].valid()) {
+                LiveActor* again = PetariEditor::actorForRow(rows[i]);
+                if (pickable(again)) selection[i] = again;
+            }
             if (pickable(selection[i])) {
                 i++;
             } else {
                 selection.erase(selection.begin() + static_cast< long >(i));
+                rows.erase(rows.begin() + static_cast< long >(i));
             }
         }
 
@@ -213,6 +252,48 @@ namespace EditorPicking {
         const V up = cross(right, forward);
         const float tanY = std::tan(view.fovy * 0.5f * kDeg), tanX = tanY * view.aspect;
         const V ray = normalized(add(forward, add(mul(right, view.cursorX * tanX), mul(up, view.cursorY * tanY))));
+
+        // Select by name (search, test drivers): the first pickable object whose row or class name matches.
+        if (char name[64]; Pick::takeSelectByName(name, sizeof(name))) {
+            // Rows first (every placed object Runtime bound), then actors by class.
+            LiveActor* found = nullptr;
+            if (const PetariEditor::ModelView* model = PetariEditor::model()) {
+                PetariEditor::forEachBoundRow([&](PetariEditor::RowId row, LiveActor* actor) {
+                    const char* rowName = model->objectName(row);
+                    if (found == nullptr && pickable(actor) && rowName != nullptr && std::strcmp(rowName, name) == 0) found = actor;
+                });
+            }
+            if (found != nullptr) {
+                selection.clear();
+                selection.push_back(found);
+            } else if (ClippingActorInfoList* list = allActors()) {
+                for (int i = 0; i < list->_4; i++) {
+                    LiveActor* actor = list->mClippingActorList[i] != nullptr ? list->mClippingActorList[i]->mActor : nullptr;
+                    if (!pickable(actor)) continue;
+                    const PetariEditor::RowId row = PetariEditor::rowForActor(actor);
+                    const char* rowName = row.valid() && PetariEditor::model() != nullptr ? PetariEditor::model()->objectName(row) : nullptr;
+                    if ((rowName != nullptr && std::strcmp(rowName, name) == 0) || className(actor) == name) {
+                        selection.clear();
+                        selection.push_back(actor);
+                        break;
+                    }
+                }
+            }
+            syncRows(selection);
+            std::fprintf(stderr, "[editor] select %s: %d object(s)\n", name, static_cast< int >(selection.size()));
+        }
+
+        // Select a row's object (the Changes and Outliner lists).
+        std::uint64_t rowId = 0;
+        Pick::Click rowMode = Pick::Click::None;
+        if (Pick::takeSelectRow(&rowId, &rowMode)) {
+            const PetariEditor::RowId id{rowId};
+            const Pick::Click mode = rowMode;
+            LiveActor* actor = PetariEditor::actorForRow(id);
+            if (mode == Pick::Click::Replace) selection.clear();
+            if (pickable(actor) && std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
+            syncRows(selection);
+        }
 
         const Pick::Click click = Pick::takeClick();
         const bool wantHover = Pick::hoverWanted();
@@ -233,6 +314,7 @@ namespace EditorPicking {
                     selection.push_back(under.actor);
                 }
             }
+            syncRows(selection);
             std::fprintf(stderr, "[editor] select: %d object(s)%s\n", static_cast< int >(selection.size()),
                          under.actor != nullptr ? "" : " (nothing under the cursor)");
         }
@@ -281,6 +363,8 @@ namespace EditorPicking {
     }
 
     void reset() {
+        // Leaving Edit (or a rebuilt scene): the actors go; the rows stay, so the selection comes back
+        // when Edit is entered again (UX section 3: return with the edit state intact).
         gHover = nullptr;
         if (gSelected != nullptr) gSelected->clear();
         Pick::publish(nullptr, {});
