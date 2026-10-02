@@ -14,10 +14,17 @@ if(APPLE)
     target_link_libraries(petari_editor_formats PRIVATE iconv)  # Shift-JIS <-> UTF-8
 endif()
 
+# Patch mods (TECH.md 5.1, 5.3): edits as row ops against the player's disc, built into archives
+# by the mod loader at start-up. Pure C++.
+add_library(petari_editor_patch STATIC patch/patch.cpp)
+target_include_directories(petari_editor_patch PUBLIC include)
+target_link_libraries(petari_editor_patch PUBLIC petari_editor_formats)
+target_compile_features(petari_editor_patch PUBLIC cxx_std_17)
+
 # The EditModel: one galaxy's tables, ops and undo, changed archives. Pure C++ (tested alone).
 add_library(petari_editor_model STATIC runtime/edit_model.cpp runtime/checks.cpp)
 target_include_directories(petari_editor_model PUBLIC include PRIVATE runtime)
-target_link_libraries(petari_editor_model PUBLIC petari_editor_formats petari_editor_core)
+target_link_libraries(petari_editor_model PUBLIC petari_editor_formats petari_editor_patch petari_editor_core)
 target_compile_features(petari_editor_model PUBLIC cxx_std_17)
 
 # The object catalog's shipped files, embedded (TECH.md 2.11; native/editor/catalog).

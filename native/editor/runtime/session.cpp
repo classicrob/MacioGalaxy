@@ -386,7 +386,7 @@ namespace {
             case Command::Kind::SaveMod: {
                 PetariNative::HostAllocationScope host;
                 std::string notice;
-                if (saveFullArchiveMod(*s.model, command.modName, &notice, &error)) {
+                if (saveMod(*s.model, command.modName, command.fullArchives, &notice, &error)) {
                     s.model->markSaved();
                     Core::reportNotice(notice);
                     std::fprintf(stderr, "[editor] %s\n", notice.c_str());

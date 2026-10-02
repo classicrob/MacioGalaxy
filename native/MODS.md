@@ -281,6 +281,26 @@ A mod file that cannot be used (for example a path where the disc has a director
 in the way) is skipped with a `[mods] skipped <path>: <reason>` line; the rest of the
 mod still applies.
 
+## Level edit patches
+
+The level editor saves a mod as a **patch** by default: `edits/<Galaxy>.json`
+next to `mod.txt`, holding the changed rows of the galaxy's tables and no game
+data. At start-up the loader builds the archives from your own disc. It caches
+them in `<user folder>/mods-cache/` and builds again only when the patch changes.
+After that the result is used like any `files/` archive:
+
+```
+[mods] patch mods: built StageData/SoramameZone.arc (MyEdit)
+[mods] mod MyEdit (priority 0, rank 1 of 1): 0 files and level edits
+```
+
+How patches combine with other mods:
+- **Patch with patch:** two patch mods that edit the same archive are merged. Where both change the same cell, the higher-priority mod wins.
+- **Patch with full archive:** a higher-priority mod with a full archive of the same file wins it.
+- **Different disc:** a patch made against another disc (another region) is not applied to the archives whose rows don't match, and the log says so.
+
+To get archives Whitehole or Dolphin can open, save with "Full archives" in the editor.
+
 ## Compressed and uncompressed archives
 
 The game decides by the file's header, as on the console. Stage archives

@@ -4,6 +4,8 @@
 //
 //   mods/<ModName>/files/StageData/..., ObjectData/..., LayoutData/..., AudioRes/...
 //   mods/<ModName>/mod.txt   optional: name=, description=, priority=
+//   mods/<ModName>/edits/<Galaxy>.json   a level editor patch (docs/dev/level-editor/TECH.md 5.3):
+//       row edits against the player's own disc, built into archives at start-up (setPatchBuilder)
 //
 // An enabled mod's file replaces the disc file of the same path (ASCII
 // case-insensitive, like the game's own lookup) or adds a new one. The
@@ -17,6 +19,7 @@
 // disc is not touched at all.
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -33,6 +36,7 @@ struct ModInfo {
     std::filesystem::path root;  // mods/<ModName>
     std::string source;        // the mods directory it was found in
     unsigned fileCount = 0;    // files below files/
+    bool hasEdits = false;     // edits/*.json: a level editor patch
 };
 
 // "/StageData//Foo/./Bar.arc" and "stagedata\\foo\\bar.arc" -> "StageData/Foo/Bar.arc"
@@ -68,9 +72,24 @@ struct Resolved {
 // ("archive", "message file", "stream"). Reads at most a few dozen bytes.
 std::string invalidKind(const std::filesystem::path& host, const std::string& discPath);
 
+// Builds the enabled patch mods' archives (roots lowest priority first) from the disc's files/
+// folder into a cache folder; returns (disc path, built file) pairs. The level editor's
+// PetariEditor::Patch::buildForLoader; set by the app before resolveForUser.
+using PatchBuilder = std::function<std::vector<std::pair<std::string, std::filesystem::path>>(
+    const std::vector<std::filesystem::path>& roots, const std::filesystem::path& discFiles, const std::filesystem::path& cacheDirectory,
+    std::vector<std::string>* log)>;
+void setPatchBuilder(PatchBuilder builder);
+
+// Where patch mods are built: the disc's files/ folder and the cache (both empty: patches are skipped).
+struct PatchContext {
+    std::filesystem::path discFiles;
+    std::filesystem::path cacheDirectory;
+};
+
 // Enabled mods in precedence order (priority descending, then name ascending);
-// the first one listed that supplies a path wins it.
-Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, bool>& states);
+// the first one listed that supplies a path wins it. Patch mods' archives (with `patch` and a
+// builder) are claimed at the rank of the highest-ranked patch mod, before its files/.
+Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, bool>& states, const PatchContext* patch = nullptr);
 
 // The mods directories searched: <user>/mods, then each entry of PETARI_MOD_DIRS
 // (":"-separated; for development, e.g. the repo's mods/).
@@ -78,7 +97,8 @@ std::vector<std::filesystem::path> searchDirectories(const std::filesystem::path
 
 // discover + effectiveStates + resolve, for the app at start-up. Also
 // remembers the directory for the menu calls below.
-Resolved resolveForUser(const std::filesystem::path& userDirectory);
+// With `disc` (the mounted disc's root), patch mods are built into <user>/mods-cache.
+Resolved resolveForUser(const std::filesystem::path& userDirectory, const std::filesystem::path& disc = {});
 
 // The roots (mods/<ModName>) of the enabled mods for a user directory, in precedence order
 // (searchDirectories + effectiveStates). The mod galaxy registry reads their galaxy.json.

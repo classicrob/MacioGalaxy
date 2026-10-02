@@ -1,10 +1,15 @@
 // The EditModel (edit_model.hpp; TECH.md 1.9 and 2.8).
 #include "edit_model.hpp"
 
+#include <petari/editor/json.hpp>
+#include <petari/editor/patch.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <map>
 #include <unordered_map>
 
 namespace PetariEditor {

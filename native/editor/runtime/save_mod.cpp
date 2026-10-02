@@ -1,7 +1,8 @@
-// Saving an edit as a Full-archive mod (TECH.md 5.1): the edited zone archives, Yaz0-compressed as
-// the community's tools write them, in <user>/mods/<Name>/files/StageData/, which today's mod
-// loader reads (native/MODS.md). The mod is switched on for the next start; during the session the
-// edits already show (reloads inject them).
+// Saving an edit as a mod (TECH.md 5.1). A patch by default: edits/<Galaxy>.json, row ops against
+// the player's disc that the mod loader builds into archives at start-up (petari/editor/patch.hpp),
+// so the mod holds no game data. Or Full archives: the edited zone archives, Yaz0-compressed as the
+// community's tools write them, in files/StageData/. The mod is switched on for the next start;
+// during the session the edits already show (reloads inject them).
 #include "edit_model.hpp"
 #include "save_mod.hpp"
 
@@ -64,7 +65,7 @@ namespace {
     }
 }  // namespace
 
-bool saveFullArchiveMod(const EditModel& model, const std::string& modName, std::string* pNotice, std::string* pError) {
+bool saveMod(const EditModel& model, const std::string& modName, bool fullArchives, std::string* pNotice, std::string* pError) {
     if (!validName(modName)) {
         *pError = "a mod name uses letters, digits, spaces, '-', '_' and '.'";
         return false;
@@ -81,22 +82,54 @@ bool saveFullArchiveMod(const EditModel& model, const std::string& modName, std:
         return false;
     }
 
-    // Every zone archive that differs from the disc; the others are removed from the mod, so an
-    // edit reverted since the last save takes effect.
+    const fs::path patchFile = root / "edits" / (std::string(model.galaxy()) + ".json");
     int written = 0;
     std::set< std::string > changed;
-    for (auto& [discPath, plain] : model.changedArchives()) {
+    std::string summary;
+    if (!fullArchives) {
+        // The patch, plus the zones it can't express (a mod's own zones) as whole archives. This
+        // galaxy's other archives leave the mod: the patch holds every difference from the disc.
+        const EditModel::PatchOut patch = model.patch();
+        if (patch.json.empty()) {
+            fs::remove(patchFile, ec);
+        } else if (!writeAtomically(patchFile, Formats::Bytes(patch.json.begin(), patch.json.end()), pError)) {
+            return false;
+        }
+        for (auto& [discPath, plain] : patch.wholeArchives) {
+            if (!writeAtomically(root / "files" / discPath.substr(1), Formats::yaz0Encode(plain), pError)) {
+                return false;
+            }
+            changed.insert(discPath);
+        }
+        for (int zone = 0; zone < model.zoneCount(); zone++) {
+            const std::string discPath = std::string("/StageData/") + model.zoneName(zone) + ".arc";
+            if (!changed.count(discPath)) {
+                fs::remove(root / "files" / discPath.substr(1), ec);
+            }
+        }
+        summary = std::to_string(patch.ops) + (patch.ops == 1 ? " edit" : " edits") + " as a patch";
+        if (!patch.wholeArchives.empty()) {
+            summary += " and " + std::to_string(patch.wholeArchives.size()) + " new zone archive" + (patch.wholeArchives.size() == 1 ? "" : "s");
+        }
+    }
+    // Full archives: every zone archive that differs from the disc; the others are removed from the
+    // mod, so an edit reverted since the last save takes effect.
+    for (auto& [discPath, plain] : fullArchives ? model.changedArchives() : std::vector< std::pair< std::string, Formats::Bytes > >()) {
         if (!writeAtomically(root / "files" / discPath.substr(1), Formats::yaz0Encode(plain), pError)) {
             return false;
         }
         changed.insert(discPath);
         written++;
     }
-    for (int zone = 0; zone < model.zoneCount(); zone++) {
-        const std::string discPath = std::string("/StageData/") + model.zoneName(zone) + ".arc";
-        if (!changed.count(discPath)) {
-            fs::remove(root / "files" / discPath.substr(1), ec);
+    if (fullArchives) {
+        for (int zone = 0; zone < model.zoneCount(); zone++) {
+            const std::string discPath = std::string("/StageData/") + model.zoneName(zone) + ".arc";
+            if (!changed.count(discPath)) {
+                fs::remove(root / "files" / discPath.substr(1), ec);
+            }
         }
+        fs::remove(patchFile, ec);  // the loader would build it over these
+        summary = std::to_string(written) + (written == 1 ? " archive" : " archives");
     }
     if (!fs::exists(root / "mod.txt", ec)) {
         Formats::Bytes text;
@@ -108,7 +141,7 @@ bool saveFullArchiveMod(const EditModel& model, const std::string& modName, std:
     }
     std::string enableError;
     PetariNative::Platform::ModFolder::setEnabled(modName, true, &enableError);
-    *pNotice = "Saved " + std::to_string(written) + (written == 1 ? " archive" : " archives") + " to mods/" + modName +
+    *pNotice = "Saved " + summary + " to mods/" + modName +
                (enableError.empty() ? " (on from the next start)" : " (turn it on in the Mods page: " + enableError + ")");
     return true;
 }
