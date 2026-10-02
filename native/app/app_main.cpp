@@ -31,6 +31,8 @@ extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgb
 #include <petari/unlocked_save.hpp>
 #include <petari/pipeline_startup.hpp>
 #include <petari/mods.hpp>
+#include <petari/platform/mod_folder.hpp>
+#include <petari/platform/mod_galaxy.hpp>
 #include <petari/progress.hpp>
 #include <petari/camera_input.h>
 #include <petari/camera_settings.hpp>
@@ -174,14 +176,6 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
             std::fputs("petari: --stage is for normal play; test fixtures use PETARI_STAGE\n", stderr);
             return false;
         }
-        std::string stage, error;
-        if (!App::LaunchStage::resolve(launchStage, launchScenario, &stage, &error)) {
-            std::fprintf(stderr, "petari: --stage: %s\n", error.c_str());
-            return false;
-        }
-        PetariNative::PlayerLaunch::stage = stage;
-        PetariNative::PlayerLaunch::scenario = launchScenario;
-        std::fprintf(stderr, "PETARI LAUNCH: after a file loads, going to %s mission %d\n", stage.c_str(), launchScenario);
     }
     if (!unlockedSave.empty()) {
         // Rewrites a saved file: only an explicit, marked, isolated directory.
@@ -231,8 +225,18 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
     }
     if (stageFixture) {
         const std::string& stage = PetariNative::TestFixture::stage;
-        if (!std::filesystem::is_regular_file(paths->disc / "files/StageData" / stage / (stage + "Scenario.arc"))) {
-            std::fprintf(stderr, "petari: PETARI_STAGE %s has no StageData/%s/%sScenario.arc on the disc\n",
+        const std::filesystem::path scenario = std::filesystem::path("StageData") / stage / (stage + "Scenario.arc");
+        bool found = std::filesystem::is_regular_file(paths->disc / "files" / scenario);
+        // A new galaxy from a folder mod (<user>/mods/<Mod>/files/...); the overlay decides later
+        // whether that mod is enabled.
+        std::error_code ec;
+        if (!found && !paths->user.empty() && std::filesystem::is_directory(paths->user / "mods", ec)) {
+            for (const auto& mod : std::filesystem::directory_iterator(paths->user / "mods", ec)) {
+                found = found || std::filesystem::is_regular_file(mod.path() / "files" / scenario, ec);
+            }
+        }
+        if (!found) {
+            std::fprintf(stderr, "petari: PETARI_STAGE %s has no StageData/%s/%sScenario.arc on the disc or in a mod folder\n",
                          stage.c_str(), stage.c_str(), stage.c_str());
             return false;
         }
@@ -247,6 +251,20 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
             return false;
         }
         paths->user = std::filesystem::path(home) / "Library/Application Support/Petari";
+    }
+    if (!launchStage.empty()) {
+        // Mod galaxies (galaxy.json of the user's enabled folder mods) are destinations too.
+        std::vector<std::string> galaxyLog;
+        PetariNative::Platform::ModGalaxy::load(PetariNative::Platform::ModFolder::enabledRoots(paths->user), &galaxyLog);
+        for (const std::string& line : galaxyLog) std::fprintf(stderr, "[mods] %s\n", line.c_str());
+        std::string stage, error;
+        if (!App::LaunchStage::resolve(launchStage, launchScenario, &stage, &error)) {
+            std::fprintf(stderr, "petari: --stage: %s\n", error.c_str());
+            return false;
+        }
+        PetariNative::PlayerLaunch::stage = stage;
+        PetariNative::PlayerLaunch::scenario = launchScenario;
+        std::fprintf(stderr, "PETARI LAUNCH: after a file loads, going to %s mission %d\n", stage.c_str(), launchScenario);
     }
     return true;
 }
@@ -507,6 +525,15 @@ int main(int argc, char** argv) {
     App::Paths paths;
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--stage") == 0 && std::strcmp(argv[i + 1], "list") == 0) {
+            // The enabled mods' galaxies are listed too (for --user, else the normal user folder).
+            std::filesystem::path user;
+            for (int k = 1; k + 1 < argc; ++k) {
+                if (std::strcmp(argv[k], "--user") == 0) user = argv[k + 1];
+            }
+            const char* home = std::getenv("HOME");
+            if (user.empty() && home != nullptr) user = std::filesystem::path(home) / "Library/Application Support/Petari";
+            std::vector<std::string> galaxyLog;
+            if (!user.empty()) PetariNative::Platform::ModGalaxy::load(PetariNative::Platform::ModFolder::enabledRoots(user), &galaxyLog);
             App::LaunchStage::printList(stdout);
             return 0;
         }
@@ -559,24 +586,6 @@ int main(int argc, char** argv) {
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0", SDL_HINT_OVERRIDE);
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "0", SDL_HINT_OVERRIDE);
         SDL_SetEventFilter(App::SmokeBackground::eventFilter, nullptr);
-        // After a Petari crash (any build shares the bundle id) AppKit may ask at launch
-        // whether to reopen windows, in a modal nobody can answer for a hidden window:
-        // the run then hangs before its first frame. Ignore saved window state for this
-        // process only (the registration domain; nothing is written to the user's defaults).
-        {
-            const auto sendClass = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend);
-            const auto withBool = reinterpret_cast<id (*)(id, SEL, BOOL)>(objc_msgSend);
-            const auto withString = reinterpret_cast<id (*)(id, SEL, const char*)>(objc_msgSend);
-            const auto withObjectForKey = reinterpret_cast<id (*)(id, SEL, id, id)>(objc_msgSend);
-            const auto registerDefaults = reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend);
-            const id yes = withBool(reinterpret_cast<id>(objc_getClass("NSNumber")), sel_registerName("numberWithBool:"), YES);
-            const id key = withString(reinterpret_cast<id>(objc_getClass("NSString")), sel_registerName("stringWithUTF8String:"),
-                                      "ApplePersistenceIgnoreState");
-            const id values = withObjectForKey(reinterpret_cast<id>(objc_getClass("NSDictionary")),
-                                               sel_registerName("dictionaryWithObject:forKey:"), yes, key);
-            const id defaults = sendClass(reinterpret_cast<id>(objc_getClass("NSUserDefaults")), sel_registerName("standardUserDefaults"));
-            registerDefaults(defaults, sel_registerName("registerDefaults:"), values);
-        }
         // Let SDL install its Cocoa application/delegate first, before creating
         // any window. Accessory policy avoids normal foreground application activation.
         if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {

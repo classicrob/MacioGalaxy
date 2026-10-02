@@ -13,6 +13,7 @@
 #include <petari/platform/diagnostics.hpp>
 #include <petari/platform/dvd.hpp>
 #include <petari/platform/mod_folder.hpp>
+#include <petari/platform/mod_galaxy.hpp>
 #include <petari/platform/nand.hpp>
 #include <petari/platform/os_host.hpp>
 #include <petari/platform/power.hpp>
@@ -83,6 +84,13 @@ bool preparePlatform(const Paths& paths, std::string* error) {
         auto resolved = Platform::ModFolder::resolveForUser(paths.user);
         for (const std::string& line : resolved.log) std::fprintf(stderr, "[mods] %s\n", line.c_str());
         mountOptions.overlay = std::move(resolved.files);
+        // New galaxies of the enabled mods (galaxy.json; docs/dev/level-editor/TECH.md 5.7), unless
+        // --stage loaded them already.
+        if (Platform::ModGalaxy::all().empty()) {
+            std::vector<std::string> galaxyLog;
+            Platform::ModGalaxy::load(Platform::ModFolder::enabledRoots(paths.user), &galaxyLog);
+            for (const std::string& line : galaxyLog) std::fprintf(stderr, "[mods] %s\n", line.c_str());
+        }
     }
     if (!Platform::DVD::mount(mountOptions, error)) {
         *error = "disc " + paths.disc.string() + ": " + *error;

@@ -250,7 +250,13 @@ s32 SpinDriverPathStorageGalaxy::deserialize(const u8* pData, u32 maxBufferSize)
 }
 
 SpinDriverPathStorage::SpinDriverPathStorage() {
+#ifdef PETARI_NATIVE
+    // One per parsed galaxy, appended unchecked: the parser holds up to 64 (48 on the disc), so 50
+    // overflowed from the third mod galaxy (TECH.md 5.7).
+    mGalaxyStorage.init(64);
+#else
     mGalaxyStorage.init(50);
+#endif
 
     ScenarioDataIter iter = MR::makeBeginScenarioDataIter();
     while (!iter.isEnd()) {

@@ -10,6 +10,11 @@
 #include "Game/Util/StringUtil.hpp"
 #include <JSystem/JKernel/JKRMemArchive.hpp>
 #include <algorithm>
+#ifdef PETARI_NATIVE
+#include "Game/System/GameDataConst.hpp"
+#include <cstdio>
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 template const bool JMapInfo::getValue< s32 >(int, const char*, s32*) const NO_INLINE;
 
@@ -154,6 +159,46 @@ GalaxyStatusAccessor ScenarioDataIter::makeAccessor() const {
     return GalaxyStatusAccessor(mParser->getScenarioData(mCur));
 }
 
+#ifdef PETARI_NATIVE
+namespace {
+    // The disc's galaxies: GalaxyID's rows, and FileSelect (the only disc Scenario archive
+    // without a row), so a vanilla disc parses exactly as before.
+    bool isDiscGalaxy(const char* pName) {
+        if (MR::isEqualString(pName, "FileSelect")) {
+            return true;
+        }
+        JMapInfo info;
+        info.attach(&GalaxyIDBCSV);
+        return info.findElement< const char* >("name", pName, 0).isValid();
+    }
+}  // namespace
+
+bool ScenarioDataParser::nativeAcceptGalaxy(const char* pName) {
+    namespace ModGalaxy = PetariNative::Platform::ModGalaxy;
+    if (isDiscGalaxy(pName)) {
+        return true;
+    }
+    if (ModGalaxy::find(pName) == nullptr) {
+        std::fprintf(stderr, "[mods] galaxy %s skipped: not a disc galaxy and not in any enabled mod's galaxy.json\n", pName);
+        return false;
+    }
+    // The save keys galaxies by a 16-bit hash of the name: a mod galaxy sharing a disc galaxy's
+    // key would read and overwrite that galaxy's record.
+    JMapInfo info;
+    info.attach(&GalaxyIDBCSV);
+    for (s32 i = 0; i < info.getNumEntries(); i++) {
+        const char* pDisc = nullptr;
+        if (info.getValue< const char* >(i, "name", &pDisc) && pDisc != nullptr && ModGalaxy::saveKey(pDisc) == ModGalaxy::saveKey(pName)) {
+            char reason[128];
+            std::snprintf(reason, sizeof(reason), "its save key collides with %s's; rename it", pDisc);
+            ModGalaxy::reject(pName, reason);
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
 #pragma push
 #pragma opt_propagation off
 ScenarioDataParser::ScenarioDataParser(const char* pName) : NameObj(pName), mScenarioData() {
@@ -173,6 +218,19 @@ ScenarioDataParser::ScenarioDataParser(const char* pName) : NameObj(pName), mSce
             continue;
         }
 
+#ifdef PETARI_NATIVE
+        // TECH.md 5.7: a galaxy the executable has no data for (not in the compiled-in GalaxyID
+        // table) breaks every player once parsed: event flags, names and the next stage after any
+        // Power Star are looked up for each parsed galaxy. Only the mod galaxy registry's are
+        // taken; others (e.g. a Whitehole mod's new galaxy without galaxy.json) are skipped.
+        if (!nativeAcceptGalaxy(dirent.name)) {
+            continue;
+        }
+        if (mScenarioData.mCount >= 64) {  // FixedArray< ScenarioData*, 64 >, unchecked on the Wii
+            std::fprintf(stderr, "[mods] galaxy %s skipped: the game holds at most 64 galaxies\n", dirent.name);
+            continue;
+        }
+#endif
         ScenarioData* pData = new ScenarioData(fileName);
 
         u32 index = mScenarioData.mCount;

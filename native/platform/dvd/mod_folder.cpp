@@ -370,6 +370,20 @@ Resolved resolveForUser(const fs::path& userDirectory) {
     return resolve(mods, effectiveStates(userDirectory / "mods.txt"));
 }
 
+std::vector<fs::path> enabledRoots(const fs::path& userDirectory) {
+    std::vector<ModInfo> mods = discover(searchDirectories(userDirectory));
+    const std::map<std::string, bool> states = effectiveStates(userDirectory / "mods.txt");
+    std::stable_sort(mods.begin(), mods.end(), [](const ModInfo& a, const ModInfo& b) {
+        return a.priority != b.priority ? a.priority > b.priority : a.name < b.name;
+    });
+    std::vector<fs::path> roots;
+    for (const ModInfo& mod : mods) {
+        auto state = states.find(mod.name);
+        if (state != states.end() && state->second) roots.push_back(mod.root);
+    }
+    return roots;
+}
+
 std::vector<ModInfo> detected() {
     fs::path user;
     {

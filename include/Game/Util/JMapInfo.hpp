@@ -184,6 +184,13 @@ public:
 
     template < typename T >
     bool getValue(const char* pKey, T* pValueOut) const {
+#ifdef PETARI_NATIVE
+        // An iterator past the table (findElement's end() for a missing name, e.g. a galaxy not in
+        // the compiled-in GalaxyID.bcsv) reads nothing: on the Wii it read the string pool as a row.
+        if (!isValid()) {
+            return false;
+        }
+#endif
         return mInfo->getValue(mIndex, pKey, pValueOut);
     }
 

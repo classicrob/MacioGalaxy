@@ -35,7 +35,7 @@ def run(args, name, extra):
     log = args.output / f"{name}.log"
     command, env_extra = sweep.app_command(args, user, STAGE, SCENARIO)
     env = dict(os.environ, **env_extra)
-    for key in ("PETARI_MODS", "PETARI_EDITOR", "PETARI_EDITOR_RELOAD_TEST", "PETARI_EDITOR_SYNC_TEST", "PETARI_EDITOR_HOOKS_TEST"):
+    for key in ("PETARI_EDITOR_PLAIN_RELOAD_TEST", "PETARI_MODS", "PETARI_EDITOR", "PETARI_EDITOR_RELOAD_TEST", "PETARI_EDITOR_SYNC_TEST", "PETARI_EDITOR_HOOKS_TEST"):
         env.pop(key, None)
     env.update(PETARI_LOCK_CLASS="functional", **extra)
     full = [str(args.lock), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die", str(args.timeout)] + command
@@ -65,6 +65,7 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
 
     off = run(args, "1-editor-off", {})
+    plain = run(args, "3-plain-reload", {"PETARI_EDITOR_PLAIN_RELOAD_TEST": "1"})
     on = run(args, "2-editor-on", {"PETARI_EDITOR": "1", "PETARI_MODS": "LevelEditor", "PETARI_EDITOR_RELOAD_TEST": "1"})
     failures = []
     if off["result"] != "PASS":
@@ -73,9 +74,11 @@ def main():
         failures.append(f"editor off: editor hooks ran: {off['hooks'][:2]}")
     if "PASS" not in on["hooks"]:
         failures.append(f"editor on: hooks check did not pass: {on['hooks'][-3:]}")
+    if "plain PASS" not in plain["hooks"]:
+        failures.append(f"plain reloadScene (editor off): {plain['hooks'][-2:]}")
     if on["result"] != "PASS":
         failures.append(f"editor on: stage smoke {on['result']}")
-    for r in (off, on):
+    for r in (off, plain, on):
         print(f"{r['name']}: exit {r['status']}, smoke {r['result']}")
         for line in r["hooks"]:
             print(f"  [editor-reload] {line}")

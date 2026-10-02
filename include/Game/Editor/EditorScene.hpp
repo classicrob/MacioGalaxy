@@ -26,10 +26,23 @@ namespace EditorScene {
     /// loaded archive). False and *ppError: nothing was created.
     bool createFromRow(const JMapInfoIter& rIter, Created* pOut, const char** ppError);
 
+    /// For objects the editor makes itself (not from a row's class, e.g. terrain parts): the
+    /// scene's execute-entry count before creating them, then lateConnect(that count) after
+    /// their init, which connects them as createFromRow does.
+    s32 executeCount();
+    void lateConnect(s32 executeBefore);
+
     /// Removes an actor the editor created or replaced: dead (out of the scene's lists and
     /// clipping) and hidden. Its
     /// memory stays (nothing is freed mid-scene; TECH.md 2.3).
     void retire(LiveActor* pActor);
+
+    /// Carries out the connect/disconnect requests that creating and retiring made. The scene does
+    /// this in its movement step, which a frozen (Edit mode) scene doesn't run: a retired actor
+    /// would stay drawn until Play.
+    void flushConnectionRequests();
+    /// True while the object is in the scene's draw lists.
+    bool isConnectedToDraw(const LiveActor* pActor);
 
     /// Live actors and the limit, for capacity checks.
     s32 liveActorCount();
@@ -62,6 +75,10 @@ namespace EditorReload {
     /// StageFileLoader::startLoadingStageFile: put the editor's archive bytes in place of the
     /// listed stage files it overrides (on the scene heap; dropped with the scene).
     void injectOverriddenArchives(const char* const* ppFiles, int count);
+    /// FileLoader::requestMountArchive: an archive the editor overrides or generated
+    /// (Hooks::setArchiveOverride) is mounted from its bytes, not read from the disc. False when
+    /// the path has no override, is already loaded, or no archive slot is left.
+    bool injectOverriddenArchive(const char* pPath);
     /// A same-stage restart (the miss path's move, without the miss): at the restart point, or
     /// at the mission's start when fromStart.
     void requestReload(bool fromStart);

@@ -100,14 +100,34 @@ namespace EditorScene {
         MR::initLiveActorSystemInfo(rIter);
         pObj->initAfterPlacement();
         MR::clearCurrentPlacementZoneId();
-        pExec->nativeLateConnect(executeBefore);
-        refreshViewGroups();
+        lateConnect(executeBefore);
 
         pOut->mObj = pObj;
         pOut->mActorCount = pGroup->getObjNum() - actorsBefore;
         pOut->mFirstActor = pOut->mActorCount > 0 ? pGroup->getActor(actorsBefore) : nullptr;
         pOut->mFirstIndex = actorsBefore;
         return true;
+    }
+
+    s32 executeCount() {
+        return executeHolder()->nativeExecuteCount();
+    }
+
+    void lateConnect(s32 executeBefore) {
+        executeHolder()->nativeLateConnect(executeBefore);
+        refreshViewGroups();
+    }
+
+    void flushConnectionRequests() {
+        // The order of SceneFunction::executeMovementList.
+        MR::executeRequirementConnectMovement();
+        MR::executeRequirementConnectDraw();
+        MR::executeRequirementDisconnectMovement();
+        MR::executeRequirementDisconnectDraw();
+    }
+
+    bool isConnectedToDraw(const LiveActor* pActor) {
+        return executeHolder()->isConnectToDraw(pActor);
     }
 
     s32 mountedArchiveCount() {

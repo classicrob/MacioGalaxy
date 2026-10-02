@@ -56,6 +56,7 @@ add_library(petari_platform_dvd STATIC
     dvd/dvd_fst.cpp
     dvd/dvd_host.cpp
     dvd/mod_folder.cpp
+    dvd/mod_galaxy.cpp
     ${PETARI_REPO_ROOT}/src/RVL_SDK/dvd/dvdidutils.c)
 set_source_files_properties(${PETARI_REPO_ROOT}/src/RVL_SDK/dvd/dvdidutils.c PROPERTIES LANGUAGE CXX)
 target_include_directories(petari_platform_dvd PUBLIC include PRIVATE dvd os)
@@ -153,6 +154,10 @@ if(BUILD_TESTING)
     target_link_libraries(petari_mod_folder_tests PRIVATE petari_platform)
     add_test(NAME native_mod_folder COMMAND petari_mod_folder_tests)
 
+    add_executable(petari_mod_galaxy_tests ${PETARI_REPO_ROOT}/native/tests/mod_galaxy_tests.cpp)
+    target_link_libraries(petari_mod_galaxy_tests PRIVATE petari_platform)
+    add_test(NAME native_mod_galaxy COMMAND petari_mod_galaxy_tests)
+
     add_executable(petari_platform_os_tests ${PETARI_REPO_ROOT}/native/tests/platform_os_tests.cpp)
     target_include_directories(petari_platform_os_tests PRIVATE os dvd)
     target_link_libraries(petari_platform_os_tests PRIVATE petari_platform)
@@ -243,6 +248,7 @@ if(BUILD_TESTING)
         petari_encode_target_sources(petari_platform_allocation_tests)
         target_link_libraries(petari_platform_allocation_tests PRIVATE petari_platform petari_heaps petari_boot)
         add_test(NAME native_platform_allocation COMMAND petari_platform_allocation_tests)
+        set_tests_properties(native_platform_allocation PROPERTIES LABELS timing)  # symbol-resolution speed assertion: quiet Mac only
     endif()
 
     option(PETARI_AUDIO_BOOT_SMOKE "Build and register the audio boot smoke test (needs the extracted disc in build/game-data/RMGE01)" OFF)
