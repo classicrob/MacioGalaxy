@@ -92,6 +92,10 @@ void UserFile::makeGameDataBinary(u8* pBuffer, u32 size) const {
 void UserFile::nativeSaveModGalaxies() const {
     mGameDataHolder->nativeSaveModGalaxies();
 }
+
+void UserFile::nativeCopyModGalaxies(const UserFile& rOther) {
+    mGameDataHolder->nativeCopyModGalaxies(*rOther.mGameDataHolder);
+}
 #endif
 
 void UserFile::loadFromGameDataBinary(const char* pName, const u8* pBuffer, u32 size) {

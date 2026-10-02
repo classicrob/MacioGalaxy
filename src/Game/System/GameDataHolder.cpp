@@ -368,6 +368,25 @@ u32 GameDataHolder::makeFileBinary(u8* pData, u32 a2) {
 void GameDataHolder::nativeSaveModGalaxies() const {
     saveModGalaxies(mName, mAllGalaxyStorage);
 }
+
+void GameDataHolder::nativeCopyModGalaxies(const GameDataHolder& rOther) {
+    for (s32 i = 0; i < mAllGalaxyStorage->getGalaxyNum(); i++) {
+        GameDataSomeGalaxyStorage* pGalaxy = mAllGalaxyStorage->getGalaxyStorage(i);
+        if (ModGalaxy::find(pGalaxy->mGalaxyName) == nullptr) {
+            continue;
+        }
+        const s32 index = rOther.mAllGalaxyStorage->findIndex(pGalaxy->mGalaxyName);
+        if (index < 0) {
+            continue;
+        }
+        const GameDataSomeGalaxyStorage* pSource = rOther.mAllGalaxyStorage->getGalaxyStorage(index);
+        pGalaxy->mPowerStarOwnedFlags = pSource->mPowerStarOwnedFlags;
+        pGalaxy->mAlreadyVisitedFlags = pSource->mAlreadyVisitedFlags;
+        for (s32 c = 0; c < 8; c++) {
+            pGalaxy->mMaxCoinNum[c] = pSource->mMaxCoinNum[c];
+        }
+    }
+}
 #endif
 
 bool GameDataHolder::loadFromFileBinary(const char* pName, const u8* pData, u32 dataSize) {

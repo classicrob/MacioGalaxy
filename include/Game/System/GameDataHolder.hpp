@@ -66,6 +66,9 @@ public:
 #ifdef PETARI_NATIVE
     /// Writes this file's mod galaxy records to the mods' sidecars (petari/platform/mod_galaxy.hpp).
     void nativeSaveModGalaxies() const;
+    /// Copies the mod galaxies' records from another file's data (they are not in the binary
+    /// SaveDataHandleSequence::backupCurrentUserFile copies through).
+    void nativeCopyModGalaxies(const GameDataHolder& rOther);
 #endif
     bool loadFromFileBinary(const char*, const u8*, u32);
 

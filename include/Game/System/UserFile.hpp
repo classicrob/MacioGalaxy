@@ -29,6 +29,7 @@ public:
     void makeGameDataBinary(u8*, u32) const;
 #ifdef PETARI_NATIVE
     void nativeSaveModGalaxies() const;
+    void nativeCopyModGalaxies(const UserFile& rOther);
 #endif
     void loadFromGameDataBinary(const char*, const u8*, u32);
     const char* getConfigDataName() const;
