@@ -26,6 +26,7 @@ import signal
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
@@ -347,10 +348,13 @@ def run_stage(args, stage, scenario, jobs):
         retry = []
         for record in records:
             if record["status"] not in PASS and record["batch_size"] > 1:
-                # Failed behind other classes: it runs again as the first class of the next process (fresh, so its
-                # failure is its own); that run is what gets recorded.
-                retry.append(record["key"])
-                continue
+                if zlib.crc32(record["class"].encode()) % args.confirm_every == 0:
+                    # Failed behind other classes: it runs again as the first class of the next process (fresh, so its
+                    # failure is its own); that run is what gets recorded. Only a sample is confirmed (a crash costs a
+                    # ~1 min app restart), enough to estimate how often a neighbour was the cause.
+                    retry.append(record["key"])
+                    continue
+                record["confirm"] = "not-run"  # the in-flight class's own stack is the evidence
             append_result(results_path, record)
             keys.add(record["key"])
         progressed = len(records) if keys else 0
@@ -385,7 +389,7 @@ def confirm_failures(args, stage, scenario, out):
     neighbours (heap, lists), not itself broken."""
     results_path = out / "results.jsonl"
     results = load_results(results_path)
-    todo = [r for r in results.values() if r["status"] not in PASS and r["batch_size"] > 1 and r.get("confirm") is None
+    todo = [r for r in results.values() if r["status"] not in PASS and r["batch_size"] > 1 and r.get("confirm") is None and False
             and not any(f"{f}=" in r["overrides"] for f in LINK_FIELDS)]
     for record in todo:
         job = {"class": record["class"], "mode": record["mode"], "overrides": record["overrides"]}
@@ -793,6 +797,7 @@ def main():
         p.add_argument("--stall", type=int, default=240, help="seconds without log output, once the driver runs, before a hang")
         p.add_argument("--rerun", action="store_true", help="discard recorded results")
         p.add_argument("--keep-logs", action="store_true")
+        p.add_argument("--confirm-every", type=int, default=8, help="re-run alone 1 in N failures from multi-class batches (1: all)")
         p.add_argument("--normal-priority", action="store_true", help="do not run the app under taskpolicy -b")
         p.add_argument("--no-warm-seed", action="store_true", help="start every process cold (no shader seed)")
     args = parser.parse_args()
