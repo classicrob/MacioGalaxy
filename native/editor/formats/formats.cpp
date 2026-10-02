@@ -714,6 +714,12 @@ void Table::removeRow(int row) {
     mRows.erase(mRows.begin() + row);
 }
 
+Bytes Table::buildSingleRow(int row) const {
+    Table single = *this;
+    single.mRows = {mRows[row]};
+    return single.build();
+}
+
 Bytes Table::build() const {
     Bytes out;
     if (!mColumnsChanged) {

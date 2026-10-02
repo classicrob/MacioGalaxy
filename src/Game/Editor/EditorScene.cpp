@@ -13,6 +13,13 @@
 #include "Game/Util/JMapUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
+#include "Game/Gravity/PlanetGravityManager.hpp"
+#include "Game/Scene/StageDataHolder.hpp"
+#include "Game/Util/MemoryUtil.hpp"
+#include "Game/Util/MtxUtil.hpp"
+#include <JSystem/JKernel/JKRArchive.hpp>
+#include <JSystem/JKernel/JKRSolidHeap.hpp>
+#include <cmath>
 
 namespace {
     // Kept free for the game's own runtime needs (effects, generated items reuse pre-made actors,
@@ -92,7 +99,82 @@ namespace EditorScene {
         pOut->mObj = pObj;
         pOut->mActorCount = pGroup->getObjNum() - actorsBefore;
         pOut->mFirstActor = pOut->mActorCount > 0 ? pGroup->getActor(actorsBefore) : nullptr;
+        pOut->mFirstIndex = actorsBefore;
         return true;
+    }
+
+    LiveActor* actorAt(s32 index) {
+        AllLiveActorGroup* pGroup = MR::getAllLiveActorGroup();
+        return index >= 0 && index < pGroup->getObjNum() ? pGroup->getActor(index) : nullptr;
+    }
+
+    s32 gravityCount() {
+        if (!MR::isExistSceneObj(SceneObj_PlanetGravityManager)) {
+            return 0;
+        }
+        return MR::getSceneObj< PlanetGravityManager >(SceneObj_PlanetGravityManager)->nativeGravityCount();
+    }
+
+    const char* stageName() {
+        return MR::getCurrentStageName();
+    }
+
+    s32 scenario() {
+        return MR::getCurrentScenarioNo();
+    }
+
+    const void* tableData(s32 zoneId, const char* pPath) {
+        if (!MR::isExistSceneObj(SceneObj_StageDataHolder)) {
+            return nullptr;
+        }
+        StageDataHolder* pRoot = MR::getStageDataHolder();
+        if (zoneId != 0 && !pRoot->isPlacedZone(zoneId)) {
+            return nullptr;
+        }
+        StageDataHolder* pZone = pRoot->getStageDataHolderFromZoneId(zoneId);
+        if (pZone == nullptr || pZone->mArchive == nullptr) {
+            return nullptr;
+        }
+        char path[160];
+        snprintf(path, sizeof(path), "/%s", pPath);
+        return pZone->mArchive->getResource(path);
+    }
+
+    void applyTransform(LiveActor* pActor, s32 zoneId, const f32* pPos, const f32* pDirDegrees, const f32* pScale) {
+        TVec3f pos(pPos[0], pPos[1], pPos[2]);
+        TVec3f rotate(pDirDegrees[0], pDirDegrees[1], pDirDegrees[2]);
+        if (MR::isPlacementLocalStage()) {
+            const TPos3f* pZone = MR::getZonePlacementMtx(zoneId);
+            pZone->mult(pos, pos);
+            // As MR::getJMapInfoRotate: zone rotation times the row's, back to Euler degrees.
+            TMtx34f rotateMtx;
+            MR::makeMtxRotate(rotateMtx.toMtxPtr(), rotate);
+            rotateMtx.concat(*pZone, rotateMtx);
+            if (-0.001f <= rotateMtx.mMtx[2][0] - 1.0f) {
+                rotate.x = std::atan2(-rotateMtx.mMtx[0][1], rotateMtx.mMtx[1][1]);
+                rotate.y = -1.5707964f;
+                rotate.z = 0.0f;
+            } else if (rotateMtx.mMtx[2][0] + 1.0f <= 0.001f) {
+                rotate.x = std::atan2(rotateMtx.mMtx[0][1], rotateMtx.mMtx[1][1]);
+                rotate.y = 1.5707964f;
+                rotate.z = 0.0f;
+            } else {
+                rotate.x = std::atan2(rotateMtx.mMtx[2][1], rotateMtx.mMtx[2][2]);
+                rotate.z = std::atan2(rotateMtx.mMtx[1][0], rotateMtx.mMtx[0][0]);
+                rotate.y = std::asin(-rotateMtx.mMtx[2][0]);
+            }
+            rotate = rotate * 57.29578f;
+        }
+        pActor->mPosition = pos;
+        pActor->mRotation = rotate;
+        pActor->mScale.set(pScale[0], pScale[1], pScale[2]);
+        MR::calcAnimDirect(pActor);
+    }
+
+    void sceneHeap(u32* pFree, u32* pTotal) {
+        JKRSolidHeap* pHeap = MR::getSceneHeapNapa();
+        *pFree = pHeap != nullptr ? static_cast< u32 >(pHeap->getFreeSize()) : 0;
+        *pTotal = pHeap != nullptr ? static_cast< u32 >(reinterpret_cast< uintptr_t >(pHeap->getEndAddr()) - reinterpret_cast< uintptr_t >(pHeap->getStartAddr())) : 0;
     }
 
     void retire(LiveActor* pActor) {

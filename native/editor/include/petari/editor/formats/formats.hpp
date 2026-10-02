@@ -112,6 +112,8 @@ public:
     void removeRow(int row);
 
     Bytes build() const;
+    /// A table with this table's columns and only row `row` (for creating one object live).
+    Bytes buildSingleRow(int row) const;
 
 private:
     Bytes mHeader;  // the original header and field records (kept while columns are unchanged)

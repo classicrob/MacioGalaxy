@@ -63,8 +63,33 @@ std::int32_t findSyntheticZone(std::uintptr_t rowAddress) {
     return -1;
 }
 
+namespace {
+    std::vector< Placed >& placedList() {
+        static std::vector< Placed > sPlaced;
+        return sPlaced;
+    }
+}  // namespace
+
+void notePlaced(const void* pTableData, int row, void* pActor) {
+    placedList().push_back({pTableData, row, pActor});
+}
+
+const std::vector< Placed >& placed() {
+    return placedList();
+}
+
+namespace {
+    std::uint32_t gSceneSerial = 1;
+}
+
+std::uint32_t sceneSerial() {
+    return gSceneSerial;
+}
+
 void sceneDestroyed() {
     ranges().clear();
+    placedList().clear();
+    gSceneSerial++;
 }
 
 }  // namespace PetariEditor::Hooks
