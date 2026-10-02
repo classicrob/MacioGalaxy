@@ -425,4 +425,7 @@ test runs listed; only the ctest targets were re-run for this summary.
   failure as a regression.
 - `native_platform_allocation` has a performance comparison ("faster than dladdr")
   that failed once under load and passed on rerun.
+- `native_audio_sdl` (SDL audio sink, dummy driver) failed in two full parallel runs on a loaded
+  machine (load ~29, no assertion text, only `[baton]` stall lines) and passed 3/3 alone; it is
+  now labelled `timing` like `native_audio_pacing`.
 - Tests labelled `timing` need a quiet machine (see the afternoon section above).
