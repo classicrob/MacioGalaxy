@@ -18,6 +18,7 @@
 // references are aborting stubs: queries here never attach a .pa to a server.
 #include "Game/Map/KCollision.hpp"
 #include "Game/Util/JMapInfo.hpp"
+#include <petari/editor/terrain/brush.hpp>
 #include <petari/editor/terrain/kcl_writer.hpp>
 #include <petari/editor/formats/formats.hpp>
 #include <petari/kcl_collision.hpp>
@@ -277,6 +278,48 @@ static T::Mesh heightfield(int n) {
     return mesh;
 }
 
+// Every brush shape is closed and winds outward (each face normal points away from the brush's
+// centre of mass), and its collision answers arrows like brute force.
+static void testBrushes() {
+    for (int shape = 0; shape < 4; shape++) {
+        const T::Brush brush = T::brushFromRow(shape, 3, 1, 1, {1.6f, 0.8f, 2.4f});
+        const T::Mesh mesh = T::brushMesh(brush);
+        double cx = 0, cy = 0, cz = 0;
+        for (const T::Vec3& p : mesh.positions) {
+            cx += p.x;
+            cy += p.y;
+            cz += p.z;
+        }
+        cx /= mesh.positions.size();
+        cy /= mesh.positions.size();
+        cz /= mesh.positions.size();
+        int inward = 0;
+        T::Vec3 lo, hi;
+        mesh.bounds(&lo, &hi);
+        for (std::size_t t = 0; t < mesh.triangleCount(); t++) {
+            const T::Vec3 a = mesh.positions[mesh.indices[t * 3]], b = mesh.positions[mesh.indices[t * 3 + 1]],
+                          c = mesh.positions[mesh.indices[t * 3 + 2]];
+            const double n[3] = {(b.y - a.y) * (c.z - a.z) - (b.z - a.z) * (c.y - a.y), (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z),
+                                 (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)};
+            const double m[3] = {(a.x + b.x + c.x) / 3 - cx, (a.y + b.y + c.y) / 3 - cy, (a.z + b.z + c.z) / 3 - cz};
+            inward += n[0] * m[0] + n[1] * m[1] + n[2] * m[2] <= 0.0;
+        }
+        const std::string name = "brush " + T::brushShapeNames()[shape];
+        check(inward == 0, (name + ": faces wind outward").c_str());
+        check(std::fabs(lo.y) < 0.01f && mesh.normals.size() == mesh.positions.size() && mesh.uvs.size() == mesh.positions.size() * 2,
+              (name + ": bottom at the origin, with normals and UVs").c_str());
+        check(mesh.surfaces[0].floor == T::floorCode("Ice") && mesh.surfaces[0].sound == T::soundCode("Stone"),
+              (name + ": surface from the presets (Ice floor, Stone look)").c_str());
+        checkMesh(mesh, name.c_str(), 1500, 10 + shape);
+        const T::GravityFit fit = T::fitGravity(brush);
+        check(fit.kind != T::GravityFit::Kind::None && fit.range >= 1000.0f, (name + ": fitted gravity").c_str());
+    }
+    const T::Brush sphere = T::brushFromRow(1, -1, -1, -1, {2, 5, 9});
+    check(sphere.size.y == 2000 && sphere.size.z == 2000 && sphere.fittedGravity && sphere.material == 0, "a sphere is round; -1 args default");
+    check(T::fitGravity(T::brushFromRow(0, 0, 0, 0, {1, 1, 1})).kind == T::GravityFit::Kind::None, "gravity 0: the stage's own");
+    check(T::brushFromRow(9, 99, 99, 1, {0, 0, 0}).size.x >= 50.0f, "args and sizes clamp");
+}
+
 static void testHeightfield() {
     checkMesh(heightfield(90), "heightfield", 1500, 3);
     const T::KclResult r = T::buildKcl(heightfield(91));
@@ -482,6 +525,7 @@ int main() {
     testBox();
     testSphere();
     testHeightfield();
+    testBrushes();
     testAttributes();
     testLimits();
 #ifdef PETARI_TEST_DISC_FILES
