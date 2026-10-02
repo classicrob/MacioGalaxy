@@ -30,7 +30,7 @@ player**, not only inside that galaxy.
 | Stage load | `PauseMenu::init` (`PauseMenu.cpp:87, 93`), via `GamePauseSequence::init` | Null galaxy/scenario name reaches `ReplaceTagProcessor::Replace` (`ReplaceTagProcessor.cpp:51`) | **Done**: message overlay in `MessageData::getMessageDirect` |
 | Scenario starter | `ScenarioTitle::exeAppear` (`ScenarioTitle.cpp:34-35`) | Same null name | **Done** (message overlay) |
 | Entry by name | `petariDirectStageMove` with a name the parser does not know | `makeAccessor` wraps a null `ScenarioData` | **Note**: only reached for typos (`PETARI_STAGE`) |
-| Level Select, `--stage` | `kGalaxies` (`launch_stage.cpp:12-55`) | Mod galaxies are not listed (fails safe) | **Proposed**: build the list from the parser, with a Mod galaxies group |
+| Level Select, `--stage` | `kGalaxies` (`launch_stage.cpp:12-55`) | Mod galaxies are not listed (fails safe) | **Done**: the registry's galaxies follow the disc's in a "Mod galaxies" section, and `--stage` resolves them |
 | Music | `AudStageBgmWrap::changeStageNameToSoundID`, `AudStageBgmTable::findDataElement`, `AudSceneMgr::findSceneSoundInfo` | Silence, and `cSceneInfo[0]` dummy wave sets | **Done**: each maps the mod galaxy to `galaxy.json`'s `music` galaxy |
 | Pause menu star list (any galaxy, vanilla too) | `PowerStarList::getSortedList` (`PowerStarList.cpp:154`) → `isOn(name)` | Null flag dereference | **Done**: null-flag guard (registry galaxies count as open) |
 | Pause menu star list | `makeGalaxyNameText` (`:546-550`) | Null name used as the `swprintf` format | **Done** (message overlay) |
@@ -55,7 +55,11 @@ player**, not only inside that galaxy.
 - 6 chunks per file in 0xF80 bytes. `BinaryDataChunkHolder::makeFileBinary` never checks the total size.
 - **Hash collision.** A mod galaxy whose 16-bit key equals a disc galaxy's would share that galaxy's record. `findIndex(u16)` returns the first match.
   - **Done**: the parser rejects such a registry galaxy and logs which disc galaxy it collides with.
-- **Proposed (M4).** Mod galaxies' `GALA`/`SPN1` records go to a sidecar file `<user>/mods-saves/<Mod>.bin`. `serialize` skips them and `deserialize` routes them there, so `GameData.bin` stays vanilla-shaped and progress survives turning the mod off.
+- **Done: the `GALA` sidecar.**
+  - `GameDataAllGalaxyStorage::serialize` leaves registry galaxies out, so `GameData.bin` keeps the disc's shape.
+  - `GameDataHolder::makeFileBinary` and `loadFromFileBinary` write and read their records in `<user>/mods-saves/<Mod>.json`, keyed by the user file's save name (`mario1`...). The format is in `petari/platform/mod_galaxy.hpp`.
+  - Turning the mod off and on keeps the stars: `editor_galaxy_smoke.py` runs 3 and 4.
+- **Proposed:** the same for `SPN1` (launch-star paths drawn after first use). Losing them only redraws the path.
 
 ## 3. Fixed counts
 

@@ -684,7 +684,10 @@ The Checks run on the EditModel at every op (cheap, incremental) and block savin
   - plays the star get;
   - returns to the Comet Observatory (`GrandGalaxyNo` 0);
   - saves (see the S8 row in 7 for the restart check).
-- The save sidecar, Level Select's Mod galaxies group and the remaining caps are M4 work (new-galaxies.md marks them *Proposed*).
+- Since then:
+  - **Level Select / `--stage`** list mod galaxies in their own section.
+  - **The save sidecar** is done, as JSON rather than `.bin` (`<user>/mods-saves/<Mod>.json`, so it is readable and mergeable). `GameData.bin` keeps only the disc's galaxies.
+- The remaining caps, comet guards and star-total exclusion are M4 work (new-galaxies.md marks them *Proposed*).
 
 **`galaxy.json`** (in the mod, user-made, so no Nintendo data):
 - name and short name per language

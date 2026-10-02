@@ -8,6 +8,9 @@
 #include "Game/Util/MathUtil.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/StringUtil.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 namespace {
     inline s32 writeU16(void* pData, u16 value) {
@@ -255,7 +258,17 @@ s32 GameDataAllGalaxyStorage::serialize(u8* pData, u32 dataSize) const {
 
     const char* name;
     s32 writeOffset = 0;
+#ifdef PETARI_NATIVE
+    // Mod galaxies are saved in their mods' sidecars (GameDataHolder::makeFileBinary), so
+    // GameData.bin keeps the disc's shape (TECH.md 5.7).
+    s32 recordCount = 0;
+    for (s32 idx = 0; idx < getGalaxyNum(); idx++) {
+        recordCount += PetariNative::Platform::ModGalaxy::find(mSomeGalaxyStorages[idx]->mGalaxyName) == nullptr;
+    }
+    writeOffset += ::writeU16(pData + writeOffset, recordCount);
+#else
     writeOffset += ::writeU16(pData + writeOffset, getGalaxyNum());
+#endif
     name = reinterpret_cast< const char* >(getSerializer()->getBuffer());
     MR::copyMemory(pData + writeOffset, name, getSerializer()->getHeaderSize());
     writeOffset += getSerializer()->getHeaderSize();
@@ -263,6 +276,11 @@ s32 GameDataAllGalaxyStorage::serialize(u8* pData, u32 dataSize) const {
     BinaryDataContentAccessor accessor(static_cast< u8* >(getSerializer()->getBuffer()));
     for (s32 idx = 0; idx < getGalaxyNum(); idx++) {
         GameDataSomeGalaxyStorage* storage = mSomeGalaxyStorages[idx];
+#ifdef PETARI_NATIVE
+        if (PetariNative::Platform::ModGalaxy::find(storage->mGalaxyName) != nullptr) {
+            continue;
+        }
+#endif
         name = "mGalaxyName";
         u8* record = pData + writeOffset;
         void* writePtr = accessor.getPointer(name, record);

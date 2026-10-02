@@ -84,6 +84,8 @@ bool preparePlatform(const Paths& paths, std::string* error) {
         auto resolved = Platform::ModFolder::resolveForUser(paths.user);
         for (const std::string& line : resolved.log) std::fprintf(stderr, "[mods] %s\n", line.c_str());
         mountOptions.overlay = std::move(resolved.files);
+        // Mod galaxies' progress is saved beside the save, never in it (TECH.md 5.7).
+        Platform::ModGalaxy::setSaveDirectory(paths.user / "mods-saves");
         // New galaxies of the enabled mods (galaxy.json; docs/dev/level-editor/TECH.md 5.7), unless
         // --stage loaded them already.
         if (Platform::ModGalaxy::all().empty()) {
