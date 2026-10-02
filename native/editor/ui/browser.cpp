@@ -64,7 +64,9 @@ struct Thumbnail {
     const void* copy = nullptr;  // published, being read back
     ImVec2 uv0{0, 0}, uv1{1, 1};  // the drawn part, squared
     int waited = 0;              // frames since requested
+    int attempts = 1;
     bool failed = false;
+    int retryAt = 0;             // gFrame: an empty drawing is tried again (pipelines compile on first use)
 };
 std::map< std::string, Thumbnail > gThumbnails;
 ThumbnailReadback gReadback = nullptr;
@@ -72,9 +74,12 @@ ThumbnailTexture gMakeTexture = nullptr;
 std::vector< unsigned char > gRgba;
 constexpr int kThumbnailsInFlight = 3;
 constexpr int kThumbnailTimeout = 90;  // frames
+constexpr int kThumbnailAttempts = 3;
+int gFrame = 0;
 
 void serviceThumbnails() {
     if (gReadback == nullptr) return;
+    gFrame++;
     char name[64];
     const void* copy = nullptr;
     while (Pick::takeThumbnail(name, sizeof(name), &copy)) {
@@ -95,7 +100,10 @@ void serviceThumbnails() {
                 thumb.copy = nullptr;
                 float uv[4];
                 if (!thumbnailCrop(gRgba.data(), width, height, uv)) {
-                    thumb.failed = true;  // drawn empty (a model that needs its own draw pass)
+                    // Drawn empty: its shaders may still have been compiling (Aurora skips those draws); try
+                    // again in a second, a few times, before keeping the initials.
+                    thumb.failed = true;
+                    thumb.retryAt = thumb.attempts < kThumbnailAttempts ? gFrame + 60 : 0;
                     continue;
                 }
                 thumb.uv0 = ImVec2(uv[0], uv[1]);
@@ -110,11 +118,16 @@ void serviceThumbnails() {
 
 // Asks for a card's thumbnail when it is on screen and few are in flight.
 void wantThumbnail(const BrowserEntry& entry) {
-    if (gReadback == nullptr || entry.examples.empty() || gThumbnails.count(entry.className) != 0) return;
+    if (gReadback == nullptr || entry.examples.empty()) return;
+    auto existing = gThumbnails.find(entry.className);
+    const bool retry = existing != gThumbnails.end() && existing->second.failed && existing->second.retryAt != 0 && gFrame >= existing->second.retryAt;
+    if (existing != gThumbnails.end() && !retry) return;
     int inFlight = 0;
     for (const auto& [className, thumb] : gThumbnails) inFlight += thumb.texture == 0 && !thumb.failed;
     if (inFlight >= kThumbnailsInFlight) return;
-    gThumbnails[entry.className] = Thumbnail{};
+    Thumbnail next;
+    next.attempts = retry ? existing->second.attempts + 1 : 1;
+    gThumbnails[entry.className] = next;
     std::uint64_t rows[Pick::kThumbnailExamples] = {};
     const int count = std::min(static_cast< int >(entry.examples.size()), Pick::kThumbnailExamples);
     for (int i = 0; i < count; i++) rows[i] = entry.examples[i].v;
