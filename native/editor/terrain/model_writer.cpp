@@ -230,13 +230,79 @@ std::optional< MaterialClone > cloneMaterial(const Bytes& donor, const std::stri
     MaterialClone clone;
     clone.name = materialName;
     clone.mat3 = out.finish();
+
+    // TEX1 with only the textures this material uses: its init entry's 8 texture slots (u16 at
+    // 0x84) index the texNo pool (0x48), whose entries index TEX1. The copied pool is rewritten
+    // to the new indices (entries no slot uses point at texture 0).
     std::size_t texStart, texSize;
-    if (findBlock(donor, "TEX1", &texStart, &texSize)) {
-        clone.tex1.assign(donor.begin() + static_cast< std::ptrdiff_t >(texStart), donor.begin() + static_cast< std::ptrdiff_t >(texStart + texSize));
-    } else {
-        Block empty("TEX1", 0x14);
-        clone.tex1 = empty.finish();
+    const std::uint32_t poolOffset = get32(block, 0x48);
+    std::vector< std::uint16_t > used;          // donor texture indices, in first-use order
+    std::map< std::uint16_t, std::uint16_t > newIndex;  // donor texture -> clone texture
+    std::vector< std::uint16_t > poolSlots;     // texNo pool entries the material uses
+    const std::size_t entry = initOffset + initIndex * kMaterialInitSize;
+    for (int slot = 0; slot < 8 && poolOffset != 0; slot++) {
+        const std::uint16_t poolIndex = get16(block, entry + 0x84 + slot * 2);
+        if (poolIndex == 0xFFFF || poolOffset + poolIndex * 2 + 2 > regionEnd(poolOffset)) {
+            continue;
+        }
+        const std::uint16_t texture = get16(block, poolOffset + poolIndex * 2);
+        if (!newIndex.count(texture)) {
+            newIndex[texture] = static_cast< std::uint16_t >(used.size());
+            used.push_back(texture);
+        }
+        poolSlots.push_back(poolIndex);
     }
+    Block tex("TEX1", 0x14);
+    if (findBlock(donor, "TEX1", &texStart, &texSize) && !used.empty()) {
+        const Bytes donorTex(donor.begin() + static_cast< std::ptrdiff_t >(texStart), donor.begin() + static_cast< std::ptrdiff_t >(texStart + texSize));
+        const std::uint16_t count = get16(donorTex, 0x08);
+        const std::uint32_t headers = get32(donorTex, 0x0C);
+        // Every data start (image and palette) in the block, to size each run by the next start.
+        std::vector< std::uint32_t > starts = {static_cast< std::uint32_t >(donorTex.size())};
+        for (std::uint16_t t = 0; t < count; t++) {
+            const std::uint32_t h = headers + t * 0x20;
+            if (get32(donorTex, h + 0x1C) != 0) starts.push_back(h + get32(donorTex, h + 0x1C));
+            if (get32(donorTex, h + 0x0C) != 0 && get16(donorTex, h + 0x0A) != 0) starts.push_back(h + get32(donorTex, h + 0x0C));
+        }
+        std::sort(starts.begin(), starts.end());
+        auto runEnd = [&](std::uint32_t start) { return *std::upper_bound(starts.begin(), starts.end(), start); };
+        // Headers first (32 bytes each), then each texture's palette and image, 32-byte aligned.
+        put16(tex.data, 0x08, static_cast< std::uint16_t >(used.size()));
+        put16(tex.data, 0x0A, 0xFFFF);
+        align(tex.data, 0x20);
+        const std::size_t headerBase = tex.data.size();
+        put32(tex.data, 0x0C, static_cast< std::uint32_t >(headerBase));
+        tex.data.resize(headerBase + used.size() * 0x20, 0);
+        const std::vector< std::string > donorNames = readNames(donorTex, get32(donorTex, 0x10), donorTex.size());
+        std::vector< std::string > names;
+        for (std::size_t i = 0; i < used.size(); i++) {
+            const std::uint32_t h = headers + used[i] * 0x20;
+            const std::size_t newHeader = headerBase + i * 0x20;
+            std::copy(donorTex.begin() + h, donorTex.begin() + h + 0x20, tex.data.begin() + static_cast< std::ptrdiff_t >(newHeader));
+            for (std::uint32_t field : {0x0Cu, 0x1Cu}) {  // palette, image: relative to the header
+                const std::uint32_t offset = get32(donorTex, h + field);
+                if (offset == 0 || (field == 0x0C && get16(donorTex, h + 0x0A) == 0)) {
+                    continue;
+                }
+                align(tex.data, 0x20);
+                const std::uint32_t start = h + offset;
+                const std::size_t at = tex.data.size();
+                tex.data.insert(tex.data.end(), donorTex.begin() + start, donorTex.begin() + runEnd(start));
+                put32(tex.data, newHeader + field, static_cast< std::uint32_t >(at - newHeader));
+            }
+            names.push_back(used[i] < donorNames.size() ? donorNames[used[i]] : "tex" + std::to_string(i));
+        }
+        tex.place(nameTable(names), 0x10);
+        // The clone's texNo pool now indexes this TEX1.
+        const std::uint32_t clonePool = get32(clone.mat3, 0x48);
+        const std::uint32_t poolEnd = get32(block, 0x48) != 0 ? regionEnd(poolOffset) - poolOffset : 0;
+        for (std::uint32_t k = 0; clonePool != 0 && k * 2 + 2 <= poolEnd; k++) {
+            const std::uint16_t texture = get16(block, poolOffset + k * 2);
+            auto it = newIndex.find(texture);
+            put16(clone.mat3, clonePool + k * 2, it != newIndex.end() ? it->second : 0);
+        }
+    }
+    clone.tex1 = tex.finish();
     return clone;
 }
 

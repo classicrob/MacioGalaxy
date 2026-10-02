@@ -9,7 +9,10 @@
 // Links: petari_j3d (J3DGraphLoader, J3DGraphBase, native/resource/j3d_model.cpp, a GX
 // implementation), petari_editor_terrain.
 #include <petari/editor/formats/formats.hpp>
+#include <petari/editor/terrain/bake.hpp>
+#include <petari/editor/terrain/brush.hpp>
 #include <petari/editor/terrain/model_writer.hpp>
+#include <petari/kcl_collision.hpp>
 #include <petari/boot.hpp>
 #include <petari/j3d_model.hpp>
 #include <JSystem/J3DGraphAnimator/J3DJoint.hpp>
@@ -22,7 +25,9 @@
 #include <JSystem/JUtility/JUTTexture.hpp>
 #include <algorithm>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
+#include <optional>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -82,7 +87,8 @@ static bool loadAndCheck(const Bytes& model, const T::Mesh& mesh, const std::str
         expect(pMaterial != nullptr && pMaterial->getTevBlock() != nullptr && pMaterial->getTevBlock()->getTevStageNum() >= 1, "TEV stages");
         const JUTNameTab* pNames = pData->getMaterialTable().getMaterialName();
         expect(pNames != nullptr && std::strcmp(pNames->getName(0), material.c_str()) == 0, "the material keeps its donor name");
-        expect(pData->getTexture() != nullptr && pData->getTexture()->getNum() == textures, "the donor's textures");
+        // TEX1 holds only the textures the material uses (at most the donor's).
+        expect(pData->getTexture() != nullptr && pData->getTexture()->getNum() <= textures, "the material's textures");
         expect(pData->getVertexData().getVtxNum() == mesh.positions.size(), "vertex count");
         const f32* pPositions = static_cast< const f32* >(pData->getVertexData().getVtxPosArray());
         expect(pPositions != nullptr && pPositions[0] == mesh.positions[0].x && pPositions[2] == mesh.positions[0].z, "positions (host order)");
@@ -126,6 +132,7 @@ static void testDisc(const char* pDisc) {
     const T::Mesh box = T::makeBox({0, 150, 0}, {1500, 150, 1500});
     const T::Mesh sphere = T::makeSphere({0, 0, 0}, 1000.0f, 24, 32);
     int models = 0;
+    std::size_t modelBytes = 0;
     for (const Donor& donor : donors) {
         std::ifstream file(std::string(pDisc) + "/ObjectData/" + donor.archive + ".arc", std::ios::binary);
         if (!file) {
@@ -160,12 +167,136 @@ static void testDisc(const char* pDisc) {
                 }
                 sFailures += loadAndCheck(r.model, *pMesh, name, textures, where + (pMesh == &box ? " box" : " sphere")) ? 0 : 1;
                 models++;
+                modelBytes += r.model.size();
             }
         }
         std::printf("donor %s: %zu materials cloned onto a box and a sphere\n", donor.archive, names.size());
     }
     check(models > 0, "no donor model on the disc");
-    std::printf("%d generated models loaded through J3D\n", models);
+    std::printf("%d generated models loaded through J3D (%zu KB on average)\n", models, models ? modelBytes / models / 1024 : 0);
+}
+
+// Bakes brush rows into planets (bake.hpp): Good Egg's own archive with four brushes on the
+// Common layer and one on Layer A.
+static void testBake(const char* pDisc) {
+    namespace F = PetariEditor::Formats;
+    auto read = [pDisc](const std::string& path) -> std::optional< Bytes > {
+        std::ifstream file(std::string(pDisc) + path, std::ios::binary);
+        if (!file) {
+            return std::nullopt;
+        }
+        return Bytes((std::istreambuf_iterator< char >(file)), std::istreambuf_iterator< char >());
+    };
+    const auto raw = read("/StageData/EggStarGalaxy.arc");
+    if (!raw) {
+        std::printf("bake: Good Egg not on the disc, skipped\n");
+        return;
+    }
+    auto archive = F::Archive::parse(*raw);
+    auto countRows = [](const F::Archive& a, const char* pTable, const char* pPrefix) {
+        auto table = F::Table::parse(*a.file(pTable));
+        const int column = table->column(F::jmapHash("name"));
+        int n = 0;
+        for (int r = 0; r < table->rowCount(); r++) {
+            n += table->get(r, column).s.rfind(pPrefix, 0) == 0;
+        }
+        return n;
+    };
+    const int commonGravity = F::Table::parse(*archive->file("jmp/placement/common/planetobjinfo"))->rowCount();
+    const int layerGravity = F::Table::parse(*archive->file("jmp/placement/layera/planetobjinfo"))->rowCount();
+    auto addBrush = [](F::Table& table, int shape, float x) {
+        const int row = table.addRow(0);
+        auto set = [&](const char* pName, F::CellValue v) {
+            const int c = table.column(F::jmapHash(pName));
+            if (c >= 0) table.set(row, c, v);
+        };
+        F::CellValue name;
+        name.kind = F::CellValue::Kind::String;
+        name.s = T::kBrushClass;
+        set("name", name);
+        auto num = [](float f) { F::CellValue v; v.kind = F::CellValue::Kind::Float; v.f = f; return v; };
+        auto arg = [](int i) { F::CellValue v; v.i = i; return v; };
+        set("pos_x", num(x));
+        set("dir_y", num(30.0f));
+        set("scale_x", num(2));
+        set("scale_y", num(0.5f));
+        set("scale_z", num(1.5f));
+        set("Obj_arg0", arg(shape));
+        set("Obj_arg1", arg(shape + 1));
+        set("Obj_arg2", arg(0));
+        set("Obj_arg3", arg(1));
+    };
+    auto common = F::Table::parse(*archive->file("jmp/placement/common/objinfo"));
+    for (int shape = 0; shape < 4; shape++) {
+        addBrush(*common, shape, 3000.0f * shape);
+    }
+    archive->replace("jmp/placement/common/objinfo", common->build());
+    auto layerA = F::Table::parse(*archive->file("jmp/placement/layera/objinfo"));
+    addBrush(*layerA, 0, -5000.0f);
+    archive->replace("jmp/placement/layera/objinfo", layerA->build());
+
+    T::BakeInput input;
+    input.stageArchives["/StageData/EggStarGalaxy.arc"] = archive->build();
+    input.readDisc = read;
+    const T::BakeOutput out = T::bakeBrushes(input);
+    check(out.error.empty(), out.error.c_str());
+    check(out.brushes == 5, "five brushes baked");
+    int planets = 0, loaded = 0;
+    for (const auto& [path, bytes] : out.files) {
+        if (path.rfind("/ObjectData/EditorBrush", 0) != 0) {
+            continue;
+        }
+        planets++;
+        auto planet = F::Archive::parse(bytes);
+        const std::string base = path.substr(12, path.size() - 12 - 4);
+        std::string lowerBase;
+        for (char c : base) lowerBase += static_cast< char >(std::tolower(static_cast< unsigned char >(c)));
+        const Bytes* pModel = planet ? planet->file(lowerBase + ".bmd") : nullptr;
+        const Bytes* pKcl = planet ? planet->file(lowerBase + ".kcl") : nullptr;
+        if (pModel == nullptr || pKcl == nullptr || planet->file(lowerBase + ".pa") == nullptr) {
+            check(false, "a planet archive holds <name>.bmd, .kcl and .pa");
+            continue;
+        }
+        Bytes kcl = *pKcl;
+        check(PetariNative::KCL::convertInPlace(kcl.data(), static_cast< std::uint32_t >(kcl.size())) == nullptr, "the planet's KCL converts");
+        Bytes image(pModel->size());
+        loaded += PetariNative::J3D::makeHostModelImage(pModel->data(), static_cast< std::uint32_t >(pModel->size()), image.data()) == nullptr;
+    }
+    check(planets == 5 && loaded == 5, "five planet archives whose models convert");
+    const auto stageIt = out.files.find("/StageData/EggStarGalaxy.arc");
+    auto baked = stageIt != out.files.end() ? F::Archive::parse(stageIt->second) : std::nullopt;
+    if (!baked) {
+        check(false, "the stage archive is rewritten");
+        return;
+    }
+    check(countRows(*baked, "jmp/placement/common/objinfo", "EditorBrush") == 4 && countRows(*baked, "jmp/placement/layera/objinfo", "EditorBrush") == 1,
+          "brush rows become planets, layer by layer");
+    auto bakedCommon = F::Table::parse(*baked->file("jmp/placement/common/objinfo"));
+    const int nameColumn = bakedCommon->column(F::jmapHash("name"));
+    for (int r = 0; r < bakedCommon->rowCount(); r++) {
+        check(bakedCommon->get(r, nameColumn).s != T::kBrushClass, "no row keeps the brush class");
+    }
+    const int commonAfter = F::Table::parse(*baked->file("jmp/placement/common/planetobjinfo"))->rowCount();
+    const int layerAfter = F::Table::parse(*baked->file("jmp/placement/layera/planetobjinfo"))->rowCount();
+    check(commonAfter == commonGravity + 4 && layerAfter == layerGravity + 1, "a gravity row per brush, in its layer");
+    check(countRows(*baked, "jmp/placement/common/planetobjinfo", "GlobalSegmentGravity") >= 1 &&
+              countRows(*baked, "jmp/placement/common/planetobjinfo", "GlobalPointGravity") >= 1,
+          "cylinder -> segment, sphere -> point gravity");
+
+    auto tableRows = [](const Bytes& arc) {
+        auto a = F::Archive::parse(arc);
+        return F::Table::parse(*a->file("planetmapdatatable.bcsv"))->rowCount();
+    };
+    const int discPlanets = tableRows(*read("/ObjectData/PlanetMapDataTable.arc"));
+    const Bytes& firstTable = out.files.at("/ObjectData/PlanetMapDataTable.arc");
+    check(tableRows(firstTable) == discPlanets + 5, "PlanetMapDataTable gains the five planets");
+    // Baking again over the mod's own table (as a re-save reads it) replaces, not adds.
+    T::BakeInput again = input;
+    again.readDisc = [&](const std::string& path) -> std::optional< Bytes > {
+        return path == "/ObjectData/PlanetMapDataTable.arc" ? std::optional< Bytes >(firstTable) : read(path);
+    };
+    check(tableRows(T::bakeBrushes(again).files.at("/ObjectData/PlanetMapDataTable.arc")) == discPlanets + 5, "a re-bake does not pile up planets");
+    std::printf("bake: 5 brushes -> %d planets, %zu files\n", planets, out.files.size());
 }
 
 int main() {
@@ -174,6 +305,7 @@ int main() {
     testInputs();
 #ifdef PETARI_TEST_DISC_FILES
     testDisc(PETARI_TEST_DISC_FILES);
+    testBake(PETARI_TEST_DISC_FILES);
 #endif
     if (sFailures != 0) {
         std::fprintf(stderr, "%d terrain model check(s) failed\n", sFailures);

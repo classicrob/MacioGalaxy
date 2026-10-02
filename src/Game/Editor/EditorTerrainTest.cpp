@@ -16,7 +16,7 @@
 // PETARI_EDITOR_TERRAIN_TEST=archive builds nothing: the same box and sphere come from a baked
 // mod (native/editor/tools/terrain_bake.cpp: ObjectData planet archives, PlanetMapDataTable rows,
 // placement and gravity rows), loaded by the game's own placement; the check is the same, on the
-// planets EditorBlockoutBox and EditorBlockoutSphere.
+// planets the bake made of the two brush rows (EditorBrush<hash>).
 // Test code only: the editor builds parts from brushes in the EditModel.
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
@@ -273,10 +273,12 @@ namespace EditorTerrainTest {
         CollisionParts* pParts = pGround != nullptr ? pGround->mParts : nullptr;
         bool onBox, onSphere;
         if (gArchive) {
-            // The baked planets, by the name of the actor owning the collision.
+            // The baked planets (EditorBrush<hash>), by the actor owning the collision; the box is
+            // the one near z = 30000, the sphere near z = 40000.
             const char* pHost = pParts != nullptr && pParts->mHitSensor != nullptr ? pParts->mHitSensor->mHost->mName : "";
-            onBox = std::strcmp(pHost, "EditorBlockoutBox") == 0;
-            onSphere = std::strcmp(pHost, "EditorBlockoutSphere") == 0;
+            const bool brush = std::strncmp(pHost, "EditorBrush", 11) == 0;
+            onBox = brush && pos.z < 35000.0f;
+            onSphere = brush && pos.z >= 35000.0f;
         } else {
             onBox = pParts != nullptr && pParts == gBox.mPart->mCollisionParts;
             onSphere = pParts != nullptr && pParts == gSphere.mPart->mCollisionParts;
