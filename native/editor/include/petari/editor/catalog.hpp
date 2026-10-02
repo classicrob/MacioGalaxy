@@ -61,6 +61,13 @@ struct Link {
     bool required = false;  // the class crashes or does nothing without it (proved by the class sweep)
 };
 
+/// A named starting point for placing a class: the args it is placed with (the Browser shows
+/// each as its own card; e.g. a terrain brush's Box / Sphere / Cylinder / Ramp).
+struct Preset {
+    std::string label;
+    std::vector< std::pair< int, std::int32_t > > args;  // Obj_arg index -> value
+};
+
 struct ClassInfo {
     std::string name;         // the placement name, "Kuribo"
     std::string displayName;  // "Goomba"
@@ -78,11 +85,22 @@ struct ClassInfo {
     std::string thumbnailArchive;  // the model to render for its thumbnail
     std::string thumbnailJoint;    // optional joint to frame
     std::string appearSound;       // SE name for placement feedback; empty: none
+    std::vector< Preset > presets;  // empty: the class is placed with its args' defaults
 };
 
-/// Loads the catalog files (native/editor/catalog/*.json, then any user overrides). Called once;
+/// Loads the shipped catalog (generated.json, then curated.json, embedded in the binary). Called once;
 /// later calls do nothing. False and *pError when the shipped files are missing or broken.
 bool load(std::string* pError);
+/// As load(), then the user's own files in <userDirectory>/editor/catalog/*.json (same schema as
+/// native/editor/catalog/curated.json; they only describe classes the game has).
+bool loadWithUser(const std::string& userDirectory, std::string* pError);
+
+/// Adds planet classes (PlanetMapDataTable's PlanetName rows, read from the player's disc): the
+/// factory makes any listed name a planet, so they are classes the game knows. Existing names are kept.
+void addPlanets(const std::vector< std::string >& names);
+
+/// Adds (or replaces) a class the factory doesn't make, defined by editor code (the terrain brush).
+void addClass(ClassInfo info);
 
 /// Every class, sorted by display name.
 const std::vector< ClassInfo >& classes();

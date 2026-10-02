@@ -174,6 +174,22 @@ void syncTestTick() {
     if (f == 30) {
         if (actorForRow(s.copy) != nullptr || !MR::isDead(s.copyActor) || model()->state(s.copy) != RowState::Deleted)
             return finish("FAIL: deleting the duplicate left its actor");
+        std::fprintf(stderr, "[editor-sync] new problems after the edits: %zu\n", checks().size());
+        for (size_t i = 0; i < checks().size() && i < 12; i++) {
+            std::fprintf(stderr, "[editor-sync]   %s %s\n", checks()[i].severity == Severity::Error ? "error" : "warning",
+                         checks()[i].message.c_str());
+        }
+        if (!checks().empty()) return finish("FAIL: Checks report problems the edits didn't make");
+        // A switch id out of range: a new error, with a fix.
+        enqueue(apply("Bad switch", s.takobo, "SW_B", Cell{CellType::Int, 500, 0, {}}));
+    }
+    if (f == 33) {
+        const Check* pFound = nullptr;
+        for (const Check& c : checks()) {
+            if (c.key.rfind("switch-range:", 0) == 0 && !c.rows.empty() && c.rows.front() == s.takobo) pFound = &c;
+        }
+        if (pFound == nullptr || pFound->fix.sets.empty()) return finish("FAIL: no out-of-range switch check");
+        std::fprintf(stderr, "[editor-sync] check: %s (fix: %s)\n", pFound->message.c_str(), pFound->fixLabel.c_str());
         finish("PASS");
     }
 }
