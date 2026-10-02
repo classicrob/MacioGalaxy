@@ -7,6 +7,8 @@ namespace PetariEditor::Runtime {
 /// EditModel when an edit session starts, binds placed actors to their rows after each scene
 /// build, drains the UI's commands into the model and SceneSync, refreshes status() and runs
 /// the UI seam hook. Does nothing while the editor is off.
-void tick();
+/// playable: the scene is in normal play where the pause menu could open (a reload is complete
+/// and Mario can be moved).
+void tick(bool playable);
 
 }  // namespace PetariEditor::Runtime

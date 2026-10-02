@@ -1,4 +1,7 @@
 #include "Game/System/GameDataFunction.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
+#endif
 #include "Game/System/GalaxyStatusAccessor.hpp"
 #include "Game/System/GameDataGalaxyStorage.hpp"
 #include "Game/System/GameDataHolder.hpp"
@@ -315,6 +318,11 @@ namespace GameDataFunction {
     void resetGameDataGoToGalaxyRetry() {
         ::getGameDataTemporaryInGalaxy()->resetRaceBestTime();
         ::getGameDataTemporaryInGalaxy()->_4 = true;
+#ifdef PETARI_NATIVE
+        if (PetariEditor::Hooks::editorReload()) {
+            ::getGameDataTemporaryInGalaxy()->clearAlreadyDoneFlag();  // the editor rebuilds the edited layout, items included
+        }
+#endif
     }
 
     void onCompleteEndingCurrentPlayer() {

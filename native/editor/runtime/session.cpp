@@ -11,7 +11,9 @@
 #include <petari/platform/dvd.hpp>
 #include <revolution/dvd.h>
 
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -34,6 +36,12 @@ namespace {
         std::vector< std::unique_ptr< LiveRow > > liveRows;
         std::set< RowId > previewing;
         Vec3 playMarker;
+        bool hasMarker = false;
+        // A reload in flight: what to do once its scene is playable.
+        enum class After : std::uint8_t { None, Edit, PlayMarker, PlayStart } after = After::None;
+        std::uint32_t reloadFromScene = 0;
+        double reloadStartMs = 0;
+        bool teleportPending = false;
     };
 
     Session& session() {
@@ -54,15 +62,30 @@ namespace {
         return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
     }
 
+    // The disc itself, without the mod overlay: the EditModel's originals.
+    std::optional< Formats::Bytes > readUnmoddedDisc(const std::string& path) {
+        const std::filesystem::path files = PetariNative::Platform::DVD::mountInfo().filesDirectory;
+        std::ifstream in(files / path.substr(1), std::ios::binary);
+        if (files.empty() || !in) {
+            return std::nullopt;
+        }
+        return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
+    }
+
     bool endsWith(const std::string& text, const char* pSuffix) {
         const std::string suffix(pSuffix);
         return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
     }
 
+    double nowMs() {
+        return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+
     void loadModel(const char* pStage, int scenario) {
         Session& s = session();
         std::string error;
-        s.model = EditModel::load(pStage, scenario, readDisc, &error);
+        Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
+        s.model = EditModel::load(pStage, scenario, readDisc, &error, readUnmoddedDisc);
         s.actors.clear();
         s.pending.clear();
         s.boundScene = 0;
@@ -204,9 +227,70 @@ namespace {
         }
     }
 
+    // Rebuild the scene from the model (TECH.md 2.6): the edited archives replace the cached ones.
+    void startReload(Session::After after) {
+        Session& s = session();
+        for (auto& [path, bytes] : s.model->changedArchives()) {
+            Hooks::setArchiveOverride(path, std::move(bytes));
+        }
+        Hooks::setEditorReload(true);
+        s.after = after;
+        s.reloadFromScene = Hooks::sceneSerial();
+        s.reloadStartMs = nowMs();
+        Core::setMode(Mode::Reloading);
+        EditorReload::requestReload(after == Session::After::PlayStart);
+    }
+
+    void play(PlayFrom from) {
+        Session& s = session();
+        if (from == PlayFrom::MissionStart) {
+            startReload(Session::After::PlayStart);
+        } else if (!s.pending.empty()) {
+            startReload(from == PlayFrom::Marker ? Session::After::PlayMarker : Session::After::PlayStart);
+        } else {
+            // Nothing needs a reload: unfreeze where we are (and put Mario on the marker).
+            if (Core::uiCallbacks().leaveEdit != nullptr) {
+                Core::uiCallbacks().leaveEdit();
+            }
+            s.teleportPending = from == PlayFrom::Marker && s.hasMarker;
+            Core::setMode(Mode::Playing);
+        }
+    }
+
+    // A reload's new scene is up and playable.
+    void finishReload() {
+        Session& s = session();
+        Hooks::setEditorReload(false);
+        s.pending.clear();
+        std::fprintf(stderr, "[editor] reload done in %.0f ms\n", nowMs() - s.reloadStartMs);
+        const Session::After after = s.after;
+        s.after = Session::After::None;
+        if (after == Session::After::Edit) {
+            Core::setMode(Mode::Off);
+            if (Core::uiCallbacks().resumeEdit != nullptr) {
+                Core::uiCallbacks().resumeEdit();  // the UI re-enters Edit and calls notifyEditEntered
+            } else {
+                notifyEditEntered();
+            }
+        } else {
+            if (Core::uiCallbacks().leaveEdit != nullptr) {
+                Core::uiCallbacks().leaveEdit();
+            }
+            s.teleportPending = after == Session::After::PlayMarker && s.hasMarker;
+            Core::setMode(Mode::Playing);
+        }
+    }
+
     void drain() {
         Session& s = session();
-        for (Command& command : Core::drainCommands()) {
+        std::vector< Command > commands = Core::drainCommands();
+        for (size_t i = 0; i < commands.size(); i++) {
+            Command& command = commands[i];
+            auto requeueRest = [&]() {
+                for (size_t j = i + 1; j < commands.size(); j++) {
+                    enqueue(std::move(commands[j]));
+                }
+            };
             if (!s.model) {
                 Core::reportError("No galaxy is loaded for editing");
                 continue;
@@ -238,9 +322,16 @@ namespace {
                 break;
             case Command::Kind::SetPlayMarker:
                 s.playMarker = command.markerPos;
+                s.hasMarker = true;
                 break;
             case Command::Kind::Play:
+                play(command.from);
+                requeueRest();  // the rest waits for the scene Play leads to
+                return;
             case Command::Kind::Reload:
+                startReload(Session::After::Edit);
+                requeueRest();
+                return;
             case Command::Kind::SaveMod:
             case Command::Kind::SwitchScenario:
                 Core::reportError("Not available yet in this build");  // editor/fast-reload, editor/save-mod
@@ -264,13 +355,15 @@ namespace {
     }
 }  // namespace
 
-void syncTestTick();  // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
+void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
+void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 
-void tick() {
+void tick(bool playable) {
     if (!Hooks::enabled()) {
         return;
     }
     syncTestTick();
+    reloadTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     if (mode() != Mode::Off && pStage != nullptr) {
@@ -285,6 +378,19 @@ void tick() {
     }
     if (s.boundScene != Hooks::sceneSerial()) {
         bindPlacements();
+    }
+    if (mode() == Mode::Reloading) {
+        if (Hooks::sceneSerial() != s.reloadFromScene && playable) {
+            finishReload();
+        } else {
+            updateStatus();
+            Core::runUiSeamHook();
+            return;  // commands wait for the new scene
+        }
+    }
+    if (s.teleportPending && playable) {
+        EditorReload::teleportPlayer(s.playMarker.x, s.playMarker.y, s.playMarker.z);
+        s.teleportPending = false;
     }
     drain();
     for (RowId id : s.model->takeChangedRows()) {
