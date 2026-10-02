@@ -464,6 +464,22 @@ App::FrameStats::Phase framePhaseForPipelines() {
                         }
                     }
                 }
+                // PETARI_EDITOR_TEST_CHECK=1: give the selection two problems for the Checks tab (a switch out of
+                // range, a path that doesn't exist).
+                if (t == 145 && std::getenv("PETARI_EDITOR_TEST_CHECK") != nullptr) {
+                    const std::vector<Pick::Item> selected = Pick::selection();
+                    if (!selected.empty() && selected.front().row != 0) {
+                        PetariEditor::Command broken{PetariEditor::Command::Kind::Apply};
+                        broken.op.label = "Test: break the selection";
+                        PetariEditor::Cell sw, path;
+                        sw.i = 500;
+                        path.i = 77;
+                        broken.op.sets.push_back({PetariEditor::RowId{selected.front().row}, PetariEditor::columnHash("SW_APPEAR"), sw});
+                        broken.op.sets.push_back({PetariEditor::RowId{selected.front().row}, PetariEditor::columnHash("CommonPath_ID"), path});
+                        PetariEditor::enqueue(std::move(broken));
+                        std::fputs("[editor-test] check: SW_APPEAR 500, CommonPath_ID 77\n", stderr);
+                    }
+                }
                 if (t == 160) {
                     const PetariEditor::ModelView* model = PetariEditor::model();
                     std::fprintf(stderr, "[editor-test] gizmo: history %d (%s, %s)\n", model != nullptr ? model->historySize() : -1,
@@ -491,7 +507,15 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 if (t == 125) PetariNative::EditorPick::click(PetariNative::EditorPick::Click::Replace);
                 if (t == 140) Editor::frame();
                 if (t >= 170 && t < 190) Editor::pan(0.01f, 0.0f);  // a fifth of the view sideways
-                if (t == 250) {
+                // PETARI_EDITOR_TEST_MISSION=<n>: switch to mission n as the toolbar's chip does, then leave later.
+                static const int sMission = std::getenv("PETARI_EDITOR_TEST_MISSION") != nullptr ? std::atoi(std::getenv("PETARI_EDITOR_TEST_MISSION")) : 0;
+#ifdef PETARI_EDITOR_UI
+                if (t == 195 && sMission > 0) {
+                    std::fprintf(stderr, "[editor-test] switch to mission %d\n", sMission);
+                    PetariEditor::Ui::switchMission(sMission);
+                }
+#endif
+                if (t == (sMission > 0 ? 420 : 250)) {
                     PetariNative::EditorPick::setHoverWanted(false);
                     std::fputs("[editor-test] LevelEditor tap (leave)\n", stderr);
                     Editor::toggle();

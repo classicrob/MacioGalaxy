@@ -174,6 +174,23 @@ void testPanelsLogic() {
     CHECK(Ui::filterEntries(entries, "", "").size() == 3 && Ui::filterEntries(entries, "zzz", "").empty());
     CHECK(Ui::filterEntries(entries, "", "Planets").empty());
 
+    // Mission names: shown when drawable, else "Mission <n>" (FakeModel names every mission "Test mission").
+    CHECK(Ui::missionLabel(model, 1) == "Test mission");
+
+    // Checks: counted by severity, errors listed first, each group in Runtime's order.
+    {
+        std::vector< PetariEditor::Check > list(4);
+        list[0].key = "w1", list[0].severity = PetariEditor::Severity::Warning;
+        list[1].key = "e1", list[1].severity = PetariEditor::Severity::Error;
+        list[2].key = "w2", list[2].severity = PetariEditor::Severity::Warning;
+        list[3].key = "e2", list[3].severity = PetariEditor::Severity::Error;
+        const Ui::CheckCounts counts = Ui::countChecks(list);
+        CHECK(counts.errors == 2 && counts.warnings == 2);
+        const std::vector< const PetariEditor::Check* > ordered = Ui::orderChecks(list);
+        CHECK(ordered.size() == 4 && ordered[0]->key == "e1" && ordered[1]->key == "e2" && ordered[2]->key == "w1" && ordered[3]->key == "w2");
+        CHECK(Ui::countChecks({}).errors == 0 && Ui::orderChecks({}).empty());
+    }
+
     // Named settings in words: enum labels (including a named -1), on/off, numbers with units, "default".
     {
         PetariEditor::Catalog::Arg walk;

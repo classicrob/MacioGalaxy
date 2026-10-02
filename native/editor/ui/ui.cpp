@@ -23,6 +23,10 @@ extern "C" void petari_present_set_free_aspect(int enabled);
 namespace PetariEditor::Ui {
 namespace {
 
+int gSwitchingTo = 0;      // a mission switch in flight (SwitchScenario takes ~2 s)
+double gSwitchSince = 0.0;
+bool gSwitchReloading = false;  // Runtime has started the switch's reload
+
 constexpr float kToolbarHeight = 44.0f;
 constexpr float kFooterHeight = 28.0f;
 constexpr float kLeftWidth = 260.0f;   // UX section 4: 1440 x 900 window -> 260 / 300 docks
@@ -224,14 +228,11 @@ void drawToolbar(float width) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.17f, 0.02f, 1.0f));
             }
             if (ImGui::Button(label) && !current) {
-                Command command{Command::Kind::SwitchScenario};
-                command.index = mission;
-                enqueue(std::move(command));
+                switchMission(mission);
             }
             if (current) ImGui::PopStyleColor(2);
             if (ImGui::IsItemHovered()) {
-                const char* name = model->missionName(mission);
-                ImGui::SetTooltip("%s%s", name != nullptr && name[0] != '\0' ? name : "Mission", current ? " (editing)" : " (click to edit it)");
+                ImGui::SetTooltip("%s%s", missionLabel(*model, mission).c_str(), current ? " (editing)" : " (click to edit it)");
             }
         }
         ImGui::SameLine(0.0f, 10.0f);
@@ -246,6 +247,30 @@ void drawToolbar(float width) {
     char reload[48];
     std::snprintf(reload, sizeof(reload), state.pendingCount > 0 ? "Reload  %d pending" : "Reload", state.pendingCount);
     const float right = width - 12.0f;
+    // Checks badge (UX section 16): problems the edits introduced; opens the Checks tab.
+    if (const CheckCounts counts = countChecks(checks()); counts.errors + counts.warnings > 0) {
+        char badge[32];
+        std::snprintf(badge, sizeof(badge), "     %d###checks", counts.errors + counts.warnings);  // room for the warning sign
+        const float badgeWidth = ImGui::CalcTextSize(badge, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        ImGui::SetCursorPos(ImVec2(right - 96.0f - 8.0f - 230.0f - badgeWidth - 10.0f, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_Button, counts.errors > 0 ? ImVec4(0.85f, 0.25f, 0.20f, 0.85f) : ImVec4(0.90f, 0.65f, 0.15f, 0.80f));
+        if (ImGui::Button(badge)) openTab("Checks");
+        ImGui::PopStyleColor();
+        {
+            // The warning sign, drawn (the fonts may not have U+26A0): a white triangle with a dark "!".
+            const ImVec2 min = ImGui::GetItemRectMin();
+            const float h = ImGui::GetItemRectSize().y, x = min.x + ImGui::GetStyle().FramePadding.x, t = h * 0.30f;
+            ImDrawList* list = ImGui::GetWindowDrawList();
+            list->AddTriangleFilled(ImVec2(x + t, min.y + h * 0.5f - t), ImVec2(x + 2.0f * t, min.y + h * 0.5f + t * 0.85f),
+                                    ImVec2(x, min.y + h * 0.5f + t * 0.85f), IM_COL32(255, 255, 255, 240));
+            list->AddLine(ImVec2(x + t, min.y + h * 0.5f - t * 0.35f), ImVec2(x + t, min.y + h * 0.5f + t * 0.30f), IM_COL32(60, 30, 10, 255), 1.6f);
+            list->AddCircleFilled(ImVec2(x + t, min.y + h * 0.5f + t * 0.58f), 1.0f, IM_COL32(60, 30, 10, 255));
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%d error%s, %d warning%s: click for the list", counts.errors, counts.errors == 1 ? "" : "s", counts.warnings,
+                              counts.warnings == 1 ? "" : "s");
+        }
+    }
     ImGui::SetCursorPos(ImVec2(right - 96.0f - 8.0f - 230.0f, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
     if (state.pendingCount > 0) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.66f, 1.0f, 0.45f));
     if (ImGui::Button(reload)) enqueue(Command{Command::Kind::Reload});
@@ -340,25 +365,47 @@ void buildDefaultLayout(ImGuiID dock, ImVec2 size) {
     ImGui::DockBuilderFinish(dock);
 }
 
-// A toast at the top of the viewport for 4 s when a command failed (Runtime's status().lastError).
+// A toast at the top of the viewport: a mission switch in flight, else the last failed command (4 s,
+// orange; Runtime's status().lastError), else the last notice (3 s, cyan; status().notice).
 void drawToast() {
-    static std::uint64_t sSerial = 0;
+    static std::uint64_t sErrorSerial = 0, sNoticeSerial = 0;
     static std::string sText;
+    static bool sError = false;
     static double sUntil = 0.0;
     const Status& state = status();
-    if (state.errorSerial != sSerial) {
-        sSerial = state.errorSerial;
-        sText = state.lastError;
-        sUntil = ImGui::GetTime() + 4.0;
+    if (state.errorSerial != sErrorSerial) {
+        sErrorSerial = state.errorSerial;
+        sText = state.lastError, sError = true, sUntil = ImGui::GetTime() + 4.0;
     }
-    if (sText.empty() || ImGui::GetTime() > sUntil) return;
+    if (state.noticeSerial != sNoticeSerial) {
+        sNoticeSerial = state.noticeSerial;
+        sText = state.notice, sError = false, sUntil = ImGui::GetTime() + 3.0;
+    }
+    std::string text = sText;
+    bool error = sError;
+    if (gSwitchingTo != 0) {
+        // Done when Runtime's reload for it has come and gone (the model names the new mission at once).
+        const ModelView* model = PetariEditor::model();
+        const bool reloading = mode() == Mode::Reloading;
+        gSwitchReloading = gSwitchReloading || reloading;
+        const double elapsed = ImGui::GetTime() - gSwitchSince;
+        if ((gSwitchReloading && !reloading) || elapsed > 10.0 || (!gSwitchReloading && elapsed > 1.5)) {
+            gSwitchingTo = 0;
+        } else {
+            const std::string name = model != nullptr ? missionLabel(*model, gSwitchingTo) : "";
+            text = "Loading " + (name.empty() || name.rfind("Mission ", 0) == 0 ? "mission " + std::to_string(gSwitchingTo) : "mission " + std::to_string(gSwitchingTo) + ": " + name) + "...";
+            error = false;
+        }
+    } else if (sText.empty() || ImGui::GetTime() > sUntil) {
+        return;
+    }
     ImDrawList* list = ImGui::GetForegroundDrawList();
-    const ImVec2 size = ImGui::CalcTextSize(sText.c_str());
+    const ImVec2 size = ImGui::CalcTextSize(text.c_str());
     const float cx = gViewport.x + gViewport.w * 0.5f, top = gViewport.y + 12.0f;
     const ImVec2 min(cx - size.x * 0.5f - 14.0f, top), max(cx + size.x * 0.5f + 14.0f, top + size.y + 10.0f);
-    list->AddRectFilled(min, max, rgba(0.05f, 0.03f, 0.03f, 0.88f), (max.y - min.y) * 0.5f);
-    list->AddRect(min, max, rgba(1.0f, 0.55f, 0.25f, 1.0f), (max.y - min.y) * 0.5f, 0, 1.5f);
-    list->AddText(ImVec2(min.x + 14.0f, min.y + 5.0f), rgba(1, 1, 1, 1), sText.c_str());
+    list->AddRectFilled(min, max, error ? rgba(0.05f, 0.03f, 0.03f, 0.88f) : rgba(0.02f, 0.10f, 0.16f, 0.88f), (max.y - min.y) * 0.5f);
+    list->AddRect(min, max, error ? rgba(1.0f, 0.55f, 0.25f, 1.0f) : rgba(0.40f, 0.86f, 1.0f, 1.0f), (max.y - min.y) * 0.5f, 0, 1.5f);
+    list->AddText(ImVec2(min.x + 14.0f, min.y + 5.0f), rgba(1, 1, 1, 1), text.c_str());
 }
 
 void setArea(float x, float y, float w, float h) {
@@ -369,6 +416,15 @@ void setArea(float x, float y, float w, float h) {
 }
 
 }  // namespace
+
+void switchMission(int mission) {
+    Command command{Command::Kind::SwitchScenario};
+    command.index = mission;
+    enqueue(std::move(command));
+    gSwitchingTo = mission;
+    gSwitchSince = ImGui::GetCurrentContext() != nullptr ? ImGui::GetTime() : 0.0;
+    gSwitchReloading = false;
+}
 
 bool installFonts(float displayScale) {
     if (ImGui::GetCurrentContext() == nullptr || gUiFont != nullptr) {
