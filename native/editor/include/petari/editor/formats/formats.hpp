@@ -58,6 +58,11 @@ private:
 
 // ---- BCSV ---------------------------------------------------------------------------------------
 
+/// Table strings are Shift-JIS (CP932); the editor's own files are UTF-8. Text that can't be
+/// converted comes back unchanged.
+std::string sjisToUtf8(const std::string& sjis);
+std::string utf8ToSjis(const std::string& utf8);
+
 /// The game's field-name hash (JGadget::getHashCode).
 std::uint32_t jmapHash(const char* pName);
 

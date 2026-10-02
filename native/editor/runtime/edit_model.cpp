@@ -5,7 +5,6 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
-#include <iconv.h>
 #include <unordered_map>
 
 namespace PetariEditor {
@@ -27,29 +26,6 @@ namespace {
             return table;
         }();
         return sTable;
-    }
-
-    std::string convert(const std::string& text, const char* pFrom, const char* pTo) {
-        bool ascii = std::all_of(text.begin(), text.end(), [](char c) { return static_cast< unsigned char >(c) < 0x80; });
-        if (ascii) {
-            return text;
-        }
-        iconv_t cd = iconv_open(pTo, pFrom);
-        if (cd == reinterpret_cast< iconv_t >(-1)) {
-            return text;
-        }
-        std::string out(text.size() * 4 + 4, '\0');
-        char* pIn = const_cast< char* >(text.data());
-        size_t inLeft = text.size();
-        char* pOut = out.data();
-        size_t outLeft = out.size();
-        const size_t result = iconv(cd, &pIn, &inLeft, &pOut, &outLeft);
-        iconv_close(cd);
-        if (result == static_cast< size_t >(-1)) {
-            return text;
-        }
-        out.resize(out.size() - outLeft);
-        return out;
     }
 
     CellType cellTypeOf(ColumnType type) {
@@ -211,11 +187,11 @@ const char* knownColumnName(std::uint32_t hash) {
 }
 
 std::string sjisToUtf8(const std::string& sjis) {
-    return convert(sjis, "CP932", "UTF-8");
+    return Formats::sjisToUtf8(sjis);
 }
 
 std::string utf8ToSjis(const std::string& utf8) {
-    return convert(utf8, "UTF-8", "CP932");
+    return Formats::utf8ToSjis(utf8);
 }
 
 // ---- loading ------------------------------------------------------------------------------------
@@ -266,6 +242,7 @@ std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scen
                     zone.discPlain = disc->build();
                 }
             }
+            zone.onDisc = disc.has_value();
         }
         for (const std::string& file : zone.archive.files()) {
             if (file.rfind("jmp/", 0) != 0) {
@@ -1009,6 +986,214 @@ const Formats::Table* EditModel::rowTable(RowId id, int* pRowIndex) const {
         *pRowIndex = row;
     }
     return &mZones[zone].tables[table].current;
+}
+
+// ---- patch ---------------------------------------------------------------------------------------
+
+namespace {
+    // Rows of `from` matched to rows of `to` (index in `to`, or -1): equal rows first, in order,
+    // then rows with the same name and l_id (edited since the disc).
+    std::vector< int > matchRows(const Formats::Table& from, const Formats::Table& to) {
+        auto key = [](const Formats::Table& t, int row, const Formats::Table& columnsOf) {
+            std::string k;
+            for (const Formats::TableColumn& c : columnsOf.columns()) {
+                const int index = t.column(c.hash);
+                const CellValue v = index >= 0 ? t.get(row, index) : CellValue{};
+                k += std::to_string(static_cast< int >(v.kind)) + ":" + std::to_string(v.i) + ":" + std::to_string(v.f) + ":" + v.s + "|";
+            }
+            return k;
+        };
+        std::vector< int > out(from.rowCount(), -1);
+        std::vector< bool > used(to.rowCount(), false);
+        std::map< std::string, std::vector< int > > byKey;
+        for (int r = to.rowCount() - 1; r >= 0; r--) byKey[key(to, r, to)].push_back(r);
+        for (int r = 0; r < from.rowCount(); r++) {
+            auto it = byKey.find(key(from, r, to));
+            if (it != byKey.end() && !it->second.empty()) {
+                out[r] = it->second.back();
+                used[out[r]] = true;
+                it->second.pop_back();
+            }
+        }
+        const int nameFrom = from.column(Formats::jmapHash("name")), nameTo = to.column(Formats::jmapHash("name"));
+        const int lidFrom = from.column(Formats::jmapHash("l_id")), lidTo = to.column(Formats::jmapHash("l_id"));
+        if (nameFrom >= 0 && nameTo >= 0 && lidFrom >= 0 && lidTo >= 0) {
+            for (int r = 0; r < from.rowCount(); r++) {
+                if (out[r] >= 0) continue;
+                for (int d = 0; d < to.rowCount(); d++) {
+                    if (!used[d] && to.get(d, nameTo) == from.get(r, nameFrom) && to.get(d, lidTo) == from.get(r, lidFrom)) {
+                        out[r] = d;
+                        used[d] = true;
+                        break;
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    std::string patchColumnName(std::uint32_t hash) {
+        if (const char* pName = knownColumnName(hash)) return pName;
+        char buffer[16];
+        std::snprintf(buffer, sizeof(buffer), "#%08x", hash);
+        return buffer;
+    }
+
+    Json::Value patchCell(const CellValue& v) {
+        if (v.kind == CellValue::Kind::String) return Json::Value(sjisToUtf8(v.s));
+        if (v.kind == CellValue::Kind::Float) return Json::Value(static_cast< double >(v.f));
+        return Json::Value(v.i);
+    }
+
+    CellValue neutralCell(ColumnType type) {
+        CellValue v;
+        v.kind = type == ColumnType::Float ? CellValue::Kind::Float
+                 : (type == ColumnType::StringOffset || type == ColumnType::InlineString) ? CellValue::Kind::String
+                                                                                          : CellValue::Kind::Int;
+        v.i = -1;
+        return v;
+    }
+
+    bool sameColumns(const Formats::Table& a, const Formats::Table& b) {
+        if (a.columns().size() != b.columns().size()) return false;
+        for (size_t c = 0; c < a.columns().size(); c++) {
+            const Formats::TableColumn &x = a.columns()[c], &y = b.columns()[c];
+            if (x.hash != y.hash || x.type != y.type || x.mask != y.mask || x.shift != y.shift || x.offset != y.offset) return false;
+        }
+        return true;
+    }
+}  // namespace
+
+EditModel::PatchOut EditModel::patch() const {
+    PatchOut out;
+    Json::Value archives = Json::Value::object();
+    for (const ZoneModel& zone : mZones) {
+        const std::string archivePath = "StageData/" + zone.name + ".arc";
+        if (!zone.onDisc) {
+            for (const auto& [path, bytes] : changedArchives()) {
+                if (path == "/" + archivePath) out.wholeArchives.emplace_back(path, bytes);
+            }
+            continue;
+        }
+        std::optional< Formats::Archive > discArchive =
+            zone.discPlain.empty() ? std::optional< Formats::Archive >(zone.archive) : Formats::Archive::parse(zone.discPlain);
+        if (!discArchive) continue;
+        Json::Value ops = Json::Value::array();
+        for (const TableModel& t : zone.tables) {
+            const Formats::Bytes* pDiscBytes = discArchive->file(t.path);
+            std::optional< Formats::Table > disc = pDiscBytes ? Formats::Table::parse(*pDiscBytes) : std::nullopt;
+            const Formats::Table& cur = t.current;
+            auto addRowOp = [&](int r) {
+                Json::Value op = Json::Value::object();
+                op.set("op", "add");
+                op.set("table", t.path);
+                op.set("at", r);
+                Json::Value cells = Json::Value::object();
+                for (int c = 0; c < static_cast< int >(cur.columns().size()); c++) {
+                    cells.set(patchColumnName(cur.columns()[c].hash), patchCell(cur.get(r, c)));
+                }
+                op.set("cells", std::move(cells));
+                ops.push(std::move(op));
+            };
+            if (!disc) {
+                if (cur.rowCount() == 0) continue;
+                // A table the disc's archive lacks (a new layer): from a disc table with its columns, or the columns listed.
+                Json::Value op = Json::Value::object();
+                op.set("op", "addFile");
+                op.set("table", t.path);
+                std::string schemaOf;
+                for (const std::string& path : discArchive->files()) {
+                    std::optional< Formats::Table > other = Formats::Table::parse(*discArchive->file(path));
+                    if (other && sameColumns(*other, cur)) {
+                        schemaOf = path;
+                        break;
+                    }
+                }
+                if (!schemaOf.empty()) {
+                    op.set("schemaOf", schemaOf);
+                } else {
+                    Json::Value columns = Json::Value::array();
+                    for (const Formats::TableColumn& c : cur.columns()) {
+                        Json::Value column = Json::Value::object();
+                        column.set("name", patchColumnName(c.hash));
+                        column.set("type", Patch::typeName(c.type));
+                        columns.push(std::move(column));
+                    }
+                    op.set("columns", std::move(columns));
+                }
+                ops.push(std::move(op));
+                for (int r = 0; r < cur.rowCount(); r++) addRowOp(r);
+                continue;
+            }
+            // Each current row's disc row: its own index when the loaded table is the disc's, else matched.
+            const Formats::Bytes* pSource = zone.archive.file(t.path);
+            const bool sourceIsDisc = pSource != nullptr && *pSource == *pDiscBytes;
+            const std::vector< int > sourceToDisc = sourceIsDisc ? std::vector< int >() : matchRows(t.original, *disc);
+            std::vector< int > discOf(cur.rowCount(), -1);
+            std::vector< bool > kept(disc->rowCount(), false);
+            for (int r = 0; r < cur.rowCount(); r++) {
+                if (t.added[r] || (t.ids[r].v >> 63)) continue;
+                const int source = static_cast< int >(t.ids[r].v & kField) - 1;
+                const int d = sourceIsDisc ? source : (source >= 0 && source < static_cast< int >(sourceToDisc.size()) ? sourceToDisc[source] : -1);
+                if (d >= 0 && d < disc->rowCount() && !kept[d]) {
+                    discOf[r] = d;
+                    kept[d] = true;
+                }
+            }
+            for (const Formats::TableColumn& c : cur.columns()) {
+                if (disc->column(c.hash) >= 0) continue;
+                Json::Value op = Json::Value::object();
+                op.set("op", "addColumn");
+                op.set("table", t.path);
+                op.set("name", patchColumnName(c.hash));
+                op.set("type", Patch::typeName(c.type));
+                op.set("default", patchCell(neutralCell(c.type)));
+                ops.push(std::move(op));
+            }
+            for (int r = 0; r < cur.rowCount(); r++) {
+                if (discOf[r] < 0) continue;
+                Json::Value cells = Json::Value::object();
+                for (int c = 0; c < static_cast< int >(cur.columns().size()); c++) {
+                    const int dc = disc->column(cur.columns()[c].hash);
+                    const CellValue now = cur.get(r, c);
+                    const CellValue before = dc >= 0 ? disc->get(discOf[r], dc) : neutralCell(cur.columns()[c].type);
+                    if (now != before) cells.set(patchColumnName(cur.columns()[c].hash), patchCell(now));
+                }
+                if (cells.members().empty()) continue;
+                Json::Value op = Json::Value::object();
+                op.set("op", "set");
+                op.set("table", t.path);
+                op.set("row", discOf[r]);
+                op.set("fp", Patch::fingerprint(*disc, discOf[r]));
+                op.set("cells", std::move(cells));
+                ops.push(std::move(op));
+            }
+            for (int d = 0; d < disc->rowCount(); d++) {
+                if (kept[d]) continue;
+                Json::Value op = Json::Value::object();
+                op.set("op", "delete");
+                op.set("table", t.path);
+                op.set("row", d);
+                op.set("fp", Patch::fingerprint(*disc, d));
+                ops.push(std::move(op));
+            }
+            for (int r = 0; r < cur.rowCount(); r++) {
+                if (discOf[r] < 0) addRowOp(r);
+            }
+        }
+        if (!ops.items().empty()) {
+            out.ops += static_cast< int >(ops.items().size());
+            archives.set(archivePath, std::move(ops));
+        }
+    }
+    if (out.ops > 0) {
+        Json::Value doc = Json::Value::object();
+        doc.set("format", 1);
+        doc.set("galaxy", mGalaxy);
+        doc.set("archives", std::move(archives));
+        out.json = Json::write(doc, true) + "\n";
+    }
+    return out;
 }
 
 }  // namespace PetariEditor

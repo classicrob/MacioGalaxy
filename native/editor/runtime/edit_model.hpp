@@ -76,6 +76,15 @@ public:
     /// Edits since the last markSaved().
     bool unsaved() const { return serialAtCursor() != mSavedSerial; }
     void markSaved();
+    /// The edits as a patch against the disc (petari/editor/patch.hpp): `json` is edits/<Galaxy>.json
+    /// (empty when nothing differs from the disc); zones the disc doesn't have can't be patched and
+    /// come back whole, to be saved as files.
+    struct PatchOut {
+        std::string json;
+        std::vector< std::pair< std::string, Formats::Bytes > > wholeArchives;  // "/StageData/X.arc"
+        int ops = 0;
+    };
+    PatchOut patch() const;
     /// The mission being edited (1..missionCount()); the edits and history are kept. False when out of range.
     bool setScenario(int scenario);
 
@@ -110,6 +119,7 @@ private:
         Formats::Bytes discPlain;  // the disc's archive, decompressed (empty: same as `archive`, or a mod-only zone)
         std::vector< TableModel > tables;
         bool filesAdded = false;  // a table was created (the archive is rebuilt, not patched)
+        bool onDisc = true;       // false: a mod's own zone (the disc has no such archive)
         bool placed = false;
         Mtx34 world{};
     };
