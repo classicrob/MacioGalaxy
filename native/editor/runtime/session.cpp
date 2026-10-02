@@ -99,6 +99,7 @@ namespace {
         if (!Catalog::loadWithUser(PetariNative::Platform::ModFolder::userDirectory().string(), &catalogError)) {
             Core::reportError("Catalog: " + catalogError);
         }
+        TerrainSync::registerWithEditor();
         s.checkedRevision = 0;
         // Planet classes: the names PlanetMapDataTable lists on this disc.
         if (std::optional< Formats::Bytes > raw = readDisc("/ObjectData/PlanetMapDataTable.arc")) {

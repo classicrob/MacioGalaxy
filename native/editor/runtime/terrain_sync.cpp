@@ -7,6 +7,9 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/ModelUtil.hpp"
+#include "checks.hpp"
+#include <petari/editor/catalog.hpp>
 #include <petari/editor/terrain/brush.hpp>
 #include <petari/editor/terrain/kcl_writer.hpp>
 #include <petari/editor/terrain/model_writer.hpp>
@@ -120,6 +123,67 @@ namespace {
         EditorScene::applyTransform(pPart, zoneId, pos, dir, scale);
     }
 }  // namespace
+
+void registerWithEditor() {
+    static bool sDone = false;
+    // The class (Browser cards, the Inspector's named args) after every catalog load (addClass
+    // replaces it); the check once.
+    Catalog::ClassInfo info;
+    info.name = T::kBrushClass;
+    info.displayName = "Terrain brush";
+    info.description = "A blockout shape you can walk on, in a material from the game, with its own gravity";
+    info.aliases = {"brush", "terrain", "blockout", "box", "sphere", "cylinder", "ramp", "platform"};
+    info.category = Catalog::Category::Planet;
+    info.placeable = true;
+    info.curated = true;
+    info.keepable = true;
+    info.hasCollision = true;
+    auto enumArg = [](int index, const char* pName, const std::vector< std::string >& labels, const char* pHelp) {
+        Catalog::Arg arg;
+        arg.index = index;
+        arg.name = pName;
+        arg.type = Catalog::ArgType::Enum;
+        arg.defaultValue = 0;
+        arg.help = pHelp;
+        for (std::size_t i = 0; i < labels.size(); i++) {
+            arg.choices.push_back({static_cast< std::int32_t >(i), labels[i]});
+        }
+        return arg;
+    };
+    std::vector< std::string > materials, surfaces;
+    for (const T::MaterialPreset& preset : T::materialPalette()) {
+        materials.push_back(preset.label);
+    }
+    for (const T::SurfacePreset& preset : T::surfacePresets()) {
+        surfaces.push_back(preset.label);
+    }
+    info.args = {enumArg(0, "Shape", T::brushShapeNames(), "Its size is the scale: 1 = 1000 units (a sphere uses the X scale)"),
+                 enumArg(1, "Material", materials, "A planet material from the game"),
+                 enumArg(2, "Surface", surfaces, "How it feels to walk on"),
+                 enumArg(3, "Gravity", {"The stage's", "Fitted to the shape"}, "Fitted: a cube, point or cylinder field around it")};
+    info.args[3].defaultValue = 1;
+    for (std::size_t i = 0; i < T::brushShapeNames().size(); i++) {
+        info.presets.push_back({T::brushShapeNames()[i] + " brush", {{0, static_cast< std::int32_t >(i)}}});
+    }
+    Catalog::addClass(info);
+    if (sDone) {
+        return;
+    }
+    sDone = true;
+    registerCheckProvider([](const ModelView& model, std::vector< Check >& out) {
+        for (const auto& [id, brush] : live()) {
+            if (brush.triangles > 16000) {
+                Check check;
+                check.key = "brush-tris:" + idText(id);
+                check.severity = Severity::Warning;
+                check.message = "Terrain brush has " + std::to_string(brush.triangles) + " triangles; a collision file holds about 16,000";
+                check.rows = {id};
+                out.push_back(check);
+            }
+        }
+        (void)model;
+    });
+}
 
 bool isBrush(const char* pName) {
     return pName != nullptr && std::strcmp(pName, T::kBrushClass) == 0;

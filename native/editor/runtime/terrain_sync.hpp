@@ -13,6 +13,10 @@ class EditModel;
 
 namespace PetariEditor::TerrainSync {
 
+/// Registers the brush class with the catalog (Browser presets, the Inspector's named args) and
+/// its Checks. Called after every catalog load.
+void registerWithEditor();
+
 /// True for the brush class name.
 bool isBrush(const char* pName);
 
