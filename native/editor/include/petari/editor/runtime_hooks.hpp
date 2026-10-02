@@ -11,6 +11,10 @@ namespace PetariEditor::Hooks {
 /// PETARI_EDITOR=1 for tests). Read at stage load to reserve headroom.
 bool enabled();
 void setEnabled(bool on);
+/// The Mods-page switch, at each scene start (GameScene::init): on when it is on or
+/// PETARI_EDITOR=1. A switch flipped mid-stage takes effect at the next stage load for the
+/// headroom; late connect covers the stage in between.
+void syncSwitch(bool modSwitchOn);
 
 /// The size to allocate for a list the game sizes to exactly its load-time count
 /// (NameObjCategoryList, DrawBufferExecuter): unchanged while the editor is off, otherwise

@@ -25,3 +25,6 @@ Each editor topic branch (`editor/<topic>`) is tested in a clean worktree and me
 - The live `movement_baseline.py` (mods off/on) is not run by the integrator (it drives the app); the
   static `native_movement_baseline` check passes. The runtime worker saw the live baseline flake on a busy
   machine (A-tap timing): run it under `PETARI_LOCK_CLASS=quiet` (see the script's docstring).
+- Live `movement_baseline.py --mods both` under `PETARI_LOCK_CLASS=quiet` (runtime worker): the
+  `level-editor` tip at `424853073` (PRs 1-5) passes mods off and on; `editor/scene-sync`
+  (merged with that tip) passes mods off and on.

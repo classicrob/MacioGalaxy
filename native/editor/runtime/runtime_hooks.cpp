@@ -34,6 +34,11 @@ void setEnabled(bool on) {
     gEnabled.store(on ? 1 : 0, std::memory_order_relaxed);
 }
 
+void syncSwitch(bool modSwitchOn) {
+    const char* pEnv = std::getenv("PETARI_EDITOR");
+    setEnabled(modSwitchOn || (pEnv != nullptr && pEnv[0] == '1'));
+}
+
 std::uint32_t withHeadroom(std::uint32_t count) {
     return enabled() ? count + count / 2 + 16 : count;
 }

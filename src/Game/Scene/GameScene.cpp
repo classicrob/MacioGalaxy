@@ -49,6 +49,7 @@ extern "C" void petari_os_preemption_point(void);
 #include "Game/System/GameSequenceFunction.hpp"
 #include "Game/Editor/EditorScene.hpp"
 #include <petari/editor/runtime.hpp>
+#include <petari/editor_settings.hpp>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
 // StorySequenceExecutor.cpp
@@ -95,6 +96,10 @@ GameScene::~GameScene() {
 }
 
 void GameScene::init() {
+#ifdef PETARI_NATIVE
+    // Before any list is sized: the level editor's headroom follows the Mods-page switch.
+    PetariEditor::Hooks::syncSwitch(PetariNative::EditorSettings::enabled());
+#endif
     SceneFunction::createHioBasicNode(this);
     SceneFunction::startStageFileLoad();
     MR::requestChangeArchivePlayer(MR::isPlayerLuigi() == false);
