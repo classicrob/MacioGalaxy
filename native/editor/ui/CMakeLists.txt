@@ -6,7 +6,7 @@ if(NOT TARGET imgui OR NOT TARGET petari_home_menu_imgui)
     return()
 endif()
 
-add_library(petari_editor_ui STATIC ui.cpp edit_mode.cpp)
+add_library(petari_editor_ui STATIC ui.cpp edit_mode.cpp panels.cpp)
 target_include_directories(petari_editor_ui PUBLIC include)
 # Deliberately not petari_native_config: nothing here sees the SDK headers.
 # petari_editor_core: edit_api.hpp (Runtime); petari_input: the Edit mode gate and camera feed.
@@ -17,6 +17,7 @@ if(BUILD_TESTING)
     # The dock layout and the game's viewport, headless (native/tests/editor_ui_tests.cpp).
     add_executable(petari_editor_ui_tests ${CMAKE_CURRENT_SOURCE_DIR}/../../tests/editor_ui_tests.cpp)
     target_link_libraries(petari_editor_ui_tests PRIVATE petari_editor_ui)
+    target_include_directories(petari_editor_ui_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})  # panels.hpp
     add_test(NAME native_editor_ui COMMAND petari_editor_ui_tests)
 endif()
 

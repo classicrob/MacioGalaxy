@@ -1,6 +1,7 @@
 // Edit mode, UI side (docs/dev/level-editor/UX.md sections 3 and 5): the panels follow the game's Edit
 // nerve, and mouse, trackpad and keys over the viewport drive the editor camera.
 #include "edit_mode.hpp"
+#include "panels.hpp"
 
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor/ui.hpp>
@@ -249,6 +250,9 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Period)) {
         setFocusMode(!focusMode());
     }
+    // Cmd+Z / Cmd+Shift+Z (UX section 16), unless a text field has the keys.
+    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) undo();
+    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z)) redo();
     const Area area = cameraArea(windowWidth, windowHeight);
     cameraInput(area);
     drawPickMarks(area);

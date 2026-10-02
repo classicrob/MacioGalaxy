@@ -2,6 +2,7 @@
 #include <petari/editor/ui.hpp>
 
 #include "edit_mode.hpp"
+#include "panels.hpp"
 
 #include <petari/editor_pick.hpp>
 
@@ -24,7 +25,7 @@ constexpr float kToolbarHeight = 44.0f;
 constexpr float kFooterHeight = 28.0f;
 constexpr float kLeftWidth = 260.0f;   // UX section 4: 1440 x 900 window -> 260 / 300 docks
 constexpr float kRightWidth = 300.0f;
-constexpr const char* kOutliner = "Outliner";
+constexpr const char* kOutliner = "Galaxy";  // Outliner, Changes, History
 constexpr const char* kInspector = "Inspector";
 
 bool gVisible = false;
@@ -196,6 +197,16 @@ void drawToolbar(float width) {
     bandBackground(ImVec2(0, 0), ImVec2(width, kToolbarHeight), true);
     ImGui::SetCursorPosY((kToolbarHeight - 18.0f) * 0.5f);
     galaxyText("Level Editor", 18.0f, rgba(1.0f, 1.0f, 1.0f));
+    ImGui::SameLine(0.0f, 24.0f);
+    // Undo / redo (Cmd+Z / Cmd+Shift+Z).
+    ImGui::SetCursorPosY((kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f);
+    ImGui::BeginDisabled(!canUndo());
+    if (ImGui::Button("Undo")) undo();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!canRedo());
+    if (ImGui::Button("Redo")) redo();
+    ImGui::EndDisabled();
     ImGui::SameLine(0.0f, 16.0f);
     const float buttonHeight = 26.0f;
     const float playWidth = 96.0f;
@@ -220,7 +231,7 @@ void drawFooter(float width, float height) {
     if (gizmo.dragging && gizmo.status[0] != '\0') {
         ImGui::TextUnformatted(gizmo.status);
     } else {
-        ImGui::TextUnformatted("Tab play    Click select    W E R move/rotate/scale    End drop to ground    F frame    Cmd+. focus");
+        ImGui::TextUnformatted("Tab play    Click select    W E R move/rotate/scale    End drop to ground    F frame    Cmd+Z undo    Cmd+. focus");
     }
     ImGui::End();
     ImGui::PopStyleColor();
@@ -333,15 +344,8 @@ void drawFrame(float windowWidth, float windowHeight) {
     ImGui::DockSpace(dock, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_NoDockingOverCentralNode);
     ImGui::End();
 
-    // Placeholder panels until the Outliner and Inspector land (editor/inspector).
-    if (ImGui::Begin(kOutliner)) {
-        ImGui::TextDisabled("Everything in the galaxy, by zone.");
-    }
-    ImGui::End();
-    if (ImGui::Begin(kInspector)) {
-        ImGui::TextDisabled("Select something to see its settings.");
-    }
-    ImGui::End();
+    drawGalaxyWindow(kOutliner);
+    drawInspectorWindow(kInspector);
 
     if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
                                                                         central->Size.y > 8.0f) {
