@@ -208,6 +208,10 @@ void syncBrush(const EditModel& model, RowId id) {
     const bool geometry = entry.part == nullptr || !entry.built.sameGeometry(brush);
     const bool look = geometry;
     std::string error;
+    // A new archive name each time: the game caches resource holders by name. The model file in
+    // it is <name>.bmd, as the game looks it up.
+    static int sVersion = 0;
+    const std::string name = look ? "EditorBrush_" + idText(id) + "_" + std::to_string(++sVersion) : std::string();
     void* pKcl = nullptr;
     void* pPa = nullptr;
     Formats::Bytes archive;
@@ -237,7 +241,10 @@ void syncBrush(const EditModel& model, RowId id) {
         if (const T::MaterialClone* pMaterial = materialClone(brush.material, &error)) {
             const T::ModelResult result = T::buildModel(mesh, *pMaterial);
             if (result.error.empty()) {
-                std::string base = "editorbrush";
+                std::string base = name;
+                for (char& c : base) {
+                    c = static_cast< char >(std::tolower(static_cast< unsigned char >(c)));
+                }
                 archive = Formats::Archive::create(base, {{base + ".bmd", result.model}}).build();
             } else {
                 error = result.error;
@@ -263,9 +270,6 @@ void syncBrush(const EditModel& model, RowId id) {
     entry.part->setBuiltScale(TVec3f(t.scale.x, t.scale.y, t.scale.z));
 
     if (!archive.empty()) {
-        // A new archive name each time: the game caches resource holders by name.
-        static int sVersion = 0;
-        const std::string name = "EditorBrush_" + idText(id) + "_" + std::to_string(++sVersion);
         const char* pName = persistent(name);
         EditorTerrain::injectArchive(persistent("/ObjectData/" + name + ".arc"), archive.data(), static_cast< u32 >(archive.size()));
         const char* pError = "";
