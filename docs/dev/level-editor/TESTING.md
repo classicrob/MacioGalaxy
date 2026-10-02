@@ -36,3 +36,16 @@ Commands (`src/Game/Scene/TestServer.cpp`, run on the game thread from `GameScen
 (the Level Select warp path), `reload [start]` (`PetariEditor::Runtime::reloadScene`), `quit`. Replies: `ok ...` or `error ...`.
 The server holds one app slot until stopped: stop it when you are done. While it is up the smoke's movement script is skipped (it idles) and
 the run no longer ends by itself (`--lifetime` alarm, default 2 h).
+
+## Before any live smoke: is the app really relinked?
+
+After a merge or any source change, build the app explicitly (`cmake --build build/macos-gx -j6 --target petari`, plus your test
+targets). A plain full build has twice ended with "[100%] Built target ..." and no error while `Petari.app/Contents/MacOS/Petari` was
+still the old binary, so smokes passed on stale code. Then check the binary is newer than your last merge or commit:
+
+```sh
+stat -f %Sm build/macos-gx/native/app/Petari.app/Contents/MacOS/Petari   # must be after:
+git log -1 --format=%cd
+```
+
+Read the build's tail; grepping for "error" alone misses an interrupted build.
