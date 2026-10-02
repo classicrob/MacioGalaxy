@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's camera over the frozen scene (Game/Camera/EditorCamera.hpp).
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorGizmo.hpp"
 #include "Game/Camera/EditorPicking.hpp"
 #include "Game/AudioLib/AudSystem.hpp"
 #include "Game/AudioLib/AudWrap.hpp"
@@ -179,8 +180,19 @@ namespace EditorCamera {
     bool update() {
         PetariEditorInput in;
         petari_editor_take_input(&in);
-        if (in.toggle > 0 || in.leave > 0 || !in.enabled) {
-            return true;
+        if (in.leave > 0 || !in.enabled) {
+            return true;  // Runtime's leaveEdit (Play), or the editor switched off
+        }
+        if (in.toggle > 0) {
+            // Tab in Edit mode plays (UX section 3): Runtime reloads the layout if anything changed, then
+            // leaves Edit (leaveEdit) and puts Mario at the play marker. Without a model, just leave.
+            if (PetariEditor::model() == nullptr) return true;
+            PetariEditor::Command play{PetariEditor::Command::Kind::Play};
+            play.from = in.playFrom == 1 ? PetariEditor::PlayFrom::Resume
+                        : in.playFrom == 2 ? PetariEditor::PlayFrom::MissionStart
+                                           : PetariEditor::PlayFrom::Marker;
+            PetariEditor::enqueue(std::move(play));
+            std::fprintf(stderr, "[editor] play (%s)\n", in.playFrom == 1 ? "resume" : in.playFrom == 2 ? "mission start" : "marker");
         }
         // The pivot under the cursor, for an orbit that starts now.
         if (in.repivot > 0) {
@@ -277,6 +289,7 @@ namespace EditorCamera {
         view.cursorX = in.cursorX;
         view.cursorY = in.cursorY;
         EditorPicking::update(view);
+        EditorGizmo::update(view);
         return false;
     }
 
@@ -288,6 +301,7 @@ namespace EditorCamera {
         GameSystemFunction::onPauseEndAllRumble();
         AudWrap::getSystem()->exitPauseMenu();
         gState.active = false;
+        EditorGizmo::reset();
         EditorPicking::reset();
         petari_editor_set_active(0);
         PetariEditor::notifyEditLeft();
@@ -301,6 +315,7 @@ namespace EditorCamera {
     void abandon() {
         if (!gState.active) return;
         gState.active = false;
+        EditorGizmo::reset();
         EditorPicking::reset();  // the old scene's actors are gone: drop them before anything looks
         GameSystemFunction::onPauseEndAllRumble();
         AudWrap::getSystem()->exitPauseMenu();

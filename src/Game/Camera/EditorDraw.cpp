@@ -5,7 +5,9 @@
 #include "Game/Camera/EditorPicking.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/ModelUtil.hpp"
+#include "Game/Util/ScreenUtil.hpp"
 #include <JSystem/J3DGraphAnimator/J3DModel.hpp>
 #include <JSystem/J3DGraphAnimator/J3DModelData.hpp>
 #include <JSystem/J3DGraphBase/J3DMaterial.hpp>
@@ -58,6 +60,47 @@ namespace {
         }
     }
 
+    // The selection outline (TECH.md 3.4, done in screen space): mark the object's visible pixels in
+    // the EFB's alpha, draw its flat silhouette shifted a few pixels each way where the mark is not
+    // (blending by destination alpha), then clear the mark. GX projections are parameterised, so the
+    // shift goes in the perspective's off-centre terms: a constant offset on screen at any depth.
+    void outline(LiveActor* actor, GXColor color, float pixels) {
+        // 1. Mark: alpha 255 where the object is visible; colour untouched.
+        setupFlat(GXColor{0, 0, 0, 255}, GX_LEQUAL);
+        GXSetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR);
+        GXSetColorUpdate(GX_FALSE);
+        GXSetAlphaUpdate(GX_TRUE);
+        drawShapes(actor);
+        // 2. The shifted silhouettes, only outside the mark: out = src * (1 - dstA) + dst * dstA.
+        setupFlat(color, GX_ALWAYS);
+        GXSetBlendMode(GX_BM_BLEND, GX_BL_INVDSTALPHA, GX_BL_DSTALPHA, GX_LO_CLEAR);
+        GXSetColorUpdate(GX_TRUE);
+        GXSetAlphaUpdate(GX_FALSE);
+        const TProj3f& projection = MR::getCameraProjectionMtx();
+        const float dx = pixels * 2.0f / static_cast< float >(MR::getFrameBufferWidth());
+        const float dy = pixels * 2.0f / static_cast< float >(MR::getScreenHeight());
+        static const float kOffsets[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7f, 0.7f}, {-0.7f, 0.7f}, {0.7f, -0.7f}, {-0.7f, -0.7f}};
+        for (const auto& o : kOffsets) {
+            Mtx44 shifted;
+            for (int r = 0; r < 4; r++) {
+                for (int c = 0; c < 4; c++) shifted[r][c] = projection.mMtx[r][c];
+            }
+            shifted[0][2] += o[0] * dx;
+            shifted[1][2] += o[1] * dy;
+            GXSetProjection(shifted, GX_PERSPECTIVE);
+            drawShapes(actor);
+        }
+        MR::loadProjectionMtx();
+        // 3. Clear the mark (the same pixels: the depth test passes exactly where it did).
+        setupFlat(GXColor{0, 0, 0, 0}, GX_LEQUAL);
+        GXSetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR);
+        GXSetColorUpdate(GX_FALSE);
+        GXSetAlphaUpdate(GX_TRUE);
+        drawShapes(actor);
+        GXSetColorUpdate(GX_TRUE);
+        GXSetAlphaUpdate(GX_FALSE);
+    }
+
     void tint(LiveActor* actor, GXColor visible, u8 xrayAlpha) {
         GXColor xray = visible;
         xray.a = xrayAlpha;
@@ -80,9 +123,10 @@ namespace EditorDraw {
         for (int i = 0; i < EditorPicking::selectedCount(); i++) {
             LiveActor* actor = EditorPicking::selectedAt(i);
             hoverSelected = hoverSelected || actor == hover;
-            tint(actor, GXColor{250, 204, 56, pulse}, 40);
+            tint(actor, GXColor{250, 204, 56, static_cast< u8 >(pulse / 2)}, 40);
+            outline(actor, GXColor{250, 204, 56, 255}, 2.5f);
         }
-        if (hover != nullptr && !hoverSelected) tint(hover, GXColor{102, 219, 255, 70}, 25);
+        if (hover != nullptr && !hoverSelected) outline(hover, GXColor{102, 219, 255, 255}, 1.5f);
         // Leave the state as the game's own draw passes expect it.
         GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
         GXSetAlphaUpdate(GX_FALSE);

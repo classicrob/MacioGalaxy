@@ -14,6 +14,9 @@ Each editor topic branch (`editor/<topic>`) is tested in a clean worktree and me
 | 5 | `editor/runtime-hooks`: the spike's engine hooks, productised, off unless the editor is on (stacked on edit-model, already in) | `level-editor` | `364c38a7a` | build ok incl. the app; 113/113 |
 | 6 | `editor/scene-sync`: SceneSync, the editor runtime in the frame (session, row/actor binding, command drain, live re-creation of changed rows); based on level-editor `424853073` | `level-editor` | `b7cf48af9` | build ok incl. the app; 113/113 |
 | 7 | `editor/picking-outline`: picking, hover and selection in Edit mode, plus Runtime's wiring (stacked on camera-input) | `level-editor` | `6a957caa3` | build ok incl. the app; 113/113; two mechanical merge conflicts resolved by the integrator (below) |
+| 8 | `editor/fast-reload`: reload from the model and Play (S3, ~0.3-0.5 s same-stage reload); stacked on scene-sync | `level-editor` (after merging main) | `ba71d24c2` | build ok incl. the app; 112/112 incl. `native_editor_model` |
+| 9 | `editor/outline` (self-merged; the UI's M1 stack: `editor/gizmo`, `editor/inspector`, `editor/play-toolbar`, `editor/outline`): the transform gizmo (gravity frame, slide on the ground, End to drop, one op per gesture), the raw-field Inspector with Outliner (by zone and kind) / Changes / History and undo/redo, the play loop through Runtime (Tab plays from the marker, Shift+Tab resumes, Option+Tab from the start; M places the marker; Reload pill, memory meter; the selection kept across play and reload), and S5's selection outline (screen space, EFB alpha) | `level-editor` | this merge | full build (ccache) ok incl. the app; ctest `editor|input|home_menu|seam|galaxy_font|movement_baseline` 12/12; live Gusty Garden smokes on this merge: editor on (gizmo move + drop, marker, play, back to Edit, play) PASS, editor off PASS |
+| 10 | `editor/save-mod` + `editor/m2-api` (self-merged by the runtime worker): Full-archive mod save; retire no longer re-draws a clipped actor; the M2 interface (catalog API, add/delete ops, checks, missions); drops the temporary window-restore guard (main's fix is in) | `level-editor` (after PR 9) | (this merge) | merged tree: build ok incl. the app; `ctest -R "native_editor|native_input|native_home_menu|native_platform_dvd|native_mod_folder"` 10/10; live: `editor_save_smoke.py`, `editor_reload_smoke.py`, `editor_sync_smoke.py` PASS; `native_editor_gizmo`, `native_editor_ui` pass; `movement_baseline.py --mods both` (quiet) PASS |
 
 ## Notes
 
@@ -35,3 +38,6 @@ Each editor topic branch (`editor/<topic>`) is tested in a clean worktree and me
   `target_link_libraries(petari_game_objects PRIVATE petari_editor_core)`; kept scene-sync's block, which includes it)
   and `GameScene::init` (kept both independent lines: `Hooks::syncSwitch(...)` from scene-sync, then
   `EditorCamera::abandon()` from picking-outline). Owners should glance at them.
+- Main was merged into level-editor first (`dd2713608`: never-restore-windows fix `3df2658a4`, `native_audio_sdl` labelled timing), no conflicts.
+  PR 8 carries a TEMPORARY registerDefaults for window state in background smoke mode (its author's note); it is redundant with main's
+  fix now and should be dropped by its owner.

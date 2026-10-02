@@ -8,6 +8,7 @@
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_hints.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include <objc/message.h>
 #include <objc/runtime.h>
 #include <pthread/qos.h>
@@ -15,6 +16,7 @@
 #include <SDL3/SDL_video.h>
 
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -30,6 +32,7 @@
 #include <petari/progress.hpp>
 #include <petari/camera_input.h>
 #include <petari/camera_settings.hpp>
+#include <petari/editor/edit_api.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/editor_settings.hpp>
 #include <petari/efb_dump_mark.hpp>
@@ -51,6 +54,21 @@ extern "C" void petari_gx_pipeline_set_gameplay(bool gameplay);
 namespace App = PetariNative::App;
 
 namespace {
+
+// A game never restores its windows. Without this, after Petari crashed (a test sweep crashes it on
+// purpose) macOS asks "reopen windows?" in a modal alert at the next launch, which blocks the game
+// (and background test runs) before the first frame. Registration domain only: nothing is persisted.
+void disableWindowRestoration() {
+    const void* keys[2] = {CFSTR("ApplePersistenceIgnoreState"), CFSTR("NSQuitAlwaysKeepsWindows")};
+    const void* values[2] = {kCFBooleanTrue, kCFBooleanFalse};
+    CFDictionaryRef defaults = CFDictionaryCreate(nullptr, keys, values, 2, &kCFTypeDictionaryKeyCallBacks,
+                                                  &kCFTypeDictionaryValueCallBacks);
+    const auto sendObject = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend);
+    const id standard = sendObject(reinterpret_cast<id>(objc_getClass("NSUserDefaults")), sel_registerName("standardUserDefaults"));
+    reinterpret_cast<void (*)(id, SEL, CFDictionaryRef)>(objc_msgSend)(standard, sel_registerName("registerDefaults:"), defaults);
+    CFRelease(defaults);
+}
+
 
 void logMessage(AuroraLogLevel level, const char* module, const char* message, unsigned int length) {
     std::fprintf(stderr, "[%s] %.*s\n", module, static_cast<int>(length), message);
@@ -363,6 +381,58 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     editorStep = 0;
                     PetariNative::EfbDump::mark("editor");
                 }
+            } else if (const char* gizmoTarget = std::getenv("PETARI_EDITOR_TEST_GIZMO")) {
+                // The gizmo, end to end: select an object by name, frame it, grab the move arrow along
+                // X where the game drew it, drag it, let go (one op), then drop it to the ground (End).
+                namespace Gizmo = PetariNative::EditorGizmo;
+                namespace Pick = PetariNative::EditorPick;
+                static float tipX = 0.0f, tipY = 0.0f, dirX = 0.0f, dirY = 0.0f;
+                const long t = ++editorStep;
+                if (t == 5) Pick::selectByName(gizmoTarget);
+                if (t == 15) Editor::frame();
+                if (t == 60) {
+                    Gizmo::setMode(Gizmo::Mode::Move);
+                    const Gizmo::View view = Gizmo::view();
+                    if (!view.lines.empty()) {  // the X arrow's shaft: origin -> tip
+                        const Gizmo::Line& shaft = view.lines[0];
+                        tipX = shaft.x0 + (shaft.x1 - shaft.x0) * 0.8f;
+                        tipY = shaft.y0 + (shaft.y1 - shaft.y0) * 0.8f;
+                        const float len = std::sqrt((shaft.x1 - shaft.x0) * (shaft.x1 - shaft.x0) + (shaft.y1 - shaft.y0) * (shaft.y1 - shaft.y0));
+                        dirX = len > 0.0f ? (shaft.x1 - shaft.x0) / len : 1.0f;
+                        dirY = len > 0.0f ? (shaft.y1 - shaft.y0) / len : 0.0f;
+                    }
+                    std::fprintf(stderr, "[editor-test] gizmo: %d lines, grab at (%.3f, %.3f)\n", static_cast<int>(view.lines.size()), tipX, tipY);
+                    Editor::cursor(tipX, tipY);
+                }
+                if (t == 62) Gizmo::press();
+                if (t > 62 && t <= 82) Editor::cursor(tipX + dirX * 0.012f * static_cast<float>(t - 62), tipY + dirY * 0.012f * static_cast<float>(t - 62));
+                if (t == 84) Gizmo::release();
+                if (t == 120) Gizmo::ground(Gizmo::Ground::Drop);
+                // The play loop: the marker under the centre, Tab plays (Runtime reloads the edited layout and
+                // puts Mario at the marker), Tab again freezes back into Edit (at t 250, below), and leaves at 330.
+                if (t == 140) {
+                    Editor::cursor(0.0f, -0.2f);
+                    Pick::placeMarker();
+                }
+                if (t == 170) {
+                    std::fputs("[editor-test] LevelEditor tap (play)\n", stderr);
+                    Editor::toggle();
+                }
+                if (t == 160) {
+                    const PetariEditor::ModelView* model = PetariEditor::model();
+                    std::fprintf(stderr, "[editor-test] gizmo: history %d (%s, %s)\n", model != nullptr ? model->historySize() : -1,
+                                 model != nullptr && model->historySize() > 0 ? model->historyLabel(0) : "-",
+                                 model != nullptr && model->historySize() > 1 ? model->historyLabel(1) : "-");
+                }
+                if (t == 250) {
+                    std::fputs("[editor-test] LevelEditor tap (back to Edit)\n", stderr);
+                    Editor::toggle();
+                }
+                if (t == 330) {
+                    std::fputs("[editor-test] LevelEditor tap (leave)\n", stderr);
+                    Editor::toggle();
+                    editorStep = 400;
+                }
             } else {
                 const long t = ++editorStep;
                 Editor::cursor(0.0f, 0.0f);
@@ -401,6 +471,8 @@ App::FrameStats::Phase framePhaseForPipelines() {
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Before SDL starts AppKit (NSApplication finishes launching there).
+    disableWindowRestoration();
     // The allocation-site check's symbol table, before any game thread runs
     // (building it on a first game allocation would be a startup hitch).
     PetariNative::prepareAllocationSymbols();
@@ -459,24 +531,6 @@ int main(int argc, char** argv) {
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0", SDL_HINT_OVERRIDE);
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "0", SDL_HINT_OVERRIDE);
         SDL_SetEventFilter(App::SmokeBackground::eventFilter, nullptr);
-        // After a Petari crash (any build shares the bundle id) AppKit may ask at launch
-        // whether to reopen windows, in a modal nobody can answer for a hidden window:
-        // the run then hangs before its first frame. Ignore saved window state for this
-        // process only (the registration domain; nothing is written to the user's defaults).
-        {
-            const auto sendClass = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend);
-            const auto withBool = reinterpret_cast<id (*)(id, SEL, BOOL)>(objc_msgSend);
-            const auto withString = reinterpret_cast<id (*)(id, SEL, const char*)>(objc_msgSend);
-            const auto withObjectForKey = reinterpret_cast<id (*)(id, SEL, id, id)>(objc_msgSend);
-            const auto registerDefaults = reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend);
-            const id yes = withBool(reinterpret_cast<id>(objc_getClass("NSNumber")), sel_registerName("numberWithBool:"), YES);
-            const id key = withString(reinterpret_cast<id>(objc_getClass("NSString")), sel_registerName("stringWithUTF8String:"),
-                                      "ApplePersistenceIgnoreState");
-            const id values = withObjectForKey(reinterpret_cast<id>(objc_getClass("NSDictionary")),
-                                               sel_registerName("dictionaryWithObject:forKey:"), yes, key);
-            const id defaults = sendClass(reinterpret_cast<id>(objc_getClass("NSUserDefaults")), sel_registerName("standardUserDefaults"));
-            registerDefaults(defaults, sel_registerName("registerDefaults:"), values);
-        }
         // Let SDL install its Cocoa application/delegate first, before creating
         // any window. Accessory policy avoids normal foreground application activation.
         if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
