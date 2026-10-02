@@ -88,6 +88,12 @@ void UserFile::makeGameDataBinary(u8* pBuffer, u32 size) const {
     mGameDataHolder->makeFileBinary(pBuffer, size);
 }
 
+#ifdef PETARI_NATIVE
+void UserFile::nativeSaveModGalaxies() const {
+    mGameDataHolder->nativeSaveModGalaxies();
+}
+#endif
+
 void UserFile::loadFromGameDataBinary(const char* pName, const u8* pBuffer, u32 size) {
     mIsGameDataCorrupted = !mGameDataHolder->loadFromFileBinary(pName, pBuffer, size);
 }

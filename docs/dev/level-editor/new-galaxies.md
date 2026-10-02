@@ -34,14 +34,14 @@ player**, not only inside that galaxy.
 | Music | `AudStageBgmWrap::changeStageNameToSoundID`, `AudStageBgmTable::findDataElement`, `AudSceneMgr::findSceneSoundInfo` | Silence, and `cSceneInfo[0]` dummy wave sets | **Done**: each maps the mod galaxy to `galaxy.json`'s `music` galaxy |
 | Pause menu star list (any galaxy, vanilla too) | `PowerStarList::getSortedList` (`PowerStarList.cpp:154`) → `isOn(name)` | Null flag dereference | **Done**: null-flag guard (registry galaxies count as open) |
 | Pause menu star list | `makeGalaxyNameText` (`:546-550`) | Null name used as the `swprintf` format | **Done** (message overlay) |
-| Pause menu star list | 75 rows (5 x 15, `:30-32, 147`), unchecked add | Overflow past 75 rows | **Proposed**: cap and Check (the disc uses about 61) |
+| Pause menu star list | 75 rows (5 x 15, `:30-32, 147`), unchecked add | Overflow past 75 rows once galaxies and the race page exceed it | **Done**: at most 60 galaxies listed; the last page is kept for race times (the disc opens at most 42) |
 | Star get, any galaxy (vanilla too) | `GameDataHolder::getGalaxyNumCanOpen` (`GameDataHolder.cpp:53-65`) → `canOn` | Null flag dereference, from `StageResultSequenceChecker` and `StageResultInformer` | **Done**: null-flag guard |
 | Leaving with or without a star | `getIncludedGrandGalaxyId` → 115, then `setNextStageToAstroGalaxyOrDome` sets nothing, then `strcmp(nullptr)` in `isEqualStageStopCometScheduler` | Crash | **Done**: `JMapInfoIter::getValue` reads nothing past the table, so the default 0 (no dome) applies. See the S8 run for where the game goes |
 | Result window | Null name arguments | Blank text (native `CustomTagProcessor` tolerates null) | **Done** (message overlay) |
 | Coins, scenarios 9+ | `mMaxCoinNum[8]`, u8 star bits | Out-of-bounds write | **Proposed**: the registry and the editor cap missions at 8 |
-| Star totals | `calcCurrentPowerStarNum`, `getPowerStarNumMax`, file select | Mod stars count toward 120, the Luigi event (>108) and the file-select total | **Proposed**: exclude registry galaxies (`galaxy.json` opt-in to count) |
+| Star totals | `calcCurrentPowerStarNum`, `getPowerStarNumMax`, file select | Mod stars count toward 120, the Luigi event (>108) and the file-select total | **Done**: registry galaxies are excluded from both totals |
 | Mission select (entered with scenario -1) | `ScenarioSelectLayout::appear :163`, `fadeInText :364` | Null names | **Done** (message overlay) |
-| Mission select, `Comet` column | `GalaxyCometScheduler::findFromGalaxy` returns null (`:387-391`), dereferenced at `:645`, `:796` | Crash | **Proposed**: null guard; mod comets are not scheduled in v1 |
+| Mission select, `Comet` column | `GalaxyCometScheduler::findFromGalaxy` returns null (`:387-391`), dereferenced at `:645`, `:796` | Crash | **Done**: `getEncounterCometPowerStarId` returns -1 without a schedule (`:796` needs a scheduled comet, which mod galaxies never have); mod comets are not scheduled in v1 |
 | Comet flags | `isOnGameEventFlagNormalComet` / `Coin100Comet` (`GameDataFunction.cpp:360-374`) | Null flag | **Done** (null-flag guard: off) |
 
 ## 2. Saving

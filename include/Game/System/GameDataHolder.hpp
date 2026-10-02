@@ -63,6 +63,10 @@ public:
     void followStoryEventByName(const char*);
     void resetAllData();
     u32 makeFileBinary(u8*, u32);
+#ifdef PETARI_NATIVE
+    /// Writes this file's mod galaxy records to the mods' sidecars (petari/platform/mod_galaxy.hpp).
+    void nativeSaveModGalaxies() const;
+#endif
     bool loadFromFileBinary(const char*, const u8*, u32);
 
     /* 0x00 */ GameEventFlagChecker* mEventFlagChecker;

@@ -27,6 +27,9 @@ public:
     void setUserName(const wchar_t*);
     const char* getGameDataName() const;
     void makeGameDataBinary(u8*, u32) const;
+#ifdef PETARI_NATIVE
+    void nativeSaveModGalaxies() const;
+#endif
     void loadFromGameDataBinary(const char*, const u8*, u32);
     const char* getConfigDataName() const;
     void makeConfigDataBinary(u8*, u32) const;

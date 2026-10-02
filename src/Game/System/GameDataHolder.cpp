@@ -318,7 +318,9 @@ namespace {
     namespace ModGalaxy = PetariNative::Platform::ModGalaxy;
 
     // Mod galaxies' records live in the mods' sidecars, not in GameData.bin (TECH.md 5.7;
-    // GameDataAllGalaxyStorage::serialize leaves them out).
+    // GameDataAllGalaxyStorage::serialize leaves them out). Written when a user file is stored
+    // (SaveDataHandler::storeUserFile), not by makeFileBinary: that also builds empty template
+    // files and backups, whose holders are not the player's file.
     void saveModGalaxies(const char* pUserFile, GameDataAllGalaxyStorage* pStorage) {
         std::vector< ModGalaxy::GalaxyRecord > records;
         for (s32 i = 0; i < pStorage->getGalaxyNum(); i++) {
@@ -359,11 +361,14 @@ namespace {
 #endif
 
 u32 GameDataHolder::makeFileBinary(u8* pData, u32 a2) {
-#ifdef PETARI_NATIVE
-    saveModGalaxies(mName, mAllGalaxyStorage);
-#endif
     return mChunkHolder->makeFileBinary(pData, a2);
 }
+
+#ifdef PETARI_NATIVE
+void GameDataHolder::nativeSaveModGalaxies() const {
+    saveModGalaxies(mName, mAllGalaxyStorage);
+}
+#endif
 
 bool GameDataHolder::loadFromFileBinary(const char* pName, const u8* pData, u32 dataSize) {
     snprintf(mName, sizeof(mName), "%s", pName);

@@ -148,6 +148,13 @@ GameDataSomeScenarioAccessor GameDataAllGalaxyStorage::makeAccessor(const char* 
 s32 GameDataAllGalaxyStorage::calcCurrentPowerStarNum() const {
     s32 powerStarNum = 0;
     for (s32 idx = 0; idx < getGalaxyNum(); idx++) {
+#ifdef PETARI_NATIVE
+        // Mod galaxies' stars do not count toward the game's total (the 120-star events, Luigi,
+        // the file-select count; TECH.md 5.7).
+        if (PetariNative::Platform::ModGalaxy::find(mSomeGalaxyStorages[idx]->mGalaxyName) != nullptr) {
+            continue;
+        }
+#endif
         powerStarNum += mSomeGalaxyStorages[idx]->getPowerStarNumOwned();
     }
     return powerStarNum;
