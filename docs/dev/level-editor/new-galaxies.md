@@ -30,18 +30,18 @@ player**, not only inside that galaxy.
 | Stage load | `PauseMenu::init` (`PauseMenu.cpp:87, 93`), via `GamePauseSequence::init` | Null galaxy/scenario name reaches `ReplaceTagProcessor::Replace` (`ReplaceTagProcessor.cpp:51`) | **Done**: message overlay in `MessageData::getMessageDirect` |
 | Scenario starter | `ScenarioTitle::exeAppear` (`ScenarioTitle.cpp:34-35`) | Same null name | **Done** (message overlay) |
 | Entry by name | `petariDirectStageMove` with a name the parser does not know | `makeAccessor` wraps a null `ScenarioData` | **Note**: only reached for typos (`PETARI_STAGE`) |
-| Level Select, `--stage` | `kGalaxies` (`launch_stage.cpp:12-55`) | Mod galaxies are not listed (fails safe) | **Proposed**: build the list from the parser, with a Mod galaxies group |
+| Level Select, `--stage` | `kGalaxies` (`launch_stage.cpp:12-55`) | Mod galaxies are not listed (fails safe) | **Done**: the registry's galaxies follow the disc's in a "Mod galaxies" section, and `--stage` resolves them |
 | Music | `AudStageBgmWrap::changeStageNameToSoundID`, `AudStageBgmTable::findDataElement`, `AudSceneMgr::findSceneSoundInfo` | Silence, and `cSceneInfo[0]` dummy wave sets | **Done**: each maps the mod galaxy to `galaxy.json`'s `music` galaxy |
 | Pause menu star list (any galaxy, vanilla too) | `PowerStarList::getSortedList` (`PowerStarList.cpp:154`) → `isOn(name)` | Null flag dereference | **Done**: null-flag guard (registry galaxies count as open) |
 | Pause menu star list | `makeGalaxyNameText` (`:546-550`) | Null name used as the `swprintf` format | **Done** (message overlay) |
-| Pause menu star list | 75 rows (5 x 15, `:30-32, 147`), unchecked add | Overflow past 75 rows | **Proposed**: cap and Check (the disc uses about 61) |
+| Pause menu star list | 75 rows (5 x 15, `:30-32, 147`), unchecked add | Overflow past 75 rows once galaxies and the race page exceed it | **Done**: at most 60 galaxies listed; the last page is kept for race times (the disc opens at most 42) |
 | Star get, any galaxy (vanilla too) | `GameDataHolder::getGalaxyNumCanOpen` (`GameDataHolder.cpp:53-65`) → `canOn` | Null flag dereference, from `StageResultSequenceChecker` and `StageResultInformer` | **Done**: null-flag guard |
 | Leaving with or without a star | `getIncludedGrandGalaxyId` → 115, then `setNextStageToAstroGalaxyOrDome` sets nothing, then `strcmp(nullptr)` in `isEqualStageStopCometScheduler` | Crash | **Done**: `JMapInfoIter::getValue` reads nothing past the table, so the default 0 (no dome) applies. See the S8 run for where the game goes |
 | Result window | Null name arguments | Blank text (native `CustomTagProcessor` tolerates null) | **Done** (message overlay) |
 | Coins, scenarios 9+ | `mMaxCoinNum[8]`, u8 star bits | Out-of-bounds write | **Proposed**: the registry and the editor cap missions at 8 |
-| Star totals | `calcCurrentPowerStarNum`, `getPowerStarNumMax`, file select | Mod stars count toward 120, the Luigi event (>108) and the file-select total | **Proposed**: exclude registry galaxies (`galaxy.json` opt-in to count) |
+| Star totals | `calcCurrentPowerStarNum`, `getPowerStarNumMax`, file select | Mod stars count toward 120, the Luigi event (>108) and the file-select total | **Done**: registry galaxies are excluded from both totals |
 | Mission select (entered with scenario -1) | `ScenarioSelectLayout::appear :163`, `fadeInText :364` | Null names | **Done** (message overlay) |
-| Mission select, `Comet` column | `GalaxyCometScheduler::findFromGalaxy` returns null (`:387-391`), dereferenced at `:645`, `:796` | Crash | **Proposed**: null guard; mod comets are not scheduled in v1 |
+| Mission select, `Comet` column | `GalaxyCometScheduler::findFromGalaxy` returns null (`:387-391`), dereferenced at `:645`, `:796` | Crash | **Done**: `getEncounterCometPowerStarId` returns -1 without a schedule (`:796` needs a scheduled comet, which mod galaxies never have); mod comets are not scheduled in v1 |
 | Comet flags | `isOnGameEventFlagNormalComet` / `Coin100Comet` (`GameDataFunction.cpp:360-374`) | Null flag | **Done** (null-flag guard: off) |
 
 ## 2. Saving
@@ -55,7 +55,11 @@ player**, not only inside that galaxy.
 - 6 chunks per file in 0xF80 bytes. `BinaryDataChunkHolder::makeFileBinary` never checks the total size.
 - **Hash collision.** A mod galaxy whose 16-bit key equals a disc galaxy's would share that galaxy's record. `findIndex(u16)` returns the first match.
   - **Done**: the parser rejects such a registry galaxy and logs which disc galaxy it collides with.
-- **Proposed (M4).** Mod galaxies' `GALA`/`SPN1` records go to a sidecar file `<user>/mods-saves/<Mod>.bin`. `serialize` skips them and `deserialize` routes them there, so `GameData.bin` stays vanilla-shaped and progress survives turning the mod off.
+- **Done: the `GALA` sidecar.**
+  - `GameDataAllGalaxyStorage::serialize` leaves registry galaxies out, so `GameData.bin` keeps the disc's shape.
+  - `GameDataHolder::makeFileBinary` and `loadFromFileBinary` write and read their records in `<user>/mods-saves/<Mod>.json`, keyed by the user file's save name (`mario1`...). The format is in `petari/platform/mod_galaxy.hpp`.
+  - Turning the mod off and on keeps the stars: `editor_galaxy_smoke.py` runs 3 and 4.
+- **Proposed:** the same for `SPN1` (launch-star paths drawn after first use). Losing them only redraws the path.
 
 ## 3. Fixed counts
 

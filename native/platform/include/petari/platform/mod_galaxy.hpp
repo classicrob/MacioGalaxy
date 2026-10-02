@@ -15,6 +15,7 @@
 // Text is UTF-8 in the file and answered as UTF-16 (the game's message text); a language missing
 // falls back to "en". Mods never replace Message.arc for this, so they do not conflict.
 // Pure C++, no game code: the game's hooks (PETARI_NATIVE) ask it.
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <string>
@@ -59,6 +60,28 @@ const char* musicFrom(const char* pGalaxy);
 
 /// Drops a registered galaxy for the rest of the run, with a reason for the log.
 void reject(const char* pName, const char* pReason);
+
+// ---- The save sidecar (TECH.md 5.7) ----
+// GameData.bin keeps only the disc's galaxies (vanilla-shaped, so turning a mod off loses
+// nothing and another tool reads it). A mod galaxy's per-file record (the GALA record: Power Star
+// bits, visited bits, best coins per mission) is kept in <user>/mods-saves/<Mod>.json:
+//   { "format": 1, "files": { "mario1": { "ModTestGalaxy": { "stars": 1, "visited": 1,
+//                                                          "coins": [0, 0, 0, 0, 0, 0, 0, 0] } } } }
+
+struct GalaxyRecord {
+    std::string galaxy;
+    std::uint8_t stars = 0;    // bit n-1: Power Star n owned
+    std::uint8_t visited = 0;  // bit n-1: mission n played
+    std::uint16_t coins[8] = {};
+};
+
+/// Where the sidecars live (<user>/mods-saves); empty (the default): nothing is saved or loaded.
+void setSaveDirectory(const std::filesystem::path& directory);
+/// Writes the records of the registered galaxies for one user file ("mario1"), each into its mod's
+/// sidecar, keeping the other user files' entries. Records of unregistered galaxies are ignored.
+bool saveRecords(const std::string& userFile, const std::vector< GalaxyRecord >& records, std::string* pError);
+/// The registered galaxies' records for one user file (none when there is no sidecar).
+std::vector< GalaxyRecord > loadRecords(const std::string& userFile);
 
 /// The save's 16-bit galaxy key (JGadget hash, h = c + 31 h over signed chars, truncated): mod
 /// galaxies whose key equals a disc galaxy's would share its save record, so they are rejected.

@@ -12,6 +12,11 @@
 #include "Game/Util/JMapInfo.hpp"
 #include "Game/Util/MathUtil.hpp"
 #include <cstdio>
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#include <string>
+#include <vector>
+#endif
 
 extern const u8 StoryEventBCSV[];
 
@@ -308,11 +313,89 @@ void GameDataHolder::resetAllData() {
     mStarPieceAlmsStorage->initializeData();
 }
 
+#ifdef PETARI_NATIVE
+namespace {
+    namespace ModGalaxy = PetariNative::Platform::ModGalaxy;
+
+    // Mod galaxies' records live in the mods' sidecars, not in GameData.bin (TECH.md 5.7;
+    // GameDataAllGalaxyStorage::serialize leaves them out). Written when a user file is stored
+    // (SaveDataHandler::storeUserFile), not by makeFileBinary: that also builds empty template
+    // files and backups, whose holders are not the player's file.
+    void saveModGalaxies(const char* pUserFile, GameDataAllGalaxyStorage* pStorage) {
+        std::vector< ModGalaxy::GalaxyRecord > records;
+        for (s32 i = 0; i < pStorage->getGalaxyNum(); i++) {
+            const GameDataSomeGalaxyStorage* pGalaxy = pStorage->getGalaxyStorage(i);
+            if (ModGalaxy::find(pGalaxy->mGalaxyName) == nullptr) {
+                continue;
+            }
+            ModGalaxy::GalaxyRecord record;
+            record.galaxy = pGalaxy->mGalaxyName;
+            record.stars = pGalaxy->mPowerStarOwnedFlags;
+            record.visited = pGalaxy->mAlreadyVisitedFlags;
+            for (s32 c = 0; c < 8; c++) {
+                record.coins[c] = pGalaxy->mMaxCoinNum[c];
+            }
+            records.push_back(record);
+        }
+        std::string error;
+        if (!records.empty() && !ModGalaxy::saveRecords(pUserFile, records, &error)) {
+            std::fprintf(stderr, "[mods] mod galaxy save: %s\n", error.c_str());
+        }
+    }
+
+    void loadModGalaxies(const char* pUserFile, GameDataAllGalaxyStorage* pStorage) {
+        for (const ModGalaxy::GalaxyRecord& record : ModGalaxy::loadRecords(pUserFile)) {
+            const s32 index = pStorage->findIndex(record.galaxy.c_str());
+            if (index < 0) {
+                continue;
+            }
+            GameDataSomeGalaxyStorage* pGalaxy = pStorage->getGalaxyStorage(index);
+            pGalaxy->mPowerStarOwnedFlags = record.stars;
+            pGalaxy->mAlreadyVisitedFlags = record.visited;
+            for (s32 c = 0; c < 8; c++) {
+                pGalaxy->mMaxCoinNum[c] = record.coins[c];
+            }
+        }
+    }
+}  // namespace
+#endif
+
 u32 GameDataHolder::makeFileBinary(u8* pData, u32 a2) {
     return mChunkHolder->makeFileBinary(pData, a2);
 }
 
+#ifdef PETARI_NATIVE
+void GameDataHolder::nativeSaveModGalaxies() const {
+    saveModGalaxies(mName, mAllGalaxyStorage);
+}
+
+void GameDataHolder::nativeCopyModGalaxies(const GameDataHolder& rOther) {
+    for (s32 i = 0; i < mAllGalaxyStorage->getGalaxyNum(); i++) {
+        GameDataSomeGalaxyStorage* pGalaxy = mAllGalaxyStorage->getGalaxyStorage(i);
+        if (ModGalaxy::find(pGalaxy->mGalaxyName) == nullptr) {
+            continue;
+        }
+        const s32 index = rOther.mAllGalaxyStorage->findIndex(pGalaxy->mGalaxyName);
+        if (index < 0) {
+            continue;
+        }
+        const GameDataSomeGalaxyStorage* pSource = rOther.mAllGalaxyStorage->getGalaxyStorage(index);
+        pGalaxy->mPowerStarOwnedFlags = pSource->mPowerStarOwnedFlags;
+        pGalaxy->mAlreadyVisitedFlags = pSource->mAlreadyVisitedFlags;
+        for (s32 c = 0; c < 8; c++) {
+            pGalaxy->mMaxCoinNum[c] = pSource->mMaxCoinNum[c];
+        }
+    }
+}
+#endif
+
 bool GameDataHolder::loadFromFileBinary(const char* pName, const u8* pData, u32 dataSize) {
     snprintf(mName, sizeof(mName), "%s", pName);
+#ifdef PETARI_NATIVE
+    const bool loaded = mChunkHolder->loadFromFileBinary(pData, dataSize);
+    loadModGalaxies(mName, mAllGalaxyStorage);
+    return loaded;
+#else
     return mChunkHolder->loadFromFileBinary(pData, dataSize);
+#endif
 }

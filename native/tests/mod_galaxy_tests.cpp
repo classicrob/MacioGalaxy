@@ -100,11 +100,63 @@ static void testLoadFromFolders() {
     fs::remove_all(root);
 }
 
+static void testSidecar() {
+    namespace fs = std::filesystem;
+    G::clear();
+    std::string error;
+    G::loadText(R"({"format":1,"galaxies":[{"name":"ModTestGalaxy","title":"T"},{"name":"SecondGalaxy","title":"S"}]})", "GalaxyTest", &error);
+    G::loadText(R"({"format":1,"galaxies":[{"name":"OtherModGalaxy","title":"O"}]})", "OtherMod", &error);
+    G::GalaxyRecord a;
+    a.galaxy = "ModTestGalaxy";
+    a.stars = 1;
+    a.visited = 3;
+    a.coins[0] = 42;
+    check(G::saveRecords("mario1", {a}, &error), "no directory: saving is a no-op");
+    check(G::loadRecords("mario1").empty(), "no directory: nothing loads");
+
+    const fs::path dir = fs::temp_directory_path() / "petari_mod_galaxy_sidecar";
+    fs::remove_all(dir);
+    G::setSaveDirectory(dir);
+    G::GalaxyRecord b = a;
+    b.galaxy = "OtherModGalaxy";
+    b.stars = 2;
+    G::GalaxyRecord stray = a;
+    stray.galaxy = "EggStarGalaxy";
+    check(G::saveRecords("mario1", {a, b, stray}, &error), "save");
+    check(fs::exists(dir / "GalaxyTest.json") && fs::exists(dir / "OtherMod.json") && !fs::exists(dir / "GalaxyTest.json.tmp"),
+          "one sidecar per mod, written whole");
+    G::GalaxyRecord c = a;
+    c.stars = 5;
+    check(G::saveRecords("mario2", {c}, &error), "save another user file");
+    const std::vector< G::GalaxyRecord > one = G::loadRecords("mario1");
+    bool foundA = false, foundB = false;
+    for (const G::GalaxyRecord& r : one) {
+        foundA = foundA || (r.galaxy == "ModTestGalaxy" && r.stars == 1 && r.visited == 3 && r.coins[0] == 42);
+        foundB = foundB || (r.galaxy == "OtherModGalaxy" && r.stars == 2);
+    }
+    check(one.size() == 2 && foundA && foundB, "the first user file's records survive saving another file");
+    const std::vector< G::GalaxyRecord > two = G::loadRecords("mario2");
+    check(two.size() == 1 && two[0].stars == 5, "the second user file's record");
+    check(G::loadRecords("mario3").empty(), "a file with no records");
+
+    // A galaxy the registry no longer has is not loaded (its entry stays in the file).
+    G::reject("SecondGalaxy", "test");
+    G::GalaxyRecord d = a;
+    d.galaxy = "SecondGalaxy";
+    check(G::saveRecords("mario1", {a, d}, &error), "save with an unregistered galaxy");
+    for (const G::GalaxyRecord& r : G::loadRecords("mario1")) {
+        check(r.galaxy != "SecondGalaxy", "unregistered galaxies are not loaded");
+    }
+    G::setSaveDirectory({});
+    fs::remove_all(dir);
+}
+
 int main() {
     testParse();
     testRefused();
     testSaveKey();
     testLoadFromFolders();
+    testSidecar();
     if (sFailures != 0) {
         std::fprintf(stderr, "%d mod galaxy check(s) failed\n", sFailures);
         return 1;

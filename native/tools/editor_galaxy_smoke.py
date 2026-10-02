@@ -9,7 +9,10 @@ no compiled-in table (GalaxyID.bcsv, event flags, Message.arc, BGM).
   1. collect  stage smoke entering ModTestGalaxy (PETARI_STAGE_FOLLOW=1: leaving the stage is followed, A
               tapped through the result screens); src/Game/Editor/EditorGalaxyTest.cpp logs the registry's
               names, waits for the star to be owned, then saves with the game's own save sequence
-  2. verify   a new launch on the same user folder: entering ModTestGalaxy, the star must still be owned
+  2. verify   a new launch on the same user folder: entering ModTestGalaxy, the star must still be owned.
+              Mod galaxies' progress is in <user>/mods-saves/GalaxyTest.json, not in GameData.bin
+  3. mod off  the same user with the mod off (PETARI_MOD_FOLDERS=none), Good Egg: the save loads and plays
+  4. verify   the mod back on: the star is still owned (the sidecar, untouched by run 3)
 
 Each run must log "[editor-galaxy] PASS" and the smoke must pass. Screenshots are not taken.
 
@@ -32,13 +35,15 @@ ROOT = Path(__file__).resolve().parents[2]
 GALAXY, MOD = "ModTestGalaxy", "GalaxyTest"
 
 
-def run(args, name, user, mode):
+def run(args, name, user, mode, stage=GALAXY, mods=MOD):
     log = args.output / f"{name}.log"
-    command, env_extra = sweep.app_command(args, user, GALAXY, 1)
+    command, env_extra = sweep.app_command(args, user, stage, 1)
     env = dict(os.environ, **env_extra)
     for key in ("PETARI_EDITOR", "PETARI_EDITOR_HOOKS_TEST", "PETARI_EDITOR_TERRAIN_TEST", "PETARI_STAGE_WARP", "PETARI_MOD_FOLDERS"):
         env.pop(key, None)
-    env.update(PETARI_LOCK_CLASS="functional", PETARI_MOD_FOLDERS=MOD, PETARI_STAGE_FOLLOW="1", PETARI_EDITOR_GALAXY_TEST=mode)
+    env.update(PETARI_LOCK_CLASS="functional", PETARI_MOD_FOLDERS=mods)
+    if mode:
+        env.update(PETARI_STAGE_FOLLOW="1", PETARI_EDITOR_GALAXY_TEST=mode)
     full = [str(args.lock), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die", str(args.timeout)] + command
     with log.open("wb") as stream:
         status = subprocess.run(full, cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT).returncode
@@ -75,14 +80,22 @@ def main():
                     "--galaxy", GALAXY], check=True)
 
     failures = []
-    for name, mode in (("1-collect", "collect"), ("2-verify", "verify")):
-        r = run(args, name, user, mode)
+    sidecar = user / "mods-saves" / f"{MOD}.json"
+    for name, mode, stage, mods in (("1-collect", "collect", GALAXY, MOD), ("2-verify", "verify", GALAXY, MOD),
+                                    ("3-mod-off", None, "EggStarGalaxy", "none"), ("4-verify-again", "verify", GALAXY, MOD)):
+        r = run(args, name, user, mode, stage, mods)
+        if name == "1-collect":
+            text = sidecar.read_text() if sidecar.exists() else ""
+            has_star = '"stars": 1' in text
+            print(f"  sidecar {sidecar.name}: " + ("has the star" if has_star else "MISSING the star"))
+            if not has_star:
+                failures.append("1-collect: the sidecar does not hold the star")
         print(f"{name}: exit {r['status']}, smoke {r['result']} {r['reason']}")
         for line in r["mods"]:
             print(f"  [mods] {line}")
         for line in r["galaxy"]:
             print(f"  [editor-galaxy] {line}")
-        if not any(line.startswith("PASS") for line in r["galaxy"]):
+        if mode and not any(line.startswith("PASS") for line in r["galaxy"]):
             failures.append(f"{name}: the galaxy check did not pass")
         if r["result"] != "PASS":
             failures.append(f"{name}: stage smoke {r['result']}")
@@ -91,7 +104,8 @@ def main():
     if failures:
         print("FAIL: " + "; ".join(failures))
         return 1
-    print("PASS: entered a galaxy outside GalaxyID.bcsv, collected its star, saved, and found it after a restart")
+    print("PASS: entered a galaxy outside GalaxyID.bcsv, collected its star, saved it in the sidecar, and found it after "
+          "restarts, including one with the mod off")
     return 0
 
 
