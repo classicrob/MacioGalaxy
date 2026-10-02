@@ -300,7 +300,7 @@ def run_batch(args, stage, scenario, jobs, batch_dir, tag):
         env["PETARI_SHADER_SEED_DIR"] = str(seed)
     # taskpolicy -b: macOS background QoS, so the sweep only uses spare CPU and never slows other workers' builds and smokes.
     full = [str(main / "build/locked-app.sh"), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die",
-            str(args.timeout)] + ([] if args.normal_priority else ["/usr/bin/taskpolicy", "-b"]) + command
+            str(args.timeout)] + ([] if args.normal_priority else ["/usr/sbin/taskpolicy", "-b"]) + command
     log = batch_dir / f"{tag}.log"
     status, stalled, startup = run_process(full, env, log, args.timeout, args.stall)
     (batch_dir / f"{tag}.startup").write_text("%s\n" % ("none" if startup is None else f"{startup:.1f}"))
