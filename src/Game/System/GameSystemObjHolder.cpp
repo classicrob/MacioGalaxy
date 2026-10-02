@@ -5,6 +5,7 @@
 #include "Game/Screen/ScreenPreserver.hpp"
 #include "Game/Screen/StarPointerDirector.hpp"
 #ifdef PETARI_NATIVE
+#include "Game/Camera/EditorCamera.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
 #endif
 #include "Game/System/AudSystemWrapper.hpp"
@@ -100,8 +101,8 @@ void GameSystemObjHolder::clearRequestFileInfo(bool unk) {
 
 void GameSystemObjHolder::drawStarPointer() {
 #ifdef PETARI_NATIVE
-    if (PhotoCamera::isActive()) {
-        return;  // photo mode: no pointer in the picture
+    if (PhotoCamera::isActive() || EditorCamera::isActive()) {
+        return;  // photo and Edit mode: no Star Pointer
     }
 #endif
     mStarPointerDirector->draw();

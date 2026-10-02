@@ -19,6 +19,7 @@ enum class Mod : int {
     OdysseyMovement,  // Mario moves with Super Mario Odyssey's physics (docs/dev/ODYSSEY_MOVEMENT.md); no button
     Cappy,            // Odyssey's cap throw and cap bounce (docs/dev/CAPPY.md); needs OdysseyMovement
     OdysseyJumpDive,  // with OdysseyMovement: pressing Jump in the air dives; ON unless turned off
+    LevelEditor,      // the level editor: a Tab tap enters Edit mode (docs/dev/level-editor/UX.md); off by default
     Count
 };
 

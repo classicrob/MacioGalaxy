@@ -141,6 +141,9 @@ is always one hover (or the Advanced fold) away.
    └──── Resume as-is ───┘          (freezes this frame; the trail of the run is drawn)
 ```
 
+- **Tab is a tap.** Tab also tilts the remote while held (the ball and surfing levels), so
+  only a short tap (under a quarter second, nothing else pressed) toggles Edit; a hold stays
+  the game's tilt. The editor is off until the Mods page's "Level editor" is switched on.
 - **Entering Edit never changes what's on screen.** Tab (or F1 → Level
   Editor, or the controller's hold-Minus) freezes the game exactly as photo mode
   does: the frame stays, the HUD fades out, the editor camera starts at the

@@ -1,5 +1,8 @@
 // The per-frame host seam (petari/app.hpp). Aurora and SDL side.
 
+#ifdef PETARI_EDITOR_UI
+#include <petari/editor/ui.hpp>
+#endif
 #include <aurora/aurora.h>
 #include <aurora/event.h>
 
@@ -644,6 +647,10 @@ extern "C" void petari_host_frame_seam(void) {
     }
     const Rect image = updateImage();
     traceFrame(image);
+#ifdef PETARI_EDITOR_UI
+    // The level editor's panels, around the game (they set where the next frame's image goes).
+    PetariEditor::Ui::drawFrame(gLastWindowWidth, gLastWindowHeight);
+#endif
     PetariNative::HomeMenu::drawImGuiOverlay(image.x, image.y, image.width, image.height);
     const std::uint64_t endStart = Telemetry::nowNs();
     aurora_end_frame();

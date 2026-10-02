@@ -4,6 +4,7 @@
 // (patch_aurora_present.py). Included with Aurora's lib/ on the quote path.
 
 #include "gfx/texture.hpp"
+#include "webgpu/gpu.hpp"
 #include <webgpu/webgpu_cpp.h>
 
 #include <cstdint>
@@ -22,6 +23,12 @@ struct Frame {
 // Main thread, in aurora_end_frame after the FIFO is drained (the command
 // processor is idle, so its copy textures can be read).
 Frame take() noexcept;
+
+// The present viewport in drawable pixels: the content's aspect fitted into the
+// editor's content area when one is set (petari_present_set_content_area), else
+// into the whole surface as upstream Aurora does.
+aurora::webgpu::Viewport present_viewport(uint32_t surfaceWidth, uint32_t surfaceHeight, uint32_t contentWidth,
+                                          uint32_t contentHeight) noexcept;
 
 // Render worker: the bind group drawing the XFB with Aurora's copy pipeline.
 // False if nothing is drawn (black).
