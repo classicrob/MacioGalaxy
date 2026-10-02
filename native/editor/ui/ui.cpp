@@ -25,6 +25,7 @@ namespace {
 
 int gSwitchingTo = 0;      // a mission switch in flight (SwitchScenario takes ~2 s)
 double gSwitchSince = 0.0;
+bool gSwitchReloading = false;  // Runtime has started the switch's reload
 
 constexpr float kToolbarHeight = 44.0f;
 constexpr float kFooterHeight = 28.0f;
@@ -231,8 +232,7 @@ void drawToolbar(float width) {
             }
             if (current) ImGui::PopStyleColor(2);
             if (ImGui::IsItemHovered()) {
-                const char* name = model->missionName(mission);
-                ImGui::SetTooltip("%s%s", name != nullptr && name[0] != '\0' ? name : "Mission", current ? " (editing)" : " (click to edit it)");
+                ImGui::SetTooltip("%s%s", missionLabel(*model, mission).c_str(), current ? " (editing)" : " (click to edit it)");
             }
         }
         ImGui::SameLine(0.0f, 10.0f);
@@ -384,15 +384,17 @@ void drawToast() {
     std::string text = sText;
     bool error = sError;
     if (gSwitchingTo != 0) {
+        // Done when Runtime's reload for it has come and gone (the model names the new mission at once).
         const ModelView* model = PetariEditor::model();
-        if ((model != nullptr && model->scenario() == gSwitchingTo) || ImGui::GetTime() - gSwitchSince > 10.0) {
+        const bool reloading = mode() == Mode::Reloading;
+        gSwitchReloading = gSwitchReloading || reloading;
+        const double elapsed = ImGui::GetTime() - gSwitchSince;
+        if ((gSwitchReloading && !reloading) || elapsed > 10.0 || (!gSwitchReloading && elapsed > 1.5)) {
             gSwitchingTo = 0;
         } else {
-            const char* name = model != nullptr ? model->missionName(gSwitchingTo) : nullptr;
-            char loading[160];
-            std::snprintf(loading, sizeof(loading), "Loading mission %d%s%s...", gSwitchingTo, name != nullptr && name[0] != '\0' ? ": " : "",
-                          name != nullptr ? name : "");
-            text = loading, error = false;
+            const std::string name = model != nullptr ? missionLabel(*model, gSwitchingTo) : "";
+            text = "Loading " + (name.empty() || name.rfind("Mission ", 0) == 0 ? "mission " + std::to_string(gSwitchingTo) : "mission " + std::to_string(gSwitchingTo) + ": " + name) + "...";
+            error = false;
         }
     } else if (sText.empty() || ImGui::GetTime() > sUntil) {
         return;
@@ -421,6 +423,7 @@ void switchMission(int mission) {
     enqueue(std::move(command));
     gSwitchingTo = mission;
     gSwitchSince = ImGui::GetCurrentContext() != nullptr ? ImGui::GetTime() : 0.0;
+    gSwitchReloading = false;
 }
 
 bool installFonts(float displayScale) {

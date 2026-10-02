@@ -18,6 +18,9 @@ void drawInspectorWindow(const char* title);
 // Cmd+Z / Cmd+Shift+Z (and the toolbar's buttons): whether there is something to undo / redo.
 void deleteSelection();  // Delete: one op removing the selected rows
 bool canUndo();
+// A mission's name fit to show: Runtime's, when the UI font can draw it (the disc's internal names are
+// Japanese); else "Mission <n>".
+std::string missionLabel(const ModelView& model, int mission);
 // Bring a Galaxy tab forward ("Checks": the toolbar's badge).
 void openTab(const char* name);
 struct CheckCounts {

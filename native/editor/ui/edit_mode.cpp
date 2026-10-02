@@ -34,6 +34,7 @@ enum class Drag { None, Look, Orbit, Pan };
 bool gWasActive = false;
 bool gCallbacksSet = false;
 bool gForcedVisible = false;  // shown by PETARI_EDITOR_DOCK before Edit mode existed
+bool gWasShown = false;      // the layout's last shown state (Edit, or a reload from it)
 Drag gDrag = Drag::None;
 std::chrono::steady_clock::time_point gLastScroll{};
 
@@ -303,8 +304,14 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (active != gWasActive) {
         gWasActive = active;
         gDrag = Drag::None;
-        if (!gForcedVisible) setVisible(active);
         if (!active) Pick::setHoverWanted(false);  // (Runtime is told by the game's Edit nerve)
+    }
+    // The layout stays up through a reload (Reload, a mission switch, Play's rebuild) so the panels and the
+    // "Loading mission 2..." toast don't flash away; it goes when Play hands the game over.
+    const bool shown = active || mode() == Mode::Reloading;
+    if (shown != gWasShown) {
+        gWasShown = shown;
+        if (!gForcedVisible) setVisible(shown);
     }
     if (!active) {
         return;

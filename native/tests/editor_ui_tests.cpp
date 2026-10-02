@@ -174,6 +174,9 @@ void testPanelsLogic() {
     CHECK(Ui::filterEntries(entries, "", "").size() == 3 && Ui::filterEntries(entries, "zzz", "").empty());
     CHECK(Ui::filterEntries(entries, "", "Planets").empty());
 
+    // Mission names: shown when drawable, else "Mission <n>" (FakeModel names every mission "Test mission").
+    CHECK(Ui::missionLabel(model, 1) == "Test mission");
+
     // Checks: counted by severity, errors listed first, each group in Runtime's order.
     {
         std::vector< PetariEditor::Check > list(4);

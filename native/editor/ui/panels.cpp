@@ -694,6 +694,13 @@ std::vector< const Check* > orderChecks(const std::vector< Check >& all) {
 
 void openTab(const char* name) { gOpenTab = name; }
 
+std::string missionLabel(const ModelView& model, int mission) {
+    const char* name = model.missionName(mission);
+    bool readable = name != nullptr && name[0] != '\0';
+    for (const char* c = name; readable && *c != '\0'; c++) readable = static_cast< unsigned char >(*c) >= 0x20 && static_cast< unsigned char >(*c) < 0x7F;
+    return readable ? std::string(name) : "Mission " + std::to_string(mission);
+}
+
 std::string argValueText(const Catalog::Arg& arg, std::int32_t value) {
     for (const Catalog::EnumChoice& choice : arg.choices) {
         if (choice.value == value) return choice.label;
@@ -949,8 +956,7 @@ void drawInspectorWindow(const char* title) {
                     ImGui::SmallButton(label);
                     ImGui::PopStyleColor(2);
                     if (ImGui::IsItemHovered()) {
-                        const char* name = model->missionName(mission);
-                        ImGui::SetTooltip("%s: %s", name != nullptr && name[0] != '\0' ? name : "Mission", in ? "appears" : "does not appear");
+                        ImGui::SetTooltip("%s: %s", missionLabel(*model, mission).c_str(), in ? "appears" : "does not appear");
                         gHelp = "Which missions this object appears in (its layer). Changing it comes with mission editing.";
                     }
                 }
