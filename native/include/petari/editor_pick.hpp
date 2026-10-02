@@ -74,6 +74,8 @@ void press();
 void release();
 void setSnapSuspended(bool suspended);  // Cmd held: no snapping for this drag
 void ground(Ground what);
+void setShowGhosts(bool show);  // other missions' objects (default on)
+bool showGhosts();
 
 struct Take {
     bool pressed = false, released = false, snapSuspended = false;
@@ -93,6 +95,12 @@ struct View {
     std::vector<Line> lines;
     float originX = 0, originY = 0;
     char status[96] = {};    // for the footer: "Move  X +120.0" ...
+    // Objects of other missions (UX section 12), drawn as ghosts while "Other missions" is on.
+    struct Ghost {
+        float x = 0, y = 0, radius = 0;  // viewport coordinates; radius in viewport heights
+        char name[40] = {};
+    };
+    std::vector<Ghost> ghosts;
     // The play marker (UX section 3): where Play puts Mario.
     bool marker = false;
     float markerX = 0, markerY = 0, markerRadius = 0;  // viewport coordinates; radius in viewport heights

@@ -236,6 +236,16 @@ void drawGizmo(const Area& area) {
     ImDrawList* list = ImGui::GetForegroundDrawList();
     list->PushClipRect(ImVec2(area.x, area.y), ImVec2(area.x + area.w, area.y + area.h), true);
     auto at = [&](float x, float y) { return ImVec2(area.x + (x * 0.5f + 0.5f) * area.w, area.y + (0.5f - y * 0.5f) * area.h); };
+    // Other missions' objects: faint dashed rings with their names (UX section 12).
+    for (const Gizmo::View::Ghost& ghost : view.ghosts) {
+        const ImVec2 c = at(ghost.x, ghost.y);
+        const float r = std::fmax(ghost.radius * area.h, 6.0f);
+        for (int i = 0; i < 12; i += 2) {
+            list->PathArcTo(c, r, 6.2831853f * i / 12, 6.2831853f * (i + 1) / 12, 4);
+            list->PathStroke(rgba(1.0f, 1.0f, 1.0f, 0.45f), 0, 1.5f);
+        }
+        if (r > 10.0f) list->AddText(ImVec2(c.x - ImGui::CalcTextSize(ghost.name).x * 0.5f, c.y + r + 2.0f), rgba(1.0f, 1.0f, 1.0f, 0.55f), ghost.name);
+    }
     if (view.marker) {
         // A dashed cyan ring at Mario's feet and its label (the mockup's play marker).
         const ImVec2 c = at(view.markerX, view.markerY);

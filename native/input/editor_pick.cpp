@@ -102,6 +102,7 @@ std::atomic<int> gMode{static_cast<int>(Mode::Move)};
 std::atomic<int> gFrame{static_cast<int>(Frame::Gravity)};
 std::atomic<bool> gPressed{false}, gReleased{false}, gSnapSuspended{false};
 std::atomic<int> gGround{0};
+std::atomic<bool> gShowGhosts{true};
 std::mutex gViewMutex;
 View gView;
 
@@ -115,6 +116,8 @@ void press() { gPressed.store(true, std::memory_order_relaxed); }
 void release() { gReleased.store(true, std::memory_order_relaxed); }
 void setSnapSuspended(bool suspended) { gSnapSuspended.store(suspended, std::memory_order_relaxed); }
 void ground(Ground what) { gGround.store(static_cast<int>(what), std::memory_order_relaxed); }
+void setShowGhosts(bool show) { gShowGhosts.store(show, std::memory_order_relaxed); }
+bool showGhosts() { return gShowGhosts.load(std::memory_order_relaxed); }
 
 Take take() {
     Take t;

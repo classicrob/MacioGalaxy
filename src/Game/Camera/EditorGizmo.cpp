@@ -15,6 +15,7 @@
 #include <petari/editor_pick.hpp>
 #include <petari/host_allocation.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -562,6 +563,37 @@ namespace EditorGizmo {
         if (gMarker.valid && cam.project(gMarker.pos, &out.markerX, &out.markerY)) {
             out.marker = true;
             out.markerRadius = 60.0f / cam.worldPerHeight(gMarker.pos);  // Mario's footprint
+        }
+        // Other missions' objects as ghosts (UX section 12): rows not in the mission being edited, placed
+        // through their zone; the nearest few hundred in front of the camera.
+        if (UI::showGhosts()) {
+            if (const PetariEditor::ModelView* model = PetariEditor::model(); model != nullptr && model->scenario() > 0) {
+                const std::uint32_t current = 1u << (model->scenario() - 1);
+                std::vector< std::pair< float, UI::View::Ghost > > found;
+                for (int zone = 0; zone < model->zoneCount(); zone++) {
+                    if (!model->zonePlaced(zone)) continue;
+                    const PetariEditor::Mtx34 m = model->zoneWorldMatrix(zone);
+                    const G::Basis zb = zoneBasis(m);
+                    for (int table = 0; table < model->tableCount(zone); table++) {
+                        const char* path = model->tablePath(zone, table);
+                        if (std::strstr(path, "objinfo") == nullptr || std::strstr(path, "stageobjinfo") != nullptr) continue;
+                        model->forEachRow(zone, table, [&](PetariEditor::RowId row) {
+                            if (model->state(row) == PetariEditor::RowState::Deleted || !model->hasTransform(row)) return;
+                            if ((model->rowMissions(row) & current) != 0) return;
+                            const PetariEditor::RowTransform t = model->transform(row);
+                            const V3 world = apply(zb, {t.pos.x, t.pos.y, t.pos.z}) + V3{m.m[0][3], m.m[1][3], m.m[2][3]};
+                            UI::View::Ghost ghost;
+                            if (!cam.project(world, &ghost.x, &ghost.y) || std::fabs(ghost.x) > 1.1f || std::fabs(ghost.y) > 1.1f) return;
+                            ghost.radius = 80.0f / cam.worldPerHeight(world);
+                            const char* name = model->objectName(row);
+                            std::snprintf(ghost.name, sizeof(ghost.name), "%s", name != nullptr ? name : "?");
+                            found.push_back({G::length(world - cam.eye), ghost});
+                        });
+                    }
+                }
+                std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                for (size_t i = 0; i < found.size() && i < 300; i++) out.ghosts.push_back(found[i].second);
+            }
         }
         std::vector< Item > items = gDrag.active ? *gDrag.items : gather();
         if (items.empty()) {

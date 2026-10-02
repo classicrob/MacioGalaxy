@@ -209,7 +209,37 @@ void drawToolbar(float width) {
     ImGui::BeginDisabled(!canRedo());
     if (ImGui::Button("Redo")) redo();
     ImGui::EndDisabled();
-    ImGui::SameLine(0.0f, 16.0f);
+    ImGui::SameLine(0.0f, 24.0f);
+    // Missions (UX section 12): the one being edited in gold; another reloads into it.
+    if (const ModelView* model = PetariEditor::model(); model != nullptr && model->missionCount() > 0) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(ImVec4(0.6f, 0.92f, 1.0f, 1.0f), "Mission");
+        for (int mission = 1; mission <= model->missionCount(); mission++) {
+            ImGui::SameLine(0.0f, 4.0f);
+            char label[8];
+            std::snprintf(label, sizeof(label), "%d", mission);
+            const bool current = mission == model->scenario();
+            if (current) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.98f, 0.80f, 0.22f, 0.85f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.17f, 0.02f, 1.0f));
+            }
+            if (ImGui::Button(label) && !current) {
+                Command command{Command::Kind::SwitchScenario};
+                command.index = mission;
+                enqueue(std::move(command));
+            }
+            if (current) ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered()) {
+                const char* name = model->missionName(mission);
+                ImGui::SetTooltip("%s%s", name != nullptr && name[0] != '\0' ? name : "Mission", current ? " (editing)" : " (click to edit it)");
+            }
+        }
+        ImGui::SameLine(0.0f, 10.0f);
+        bool ghosts = PetariNative::EditorGizmo::showGhosts();
+        if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
+        ImGui::SameLine(0.0f, 16.0f);
+    }
     const float buttonHeight = 26.0f;
     const Status& state = status();
     // Reload: rebuild the scene from the layout, applying pending changes (UX section 3).

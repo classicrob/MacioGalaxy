@@ -670,6 +670,30 @@ void drawInspectorWindow(const char* title) {
                 ImGui::SameLine();
                 ImGui::TextColored(stateColor(state), state == RowState::Added ? "added" : state == RowState::Deleted ? "deleted" : "changed");
             }
+            // Appears in (UX section 12): the missions this object is part of.
+            if (const int missions = model->missionCount(); missions > 0) {
+                section("Appears in", "missions");
+                const std::uint32_t bits = model->rowMissions(primary);
+                for (int mission = 1; mission <= missions; mission++) {
+                    if (mission > 1) ImGui::SameLine(0.0f, 4.0f);
+                    const bool in = (bits & (1u << (mission - 1))) != 0;
+                    ImGui::PushStyleColor(ImGuiCol_Button, in ? ImVec4(0.98f, 0.80f, 0.22f, 0.80f) : ImVec4(1.0f, 1.0f, 1.0f, 0.06f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, in ? ImVec4(0.30f, 0.17f, 0.02f, 1.0f) : kDim);
+                    char label[16];
+                    std::snprintf(label, sizeof(label), "%d##m%d", mission, mission);
+                    ImGui::SmallButton(label);
+                    ImGui::PopStyleColor(2);
+                    if (ImGui::IsItemHovered()) {
+                        const char* name = model->missionName(mission);
+                        ImGui::SetTooltip("%s: %s", name != nullptr && name[0] != '\0' ? name : "Mission", in ? "appears" : "does not appear");
+                        gHelp = "Which missions this object appears in (its layer). Changing it comes with mission editing.";
+                    }
+                }
+                if (bits == 0) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(kDim, "in no mission");
+                }
+            }
             if (model->hasTransform(primary)) {
                 section("Transform", "row space");
                 transformRow(*model, rows, "Position", "pos_", 1.0f);
