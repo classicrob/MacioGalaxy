@@ -892,6 +892,17 @@ bool EditModel::apply(const Op& op, std::string* pError) {
     return true;
 }
 
+bool EditModel::setScenario(int scenario) {
+    if (scenario < 1 || scenario > missionCount()) {
+        return false;
+    }
+    if (scenario != mScenario) {
+        mScenario = scenario;
+        mRevision++;  // which rows are in the scene changed
+    }
+    return true;
+}
+
 bool EditModel::undo() {
     if (mCursor == 0) {
         return false;

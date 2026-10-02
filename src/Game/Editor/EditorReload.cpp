@@ -70,11 +70,12 @@ namespace EditorReload {
         }
     }
 
-    void requestReload(bool fromStart) {
+    void requestReload(bool fromStart, s32 scenario) {
         GameSystemSceneController* pController = SingletonHolder< GameSystem >::get()->mSceneController;
-        JMapIdInfo info = fromStart ? MR::getInitializeStartIdInfo() : *MR::getPlayerRestartIdInfo();
-        GalaxyMoveArgument argument(5, pController->mCurrSceneControlInfo.mStage, pController->getCurrentScenarioNo(), &info);
-        argument._C = pController->getCurrentSelectedScenarioNo();
+        JMapIdInfo info = fromStart || scenario > 0 ? MR::getInitializeStartIdInfo() : *MR::getPlayerRestartIdInfo();
+        GalaxyMoveArgument argument(5, pController->mCurrSceneControlInfo.mStage, scenario > 0 ? scenario : pController->getCurrentScenarioNo(),
+                                    &info);
+        argument._C = scenario > 0 ? scenario : pController->getCurrentSelectedScenarioNo();
         GameSequenceFunction::requestGalaxyMove(argument);
     }
 

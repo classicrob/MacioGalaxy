@@ -2,7 +2,8 @@
 // PETARI_EDITOR=1 and PETARI_EDITOR_RELOAD_TEST=1, once the stage smoke's checks are done it plays
 // the UI's part on Good Egg: enter Edit; move a placed Octoomba (live) and a start point (pending);
 // Reload: the new scene must place the Octoomba where the edit put it (from the edited archive),
-// with nothing pending, back in Edit; then Play from a marker: Mario must stand there. Edit is
+// with nothing pending, back in Edit; switch to mission 2 and back (the edits and history kept,
+// the Octoomba placed again); then Play from a marker: Mario must stand there. Edit is
 // entered and re-entered through the UI (EditorSettings, the LevelEditor mod on). Logs
 // "[editor-reload] PASS" or "[editor-reload] FAIL: <reason>".
 #include "runtime_core.hpp"
@@ -129,6 +130,35 @@ void reloadTestTick() {
             if (a == nullptr || d < 200.0f || d > 450.0f) return finish("FAIL: the reloaded scene did not place the edited Octoomba");
             if (status().pendingCount != 0) return finish("FAIL: edits still pending after the reload");
             if (model()->historyCursor() != 2) return finish("FAIL: the undo history did not survive the reload");
+        }
+        enqueue(Command{Command::Kind::SwitchScenario, {}, 2});
+        s.phase = 3;
+        s.phaseFrame = 0;
+        return;
+    case 3:
+    case 4:
+        if (mode() != Mode::Editing || s.phaseFrame < 3) {
+            if (s.phaseFrame > 1500) return finish("FAIL: the mission switch did not come back to Edit");
+            return;
+        }
+        {
+            const int mission = s.phase == 3 ? 2 : 1;
+            LiveActor* a = actorForRow(s.takobo);
+            const bool inMission = (model()->rowMissions(s.takobo) >> (mission - 1)) & 1;
+            std::fprintf(stderr, "[editor-reload] mission %d: scene %d, model %d, history %d, Octoomba %s (in this mission: %d)\n", mission,
+                         static_cast< int >(EditorScene::scenario()), model()->scenario(), model()->historyCursor(), a ? "placed" : "absent",
+                         inMission);
+            if (EditorScene::scenario() != mission || model()->scenario() != mission) return finish("FAIL: the scene is not in the mission switched to");
+            if (model()->historyCursor() != 2) return finish("FAIL: the history did not survive the mission switch");
+            if ((a != nullptr) != inMission) return finish("FAIL: the Octoomba's presence does not match its missions");
+            if (s.phase == 3) {
+                enqueue(Command{Command::Kind::SwitchScenario, {}, 1});
+                s.phase = 4;
+                s.phaseFrame = 0;
+                return;
+            }
+            const float d = dist(a->mPosition, s.original);
+            if (d < 200.0f || d > 450.0f) return finish("FAIL: the edit was lost across the mission switch");
         }
         {
             TVec3f mario = *MR::getPlayerPos();
