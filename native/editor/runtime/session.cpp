@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -61,6 +62,16 @@ namespace {
         return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
     }
 
+    // The disc itself, without the mod overlay: the EditModel's originals.
+    std::optional< Formats::Bytes > readUnmoddedDisc(const std::string& path) {
+        const std::filesystem::path files = PetariNative::Platform::DVD::mountInfo().filesDirectory;
+        std::ifstream in(files / path.substr(1), std::ios::binary);
+        if (files.empty() || !in) {
+            return std::nullopt;
+        }
+        return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
+    }
+
     bool endsWith(const std::string& text, const char* pSuffix) {
         const std::string suffix(pSuffix);
         return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
@@ -74,7 +85,7 @@ namespace {
         Session& s = session();
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
-        s.model = EditModel::load(pStage, scenario, readDisc, &error);
+        s.model = EditModel::load(pStage, scenario, readDisc, &error, readUnmoddedDisc);
         s.actors.clear();
         s.pending.clear();
         s.boundScene = 0;

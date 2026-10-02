@@ -28,9 +28,13 @@ std::string utf8ToSjis(const std::string& utf8);
 
 class EditModel final : public ModelView {
 public:
-    /// Loads `galaxy` (its Scenario archive and every zone in its ZoneList). nullptr and
+    /// Loads `galaxy` (its Scenario archive and every zone in its ZoneList) from `source` (the
+    /// game's view: the disc with enabled mods). `discSource` (optional) reads the unmodified disc:
+    /// originals, row states and changedArchives() then compare with the disc, so the edits of an
+    /// enabled mod (one saved earlier) count as changes and stay in the next save. nullptr and
     /// `*pError` on failure.
-    static std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const FileSource& source, std::string* pError);
+    static std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const FileSource& source, std::string* pError,
+                                             const FileSource& discSource = nullptr);
 
     // ModelView
     std::uint64_t revision() const override { return mRevision; }
@@ -95,6 +99,7 @@ private:
         std::string name;
         std::int32_t zoneId = 0;
         Formats::Archive archive;
+        Formats::Bytes discPlain;  // the disc's archive, decompressed (empty: same as `archive`, or a mod-only zone)
         std::vector< TableModel > tables;
         bool placed = false;
         Mtx34 world{};

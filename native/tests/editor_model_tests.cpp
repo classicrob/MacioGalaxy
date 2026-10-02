@@ -161,6 +161,36 @@ void testSynthetic() {
     check(m->revision() > 1, "revision bumps");
 }
 
+// A mod saved earlier is enabled: the game's view has its edit, the disc doesn't. The edit counts
+// as a change (so the next save keeps it), and reverting it goes back to the disc.
+void testModOverDisc() {
+    std::map< std::string, F::Bytes > disc = syntheticDisc();
+    std::map< std::string, F::Bytes > modded = disc;
+    F::Bytes zoneObj = table(kObj, {{str("Kuribo"), i32(5), f32(10), f32(99), f32(30), i32(2)},
+                                    {str("Coin"), i32(6), f32(0), f32(0), f32(0), i32(-1)}});
+    F::Bytes zoneObjB = table(kObj, {{str("Takobo"), i32(7), f32(0), f32(0), f32(0), i32(-1)}});
+    modded["/StageData/TestZone.arc"] =
+        F::yaz0Encode(F::Archive::create("stage", {{"jmp/Placement/LayerA/ObjInfo", zoneObj}, {"jmp/Placement/LayerB/ObjInfo", zoneObjB}}).build());
+    auto from = [](std::map< std::string, F::Bytes >& files) {
+        return [&files](const std::string& path) -> std::optional< F::Bytes > {
+            auto it = files.find(path);
+            return it == files.end() ? std::nullopt : std::optional< F::Bytes >(it->second);
+        };
+    };
+    std::string error;
+    std::unique_ptr< E::EditModel > m = E::EditModel::load("TestGalaxy", 1, from(modded), &error, from(disc));
+    check(m != nullptr, "loads over a mod: " + error);
+    const E::RowId kuribo = findRow(*m, 1, "jmp/placement/layera/objinfo", "Kuribo");
+    check(m->cell(kuribo, E::columnHash("pos_y"))->f == 99.0f && m->originalCell(kuribo, E::columnHash("pos_y"))->f == 20.0f,
+          "current from the mod, original from the disc");
+    check(m->state(kuribo) == E::RowState::Changed, "the mod's edit is a change");
+    check(m->changedArchives().size() == 1, "an unedited session still saves the mod's archive");
+    check(m->apply(E::Op{"Revert", {}, {kuribo}}, &error) && m->changedArchives().empty(), "reverting returns to the disc");
+    std::unique_ptr< E::EditModel > plain = E::EditModel::load("TestGalaxy", 1, from(modded), &error);
+    check(plain->state(findRow(*plain, 1, "jmp/placement/layera/objinfo", "Kuribo")) == E::RowState::Original,
+          "without the disc source the loaded data is the original");
+}
+
 void testDisc() {
     const fs::path files = PETARI_TEST_DISC_FILES;
     if (!fs::is_directory(files / "StageData")) {
@@ -201,6 +231,7 @@ void testDisc() {
 
 int main() {
     testSynthetic();
+    testModOverDisc();
     testDisc();
     std::printf("editor model: %d checks passed\n", checks);
     return 0;

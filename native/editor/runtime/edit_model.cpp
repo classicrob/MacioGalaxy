@@ -219,7 +219,8 @@ std::string utf8ToSjis(const std::string& utf8) {
 
 // ---- loading ------------------------------------------------------------------------------------
 
-std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scenario, const FileSource& source, std::string* pError) {
+std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scenario, const FileSource& source, std::string* pError,
+                                             const FileSource& discSource) {
     auto fail = [&](const std::string& message) -> std::unique_ptr< EditModel > {
         if (pError != nullptr) {
             *pError = message;
@@ -256,6 +257,15 @@ std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scen
             return fail("cannot read " + path);
         }
         zone.archive = std::move(*archive);
+        std::optional< Formats::Archive > disc;
+        if (discSource) {
+            if (std::optional< Bytes > discRaw = discSource(path)) {
+                disc = Formats::Archive::parse(*discRaw);
+                if (disc) {
+                    zone.discPlain = disc->build();
+                }
+            }
+        }
         for (const std::string& file : zone.archive.files()) {
             if (file.rfind("jmp/", 0) != 0) {
                 continue;
@@ -268,17 +278,28 @@ std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scen
             model.path = file;
             model.layer = layerOf(file);
             model.original = *table;
+            // The disc's table is the original when its rows line up with the loaded one (a mod
+            // that added or removed rows: the loaded table is its own original).
+            if (disc && disc->file(file) != nullptr) {
+                std::optional< Formats::Table > discTable = Formats::Table::parse(*disc->file(file));
+                if (discTable && discTable->rowCount() == table->rowCount()) {
+                    model.original = std::move(*discTable);
+                }
+            }
             model.current = std::move(*table);
             for (const Formats::TableColumn& c : model.current.columns()) {
                 model.columns.push_back(Column{c.hash, knownColumnName(c.hash), cellTypeOf(c.type)});
             }
             for (int r = 0; r < model.current.rowCount(); r++) {
-                std::vector< Cell > row;
+                std::vector< Cell > row, original;
                 for (int c = 0; c < static_cast< int >(model.columns.size()); c++) {
                     row.push_back(toCell(model.current.get(r, c), model.current.columns()[c].type));
                 }
-                model.cells.push_back(row);
-                model.origCells.push_back(std::move(row));
+                for (int c = 0; c < static_cast< int >(model.original.columns().size()); c++) {
+                    original.push_back(toCell(model.original.get(r, c), model.original.columns()[c].type));
+                }
+                model.cells.push_back(std::move(row));
+                model.origCells.push_back(std::move(original));
             }
             zone.tables.push_back(std::move(model));
         }
@@ -612,16 +633,20 @@ std::vector< std::pair< std::string, Formats::Bytes > > EditModel::changedArchiv
     std::vector< std::pair< std::string, Formats::Bytes > > out;
     for (const ZoneModel& zone : mZones) {
         Formats::Archive archive = zone.archive;
-        bool changed = false;
+        bool edited = false;
         for (const TableModel& table : zone.tables) {
             Bytes now = table.current.build();
             if (now != *zone.archive.file(table.path)) {
                 archive.replace(table.path, std::move(now));
-                changed = true;
+                edited = true;
             }
         }
+        Bytes built = archive.build();
+        // Changed means "differs from the disc" when the disc is known (a mod's earlier edits
+        // count), else "edited since loading".
+        const bool changed = zone.discPlain.empty() ? edited : built != zone.discPlain;
         if (changed) {
-            out.emplace_back("/StageData/" + zone.name + ".arc", archive.build());
+            out.emplace_back("/StageData/" + zone.name + ".arc", std::move(built));
         }
     }
     return out;
