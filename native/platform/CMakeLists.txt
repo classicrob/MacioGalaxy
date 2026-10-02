@@ -248,6 +248,7 @@ if(BUILD_TESTING)
         petari_encode_target_sources(petari_platform_allocation_tests)
         target_link_libraries(petari_platform_allocation_tests PRIVATE petari_platform petari_heaps petari_boot)
         add_test(NAME native_platform_allocation COMMAND petari_platform_allocation_tests)
+        set_tests_properties(native_platform_allocation PROPERTIES LABELS timing)  # symbol-resolution speed assertion: quiet Mac only
     endif()
 
     option(PETARI_AUDIO_BOOT_SMOKE "Build and register the audio boot smoke test (needs the extracted disc in build/game-data/RMGE01)" OFF)

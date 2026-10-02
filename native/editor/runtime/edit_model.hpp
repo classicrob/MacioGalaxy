@@ -6,6 +6,7 @@
 #include <petari/editor/formats/formats.hpp>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -28,9 +29,13 @@ std::string utf8ToSjis(const std::string& utf8);
 
 class EditModel final : public ModelView {
 public:
-    /// Loads `galaxy` (its Scenario archive and every zone in its ZoneList). nullptr and
+    /// Loads `galaxy` (its Scenario archive and every zone in its ZoneList) from `source` (the
+    /// game's view: the disc with enabled mods). `discSource` (optional) reads the unmodified disc:
+    /// originals, row states and changedArchives() then compare with the disc, so the edits of an
+    /// enabled mod (one saved earlier) count as changes and stay in the next save. nullptr and
     /// `*pError` on failure.
-    static std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const FileSource& source, std::string* pError);
+    static std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const FileSource& source, std::string* pError,
+                                             const FileSource& discSource = nullptr);
 
     // ModelView
     std::uint64_t revision() const override { return mRevision; }
@@ -52,6 +57,9 @@ public:
     const char* objectName(RowId row) const override;
     bool hasTransform(RowId row) const override;
     RowTransform transform(RowId row) const override;
+    int missionCount() const override;
+    const char* missionName(int mission) const override;
+    std::uint32_t rowMissions(RowId row) const override;
     int historySize() const override { return static_cast< int >(mHistory.size()); }
     int historyCursor() const override { return mCursor; }
     const char* historyLabel(int index) const override;
@@ -89,13 +97,17 @@ private:
         Formats::Table current;
         std::vector< Column > columns;
         std::vector< std::vector< Cell > > cells;     // current, decoded [row][column]
-        std::vector< std::vector< Cell > > origCells;  // as on disc [row][column in original]
+        std::vector< std::vector< Cell > > origCells;  // as on disc [row][column in original]; empty for added rows
+        std::vector< RowId > ids;                      // stable ids, parallel to the rows
+        std::vector< bool > added;                     // rows added in this session
     };
     struct ZoneModel {
         std::string name;
         std::int32_t zoneId = 0;
         Formats::Archive archive;
+        Formats::Bytes discPlain;  // the disc's archive, decompressed (empty: same as `archive`, or a mod-only zone)
         std::vector< TableModel > tables;
+        bool filesAdded = false;  // a table was created (the archive is rebuilt, not patched)
         bool placed = false;
         Mtx34 world{};
     };
@@ -105,15 +117,32 @@ private:
         std::optional< Cell > before;  // nullopt: the column was added by this change
         Cell after;
     };
+    /// A row put into or taken out of a table: what undo and redo need to do it again exactly.
+    struct RowRecord {
+        RowId id;
+        int zone = 0, table = 0, index = 0;
+        Formats::Bytes record;
+        std::vector< Cell > cells, original;
+        bool added = false;
+    };
     struct Entry {
         std::uint64_t serial = 0;
         std::string label;
+        std::vector< RowRecord > inserted;  // applied first
         std::vector< Change > changes;
+        std::vector< RowRecord > removed;   // applied last
     };
 
     EditModel() = default;
     static RowId makeId(int zone, int table, int row);
     bool unpack(RowId id, int* pZone, int* pTable, int* pRow) const;
+    void insertRecord(const RowRecord& record);
+    RowRecord removeRecord(int zone, int table, int row);
+    int ensureTable(int zone, const std::string& path);
+    std::int32_t nextLinkId(int zone) const;
+    bool addRow(const AddRow& add, Entry* pEntry, std::string* pError);
+    void undoEntry(const Entry& entry);
+    void redoEntry(const Entry& entry);
     void writeCell(int zone, int table, int row, std::uint32_t column, const Cell& value);
     void computePlacement();
     std::uint64_t serialAtCursor() const { return mCursor > 0 ? mHistory[mCursor - 1].serial : 0; }
@@ -128,6 +157,8 @@ private:
     std::uint64_t mNextSerial = 1;
     std::uint64_t mRevision = 1;
     std::set< RowId > mChanged;
+    std::map< RowId, RowRecord > mDeleted;               // tombstones: deleted rows, for state() and undo
+    std::map< RowId, std::pair< int, int > > mNewRowHome;  // added rows' (zone, table)
     mutable std::string mNameScratch;
 };
 

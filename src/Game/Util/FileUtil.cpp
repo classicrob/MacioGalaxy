@@ -1,6 +1,6 @@
 #include "Game/Util/FileUtil.hpp"
 #ifdef PETARI_NATIVE
-#include "Game/Editor/EditorTerrain.hpp"
+#include <petari/editor/runtime_hooks.hpp>
 #endif
 #include "Game/System/FileLoader.hpp"
 #include "Game/System/FileRipper.hpp"
@@ -15,8 +15,9 @@
 namespace MR {
     bool isFileExist(const char* pFilePath, bool considerLanguage) {
 #ifdef PETARI_NATIVE
-        // Archives the level editor generated for this scene (terrain); none while it is off.
-        if (EditorTerrain::isInjectedArchive(pFilePath)) {
+        // Archives the level editor generated (terrain parts, new galaxies) are mounted from memory
+        // (FileLoader::requestMountArchive); none while it is off.
+        if (PetariEditor::Hooks::archiveOverride(pFilePath) != nullptr) {
             return true;
         }
 #endif

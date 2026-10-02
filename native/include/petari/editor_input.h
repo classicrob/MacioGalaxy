@@ -30,6 +30,7 @@ typedef struct PetariEditorInput {
     float cursorY;
     int frame;           /* F: frame the selection (Mario while nothing is selected) */
     int worldUp;         /* 1: up is world +Y; 0: up follows gravity at the pivot */
+    int playFrom;        /* what a toggle in Edit mode plays: 0 the play marker, 1 resume, 2 the mission start */
 } PetariEditorInput;
 
 /* Game thread, once per frame: the input since the last call. */

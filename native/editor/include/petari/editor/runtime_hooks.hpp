@@ -3,6 +3,7 @@
 // no-op while the editor is off, so the unmodded game is unchanged.
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace PetariEditor::Hooks {
@@ -38,6 +39,25 @@ struct Placed {
 };
 /// The placements noted since the scene began (cleared when it ends).
 const std::vector< Placed >& placed();
+
+// ---- reload from the model (TECH.md 2.6) ----
+
+/// Edited stage archives the next scene builds use instead of the cached or disc ones
+/// ("/StageData/SoramameZone.arc" -> plain RARC bytes). Kept until replaced or cleared, so a
+/// later load of the galaxy (Level Select, a death) also shows the edits during the session.
+void setArchiveOverride(const std::string& path, std::vector< std::uint8_t > bytes);
+void clearArchiveOverrides();
+/// The override for a path (case-insensitive), or null.
+const std::vector< std::uint8_t >* archiveOverride(const char* pPath);
+std::vector< std::string > archiveOverridePaths();
+
+/// From the editor's reload request until its scene is playable: the reload skips the lives
+/// counter, the shader gate and the circle wipe, and resets collected items.
+void setEditorReload(bool active);
+bool editorReload();
+
+/// Game-side editor code (src/Game/Editor) reports a failure to the UI's toasts (status().lastError).
+void reportError(const char* pMessage);
 
 /// Bumps each time a scene ends (SceneSync rebinds after a reload).
 std::uint32_t sceneSerial();

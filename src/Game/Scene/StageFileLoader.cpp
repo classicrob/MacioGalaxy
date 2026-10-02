@@ -1,4 +1,7 @@
 #include "Game/Scene/StageFileLoader.hpp"
+#ifdef PETARI_NATIVE
+#include "Game/Editor/EditorScene.hpp"
+#endif
 #include "Game/System/GalaxyStatusAccessor.hpp"
 #include "Game/Util.hpp"
 #include <JSystem/JKernel/JKRArchive.hpp>
@@ -12,6 +15,9 @@ StageFileLoader::StageFileLoader(const char* pName) {
 }
 
 void StageFileLoader::startLoadingStageFile() {
+#ifdef PETARI_NATIVE
+    EditorReload::injectOverriddenArchives(mStageFiles, mZoneCount);  // the level editor's edits; none when off
+#endif
     for (int i = 0; i < mZoneCount; i++) {
         MR::mountAsyncArchive(mStageFiles[i], MR::getAproposHeapForSceneArchive(0.03f));
     }

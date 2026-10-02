@@ -32,12 +32,10 @@ namespace EditorTerrain {
     /// the scene like EditorScene::createFromRow. Null and *ppError on failure.
     Part* createPart(const char* pName, const TVec3f& rPos, void* pKcl, const void* pPa, const char** ppError);
 
-    /// Serves `pBytes` (a plain RARC; copied to the scene heap) as the archive `pPath`
-    /// ("/ObjectData/EditorTerrainBox.arc") for the rest of the scene: the game's loaders find it
-    /// as if it were on the disc (MR::isFileExist answers for it, and it is already mounted).
+    /// Serves `pBytes` (a plain RARC) as the archive `pPath` ("/ObjectData/EditorTerrainBox.arc"):
+    /// it is registered with the editor's archive overrides (PetariEditor::Hooks), so the game's
+    /// loaders mount it from memory as if it were on the disc.
     void injectArchive(const char* pPath, const void* pBytes, u32 size);
-    /// True for an archive injectArchive served to the current scene.
-    bool isInjectedArchive(const char* pPath);
 
     /// A ModelObj drawing `pModelName` (archive /ObjectData/<pModelName>.arc) with the matrix
     /// `pMtx` (e.g. a Part's mBaseMtx, so the model follows it), in the Planet draw buffer.

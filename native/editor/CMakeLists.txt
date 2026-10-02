@@ -30,14 +30,14 @@ add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp)
+add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp)
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
-target_link_libraries(petari_editor_core PUBLIC petari_native_config)
+target_link_libraries(petari_editor_core PUBLIC petari_native_config petari_host_runtime)
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
 # game code (src/Game/Editor), so only the app and the link check link it.
-add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/sync_test.cpp)
+add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_native_config)
 if(TARGET petari_platform_dvd)

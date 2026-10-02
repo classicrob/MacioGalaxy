@@ -28,6 +28,9 @@ void cursor(float x, float y);    // -1..1 across the viewport, y up
 void frame();
 void setWorldUp(bool world);
 bool worldUp();
+// What Tab in Edit mode plays (the UI sets it from the keys held): 0 the play marker (Tab),
+// 1 resume the frozen moment (Shift+Tab), 2 the mission start (Option+Tab; Cmd+Tab is the app switcher).
+void setPlayFrom(int from);
 
 void resetForTesting();
 

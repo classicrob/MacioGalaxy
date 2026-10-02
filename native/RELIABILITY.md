@@ -423,6 +423,10 @@ test runs listed; only the ctest targets were re-run for this summary.
   under heavy machine load). The test does not wait for asynchronous shader
   compilation. Owner to be decided; low priority. Rerun it alone before treating a
   failure as a regression.
-- `native_platform_allocation` has a performance comparison ("faster than dladdr")
-  that failed once under load and passed on rerun.
+- `native_platform_allocation` has performance assertions ("faster than dladdr", "first-seen
+  addresses resolve in under 20 us each") that fail under machine load and pass on rerun; it is now
+  labelled `timing` and runs with the quiet-machine tests.
+- `native_audio_sdl` (SDL audio sink, dummy driver) failed in two full parallel runs on a loaded
+  machine (load ~29, no assertion text, only `[baton]` stall lines) and passed 3/3 alone; it is
+  now labelled `timing` like `native_audio_pacing`.
 - Tests labelled `timing` need a quiet machine (see the afternoon section above).

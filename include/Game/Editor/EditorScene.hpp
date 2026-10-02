@@ -32,14 +32,24 @@ namespace EditorScene {
     s32 executeCount();
     void lateConnect(s32 executeBefore);
 
-    /// Removes an actor the editor created or replaced: dead, hidden, out of clipping. Its
+    /// Removes an actor the editor created or replaced: dead (out of the scene's lists and
+    /// clipping) and hidden. Its
     /// memory stays (nothing is freed mid-scene; TECH.md 2.3).
     void retire(LiveActor* pActor);
+
+    /// Carries out the connect/disconnect requests that creating and retiring made. The scene does
+    /// this in its movement step, which a frozen (Edit mode) scene doesn't run: a retired actor
+    /// would stay drawn until Play.
+    void flushConnectionRequests();
+    /// True while the object is in the scene's draw lists.
+    bool isConnectedToDraw(const LiveActor* pActor);
 
     /// Live actors and the limit, for capacity checks.
     s32 liveActorCount();
     s32 liveActorLimit();
     s32 gravityCount();  // registered gravity fields (limit 128, no unregister)
+    s32 mountedArchiveCount();  // archives in ArchiveHolder (limit mountedArchiveLimit(), unchecked by the game)
+    s32 mountedArchiveLimit();
 
     /// The current stage and mission ("EggStarGalaxy", 1); null when no stage is loaded.
     const char* stageName();
@@ -56,6 +66,25 @@ namespace EditorScene {
     /// The scene heap's free and total bytes (the memory meter).
     void sceneHeap(u32* pFree, u32* pTotal);
 }  // namespace EditorScene
+
+// The level editor's reload from the model (TECH.md 2.6).
+namespace EditorReload {
+    /// GameSystemSceneController::destroyScene, after the scene is gone: unmount and forget the
+    /// archives the editor overrides, so the next build takes the edited bytes.
+    void dropOverriddenArchives();
+    /// StageFileLoader::startLoadingStageFile: put the editor's archive bytes in place of the
+    /// listed stage files it overrides (on the scene heap; dropped with the scene).
+    void injectOverriddenArchives(const char* const* ppFiles, int count);
+    /// FileLoader::requestMountArchive: an archive the editor overrides or generated
+    /// (Hooks::setArchiveOverride) is mounted from its bytes, not read from the disc. False when
+    /// the path has no override, is already loaded, or no archive slot is left.
+    bool injectOverriddenArchive(const char* pPath);
+    /// A same-stage restart (the miss path's move, without the miss): at the restart point, or
+    /// at the mission's start when fromStart.
+    void requestReload(bool fromStart);
+    /// Puts Mario at a world position, standing (normal play only).
+    void teleportPlayer(f32 x, f32 y, f32 z);
+}  // namespace EditorReload
 
 // The engine-hooks live check (src/Game/Editor/EditorHooksTest.cpp); GameScene::update calls it.
 namespace EditorHooksTest {
