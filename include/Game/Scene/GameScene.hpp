@@ -44,6 +44,7 @@ public:
     void exeStaffRoll();
 #ifdef PETARI_NATIVE
     void exePhotoMode();  // native photo mode (Game/Camera/PhotoCamera.hpp)
+    void exeEditMode();   // the level editor's Edit mode (Game/Camera/EditorCamera.hpp)
 #endif
     void initSequences();
     void initEffect();

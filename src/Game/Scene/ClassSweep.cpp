@@ -18,6 +18,7 @@
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include <JSystem/JGadget/hashcode.hpp>
+#include <petari/editor/runtime_hooks.hpp>
 
 #include <chrono>
 #include <cmath>
@@ -62,7 +63,7 @@ namespace {
         std::vector< std::pair< std::string, std::string > > overrides;  // field=value (integer, or float if it has a '.')
     };
 
-    std::vector< SyntheticRow* > gRows;  // never freed: actors may keep their JMapInfoIter
+    std::vector< SyntheticRow* > gRows;  // never freed: actors may keep their JMapInfoIter (the editor hooks know their zones)
     std::vector< Job > gJobs;
     bool gChecked = false;
     bool gEnabled = false;
@@ -176,6 +177,7 @@ namespace {
             b.push_back('@');
         }
 
+        PetariEditor::Hooks::registerRows(b.data(), b.size(), zone);  // the game decides a row's zone by its address
         pRow->info = new JMapInfo();
         pRow->info->attach(b.data());
         pRow->info->setName("ObjInfo");
@@ -474,16 +476,6 @@ namespace {
 }  // namespace
 
 namespace ClassSweep {
-    s32 findSyntheticZone(uintptr_t rowAddress) {
-        for (SyntheticRow* pRow : gRows) {
-            uintptr_t begin = reinterpret_cast< uintptr_t >(pRow->bytes.data());
-            if (begin <= rowAddress && rowAddress < begin + pRow->bytes.size()) {
-                return pRow->zone;
-            }
-        }
-        return -1;
-    }
-
     void update(bool actionNerve) {
         if (!gChecked) {
             gChecked = true;

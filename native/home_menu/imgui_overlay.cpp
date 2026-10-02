@@ -494,6 +494,14 @@ bool galaxyFontsInstalled() {
     return gTextFont != nullptr;
 }
 
+ImFont* galaxyTextFont() {
+    return gTextFont;
+}
+
+ImFont* galaxyTitleFont() {
+    return gTitleFont;
+}
+
 Rect titleHintRect() {
     // Above the logo: the title's own text ("Press both A and B", the
     // copyright) fills the bottom of the image.

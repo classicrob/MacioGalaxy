@@ -10,7 +10,5 @@
 namespace ClassSweep {
     // GameScene::update, every frame; actionNerve: the scene is in normal play.
     void update(bool actionNerve);
-    // StageDataHolder::findPlacedStageDataHolder: the zone of a synthesized row, or -1.
-    s32 findSyntheticZone(uintptr_t rowAddress);
 }  // namespace ClassSweep
 #endif

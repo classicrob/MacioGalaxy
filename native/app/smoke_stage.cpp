@@ -2,6 +2,7 @@
 // frame seam feeds it observations and applies its presses.
 
 #include "smoke_stage.hpp"
+#include <petari/smoke_phase.hpp>
 #include <petari/efb_dump_mark.hpp>
 
 #include <algorithm>
@@ -465,6 +466,9 @@ Step StageDriver::step(const Observation& o) {
         }
         return step;
     }
+    if (!o.playerValid && PetariNative::SmokePhase::editorReloading.load()) {
+        return step;  // the level editor is rebuilding the scene
+    }
     if (!o.playerValid) {
         finish(Result::Fail, std::string("the player vanished while ") + phase(), step);
         return step;
@@ -735,6 +739,7 @@ void StageDriver::exercise(const Observation& o, Step& step) {
     }
     case Phase::Tail:
         if (petari_class_sweep_go == 0) petari_class_sweep_go = 1;  // class sweep: start once the checks are done
+        PetariNative::SmokePhase::stageChecksDone.store(true);
         if (mPhaseFrames >= mConfig.tailFrames) {
             finish(Result::Pass,
                    "loaded, ready, pause menu opened and closed, " + std::to_string(mConfig.tailFrames) +

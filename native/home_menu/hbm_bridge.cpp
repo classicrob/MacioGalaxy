@@ -309,6 +309,7 @@ private:
         {Input::Action::CameraZoomOut, "", "Camera mod: zoom out"},
         {Input::Action::PhotoMode, "", "Photo mode"},
         {Input::Action::PhotoShot, "", "Photo mode: save a shot"},
+        {Input::Action::LevelEditor, "", "Level editor: Edit / Play (tap)"},
     };
     static_assert(sizeof(kRows) / sizeof(kRows[0]) == static_cast<size_t>(Input::Action::Count), "a row per action");
 

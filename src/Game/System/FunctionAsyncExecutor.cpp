@@ -124,7 +124,9 @@ void FunctionAsyncExecutor::waitForEnd(const char* pName) {
     }
 
 #ifdef PETARI_NATIVE
-    // THROWAWAY editor spike: startOnMainThread ran the function inline (no task was queued).
+    // startOnMainThread ran the function inline and queued nothing (a resource holder created
+    // on the main thread during play, as the level editor does): nothing to wait for. On the
+    // Wii this read past the list.
     if (cur == lst) {
         OSUnlockMutex(&MR::MutexHolder< 2 >::sMutex);
         return;

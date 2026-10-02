@@ -1,6 +1,6 @@
 #include "Game/Scene/StageDataHolder.hpp"
 #ifdef PETARI_NATIVE
-#include "Game/Scene/ClassSweep.hpp"
+#include <petari/editor/runtime_hooks.hpp>
 #endif
 #include "Game/NameObj/NameObjFactory.hpp"
 #include "Game/Scene/PlacementInfoOrdered.hpp"
@@ -357,7 +357,8 @@ const StageDataHolder* StageDataHolder::findPlacedStageDataHolder(const JMapInfo
 #endif
 
 #ifdef PETARI_NATIVE
-    if (s32 syntheticZone = ClassSweep::findSyntheticZone(data); syntheticZone >= 0) {
+    // Rows the level editor synthesized outside a loaded archive (TECH.md 2.2): -1 when off.
+    if (s32 syntheticZone = PetariEditor::Hooks::findSyntheticZone(data); syntheticZone >= 0) {
         return MR::getStageDataHolder()->getStageDataHolderFromZoneId(syntheticZone);
     }
 #endif

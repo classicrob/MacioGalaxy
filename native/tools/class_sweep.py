@@ -285,7 +285,7 @@ def run_batch(args, stage, scenario, jobs, batch_dir, tag):
     a.pipeline_policy = "default"
     command, env_extra = sweep.app_command(a, user, stage, scenario)
     env = dict(os.environ, **env_extra)
-    env.update(PETARI_LOCK_CLASS="functional", PETARI_CLASS_SWEEP_JOBS=str(jobs_file),
+    env.update(PETARI_LOCK_CLASS="functional", PETARI_EDITOR="1", PETARI_CLASS_SWEEP_JOBS=str(jobs_file),
                PETARI_CLASS_SWEEP_OBSERVE=str(args.observe))
     if not args.no_warm_seed:
         # Warm shader seed (native/tools/warm_seed.py): published on first use for this build; the run's databases are

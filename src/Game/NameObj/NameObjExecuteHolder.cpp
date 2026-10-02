@@ -11,7 +11,6 @@
 #include "Game/System/DrawBufferExecuter.hpp"
 #include "Game/System/DrawBufferGroup.hpp"
 #include "Game/System/DrawBufferHolder.hpp"
-#include <cstdio>
 #endif
 
 namespace {
@@ -430,7 +429,7 @@ NameObjExecuteHolder::NameObjExecuteHolder(int size)
 
 #ifdef PETARI_NATIVE
 namespace {
-    // Room for every object counted into a category (old arrays are left in the solid scene heap).
+    // Room for every object counted into a category. The old array stays in the solid scene heap.
     void growCategory(NameObjCategoryList* pList, int category) {
         NameObjCategoryList::CategoryInfo& rInfo = pList->mCategoryInfo[category];
         MR::AssignableArray< NameObj* >& rArray = rInfo.mNameObjArr.mArray;
@@ -441,27 +440,25 @@ namespace {
         if (need <= rArray.mMaxSize) {
             return;
         }
-        s32 newMax = need + need / 2 + 16;
+        const s32 newMax = need + need / 2 + 16;
         NameObj** pNew = new NameObj*[newMax];
         for (s32 i = 0; i < rInfo.mNameObjArr.size(); i++) {
             pNew[i] = rArray.mArr[i];
         }
-        std::fprintf(stderr, "[editor-spike] grew category list %d: %d -> %d\n", category, static_cast< int >(rArray.mMaxSize),
-                     static_cast< int >(newMax));
         rArray.mArr = pNew;
         rArray.mMaxSize = newMax;
     }
 
+    // A draw executor created after load has no lists; one that outgrew its headroom grows.
     void growExecuter(DrawBufferExecuter* pExec) {
         if (pExec->mActors == nullptr) {
             pExec->allocateActorListBuffer();
-            std::fprintf(stderr, "[editor-spike] new draw executor %s: %d actors\n", pExec->mName, static_cast< int >(pExec->mMaxNumActors));
             return;
         }
         if (pExec->mDrawBufferCount <= pExec->mMaxNumActors) {
             return;
         }
-        s32 newMax = pExec->mDrawBufferCount + pExec->mDrawBufferCount / 2 + 4;
+        const s32 newMax = pExec->mDrawBufferCount + pExec->mDrawBufferCount / 2 + 4;
         LiveActor** pActors = new LiveActor*[newMax];
         for (s32 i = 0; i < pExec->mNumActors; i++) {
             pActors[i] = pExec->mActors[i];
@@ -472,7 +469,7 @@ namespace {
         pBuffer->_8 = newMax;
         for (s32 d = 0; d < pBuffer->mNumShapeDrawers; d++) {
             DrawBufferShapeDrawer* pDrawer = pBuffer->mShapeDrawers[d];
-            s32 newPackets = newMax * pDrawer->_8;
+            const s32 newPackets = newMax * pDrawer->_8;
             PacketInfo** pPackets = new PacketInfo*[newPackets];
             for (s32 i = 0; i < newPackets; i++) {
                 if (i < pDrawer->mMaxPackets) {
@@ -487,7 +484,6 @@ namespace {
             pDrawer->mPackets = pPackets;
             pDrawer->mMaxPackets = newPackets;
         }
-        std::fprintf(stderr, "[editor-spike] grew draw executor %s to %d actors\n", pExec->mName, static_cast< int >(newMax));
     }
 }  // namespace
 

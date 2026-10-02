@@ -1,4 +1,7 @@
 #include "Game/NameObj/NameObjCategoryList.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
+#endif
 #include <algorithm>
 
 NameObjCategoryList::NameObjCategoryList(u32 count, const CategoryListInitialTable* pTable, NameObjMethod pMethod, bool allocateByCheck,
@@ -50,6 +53,9 @@ void NameObjCategoryList::allocateBuffer() {
         for (int i = 0; i < mCategoryInfo.size(); i++) {
             NameObjCategoryList::CategoryInfo* pInfo = &mCategoryInfo[i];
             u32 size = pInfo->mCheck;
+#ifdef PETARI_NATIVE
+            size = PetariEditor::Hooks::withHeadroom(size);  // room for the level editor's actors; unchanged when off
+#endif
             NameObj** pNameObjArr = new NameObj*[size];
             MR::Vector< MR::AssignableArray< NameObj* > >* pArray = &mCategoryInfo[i].mNameObjArr;
             pArray->mArray.mArr = pNameObjArr;

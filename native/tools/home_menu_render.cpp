@@ -238,9 +238,11 @@ int main(int argc, char** argv) {
         {PETARI_ICON_HOME " This menu", "F1 / `", "Guide"},
     };
     menu.setControls(controls, static_cast<int>(sizeof(controls) / sizeof(controls[0])));
-    HM::ModsEntry mods[4] = {{"Collect Star Bits (G)", false}, {"Shoot nearest enemy (V)", false},
-                             {"Odyssey movement", true}, {"Cappy (R)", false, 2}};
-    menu.setMods(mods, 4);
+    // Every mod, as the game lists them (native/input/mods.cpp).
+    HM::ModsEntry mods[6] = {{"Collect Star Bits (G)", false}, {"Shoot nearest enemy (V)", false},
+                             {"Odyssey movement", true}, {"Cappy (R)", false, 2},
+                             {"Jump during a ground pound dives", true, 2}, {"Level editor (Tab)", true}};
+    menu.setMods(mods, 6);
     HM::FolderModEntry folder[2] = {{"Coin ring (3 files)", true}, {"Retexture pack (40 files)", false}};
     menu.setFolderMods(folder, 2);
     menu.setFooterKeys("Space", "Escape", "F1", "\xE2\x86\x90/\xE2\x86\x92");

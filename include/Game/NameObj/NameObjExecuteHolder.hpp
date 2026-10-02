@@ -28,7 +28,7 @@ public:
     void disconnectToDraw();
 
 #ifdef PETARI_NATIVE
-    friend class NameObjExecuteHolder;
+    friend class NameObjExecuteHolder;  // nativeLateConnect
 #endif
 private:
     /* 0x0 */ NameObj* mExecutedObj;
@@ -61,10 +61,11 @@ public:
     void requestMovementOff(int);
     NameObjExecuteInfo* getConnectToSceneInfo(const NameObj*) const;
 #ifdef PETARI_NATIVE
-    // THROWAWAY editor spike: objects registered after the scene's load-time
-    // initConnectting (index >= from) get room in the load-sized lists and are
-    // connected the way load connects them.
+    // The level editor (TECH.md 2.2): entries registered after the scene's load-time
+    // initConnectting (index >= from) get room in the load-sized lists and are connected
+    // the way load connects them.
     s32 nativeExecuteCount() const { return mExecuteArraySize; }
+    s32 nativeExecuteCapacity() const { return mExecuteArrayMaxSize; }
     void nativeLateConnect(s32 from);
 #endif
 

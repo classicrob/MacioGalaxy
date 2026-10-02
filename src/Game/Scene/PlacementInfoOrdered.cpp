@@ -7,6 +7,7 @@
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -132,10 +133,22 @@ void PlacementInfoOrdered::initPlacement() {
             for (link = pSet->mList.mHead; link != nullptr; link = link->mNextLink) {
                 const JMapInfoIter& rIter = static_cast< Index* >(link->mValue)->getInfoIter();
                 MR::setCurrentPlacementZoneId(MR::getPlacedZoneId(rIter));
+#ifdef PETARI_NATIVE
+                const s32 actorsBefore = PetariEditor::Hooks::enabled() ? MR::getAllLiveActorGroup()->getObjNum() : 0;
+#endif
                 pObj = creator(pName);
                 MR::initLiveActorSystemInfo(rIter);
                 pObj->init(rIter);
                 MR::initLiveActorSystemInfo(rIter);
+#ifdef PETARI_NATIVE
+                // The level editor binds each placement row to the actors it made (TECH.md 2.6).
+                if (PetariEditor::Hooks::enabled()) {
+                    AllLiveActorGroup* pGroup = MR::getAllLiveActorGroup();
+                    for (s32 a = actorsBefore; a < pGroup->getObjNum(); a++) {
+                        PetariEditor::Hooks::notePlaced(rIter.mInfo->mData, rIter.mIndex, pGroup->getActor(a));
+                    }
+                }
+#endif
 #ifdef PETARI_NATIVE
                 if (isTracedPlacement(pSet->mName)) {
                     TVec3f trans(0.0f, 0.0f, 0.0f);

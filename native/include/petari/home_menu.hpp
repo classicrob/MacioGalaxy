@@ -41,6 +41,8 @@
 #include <cstdint>
 #include <string>
 
+struct ImFont;
+
 namespace PetariNative::HomeMenu {
 
 // The game's picture-font icons (GalaxyFont::Picture), as UTF-8 that menu text
@@ -145,9 +147,9 @@ struct Rect {
     bool contains(float x, float y) const { return x >= x0 && x < x1 && y >= y0 && y < y1; }
 };
 
-constexpr int kMaxItems = 8;
+constexpr int kMaxItems = 10;
 constexpr int kMaxControls = 20;
-constexpr int kMaxMods = 5;
+constexpr int kMaxMods = 6;
 constexpr int kMaxFolderMods = 64;   // detected disc-file mods (native/MODS.md)
 constexpr int kFolderPageSize = 3;   // toggles per page of the Mod folder page
 
@@ -448,6 +450,10 @@ void publish(const View& view);
 // ImGui's built-in font. Target petari_home_menu_imgui.
 bool installGalaxyFonts(const char* fontArchive, std::string* error);
 bool galaxyFontsInstalled();
+// The game's fonts in the ImGui atlas (null without them), for other ImGui
+// surfaces that want the Galaxy lettering (the level editor's titles and tabs).
+ImFont* galaxyTextFont();   // MessageFont26, with the picture icons at U+E000..
+ImFont* galaxyTitleFont();  // MenuFont64
 
 // Draws publishedView() with Dear ImGui (target petari_home_menu_imgui). Call
 // on the thread that owns the ImGui context, between aurora_begin_frame() and

@@ -6,6 +6,10 @@
 // Reports are pumped by hand (Clock::Manual): 10 reports per 3 frames, the
 // Wii's 200 Hz reports against a 60 Hz game loop.
 
+#include "petari/editor_input.h"
+#include "petari/editor_pick.hpp"
+#include <chrono>
+#include "petari/editor_settings.hpp"
 #include <revolution/kpad.h>
 #include <revolution/os.h>
 #include <revolution/sc.h>
@@ -2381,6 +2385,125 @@ void testPhotoMode() {
     In::resetForTesting();
 }
 
+// The level editor's toggle and input gate (petari/editor_settings.hpp, docs/dev/level-editor/UX.md
+// section 3): off unless the Mods switch is on; a short Tab tap toggles, a hold stays the game's
+// tilt; while editing the game gets no input and pinch zooms the editor camera.
+void testLevelEditor() {
+    namespace Editor = PetariNative::EditorSettings;
+    namespace Mods = PetariNative::Mods;
+    Editor::resetForTesting();
+    Mods::setEnabled(Mods::Mod::LevelEditor, false);
+    PetariEditorInput in;
+    {
+        Rig rig;
+        const WPadStick& stick = *rig.pad->mStick;
+        press(In::Key::Tab);
+        lift(In::Key::Tab);
+        petari_editor_take_input(&in);
+        check(!in.enabled && in.toggle == 0 && !Editor::capturing(), "editor off: Tab does nothing for it");
+        check(std::string(Mods::name(Mods::Mod::LevelEditor)) == "LevelEditor" && !Mods::enabled(Mods::Mod::LevelEditor),
+              "LevelEditor is a mod, off by default");
+
+        Mods::setEnabled(Mods::Mod::LevelEditor, true);
+        // A hold (tilting the remote) is not a tap.
+        press(In::Key::Tab);
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        lift(In::Key::Tab);
+        petari_editor_take_input(&in);
+        check(in.enabled && in.toggle == 0 && !Editor::capturing(), "holding Tab tilts, it does not toggle");
+        // Tab with a direction pressed meanwhile (tilt and move) is not a tap either.
+        press(In::Key::Tab);
+        press(In::Key::D);
+        lift(In::Key::Tab);
+        lift(In::Key::D);
+        petari_editor_take_input(&in);
+        check(in.toggle == 0, "Tab with another key is a tilt, not a tap");
+
+        // W held, then a tap: the game's stick is released and the game gets nothing more.
+        press(In::Key::W);
+        rig.frame();
+        rig.frames_(10);  // the remote settles back from the tilt over a few frames
+        check(stick.mStick.y > 0.99f, "W moves Mario before Edit mode");
+        press(In::Key::Tab);
+        lift(In::Key::Tab);
+        check(Editor::capturing(), "a tap: input held back while the game answers");
+        petari_editor_take_input(&in);
+        check(in.toggle == 1, "the game sees the toggle");
+        petari_editor_set_active(1);
+        rig.frame();
+        check(stick.mStick.x == 0.0f && stick.mStick.y == 0.0f, "entering releases the game's held stick");
+        press(In::Key::D);
+        press(In::Key::Space);
+        In::mouseMoved(100.0f, 100.0f);
+        In::mouseButtonEvent(In::MouseButton::Left, true);
+        In::mouseButtonEvent(In::MouseButton::Left, false);
+        rig.frame();
+        check(stick.mStick.x == 0.0f, "the game gets no input in Edit mode");
+        In::pinch(1.21f);
+        Editor::orbit(10.0f, -5.0f);
+        Editor::cursor(0.5f, -0.25f);
+        petari_editor_take_input(&in);
+        check(std::fabs(in.dolly - 2.0f) < 0.01f, "pinch out 21% zooms two steps (" + std::to_string(in.dolly) + ")");
+        check(in.orbitYaw == 10.0f && in.orbitPitch == -5.0f && in.cursorX == 0.5f && in.cursorY == -0.25f,
+              "the UI's camera input reaches the game");
+        petari_editor_take_input(&in);
+        check(in.dolly == 0.0f && in.orbitYaw == 0.0f, "accumulated input is taken once");
+        // Runtime's Play: leave.
+        Editor::requestLeave();
+        petari_editor_take_input(&in);
+        check(in.leave == 1, "Play asks the game to leave Edit mode");
+        petari_editor_set_active(0);
+        for (In::KeyCode key : {In::Key::W, In::Key::D, In::Key::Space}) lift(key);
+        press(In::Key::A);
+        rig.frame();
+        check(stick.mStick.x < -0.99f && !Editor::capturing(), "after leaving the game gets input again");
+        lift(In::Key::A);
+        // Runtime's resume after a reload asks to enter again.
+        Editor::requestEnter();
+        petari_editor_take_input(&in);
+        check(in.enter == 1, "resume asks to enter");
+        // Refused (the game cannot pause now): input is back at once.
+        press(In::Key::Tab);
+        lift(In::Key::Tab);
+        petari_editor_take_input(&in);
+        petari_editor_set_active(0);
+        check(!Editor::capturing(), "a refused toggle returns input to the game");
+        // Switched off while editing: the game must leave.
+        petari_editor_set_active(1);
+        Mods::setEnabled(Mods::Mod::LevelEditor, false);
+        petari_editor_take_input(&in);
+        check(!in.enabled, "switching the editor off is seen by the game (it leaves)");
+        petari_editor_set_active(0);
+    }
+    Editor::resetForTesting();
+    Mods::setEnabled(Mods::Mod::LevelEditor, false);
+    In::resetForTesting();
+}
+
+// The level editor's picking handshake (petari/editor_pick.hpp): the UI asks, the game answers.
+void testEditorPick() {
+    namespace Pick = PetariNative::EditorPick;
+    Pick::resetForTesting();
+    check(!Pick::hoverWanted() && Pick::takeClick() == Pick::Click::None && !Pick::takeClear(), "nothing asked at first");
+    Pick::setHoverWanted(true);
+    Pick::click(Pick::Click::Toggle);
+    check(Pick::hoverWanted() && Pick::takeClick() == Pick::Click::Toggle, "a Cmd-click is a toggle");
+    check(Pick::takeClick() == Pick::Click::None, "a click is answered once");
+    Pick::Item hover;
+    check(!Pick::hover(&hover) && Pick::selection().empty(), "no answers before the game publishes");
+    Pick::Item planet;
+    std::snprintf(planet.name, sizeof(planet.name), "%s", "PuffballPlanetA");
+    planet.radius = 1511.0f;
+    Pick::publish(&planet, {planet});
+    check(Pick::hover(&hover) && std::string(hover.name) == "PuffballPlanetA" && Pick::selection().size() == 1,
+          "the game's answers reach the UI");
+    Pick::clearSelection();
+    check(Pick::takeClear() && !Pick::takeClear(), "Esc clears once");
+    Pick::publish(nullptr, {});
+    check(!Pick::hover(&hover) && Pick::selection().empty(), "nothing under the pointer, nothing selected");
+    Pick::resetForTesting();
+}
+
 int main() {
     __OSThreadInit();
     testBindings();
@@ -2403,6 +2526,8 @@ int main() {
     testDevice();
     testCamera();
     testPhotoMode();
+    testLevelEditor();
+    testEditorPick();
     testMods();
     testCappyInput();
 #ifdef PETARI_INPUT_TEST_SDL3

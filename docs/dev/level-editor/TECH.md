@@ -881,10 +881,43 @@ in the tech worker's thread storage (`spike/run1..run7`), not in the repo
 
 ---
 
-## 9. Open questions for the user (technical)
+## 9. Decisions (the user, 2026-10-02)
 
-1. **Patch mods by default** (no Nintendo data; built from each player's disc at start-up), with Full archives as an export option (UX Q5)? Recommended: yes.
-2. **New galaxies are Petari-only** unless someone writes an executable patch for the real game. Edits to existing galaxies stay portable. Acceptable?
-3. **Mesh gravity** (a Petari-only gravity class for imported shapes) is deferred; v1 fits the game's own gravity shapes to terrain. OK?
-4. **Accessibility:** ImGui gives no VoiceOver support. Accept for v1?
-5. **Third-party libraries for terrain** (Manifold for booleans, cgltf, tinyobjloader, meshoptimizer; all MIT or Apache-2.0) are fine to vendor?
+The open questions are resolved; the user took every recommendation (SUMMARY.md has the UX ones):
+
+1. **Patch mods by default** (no Nintendo data; built from each player's disc at start-up), with Full-archive export as an option. M1 writes Full archives first because today's loader reads them; the patch loader is M2.
+2. **New galaxies are Petari-only** (the mod galaxy registry, 5.7). Edits to existing galaxies stay portable.
+3. **Mesh gravity is deferred.** Terrain gets fitted game gravity shapes (6.3).
+4. **No VoiceOver in v1** (ImGui).
+5. **MIT/Apache libraries** for terrain (Manifold, cgltf, tinyobjloader, meshoptimizer) may be vendored when needed.
+6. The editor is **off until switched on once** in the Home menu (Mods page, "Level editor"). With it off, the game is unchanged: no runtime hooks run, and no headroom is reserved at load.
+7. **Formats and the catalog** are shared with Supernova (SMGCommunity, MIT) where practical: plain JSON, documented here.
+
+## 10. Implementation notes (build phase)
+
+- **Branches.** `level-editor` is the integration branch; each topic gets its own `editor/<topic>` branch (docs/dev/WORKTREES.md workflow).
+- **Interface.** The UI <-> Runtime contract is `native/editor/include/petari/editor/edit_api.hpp`. It refines 2.10, as agreed with the UI worker:
+  - The UI reads the EditModel directly from the overlay (main thread, never mutated there) and touches actors only in its seam hook.
+  - There is no separate snapshot struct; `status()` carries the toolbar, meter and Checks data.
+  - Selection and the editor camera are UI state.
+  - Runtime owns Play and Reload, and calls back into the UI (`leaveEdit`, `resumeEdit`, `sceneRebuilt`).
+- **Code layout.**
+  - `native/editor/runtime/`: the EditModel, ops, SceneSync, reload, save.
+  - `native/editor/ui/`: panels, camera, gizmo, picking.
+  - Game-side hooks in `src/` stay `PETARI_NATIVE` and do nothing while the editor is off.
+- **Engine hooks** (`editor/runtime-hooks`; `native/editor/include/petari/editor/runtime_hooks.hpp`, `src/Game/Editor/EditorScene.cpp`):
+  - The spike's four hooks are productised. All are no-ops while the editor is off (`Hooks::enabled()`, set by the Mods-page switch or `PETARI_EDITOR=1`).
+  - Headroom at load is `count + count/2 + 16` per category list and draw executor, with growth as the fallback. `DrawBuffer::init` now takes the executor's allocated size (identical when off).
+  - The `waitForEnd` guard is unconditional: it only changes a path that read past the list.
+  - `EditorScene::createFromRow` / `retire` are the game-side operations. They refuse past the actor and execute limits, minus a margin of 64.
+  - `PetariEditor::` is routed to the host allocator (`native/src/host_allocation.cpp`), so the EditModel and session survive scene reloads. Game objects the editor creates still come from the scene heap.
+  - Live check: `native/tools/editor_hooks_smoke.py` (Good Egg, editor off then on).
+- **Reload and Play** (`editor/fast-reload`; S3):
+  - `destroyScene` drops the archives the editor overrides (`EditorReload::dropOverriddenArchives`, with a new `ArchiveHolder::nativeRemove`).
+  - `StageFileLoader::startLoadingStageFile` injects the model's archive bytes onto the scene heap, so nothing is read from disc.
+  - The restart is a type-5 galaxy move from the restart point (or the mission start). For an editor reload it skips the lives counter, the shader gate and the circle wipe (a fade instead), and clears the already-done flags, so collected items come back.
+  - Measured on Good Egg: **265-493 ms** from the request to normal play (the design target was ~2 s).
+  - Play: if edits are pending, reload, then `leaveEdit` and teleport to the play marker; if not, `leaveEdit` and teleport at once. Reload from Edit ends with `resumeEdit`.
+  - Overrides stay for the session, so a death or a Level Select warp into the galaxy also shows the edits.
+  - The EditModel reads the unmodded disc as its originals (`DVD::mountInfo().filesDirectory`). A saved mod's edits then count as changes and stay in the next save.
+  - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.

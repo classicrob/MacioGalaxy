@@ -35,6 +35,24 @@ int petari_present_content_aspect(unsigned* width, unsigned* height);
  * is no surface. */
 int petari_present_image_rect(float* x, float* y, float* width, float* height);
 
+/* The level editor's docked viewport (docs/dev/level-editor/TECH.md 3.6): the
+ * game image is fitted into this rectangle of the window (points) instead of
+ * the whole window, and the EFB takes the rectangle's pixel size. A width or
+ * height <= 0 goes back to the whole window. Size changes resize the EFB once
+ * they have settled (a splitter drag resizes it once, not every frame).
+ * Main thread. */
+void petari_present_set_content_area(float x, float y, float width, float height);
+
+/* The content area's size in drawable pixels while one is set, for the patched
+ * aurora::window::get_window_size. Returns 0 when there is none. Any thread. */
+int petari_present_content_area_pixels(unsigned* width, unsigned* height);
+
+/* While enabled (and a content area is set), the game renders at the content
+ * area's shape: the EFB and the presented image take its aspect, and the
+ * game's projection follows (petari/editor_view.hpp). The editor enables it
+ * while editing, when the HUD is hidden (2D layouts would stretch). Main thread. */
+void petari_present_set_free_aspect(int enabled);
+
 #ifdef __cplusplus
 }
 #endif
