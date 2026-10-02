@@ -456,7 +456,7 @@ Step StageDriver::step(const Observation& o) {
             note("stage ready: frame " + std::to_string(mFrame) + ", Mario at " + text(position(o)) +
                  (o.playerOnGround ? ", on the ground" : ", in the air"));
             // Class sweep: skip the movement script; the sweep driver runs while the smoke idles in the Tail.
-            next(std::getenv("PETARI_CLASS_SWEEP_JOBS") != nullptr ? Phase::Tail : mConfig.warp && !mWarped ? Phase::Warp : Phase::Idle);
+            next(std::getenv("PETARI_CLASS_SWEEP_JOBS") != nullptr || std::getenv("PETARI_TEST_SERVER") != nullptr ? Phase::Tail : mConfig.warp && !mWarped ? Phase::Warp : Phase::Idle);
         } else if (mPhaseFrames >= kReadyLimit) {
             finish(Result::Fail, std::string("not ready: gameplay never became ready (player ") +
                                      (o.playerValid ? "present" : "missing") + ", demo " +
