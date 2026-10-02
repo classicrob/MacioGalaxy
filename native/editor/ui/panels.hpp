@@ -46,4 +46,25 @@ std::vector< Change > collectChanges(const ModelView& model);
 // The selection's rows (from the game's picking), the first one primary.
 std::vector< RowId > selectedRows();
 
+// ---- the Browser (browser.cpp, UX section 7) ----
+
+struct BrowserEntry {
+    std::string className;    // the placement name, "Kuribo"
+    std::string displayName;  // the catalog's, else the class name
+    std::string description;
+    std::string category;     // "Enemies", ... (from the catalog, else from the table)
+    std::vector< std::string > aliases;
+    int count = 0;            // placed in this galaxy
+    std::vector< RowId > examples;  // some of those placements (the first is what Place copies)
+};
+// Every class placed in the galaxy, plus the catalog's placeable classes, by display name.
+std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model);
+// Matching a search and a category (empty: all): names first, then contains; this galaxy's first.
+std::vector< const BrowserEntry* > filterEntries(const std::vector< BrowserEntry >& entries, const std::string& query, const std::string& category);
+void drawBrowser(const ModelView& model);
+// Stamp mode: the example row each click in the viewport places (0: off).
+std::uint64_t armedPlacement();
+void disarmPlacement();
+extern const char* const kPlacePayload;  // ImGui drag-and-drop payload: a card dragged onto the viewport
+
 }  // namespace PetariEditor::Ui

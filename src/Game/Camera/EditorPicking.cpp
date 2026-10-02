@@ -284,15 +284,27 @@ namespace EditorPicking {
         }
 
         // Select a row's object (the Changes and Outliner lists).
+        // A new row's actor appears when Runtime applies the op (a frame or two later): keep asking.
+        static std::uint64_t sPendingRow = 0;
+        static Pick::Click sPendingMode = Pick::Click::None;
+        static int sPendingFrames = 0;
         std::uint64_t rowId = 0;
         Pick::Click rowMode = Pick::Click::None;
         if (Pick::takeSelectRow(&rowId, &rowMode)) {
-            const PetariEditor::RowId id{rowId};
-            const Pick::Click mode = rowMode;
-            LiveActor* actor = PetariEditor::actorForRow(id);
-            if (mode == Pick::Click::Replace) selection.clear();
-            if (pickable(actor) && std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
-            syncRows(selection);
+            sPendingRow = rowId;
+            sPendingMode = rowMode;
+            sPendingFrames = 60;
+        }
+        if (sPendingRow != 0) {
+            LiveActor* actor = PetariEditor::actorForRow(PetariEditor::RowId{sPendingRow});
+            if (pickable(actor)) {
+                if (sPendingMode == Pick::Click::Replace) selection.clear();
+                if (std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
+                syncRows(selection);
+                sPendingRow = 0;
+            } else if (--sPendingFrames <= 0) {
+                sPendingRow = 0;
+            }
         }
 
         const Pick::Click click = Pick::takeClick();

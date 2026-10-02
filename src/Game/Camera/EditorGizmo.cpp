@@ -2,7 +2,9 @@
 // The level editor's transform gizmo (Game/Camera/EditorGizmo.hpp, UX.md section 6).
 #include "Game/Camera/EditorGizmo.hpp"
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/LiveActor/HitSensor.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
+#include "Game/Map/HitInfo.hpp"
 #include "Game/Util/CollisionPartsFilter.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/MapUtil.hpp"
@@ -16,6 +18,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace {
@@ -414,6 +417,53 @@ namespace {
         std::snprintf(gStatus, sizeof(gStatus), "%s", status);
     }
 
+    // The Browser's Place (UX section 7): a copy of the example row (class and settings) on the ground
+    // under the cursor, upright for the gravity there and facing the camera, in the zone that owns that
+    // ground (else the example's). One op; the new row is selected once Runtime has created it.
+    void place(const Camera& cam, float cx, float cy, PetariEditor::RowId example) {
+        const PetariEditor::ModelView* model = PetariEditor::model();
+        int exampleZone = 0, exampleTable = 0;
+        if (model == nullptr || !model->locate(example, &exampleZone, &exampleTable)) return;
+        TVec3f point;
+        Triangle triangle;
+        const V3 ray = cam.ray(cx, cy);
+        if (!MR::getFirstPolyOnLineToMap(&point, &triangle, tv(cam.eye), tv(ray * kRayLength))) {
+            std::fprintf(stderr, "[editor] place: no ground under the cursor\n");
+            return;
+        }
+        int zone = exampleZone;
+        if (triangle.mSensor != nullptr && triangle.mSensor->mHost != nullptr) {
+            const PetariEditor::RowId host = PetariEditor::rowForActor(triangle.mSensor->mHost);
+            int hostZone = 0, hostTable = 0;
+            if (host.valid() && model->locate(host, &hostZone, &hostTable)) zone = hostZone;
+        }
+        Item item;
+        item.zone = zone;
+        item.pos = v(point);
+        const V3 up = gravityUp(item.pos, {0, 1, 0});
+        item.basis = G::gravityFrame(up, cam.forward * -1.0f);  // facing the camera
+        const PetariEditor::RowTransform exampleTransform = model->transform(example);
+        item.scale = {exampleTransform.scale.x, exampleTransform.scale.y, exampleTransform.scale.z};
+        const PetariEditor::RowTransform t = toRow(item);
+
+        PetariEditor::AddRow add;
+        add.id = PetariEditor::newRowId();
+        add.zone = zone;
+        add.table = model->tablePath(exampleZone, exampleTable);
+        add.copyOf = example;
+        static const char* const kColumns[9] = {"pos_x", "pos_y", "pos_z", "dir_x", "dir_y", "dir_z", "scale_x", "scale_y", "scale_z"};
+        const float values[9] = {t.pos.x, t.pos.y, t.pos.z, t.dirDeg.x, t.dirDeg.y, t.dirDeg.z, t.scale.x, t.scale.y, t.scale.z};
+        for (int c = 0; c < 9; c++) add.cells.push_back({PetariEditor::columnHash(kColumns[c]), floatCell(values[c])});
+        PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
+        const char* name = model->objectName(example);
+        command.op.label = std::string("Placed ") + (name != nullptr ? name : "object");
+        command.op.adds.push_back(add);
+        std::fprintf(stderr, "[editor] place %s in %s at (%.0f, %.0f, %.0f)\n", name != nullptr ? name : "?", model->zoneName(zone), point.x,
+                     point.y, point.z);
+        PetariEditor::enqueue(std::move(command));
+        PetariNative::EditorPick::selectRow(add.id.v, PetariNative::EditorPick::Click::Replace);
+    }
+
     void groundCommand(int what) {
         std::vector< Item > items = gather();
         if (items.empty()) return;
@@ -451,6 +501,9 @@ namespace EditorGizmo {
                 std::snprintf(gMarker.stage, sizeof(gMarker.stage), "%s", stage != nullptr ? stage : "");
                 sendMarker();
             }
+        }
+        if (const std::uint64_t example = PetariNative::EditorPick::takePlace(); example != 0) {
+            place(cam, view.cursorX, view.cursorY, PetariEditor::RowId{example});
         }
         if (PetariNative::EditorPick::takePlaceMarker()) {
             V3 ground;

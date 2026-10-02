@@ -129,6 +129,9 @@ struct FakeModel : ModelView {
     int historySize() const override { return 0; }
     int historyCursor() const override { return 0; }
     const char* historyLabel(int) const override { return ""; }
+    int missionCount() const override { return 1; }
+    const char* missionName(int) const override { return "Test mission"; }
+    std::uint32_t rowMissions(RowId) const override { return 1; }
 };
 
 void testPanelsLogic() {
@@ -162,6 +165,14 @@ void testPanelsLogic() {
     CHECK(Ui::sameCell(a, b) && Ui::cellText(a) == "2.5");
     b.type = CellType::Int;
     CHECK(!Ui::sameCell(a, b));
+    // The Browser: one card per class placed, with its count and examples; search by name.
+    const std::vector< Ui::BrowserEntry > entries = Ui::collectBrowserEntries(model);
+    CHECK(entries.size() == 3);  // Coin, Kuribo, Rabbit (sorted by name)
+    CHECK(entries[0].className == "Coin" && entries[0].count == 1 && entries[0].examples.size() == 1 && entries[0].category == "Objects");
+    CHECK(Ui::filterEntries(entries, "kur", "").size() == 1 && Ui::filterEntries(entries, "kur", "")[0]->className == "Kuribo");
+    CHECK(Ui::filterEntries(entries, "", "").size() == 3 && Ui::filterEntries(entries, "zzz", "").empty());
+    CHECK(Ui::filterEntries(entries, "", "Planets").empty());
+
     Column unnamedColumn;
     unnamedColumn.hash = 0xABCDEF01u;
     CHECK(Ui::columnLabel(unnamedColumn) == "0xabcdef01");

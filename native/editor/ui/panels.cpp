@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cctype>
 #include <cstring>
 
@@ -588,19 +589,30 @@ void drawGalaxyWindow(const char* title) {
         if (model == nullptr) {
             ImGui::TextDisabled("Loading the galaxy...");
         } else if (ImGui::BeginTabBar("galaxy")) {
-            if (ImGui::BeginTabItem("Outliner")) {
+            // PETARI_EDITOR_TAB=<Outliner|Browser|Changes|History>: open that tab once (screenshots, tests).
+            static const char* sOpen = std::getenv("PETARI_EDITOR_TAB");
+            auto flags = [&](const char* name) {
+                if (sOpen == nullptr || std::strcmp(sOpen, name) != 0) return ImGuiTabItemFlags_None;
+                sOpen = nullptr;
+                return ImGuiTabItemFlags_SetSelected;
+            };
+            if (ImGui::BeginTabItem("Outliner", nullptr, flags("Outliner"))) {
                 ImGui::TextColored(kDim, "%s  ·  mission %d", model->galaxy(), model->scenario());
                 drawOutliner(*model, selectedRows());
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Browser", nullptr, flags("Browser"))) {
+                drawBrowser(*model);
                 ImGui::EndTabItem();
             }
             const int changeCount = static_cast< int >(collectChanges(*model).size());
             char changesLabel[32];
             std::snprintf(changesLabel, sizeof(changesLabel), changeCount > 0 ? "Changes (%d)###changes" : "Changes###changes", changeCount);
-            if (ImGui::BeginTabItem(changesLabel)) {
+            if (ImGui::BeginTabItem(changesLabel, nullptr, flags("Changes"))) {
                 drawChanges(*model);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("History")) {
+            if (ImGui::BeginTabItem("History", nullptr, flags("History"))) {
                 drawHistory(*model);
                 ImGui::EndTabItem();
             }

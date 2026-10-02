@@ -310,6 +310,27 @@ void buildDefaultLayout(ImGuiID dock, ImVec2 size) {
     ImGui::DockBuilderFinish(dock);
 }
 
+// A toast at the top of the viewport for 4 s when a command failed (Runtime's status().lastError).
+void drawToast() {
+    static std::uint64_t sSerial = 0;
+    static std::string sText;
+    static double sUntil = 0.0;
+    const Status& state = status();
+    if (state.errorSerial != sSerial) {
+        sSerial = state.errorSerial;
+        sText = state.lastError;
+        sUntil = ImGui::GetTime() + 4.0;
+    }
+    if (sText.empty() || ImGui::GetTime() > sUntil) return;
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    const ImVec2 size = ImGui::CalcTextSize(sText.c_str());
+    const float cx = gViewport.x + gViewport.w * 0.5f, top = gViewport.y + 12.0f;
+    const ImVec2 min(cx - size.x * 0.5f - 14.0f, top), max(cx + size.x * 0.5f + 14.0f, top + size.y + 10.0f);
+    list->AddRectFilled(min, max, rgba(0.05f, 0.03f, 0.03f, 0.88f), (max.y - min.y) * 0.5f);
+    list->AddRect(min, max, rgba(1.0f, 0.55f, 0.25f, 1.0f), (max.y - min.y) * 0.5f, 0, 1.5f);
+    list->AddText(ImVec2(min.x + 14.0f, min.y + 5.0f), rgba(1, 1, 1, 1), sText.c_str());
+}
+
 void setArea(float x, float y, float w, float h) {
     petari_present_set_content_area(x, y, w, h);
     gAreaSet = w > 0.0f && h > 0.0f;
@@ -411,6 +432,7 @@ void drawFrame(float windowWidth, float windowHeight) {
         gViewport = {central->Pos.x, central->Pos.y, central->Size.x, central->Size.y};
         gViewportValid = true;
         setArea(gViewport.x, gViewport.y, gViewport.w, gViewport.h);
+        drawToast();
     }
 }
 

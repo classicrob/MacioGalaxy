@@ -418,6 +418,15 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     std::fputs("[editor-test] LevelEditor tap (play)\n", stderr);
                     Editor::toggle();
                 }
+                // PETARI_EDITOR_TEST_PLACE=1: place a copy of the selection on the ground at the view's centre (the
+                // Browser's Place path).
+                if (t == 150 && std::getenv("PETARI_EDITOR_TEST_PLACE") != nullptr) {
+                    const std::vector<Pick::Item> selected = Pick::selection();
+                    if (!selected.empty() && selected.front().row != 0) {
+                        Editor::cursor(0.0f, -0.3f);
+                        Pick::place(selected.front().row);
+                    }
+                }
                 if (t == 160) {
                     const PetariEditor::ModelView* model = PetariEditor::model();
                     std::fprintf(stderr, "[editor-test] gizmo: history %d (%s, %s)\n", model != nullptr ? model->historySize() : -1,

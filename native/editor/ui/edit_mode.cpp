@@ -116,6 +116,21 @@ void cameraInput(const Area& area) {
         }
     }
 
+    // Placing (the Browser, UX section 7): a card dropped on the viewport, or a click while Place is armed,
+    // puts a copy of its example on the ground under the cursor (instead of selecting).
+    bool placed = false;
+    if (inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (const ImGuiPayload* payload = ImGui::GetDragDropPayload(); payload != nullptr && payload->IsDataType(kPlacePayload)) {
+            Pick::place(*static_cast<const std::uint64_t*>(payload->Data));
+            placed = true;
+        } else if (armedPlacement() != 0 && !io.KeyAlt) {
+            Pick::place(armedPlacement());
+            placed = true;
+        }
+    }
+    const bool escapeDisarms = armedPlacement() != 0 && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    if (escapeDisarms) disarmPlacement();
+
     // Picking: hover while the pointer rests over the viewport; a click (not an Option-drag) selects.
     // Shift adds, Cmd toggles (Figma, UX section 6). Esc deselects.
     // (Set on changes only, so a test driver's hover is not undone by a pointer outside the window.)
@@ -125,17 +140,17 @@ void cameraInput(const Area& area) {
         sHover = hover;
         Pick::setHoverWanted(hover);
     }
-    if (inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !io.KeyAlt &&
+    if (!placed && armedPlacement() == 0 && inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !io.KeyAlt &&
         ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x * ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x +
                 ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y * ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y <
             16.0f) {
         Pick::click(io.KeyShift ? Pick::Click::Add : (io.KeyCtrl || io.KeySuper) ? Pick::Click::Toggle : Pick::Click::Replace);
     }
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Pick::clearSelection();
+    if (!escapeDisarms && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Pick::clearSelection();
 
     // The gizmo (UX section 6): the left button over the viewport presses and releases it (an
     // Option-drag orbits instead); Cmd suspends snapping for the drag.
-    if (inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
+    if (inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) Gizmo::release();
     Gizmo::setSnapSuspended(io.KeyCtrl || io.KeySuper);
     // What a Tab tap plays: Shift resumes the frozen moment, Option plays from the mission start
