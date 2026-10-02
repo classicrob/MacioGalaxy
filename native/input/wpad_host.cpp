@@ -22,6 +22,7 @@
 #include <revolution/wpad.h>
 
 #include <algorithm>
+#include <chrono>
 #include <atomic>
 #include <cmath>
 #include <cstdio>
@@ -35,6 +36,7 @@
 #include "petari/input.hpp"
 #include "petari/input_remap.hpp"
 #include "petari/latency_probe.hpp"
+#include "petari/editor_settings.hpp"
 #include "petari/camera_settings.hpp"
 #include "remote_model.hpp"
 
@@ -702,6 +704,53 @@ bool photoInput(Binding input, bool down, bool repeat) {
     publishPhotoHolds();
     return true;
 }
+// The level editor (docs/dev/level-editor/UX.md section 3), only while the Mods page's
+// "Level editor" is on. A short tap of LevelEditor (Tab) with nothing else pressed toggles
+// Edit mode; a hold stays the game's (Tab also tilts the remote). From the toggle until the
+// game leaves Edit mode the game gets no input: the editor's panels and camera read Dear
+// ImGui's (the editor UI), and pinch goes to the editor camera here.
+constexpr auto kEditorTap = std::chrono::milliseconds(250);
+std::chrono::steady_clock::time_point gEditorTapStart{};
+bool gEditorTapArmed = false;
+bool gEditorGameReleased = false;
+
+// True when the input went to the editor (and must not reach the game).
+bool editorInput(Binding input, bool down, bool repeat) {
+    if (!EditorSettings::enabled()) {
+        gEditorTapArmed = false;
+        return false;
+    }
+    if (!repeat) {
+        if (boundTo(Action::LevelEditor, input)) {
+            if (down) {
+                gEditorTapStart = std::chrono::steady_clock::now();
+                gEditorTapArmed = true;
+            } else if (gEditorTapArmed) {
+                gEditorTapArmed = false;
+                if (std::chrono::steady_clock::now() - gEditorTapStart < kEditorTap) EditorSettings::toggle();
+            }
+        } else if (down) {
+            gEditorTapArmed = false;  // something else pressed: a hold (tilt and move), not a tap
+        }
+    }
+    if (!EditorSettings::capturing()) {
+        gEditorGameReleased = false;
+        return false;
+    }
+    if (!gEditorGameReleased) {
+        // Entering: whatever the game saw held is let go, as on a focus loss.
+        model().focusChanged(false);
+        model().focusChanged(true);
+        releaseCameraInput();
+        gEditorGameReleased = true;
+    }
+    return true;
+}
+
+bool editorCapturing() {
+    return EditorSettings::enabled() && EditorSettings::capturing();
+}
+
 }  // namespace
 
 int takeActionPresses(Action action) {
@@ -794,6 +843,7 @@ void keyEvent(KeyCode code, bool down, bool repeat) {
         countModPress(Binding::key(code));
         notePressForProbe(Binding::key(code));
     }
+    if (editorInput(Binding::key(code), down, repeat)) return;
     if (photoInput(Binding::key(code), down, repeat)) return;
     if (!repeat) cameraInput(Binding::key(code), down);
     model().keyEvent(code, down, repeat);
@@ -807,6 +857,7 @@ void mouseButtonEvent(MouseButton button, bool down) {
         countModPress(Binding::mouse(button));
         notePressForProbe(Binding::mouse(button));
     }
+    if (editorInput(Binding::mouse(button), down, false)) return;
     if (photoInput(Binding::mouse(button), down, false)) return;
     cameraInput(Binding::mouse(button), down);
     model().mouseButtonEvent(button, down);
@@ -820,6 +871,7 @@ void padButtonEvent(PadButton button, bool down) {
         countModPress(Binding::pad(button));
         notePressForProbe(Binding::pad(button));
     }
+    if (editorInput(Binding::pad(button), down, false)) return;
     if (photoInput(Binding::pad(button), down, false)) return;
     cameraInput(Binding::pad(button), down);
     model().padButtonEvent(button, down);
@@ -831,6 +883,7 @@ void padAxisEvent(PadAxis axis, float value) {
         gHostActivity = true;
     }
     std::lock_guard<std::mutex> lock(gHostMutex);
+    if (editorCapturing()) return;
     if (CameraSettings::photoEnabled() && CameraSettings::photoCapturing()) {
         if (axis == PadAxis::RightX || axis == PadAxis::RightY) (axis == PadAxis::RightX ? gRightX : gRightY) = value;
         if (axis == PadAxis::LeftX || axis == PadAxis::LeftY) (axis == PadAxis::LeftX ? gLeftX : gLeftY) = value;
@@ -855,6 +908,12 @@ void padDisconnected() {
 void mouseMoved(float x, float y) {
     gHostActivity = true;
     std::lock_guard<std::mutex> lock(gHostMutex);
+    if (editorCapturing()) {
+        gMouseX = x;
+        gMouseY = y;
+        gHaveMouse = true;
+        return;
+    }
     if (CameraSettings::photoEnabled() && CameraSettings::photoCapturing()) {
         // Any mouse button held: drag to look (0.15 degrees per point).
         if (gHaveMouse && gPhotoMouseButtons > 0) CameraSettings::photoLook((x - gMouseX) * 0.15f, -(y - gMouseY) * 0.15f);
@@ -873,6 +932,7 @@ void mouseMoved(float x, float y) {
 }
 
 void mouseWheel(float x, float y) {
+    if (editorCapturing()) return;  // the editor reads scrolling from Dear ImGui (with its modifiers)
     if (CameraSettings::photoEnabled() && CameraSettings::photoCapturing()) {
         // Trackpad scroll looks; wheel notches change the field of view (up: narrower).
         const bool precise = x != 0.0f || y != std::round(y);
@@ -911,6 +971,11 @@ MenuScroll takeMenuScroll() {
 }
 
 void pinch(float scale) {
+    if (editorCapturing()) {
+        // Spread zooms the editor camera toward the cursor, about one step per 10%.
+        if (scale > 0.0f) EditorSettings::dolly(std::log(scale) / std::log(1.1f));
+        return;
+    }
     if (CameraSettings::photoEnabled() && CameraSettings::photoCapturing() && scale > 0.0f) {
         CameraSettings::photoFov(-std::log(scale) / std::log(1.1f));
         return;

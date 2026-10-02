@@ -9,6 +9,7 @@ unmodified game and every test run behave exactly as before.
 | Fire a Star Bit at the nearest enemy (`ShootEnemy`) | V (no controller default) | Shoots one Star Bit at the nearest enemy on screen |
 | Odyssey movement (`OdysseyMovement`) | none (a mode; it uses the normal Jump, Crouch and Spin buttons) | Mario moves with Super Mario Odyssey's physics and moveset: see "Odyssey movement" below. |
 | Cappy (`Cappy`) | R, controller RB | Super Mario Odyssey's cap throw and cap bounce; needs Odyssey movement: see "Cappy" below. |
+| Level editor (`LevelEditor`) | a tap of Tab | Edit the galaxy you are in (docs/dev/level-editor/UX.md). A short tap of Tab, with nothing else pressed, freezes the game into Edit mode where the pause menu could open; another tap plays again. Holding Tab still tilts the remote. Remappable as `LevelEditor` in `controls.txt`. |
 
 ## Turning mods on
 
