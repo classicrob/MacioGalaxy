@@ -1,4 +1,7 @@
 #include "Game/System/GameSequenceProgress.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
+#endif
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/Screen/PlayerMissLeft.hpp"
 #include "Game/System/FindingLuigiEventScheduler.hpp"
@@ -205,7 +208,11 @@ void GameSequenceProgress::requestGalaxyMove(const GalaxyMoveArgument& rMoveArg)
         mStarPointerOnOffController->setStateToTitle(this);
         break;
     case 5:
-        if (mPlayerMissLeft != nullptr && !isCometStar(moveArg)) {
+        if (mPlayerMissLeft != nullptr && !isCometStar(moveArg)
+#ifdef PETARI_NATIVE
+            && !PetariEditor::Hooks::editorReload()  // the level editor's reload is not a miss
+#endif
+        ) {
             mPlayerMissLeft->appear();
         }
     case 0:

@@ -206,7 +206,7 @@ void GameScene::update() {
     }
 #endif
 #ifdef PETARI_NATIVE
-    PetariEditor::Runtime::tick();  // the level editor's commands and SceneSync; nothing while it is off
+    PetariEditor::Runtime::tick(isPermitToPauseMenu());  // the level editor's commands and SceneSync; nothing while it is off
     EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
 #endif
     mPauseCtrl->updateNerve();
@@ -554,7 +554,12 @@ void GameScene::startStagePlayFirst() {
 }
 
 void GameScene::startStagePlayRetry() {
-    MR::openWipeCircle();
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Hooks::editorReload()) {
+        MR::forceOpenWipeFade();  // the level editor's reload: no circle
+    } else
+#endif
+        MR::openWipeCircle();
 
     if (MR::isEqualStageName("SurfingLv1Galaxy") && MR::getPlayerRestartIdInfo()->_0 == 1) {
         MR::stopSubBGM(0);

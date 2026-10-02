@@ -48,6 +48,10 @@ public:
     /// @param pArchiveName The name of the archive.
     /// @return The pointer to the found entry, or `nullptr` if not found.
     ArchiveHolderArchiveEntry* findEntry(const char*) const;
+#ifdef PETARI_NATIVE
+    /// Unmounts and forgets the archive of this name (the level editor's reload replaces it).
+    bool nativeRemove(const char* pArchiveName);
+#endif
 
     /* 0x0 */ MR::Vector< MR::AssignableArray< ArchiveHolderArchiveEntry* > > mEntries;
     /* 0xC */ OSMutex mMutex;
