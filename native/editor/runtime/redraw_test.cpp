@@ -17,6 +17,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <set>
 #include <string>
 
@@ -45,6 +46,11 @@ namespace {
         return out;
     }
 
+    bool modelNamed(LiveActor* pActor, const char* pPart) {
+        const char* pModel = pActor->mModelManager ? MR::getModelResName(pActor) : nullptr;
+        return pModel != nullptr && strcasestr(pModel, pPart) != nullptr;
+    }
+
     std::string describe(LiveActor* pActor) {
         char buffer[256];
         std::snprintf(buffer, sizeof(buffer), "%s (model %s, dead %d, hidden %d) at %.0f %.0f %.0f", pActor->mName ? pActor->mName : "?",
@@ -54,7 +60,22 @@ namespace {
     }
 }  // namespace
 
+// PETARI_EDITOR_DRAWN_LOG=<model name part>: every 5 frames in Edit, log the draw-connected actors
+// whose model name contains it (a diagnostic for UI-driven runs; changes nothing).
+void drawnLogTick() {
+    static const char* const sPart = std::getenv("PETARI_EDITOR_DRAWN_LOG");
+    static int sFrame = 0;
+    if (sPart == nullptr || mode() != Mode::Editing || ++sFrame % 5 != 0) return;
+    PetariNative::HostAllocationScope host;
+    for (LiveActor* a : drawnActors()) {
+        if (modelNamed(a, sPart))
+            std::fprintf(stderr, "[editor-drawn] t%d %p %s%s\n", sFrame, static_cast< void* >(a), describe(a).c_str(),
+                         rowForActor(a).valid() ? " [bound]" : "");
+    }
+}
+
 void redrawTestTick() {
+    drawnLogTick();
     PetariNative::HostAllocationScope host;  // test bookkeeping (the actors it checks are only read)
     static const char* const sClass = [] {
         const char* p = std::getenv("PETARI_EDITOR_REDRAW_TEST");
@@ -115,8 +136,7 @@ void redrawTestTick() {
         for (LiveActor* a : added) std::fprintf(stderr, "[editor-redraw]   + %s%s\n", describe(a).c_str(), a == pNew ? " [the row]" : "");
         for (LiveActor* a : removed) std::fprintf(stderr, "[editor-redraw]   - %s%s\n", describe(a).c_str(), a == s.original ? " [the row]" : "");
         for (LiveActor* a : after) {
-            const char* pModel = a->mModelManager ? MR::getModelResName(a) : "";
-            if (pModel != nullptr && std::string(pModel).find(sClass) != std::string::npos)
+            if (modelNamed(a, sClass))
                 std::fprintf(stderr, "[editor-redraw]   drawn: %s\n", describe(a).c_str());
         }
         if (EditorScene::isConnectedToDraw(s.original)) return finish("FAIL: the replaced actor is still drawn");
