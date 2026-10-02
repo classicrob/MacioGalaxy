@@ -35,7 +35,7 @@ from pathlib import Path
 TOOLS = Path(__file__).resolve().parent
 REPO = TOOLS.parents[1]
 # The stages the editor workers use plus the observatory (AstroGalaxy): their shaders are what a live run needs.
-DEFAULT_STAGES = ["EggStarGalaxy", "OceanRingGalaxy", "KoopaBattleVs1Galaxy", "AstroGalaxy"]
+DEFAULT_STAGES = ["EggStarGalaxy", "CosmosGardenGalaxy", "OceanRingGalaxy", "KoopaBattleVs1Galaxy", "AstroGalaxy"]  # CosmosGarden = Gusty Garden
 DBS = ("dawn_cache.db", "pipeline_cache.db")
 
 
@@ -64,6 +64,7 @@ def seed_ok(args):
     except (OSError, ValueError):
         return False
     return (recorded.get("exe_sha256") == args.sha and recorded.get("warm") is True
+            and set(args.stages) <= set(recorded.get("stages", []))
             and (root / "metal/dev.petari.Petari").is_dir() and all((root / db).is_file() for db in DBS))
 
 
@@ -99,8 +100,24 @@ def warm_up(args):
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     current = None  # the seed dir so far: {seed.json, metal, dbs}
+    have = []
+    old = seed_dir(args)
+    try:  # same build, other stages missing: extend the existing seed instead of starting over
+        recorded = json.loads((old / "seed.json").read_text())
+        if recorded.get("exe_sha256") == args.sha and recorded.get("warm") and not args.force:
+            have = recorded.get("stages", [])
+            current = work / "seed-base"
+            current.mkdir()
+            (current / "metal").mkdir()
+            clone_tree(old / "metal/dev.petari.Petari", current / "metal/dev.petari.Petari")
+            for db in DBS:
+                clone(old / db, current / db)
+            shutil.copyfile(old / "seed.json", current / "seed.json")
+    except (OSError, ValueError):
+        current, have = None, []
     log = lambda text: print(f"[warm-seed] {text}", file=sys.stderr, flush=True)
-    for number, stage in enumerate(args.stages):
+    todo = [s for s in args.stages if s not in have]
+    for number, stage in enumerate(todo):
         user = work / f"user{number}"
         sweep.load_fixture_module().create(main / "build/observatory-user-2", user, "stage")
         if current is not None:
@@ -134,7 +151,7 @@ def warm_up(args):
                 clone(current / db, nxt / db)
             else:
                 raise SystemExit(f"warm-seed: {stage} wrote no {db}")
-        (nxt / "seed.json").write_text(json.dumps({"exe_sha256": args.sha, "warm": True, "stages": args.stages[:number + 1],
+        (nxt / "seed.json").write_text(json.dumps({"exe_sha256": args.sha, "warm": True, "stages": have + todo[:number + 1],
                                                    "published": time.time()}, indent=2) + "\n")
         shutil.rmtree(user, ignore_errors=True)
         if current is not None:
