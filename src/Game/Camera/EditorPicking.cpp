@@ -218,6 +218,18 @@ namespace EditorPicking {
             selection.clear();
             selectedRows().clear();
         }
+        // Back in Edit (after a play-test or a reload): the selection comes back by its rows.
+        if (selection.empty() && !selectedRows().empty()) {
+            std::vector< PetariEditor::RowId > kept = selectedRows();
+            selectedRows().clear();
+            for (PetariEditor::RowId row : kept) {
+                LiveActor* actor = PetariEditor::actorForRow(row);
+                if (pickable(actor)) {
+                    selection.push_back(actor);
+                    selectedRows().push_back(row);
+                }
+            }
+        }
         // A selected actor that died was usually re-created from its edited row (Runtime's SceneSync):
         // the selection follows the row to the new actor. Otherwise (deleted) it leaves the selection.
         std::vector< PetariEditor::RowId >& rows = selectedRows();
@@ -351,9 +363,10 @@ namespace EditorPicking {
     }
 
     void reset() {
+        // Leaving Edit (or a rebuilt scene): the actors go; the rows stay, so the selection comes back
+        // when Edit is entered again (UX section 3: return with the edit state intact).
         gHover = nullptr;
         if (gSelected != nullptr) gSelected->clear();
-        if (gSelectedRows != nullptr) gSelectedRows->clear();
         Pick::publish(nullptr, {});
     }
 }  // namespace EditorPicking

@@ -28,6 +28,7 @@ void click(Click mode);            // a click over the viewport
 void clearSelection();             // Esc, or Edit mode left
 void selectByName(const char* name);  // select the first object with this row or class name (search, tests)
 void selectRow(std::uint64_t row, Click mode);  // select a row's object (the Changes and Outliner lists)
+void placeMarker();  // M: the play marker onto the ground under the cursor
 
 // Game, Edit nerve: the requests, then the answers.
 bool hoverWanted();
@@ -35,6 +36,7 @@ Click takeClick();
 bool takeClear();
 bool takeSelectByName(char* name, int size);
 bool takeSelectRow(std::uint64_t* row, Click* mode);
+bool takePlaceMarker();
 void publish(const Item* hover, const std::vector<Item>& selection);
 
 // UI: the last answers.
@@ -82,6 +84,9 @@ struct View {
     std::vector<Line> lines;
     float originX = 0, originY = 0;
     char status[96] = {};    // for the footer: "Move  X +120.0" ...
+    // The play marker (UX section 3): where Play puts Mario.
+    bool marker = false;
+    float markerX = 0, markerY = 0, markerRadius = 0;  // viewport coordinates; radius in viewport heights
 };
 void publish(const View& view);
 View view();

@@ -41,10 +41,10 @@ void leaveEdit() {
 void resumeEdit() {
     Settings::requestEnter();
 }
-// A rebuilt scene: every actor is new. The selection's actors are dropped (rows come back with
-// Runtime's binding).
+// A rebuilt scene: every actor is new. The game already dropped the selection's actors
+// (EditorCamera::abandon); its rows stay and come back through Runtime's binding on re-entry.
 void sceneRebuilt() {
-    Pick::clearSelection();
+    Pick::setHoverWanted(false);
 }
 
 struct Area {
@@ -138,6 +138,9 @@ void cameraInput(const Area& area) {
     if (inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) Gizmo::release();
     Gizmo::setSnapSuspended(io.KeyCtrl || io.KeySuper);
+    // What a Tab tap plays: Shift resumes the frozen moment, Option plays from the mission start
+    // (Cmd+Tab and Cmd+Shift+Tab are macOS's app switcher and never reach the game).
+    Settings::setPlayFrom(io.KeyShift ? 1 : io.KeyAlt ? 2 : 0);
     if (!io.WantTextInput && gDrag != Drag::Look) {
         // Q W E R: select, move, rotate, scale (while flying, those keys fly).
         if (ImGui::IsKeyPressed(ImGuiKey_Q, false)) Gizmo::setMode(Gizmo::Mode::Select);
@@ -147,6 +150,8 @@ void cameraInput(const Area& area) {
         if (ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
             Gizmo::setFrame(static_cast<Gizmo::Frame>((static_cast<int>(Gizmo::frame()) + 1) % 3));
         }
+        // M: the play marker onto the ground under the cursor.
+        if (ImGui::IsKeyPressed(ImGuiKey_M, false) && inside) Pick::placeMarker();
         // End: drop to the ground along gravity; Shift+End: stand up; Cmd+End: both.
         if (ImGui::IsKeyPressed(ImGuiKey_End, false)) {
             Gizmo::ground(io.KeyCtrl || io.KeySuper ? Gizmo::Ground::Both
@@ -207,13 +212,33 @@ void drawPickMarks(const Area& area) {
     list->PopClipRect();
 }
 
-// The gizmo's handles, as the game projected them (lines in viewport coordinates).
+// The gizmo's handles, as the game projected them (lines in viewport coordinates), and the play marker.
 void drawGizmo(const Area& area) {
     const Gizmo::View view = Gizmo::view();
-    if (!view.visible || view.lines.empty()) return;
     ImDrawList* list = ImGui::GetForegroundDrawList();
     list->PushClipRect(ImVec2(area.x, area.y), ImVec2(area.x + area.w, area.y + area.h), true);
     auto at = [&](float x, float y) { return ImVec2(area.x + (x * 0.5f + 0.5f) * area.w, area.y + (0.5f - y * 0.5f) * area.h); };
+    if (view.marker) {
+        // A dashed cyan ring at Mario's feet and its label (the mockup's play marker).
+        const ImVec2 c = at(view.markerX, view.markerY);
+        const float r = std::fmax(view.markerRadius * area.h, 8.0f);
+        const int dashes = 16;
+        for (int i = 0; i < dashes; i += 2) {
+            const float a0 = 6.2831853f * i / dashes, a1 = 6.2831853f * (i + 1) / dashes;
+            list->PathArcTo(c, r, a0, a1, 6);
+            list->PathStroke(rgba(0.40f, 0.86f, 1.0f, 0.95f), 0, 2.5f);
+        }
+        const char* text = "Play marker";
+        const ImVec2 size = ImGui::CalcTextSize(text);
+        const ImVec2 min(c.x - size.x * 0.5f - 10.0f, c.y + r + 6.0f), max(c.x + size.x * 0.5f + 10.0f, c.y + r + 12.0f + size.y);
+        list->AddRectFilled(min, max, rgba(0.01f, 0.08f, 0.14f, 0.86f), (max.y - min.y) * 0.5f);
+        list->AddRect(min, max, rgba(0.40f, 0.86f, 1.0f, 1.0f), (max.y - min.y) * 0.5f, 0, 1.5f);
+        list->AddText(ImVec2(min.x + 10.0f, min.y + 3.0f), rgba(1, 1, 1, 1), text);
+    }
+    if (!view.visible || view.lines.empty()) {
+        list->PopClipRect();
+        return;
+    }
     for (const Gizmo::Line& line : view.lines) {
         list->AddLine(at(line.x0, line.y0), at(line.x1, line.y1), IM_COL32(0, 10, 20, 120), line.width + 2.0f);
     }
@@ -253,6 +278,8 @@ void updateEditMode(float windowWidth, float windowHeight) {
     // Cmd+Z / Cmd+Shift+Z (UX section 16), unless a text field has the keys.
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) undo();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z)) redo();
+    // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
+    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
     const Area area = cameraArea(windowWidth, windowHeight);
     cameraInput(area);
     drawPickMarks(area);

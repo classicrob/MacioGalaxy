@@ -15,6 +15,7 @@ std::atomic<bool> gClear{false};
 std::atomic<bool> gByNameWanted{false};
 std::atomic<std::uint64_t> gRowWanted{0};
 std::atomic<int> gRowMode{0};
+std::atomic<bool> gPlaceMarker{false};
 char gByName[64] = {};
 std::mutex gMutex;
 bool gHoverValid = false;
@@ -31,6 +32,9 @@ void selectByName(const char* name) {
     std::snprintf(gByName, sizeof(gByName), "%s", name != nullptr ? name : "");
     gByNameWanted.store(true, std::memory_order_release);
 }
+void placeMarker() { gPlaceMarker.store(true, std::memory_order_relaxed); }
+bool takePlaceMarker() { return gPlaceMarker.exchange(false, std::memory_order_relaxed); }
+
 void selectRow(std::uint64_t row, Click mode) {
     gRowMode.store(static_cast<int>(mode), std::memory_order_relaxed);
     gRowWanted.store(row, std::memory_order_release);

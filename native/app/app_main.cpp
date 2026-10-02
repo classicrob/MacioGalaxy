@@ -408,6 +408,16 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 if (t > 62 && t <= 82) Editor::cursor(tipX + dirX * 0.012f * static_cast<float>(t - 62), tipY + dirY * 0.012f * static_cast<float>(t - 62));
                 if (t == 84) Gizmo::release();
                 if (t == 120) Gizmo::ground(Gizmo::Ground::Drop);
+                // The play loop: the marker under the centre, Tab plays (Runtime reloads the edited layout and
+                // puts Mario at the marker), Tab again freezes back into Edit (at t 250, below), and leaves at 330.
+                if (t == 140) {
+                    Editor::cursor(0.0f, -0.2f);
+                    Pick::placeMarker();
+                }
+                if (t == 170) {
+                    std::fputs("[editor-test] LevelEditor tap (play)\n", stderr);
+                    Editor::toggle();
+                }
                 if (t == 160) {
                     const PetariEditor::ModelView* model = PetariEditor::model();
                     std::fprintf(stderr, "[editor-test] gizmo: history %d (%s, %s)\n", model != nullptr ? model->historySize() : -1,
@@ -415,6 +425,10 @@ App::FrameStats::Phase framePhaseForPipelines() {
                                  model != nullptr && model->historySize() > 1 ? model->historyLabel(1) : "-");
                 }
                 if (t == 250) {
+                    std::fputs("[editor-test] LevelEditor tap (back to Edit)\n", stderr);
+                    Editor::toggle();
+                }
+                if (t == 330) {
                     std::fputs("[editor-test] LevelEditor tap (leave)\n", stderr);
                     Editor::toggle();
                     editorStep = 400;

@@ -180,8 +180,19 @@ namespace EditorCamera {
     bool update() {
         PetariEditorInput in;
         petari_editor_take_input(&in);
-        if (in.toggle > 0 || in.leave > 0 || !in.enabled) {
-            return true;
+        if (in.leave > 0 || !in.enabled) {
+            return true;  // Runtime's leaveEdit (Play), or the editor switched off
+        }
+        if (in.toggle > 0) {
+            // Tab in Edit mode plays (UX section 3): Runtime reloads the layout if anything changed, then
+            // leaves Edit (leaveEdit) and puts Mario at the play marker. Without a model, just leave.
+            if (PetariEditor::model() == nullptr) return true;
+            PetariEditor::Command play{PetariEditor::Command::Kind::Play};
+            play.from = in.playFrom == 1 ? PetariEditor::PlayFrom::Resume
+                        : in.playFrom == 2 ? PetariEditor::PlayFrom::MissionStart
+                                           : PetariEditor::PlayFrom::Marker;
+            PetariEditor::enqueue(std::move(play));
+            std::fprintf(stderr, "[editor] play (%s)\n", in.playFrom == 1 ? "resume" : in.playFrom == 2 ? "mission start" : "marker");
         }
         // The pivot under the cursor, for an orbit that starts now.
         if (in.repivot > 0) {

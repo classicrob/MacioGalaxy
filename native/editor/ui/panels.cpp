@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 
 namespace PetariEditor::Ui {
@@ -83,35 +84,166 @@ void enqueueOp(Op op) {
 
 // ---- Outliner -------------------------------------------------------------------------------------
 
+// The kinds the Outliner groups rows into (UX section 4: by zone, then by kind; never raw tables).
+enum class Kind { Objects, Planets, Platforms, Gravity, Areas, Cameras, Paths, Starts, Sounds, Cutscenes, Positions, Zones, Other, Count };
+const char* const kKindNames[] = {"Objects", "Planets", "Platforms", "Gravity", "Areas", "Cameras", "Paths",
+                                  "Starts", "Sounds", "Cutscenes", "Positions", "Zones", "Other"};
+
+// The table's kind from its path ("jmp/placement/layera/areaobjinfo"); rail points are not a kind (they
+// fold under their path), nor are the stage's lists.
+bool kindOfTable(const char* path, Kind* kind) {
+    auto has = [&](const char* part) { return std::strstr(path, part) != nullptr; };
+    if (has("pointinfo") || has("jmp/list/") || has("jmp/debug/")) return false;
+    if (has("planetobjinfo")) *kind = Kind::Gravity;
+    else if (has("areaobjinfo")) *kind = Kind::Areas;
+    else if (has("cameracubeinfo")) *kind = Kind::Cameras;
+    else if (has("mappartsinfo")) *kind = Kind::Platforms;
+    else if (has("commonpathinfo")) *kind = Kind::Paths;
+    else if (has("startinfo")) *kind = Kind::Starts;
+    else if (has("soundinfo")) *kind = Kind::Sounds;
+    else if (has("demoobjinfo")) *kind = Kind::Cutscenes;
+    else if (has("generalposinfo")) *kind = Kind::Positions;
+    else if (has("stageobjinfo")) *kind = Kind::Zones;
+    else if (has("objinfo")) *kind = Kind::Objects;  // objinfo, childobjinfo
+    else *kind = Kind::Other;
+    return true;
+}
+
+// "layera" in the path -> "A" (common rows have no tag).
+const char* layerTag(const char* path) {
+    const char* at = std::strstr(path, "/layer");
+    static char tag[2] = {};
+    if (at == nullptr || at[6] == '\0') return nullptr;
+    tag[0] = static_cast< char >(std::toupper(static_cast< unsigned char >(at[6])));
+    return tag;
+}
+
+void outlinerRow(const ModelView& model, RowId row, const std::vector< RowId >& selected, const char* layer, const char* suffix = nullptr) {
+    ImGui::PushID(static_cast< int >(row.v & 0x7FFFFFFF));
+    const RowState state = model.state(row);
+    ImGui::TextColored(stateColor(state), "%s", stateMark(state));
+    ImGui::SameLine();
+    std::string label = rowName(model, row);
+    if (suffix != nullptr) label += suffix;
+    const bool isSelected = std::find(selected.begin(), selected.end(), row) != selected.end();
+    if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_AllowOverlap)) {
+        Pick::selectRow(row.v, ImGui::GetIO().KeyShift ? Pick::Click::Add : Pick::Click::Replace);
+    }
+    if (layer != nullptr) {
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 18.0f);
+        ImGui::TextColored(kDim, "%s", layer);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("In layer %s (missions come with the mission chips)", layer);
+    }
+    ImGui::PopID();
+}
+
+// Paths, each with its points folded under it (commonpathpointinfo.<n> belongs to the n-th path).
+void drawPaths(const ModelView& model, int zone, int pathTable, const std::vector< RowId >& selected) {
+    int index = 0;
+    model.forEachRow(zone, pathTable, [&](RowId path) {
+        char pointsPath[64];
+        std::snprintf(pointsPath, sizeof(pointsPath), "jmp/path/commonpathpointinfo.%d", index++);
+        int pointsTable = -1, points = 0;
+        for (int t = 0; t < model.tableCount(zone); t++) {
+            if (std::strcmp(model.tablePath(zone, t), pointsPath) == 0) pointsTable = t;
+        }
+        if (pointsTable >= 0) model.forEachRow(zone, pointsTable, [&](RowId) { points++; });
+        ImGui::PushID(static_cast< int >(path.v & 0x7FFFFFFF));
+        char label[96];
+        std::snprintf(label, sizeof(label), "%s  (%d points)", rowName(model, path).c_str(), points);
+        const bool open = ImGui::TreeNodeEx("path", ImGuiTreeNodeFlags_SpanAvailWidth, "%s", label);
+        if (ImGui::IsItemClicked()) Pick::selectRow(path.v, Pick::Click::Replace);
+        if (open) {
+            if (pointsTable >= 0) {
+                int n = 0;
+                model.forEachRow(zone, pointsTable, [&](RowId point) {
+                    char suffix[24];
+                    std::snprintf(suffix, sizeof(suffix), " %d", n++);
+                    outlinerRow(model, point, selected, nullptr, suffix);
+                });
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    });
+}
+
+bool gRawTables = false;  // Advanced: the archive's tables as they are
+
+void drawRawTables(const ModelView& model, int zone, const std::vector< RowId >& selected) {
+    for (int table = 0; table < model.tableCount(zone); table++) {
+        int rows = 0;
+        model.forEachRow(zone, table, [&](RowId) { rows++; });
+        if (rows == 0) continue;
+        ImGui::PushID(table);
+        if (ImGui::TreeNode("table", "%s  (%d)", model.tablePath(zone, table), rows)) {
+            model.forEachRow(zone, table, [&](RowId row) { outlinerRow(model, row, selected, nullptr); });
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+}
+
 void drawOutliner(const ModelView& model, const std::vector< RowId >& selected) {
+    ImGui::Checkbox("Raw tables", &gRawTables);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Advanced: the zone archives' tables as they are on the disc");
     for (int zone = 0; zone < model.zoneCount(); zone++) {
         if (!model.zonePlaced(zone)) continue;
         ImGui::PushID(zone);
-        const bool open = ImGui::TreeNodeEx("zone", 0, "%s", model.zoneName(zone));
+        // Open the zone that holds the selection.
+        bool holdsSelection = false;
+        for (RowId row : selected) {
+            int z = -1, t = 0;
+            holdsSelection = holdsSelection || (model.locate(row, &z, &t) && z == zone);
+        }
+        if (holdsSelection) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+        const bool open = ImGui::TreeNodeEx("zone", ImGuiTreeNodeFlags_SpanAvailWidth, "%s", model.zoneName(zone));
         if (open) {
-            for (int table = 0; table < model.tableCount(zone); table++) {
-                // Rail points belong to their rail (a later Paths view), not to the object list.
-                if (std::strstr(model.tablePath(zone, table), "pointinfo") != nullptr) continue;
-                int rows = 0;
-                model.forEachRow(zone, table, [&](RowId) { rows++; });
-                if (rows == 0) continue;
-                ImGui::PushID(table);
-                const char* path = model.tablePath(zone, table);
-                if (ImGui::TreeNode("table", "%s  (%d)", path, rows)) {
+            if (gRawTables) {
+                drawRawTables(model, zone, selected);
+            } else {
+                // Rows by kind, across the zone's layers.
+                std::vector< std::pair< RowId, const char* > > byKind[static_cast< int >(Kind::Count)];
+                int pathTable = -1;
+                for (int table = 0; table < model.tableCount(zone); table++) {
+                    const char* path = model.tablePath(zone, table);
+                    Kind kind;
+                    if (!kindOfTable(path, &kind)) continue;
+                    if (kind == Kind::Paths) {
+                        pathTable = table;
+                        continue;
+                    }
                     model.forEachRow(zone, table, [&](RowId row) {
-                        ImGui::PushID(static_cast< int >(row.v & 0x7FFFFFFF));
-                        const bool isSelected = std::find(selected.begin(), selected.end(), row) != selected.end();
-                        const RowState state = model.state(row);
-                        ImGui::TextColored(stateColor(state), "%s", stateMark(state));
-                        ImGui::SameLine();
-                        if (ImGui::Selectable(rowName(model, row).c_str(), isSelected)) {
-                            Pick::selectRow(row.v, ImGui::GetIO().KeyShift ? Pick::Click::Add : Pick::Click::Replace);
-                        }
-                        ImGui::PopID();
+                        Kind k = kind;
+                        // Planets are objects whose name says so (the catalog's categories replace this).
+                        const char* name = model.objectName(row);
+                        if (k == Kind::Objects && name != nullptr && std::strstr(name, "Planet") != nullptr) k = Kind::Planets;
+                        byKind[static_cast< int >(k)].push_back({row, layerTag(path)});
                     });
-                    ImGui::TreePop();
                 }
-                ImGui::PopID();
+                for (int k = 0; k < static_cast< int >(Kind::Count); k++) {
+                    int count = static_cast< int >(byKind[k].size());
+                    if (k == static_cast< int >(Kind::Paths) && pathTable >= 0) model.forEachRow(zone, pathTable, [&](RowId) { count++; });
+                    if (count == 0) continue;
+                    ImGui::PushID(k);
+                    bool kindHoldsSelection = false;
+                    for (const auto& [row, layer] : byKind[k]) {
+                        kindHoldsSelection = kindHoldsSelection || std::find(selected.begin(), selected.end(), row) != selected.end();
+                    }
+                    if (kindHoldsSelection) ImGui::SetNextItemOpen(true, ImGuiCond_Always);
+                    if (ImGui::TreeNodeEx("kind", ImGuiTreeNodeFlags_SpanAvailWidth, "%s  (%d)", kKindNames[k], count)) {
+                        if (k == static_cast< int >(Kind::Paths)) {
+                            drawPaths(model, zone, pathTable, selected);
+                        } else {
+                            std::stable_sort(byKind[k].begin(), byKind[k].end(), [&](const auto& a, const auto& b) {
+                                return rowName(model, a.first) < rowName(model, b.first);
+                            });
+                            for (const auto& [row, layer] : byKind[k]) outlinerRow(model, row, selected, layer);
+                        }
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                }
             }
             ImGui::TreePop();
         }

@@ -4,6 +4,7 @@
 #include "edit_mode.hpp"
 #include "panels.hpp"
 
+#include <petari/editor/edit_api.hpp>
 #include <petari/editor_pick.hpp>
 
 #include <petari/home_menu.hpp>
@@ -14,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <string>
 
 extern "C" void petari_present_set_content_area(float x, float y, float width, float height);
 extern "C" void petari_present_set_free_aspect(int enabled);
@@ -209,9 +211,36 @@ void drawToolbar(float width) {
     ImGui::EndDisabled();
     ImGui::SameLine(0.0f, 16.0f);
     const float buttonHeight = 26.0f;
-    const float playWidth = 96.0f;
-    ImGui::SetCursorPos(ImVec2(width - playWidth - 12.0f, (kToolbarHeight - buttonHeight) * 0.5f));
-    capsule("##play", "Play  Tab", true, buttonHeight);
+    const Status& state = status();
+    // Reload: rebuild the scene from the layout, applying pending changes (UX section 3).
+    char reload[48];
+    std::snprintf(reload, sizeof(reload), state.pendingCount > 0 ? "Reload  %d pending" : "Reload", state.pendingCount);
+    const float right = width - 12.0f;
+    ImGui::SetCursorPos(ImVec2(right - 96.0f - 8.0f - 230.0f, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+    if (state.pendingCount > 0) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.66f, 1.0f, 0.45f));
+    if (ImGui::Button(reload)) enqueue(Command{Command::Kind::Reload});
+    if (state.pendingCount > 0) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cmd+R: rebuild the world from your layout (enemies home, coins back, pending changes applied)");
+    ImGui::SameLine();
+    if (ImGui::Button("Resume")) {
+        Command play{Command::Kind::Play};
+        play.from = PlayFrom::Resume;
+        enqueue(std::move(play));
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Shift+Tab: continue the frozen moment as it is");
+    ImGui::SameLine();
+    if (ImGui::Button("From start")) {
+        Command play{Command::Kind::Play};
+        play.from = PlayFrom::MissionStart;
+        enqueue(std::move(play));
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Option+Tab: play the mission from its start");
+    ImGui::SetCursorPos(ImVec2(right - 96.0f, (kToolbarHeight - buttonHeight) * 0.5f));
+    if (capsule("##play", "Play  Tab", true, buttonHeight)) {
+        Command play{Command::Kind::Play};
+        play.from = PlayFrom::Marker;
+        enqueue(std::move(play));
+    }
     ImGui::End();
     ImGui::PopStyleColor();
     ImGui::PopStyleVar();
@@ -231,7 +260,37 @@ void drawFooter(float width, float height) {
     if (gizmo.dragging && gizmo.status[0] != '\0') {
         ImGui::TextUnformatted(gizmo.status);
     } else {
-        ImGui::TextUnformatted("Tab play    Click select    W E R move/rotate/scale    End drop to ground    F frame    Cmd+Z undo    Cmd+. focus");
+        ImGui::TextUnformatted("Tab play    M marker    Click select    W E R move/rotate/scale    End drop    F frame    Cmd+Z undo    Cmd+. focus");
+    }
+    // Right end: unsaved edits and the stage's memory (UX section 16, the memory meter).
+    const Status& state = status();
+    const float meter = 90.0f;
+    float x = width - 12.0f - meter - 150.0f;
+    if (state.unsaved) {
+        ImGui::SameLine(x - 80.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.42f, 1.0f), "Unsaved");
+    }
+    if (state.heapTotal > 0) {
+        const float used = 1.0f - static_cast<float>(state.heapFree) / static_cast<float>(state.heapTotal);
+        ImGui::SameLine(x);
+        ImGui::Text("Memory %d%%", static_cast<int>(used * 100.0f + 0.5f));
+        ImGui::SameLine();
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float barY = at.y + ImGui::GetTextLineHeight() * 0.5f - 4.0f;
+        ImDrawList* list = ImGui::GetWindowDrawList();
+        list->AddRectFilled(ImVec2(at.x, barY), ImVec2(at.x + meter, barY + 8.0f), rgba(0.0f, 0.06f, 0.12f, 0.6f), 4.0f);
+        const ImU32 fill = used >= 1.0f ? rgba(1.0f, 0.35f, 0.35f) : used >= 0.9f ? rgba(1.0f, 0.55f, 0.25f) : rgba(0.35f, 0.85f, 0.45f);
+        list->AddRectFilled(ImVec2(at.x, barY), ImVec2(at.x + meter * std::fmin(used, 1.0f), barY + 8.0f), fill, 4.0f);
+        ImGui::Dummy(ImVec2(meter, 1.0f));
+        if (ImGui::IsItemHovered()) {
+            std::string capacities;
+            for (const Capacity& c : state.capacities) {
+                char line[96];
+                std::snprintf(line, sizeof(line), "%s %d / %d\n", c.name, c.used, c.limit);
+                capacities += line;
+            }
+            ImGui::SetTooltip("Stage memory: %u KB free of %u KB\n%s", state.heapFree / 1024, state.heapTotal / 1024, capacities.c_str());
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor();

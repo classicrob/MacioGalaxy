@@ -6,6 +6,8 @@
 #include "Game/Util/CollisionPartsFilter.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/MapUtil.hpp"
+#include "Game/Util/PlayerUtil.hpp"
+#include "Game/Util/SceneUtil.hpp"
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor/gizmo_math.hpp>
 #include <petari/editor_pick.hpp>
@@ -13,6 +15,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <vector>
 
 namespace {
@@ -54,6 +57,22 @@ namespace {
         float lastFactor = 1.0f;
     } gDrag;
     char gStatus[96] = {};  // the drag's footer line
+
+    // The play marker (UX section 3): where Play puts Mario. It starts where Mario stood when Edit
+    // was first entered in this galaxy; M drops it on the ground under the cursor.
+    struct Marker {
+        bool valid = false;
+        V3 pos, up{0, 1, 0}, front{0, 0, 1};
+        char stage[48] = {};
+    } gMarker;
+
+    void sendMarker() {
+        PetariEditor::Command command{PetariEditor::Command::Kind::SetPlayMarker};
+        command.markerPos = {gMarker.pos.x, gMarker.pos.y, gMarker.pos.z};
+        command.markerUp = {gMarker.up.x, gMarker.up.y, gMarker.up.z};
+        command.markerFront = {gMarker.front.x, gMarker.front.y, gMarker.front.z};
+        PetariEditor::enqueue(std::move(command));
+    }
 
     V3 v(const TVec3f& t) { return {t.x, t.y, t.z}; }
     TVec3f tv(V3 a) { return TVec3f(a.x, a.y, a.z); }
@@ -420,8 +439,35 @@ namespace EditorGizmo {
         if (input.ground != 0 && !gDrag.active) groundCommand(input.ground);
 
         const Camera cam = cameraOf(view);
-        std::vector< Item > items = gDrag.active ? *gDrag.items : gather();
         UI::View out;
+        // The play marker: Mario's place the first time in this galaxy, M to move it.
+        const char* stage = MR::getCurrentStageName();
+        if (!gMarker.valid || stage == nullptr || std::strncmp(stage, gMarker.stage, sizeof(gMarker.stage)) != 0) {
+            if (const TVec3f* mario = MR::getPlayerPos()) {
+                gMarker.pos = v(*mario);
+                gMarker.up = gravityUp(gMarker.pos, {0, 1, 0});
+                gMarker.front = G::gravityFrame(gMarker.up, cam.forward).z;
+                gMarker.valid = true;
+                std::snprintf(gMarker.stage, sizeof(gMarker.stage), "%s", stage != nullptr ? stage : "");
+                sendMarker();
+            }
+        }
+        if (PetariNative::EditorPick::takePlaceMarker()) {
+            V3 ground;
+            if (hitGround(cam.eye, cam.ray(view.cursorX, view.cursorY) * kRayLength, nullptr, &ground)) {
+                gMarker.pos = ground;
+                gMarker.up = gravityUp(ground, gMarker.up);
+                // Facing away from the camera, flattened onto the ground.
+                gMarker.front = G::gravityFrame(gMarker.up, cam.forward).z;
+                sendMarker();
+                std::fprintf(stderr, "[editor] play marker at (%.0f, %.0f, %.0f)\n", ground.x, ground.y, ground.z);
+            }
+        }
+        if (gMarker.valid && cam.project(gMarker.pos, &out.markerX, &out.markerY)) {
+            out.marker = true;
+            out.markerRadius = 60.0f / cam.worldPerHeight(gMarker.pos);  // Mario's footprint
+        }
+        std::vector< Item > items = gDrag.active ? *gDrag.items : gather();
         if (items.empty()) {
             gDrag.active = false;
             UI::publish(out);
