@@ -304,7 +304,11 @@ def run_stage(args, stage, scenario, jobs):
     print(f"[{stage}] {len(jobs)} jobs, {len(jobs) - len(pending)} already done, {len(pending)} to run", flush=True)
     batch_no = len(list(out.glob("batch*.log")))
     infra_failures = 0
+    retry = []
     while pending:
+        # Classes that failed on another stage go last: the safe ones then rarely restart the app.
+        bad = known_bad(args, stage)
+        pending.sort(key=lambda j: (job_key(j["class"], j["mode"], j["overrides"]) not in retry, j["class"] in bad and j["mode"] == "empty"))
         batch = pending[:args.batch]
         batch_no += 1
         tag = f"batch{batch_no:04d}"
@@ -333,10 +337,18 @@ def run_stage(args, stage, scenario, jobs):
         else:
             infra_failures = 0
         pending = [j for j in pending if job_key(j["class"], j["mode"], j["overrides"]) not in keys]
-        pending.sort(key=lambda j: job_key(j["class"], j["mode"], j["overrides"]) not in retry)  # stable: retries first
         # A batch that aborted (player died) leaves its in-flight class recorded as kills-player; the rest run again.
     confirm_failures(args, stage, scenario, out)
     return True
+
+
+def known_bad(args, stage):
+    """Class names that failed (empty links) in any other stage of this sweep so far."""
+    bad = set()
+    for other in (Path(args.out_root) / args.name).glob("*/results.jsonl"):
+        if other.parent.name != stage:
+            bad |= {r["class"] for r in load_results(other).values() if r["mode"] == "empty" and r["status"] not in PASS}
+    return bad
 
 
 def confirm_failures(args, stage, scenario, out):
