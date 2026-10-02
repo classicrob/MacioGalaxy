@@ -464,6 +464,48 @@ namespace {
         PetariNative::EditorPick::selectRow(add.id.v, PetariNative::EditorPick::Click::Replace);
     }
 
+    // Cmd+D (UX section 6): a copy of each selected object one step ahead along its gravity frame's front,
+    // settled on the ground there; one op; the copies become the selection.
+    void duplicate() {
+        std::vector< Item > items = gather();
+        if (items.empty()) return;
+        const PetariEditor::ModelView* model = PetariEditor::model();
+        PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
+        std::vector< PetariEditor::RowId > copies;
+        for (const Item& start : items) {
+            int zone = 0, table = 0;
+            if (!model->locate(start.row, &zone, &table)) continue;
+            Item copy = start;
+            const G::Basis frame = G::gravityFrame(gravityUp(start.pos, start.basis.y), start.basis.z);
+            copy.pos = start.pos + frame.z * 150.0f;
+            settle(copy, start);
+            const PetariEditor::RowTransform t = toRow(copy);
+            PetariEditor::AddRow add;
+            add.id = PetariEditor::newRowId();
+            add.zone = zone;
+            add.table = model->tablePath(zone, table);
+            add.copyOf = start.row;
+            static const char* const kColumns[3] = {"pos_x", "pos_y", "pos_z"};
+            const float values[3] = {t.pos.x, t.pos.y, t.pos.z};
+            for (int c = 0; c < 3; c++) add.cells.push_back({PetariEditor::columnHash(kColumns[c]), floatCell(values[c])});
+            static const char* const kDir[3] = {"dir_x", "dir_y", "dir_z"};
+            const float dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z};
+            for (int c = 0; c < 3; c++) add.cells.push_back({PetariEditor::columnHash(kDir[c]), floatCell(dir[c])});
+            copies.push_back(add.id);
+            command.op.adds.push_back(add);
+        }
+        const char* name = items.size() == 1 ? model->objectName(items[0].row) : nullptr;
+        char label[96];
+        if (items.size() == 1) std::snprintf(label, sizeof(label), "Duplicated %s", name != nullptr ? name : "object");
+        else std::snprintf(label, sizeof(label), "Duplicated %d objects", static_cast< int >(items.size()));
+        command.op.label = label;
+        std::fprintf(stderr, "[editor] %s\n", label);
+        PetariEditor::enqueue(std::move(command));
+        for (size_t i = 0; i < copies.size(); i++) {
+            PetariNative::EditorPick::selectRow(copies[i].v, i == 0 ? PetariNative::EditorPick::Click::Replace : PetariNative::EditorPick::Click::Add);
+        }
+    }
+
     void groundCommand(int what) {
         std::vector< Item > items = gather();
         if (items.empty()) return;
@@ -487,6 +529,7 @@ namespace EditorGizmo {
         PetariNative::HostAllocationScope host;
         const UI::Take input = UI::take();
         if (input.ground != 0 && !gDrag.active) groundCommand(input.ground);
+        if (PetariNative::EditorPick::takeDuplicate() && !gDrag.active) duplicate();
 
         const Camera cam = cameraOf(view);
         UI::View out;

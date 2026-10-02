@@ -85,7 +85,8 @@ struct FakeModel : ModelView {
         R rabbit{{3}, 1, RowState::Original, {}, {}};
         rabbit.disc = {{cols[0].hash, cellS("Rabbit")}, {cols[1].hash, cellF(1)}, {cols[2].hash, cellF(2)}, {cols[3].hash, cellI(1)}};
         rabbit.now = rabbit.disc;
-        rows = {coin, goomba, rabbit};
+        R ghost{{4}, 1, RowState::Deleted, {{cols[0].hash, cellS("Coin")}}, {}};  // added, then deleted
+        rows = {coin, goomba, rabbit, ghost};
     }
     const R* find(RowId id) const {
         for (const R& r : rows) if (r.id == id) return &r;
@@ -138,7 +139,7 @@ void testPanelsLogic() {
     namespace Ui = PetariEditor::Ui;
     const FakeModel model;
     const std::vector< Ui::Change > changes = Ui::collectChanges(model);
-    CHECK(changes.size() == 2);
+    CHECK(changes.size() == 2);  // the added-then-deleted Coin is no change
     CHECK(changes[0].name == "Coin" && changes[0].state == RowState::Changed && changes[0].zone == 0);
     // pos_x and pos_y read as one "Position"; an unnamed field by its hash.
     CHECK(changes[0].columns.size() == 2 && changes[0].columns[0] == "Position" && changes[0].columns[1] == "0x12345678");
@@ -167,7 +168,7 @@ void testPanelsLogic() {
     CHECK(!Ui::sameCell(a, b));
     // The Browser: one card per class placed, with its count and examples; search by name.
     const std::vector< Ui::BrowserEntry > entries = Ui::collectBrowserEntries(model);
-    CHECK(entries.size() == 3);  // Coin, Kuribo, Rabbit (sorted by name)
+    CHECK(entries.size() == 3);  // Coin, Kuribo, Rabbit (sorted by name; deleted rows do not count)
     CHECK(entries[0].className == "Coin" && entries[0].count == 1 && entries[0].examples.size() == 1 && entries[0].category == "Objects");
     CHECK(Ui::filterEntries(entries, "kur", "").size() == 1 && Ui::filterEntries(entries, "kur", "")[0]->className == "Kuribo");
     CHECK(Ui::filterEntries(entries, "", "").size() == 3 && Ui::filterEntries(entries, "zzz", "").empty());

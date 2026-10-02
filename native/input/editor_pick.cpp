@@ -13,10 +13,10 @@ std::atomic<bool> gHoverWanted{false};
 std::atomic<int> gClick{0};
 std::atomic<bool> gClear{false};
 std::atomic<bool> gByNameWanted{false};
-std::atomic<std::uint64_t> gRowWanted{0};
-std::atomic<int> gRowMode{0};
+std::vector<RowRequest> gRowRequests;  // under gMutex
 std::atomic<bool> gPlaceMarker{false};
 std::atomic<std::uint64_t> gPlace{0};
+std::atomic<bool> gDuplicate{false};
 char gByName[64] = {};
 std::mutex gMutex;
 bool gHoverValid = false;
@@ -36,18 +36,21 @@ void selectByName(const char* name) {
 void placeMarker() { gPlaceMarker.store(true, std::memory_order_relaxed); }
 void place(std::uint64_t exampleRow) { gPlace.store(exampleRow, std::memory_order_relaxed); }
 std::uint64_t takePlace() { return gPlace.exchange(0, std::memory_order_relaxed); }
+void duplicate() { gDuplicate.store(true, std::memory_order_relaxed); }
+bool takeDuplicate() { return gDuplicate.exchange(false, std::memory_order_relaxed); }
 bool takePlaceMarker() { return gPlaceMarker.exchange(false, std::memory_order_relaxed); }
 
 void selectRow(std::uint64_t row, Click mode) {
-    gRowMode.store(static_cast<int>(mode), std::memory_order_relaxed);
-    gRowWanted.store(row, std::memory_order_release);
+    HostAllocationScope host;
+    std::lock_guard<std::mutex> lock(gMutex);
+    gRowRequests.push_back({row, mode});
 }
-bool takeSelectRow(std::uint64_t* row, Click* mode) {
-    const std::uint64_t wanted = gRowWanted.exchange(0, std::memory_order_acquire);
-    if (wanted == 0) return false;
-    *row = wanted;
-    *mode = static_cast<Click>(gRowMode.load(std::memory_order_relaxed));
-    return true;
+std::vector<RowRequest> takeSelectRows() {
+    HostAllocationScope host;
+    std::lock_guard<std::mutex> lock(gMutex);
+    std::vector<RowRequest> out;
+    out.swap(gRowRequests);
+    return out;
 }
 
 bool takeSelectByName(char* name, int size) {

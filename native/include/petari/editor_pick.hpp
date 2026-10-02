@@ -31,15 +31,21 @@ void selectRow(std::uint64_t row, Click mode);  // select a row's object (the Ch
 void placeMarker();  // M: the play marker onto the ground under the cursor
 // Place a copy of `exampleRow` (its class and settings) on the ground under the cursor (the Browser).
 void place(std::uint64_t exampleRow);
+void duplicate();  // Cmd+D: copies of the selection, a step ahead along its gravity frame's front
 
 // Game, Edit nerve: the requests, then the answers.
 bool hoverWanted();
 Click takeClick();
 bool takeClear();
 bool takeSelectByName(char* name, int size);
-bool takeSelectRow(std::uint64_t* row, Click* mode);
+struct RowRequest {
+    std::uint64_t row = 0;
+    Click mode = Click::Replace;
+};
+std::vector<RowRequest> takeSelectRows();  // in order
 bool takePlaceMarker();
 std::uint64_t takePlace();  // 0: none
+bool takeDuplicate();
 void publish(const Item* hover, const std::vector<Item>& selection);
 
 // UI: the last answers.

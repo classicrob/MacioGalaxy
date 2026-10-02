@@ -14,6 +14,7 @@ namespace PetariEditor::Ui {
 void drawGalaxyWindow(const char* title);
 void drawInspectorWindow(const char* title);
 // Cmd+Z / Cmd+Shift+Z (and the toolbar's buttons): whether there is something to undo / redo.
+void deleteSelection();  // Delete: one op removing the selected rows
 bool canUndo();
 bool canRedo();
 void undo();

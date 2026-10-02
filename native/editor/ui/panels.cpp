@@ -522,6 +522,8 @@ std::vector< Change > collectChanges(const ModelView& model) {
             model.forEachRow(zone, table, [&](RowId row) {
                 const RowState state = model.state(row);
                 if (state == RowState::Original) return;
+                // Added, then deleted: nothing changed (a deleted row with no disc values was never on the disc).
+                if (state == RowState::Deleted && !columns.empty() && model.originalCell(row, columns.front().hash) == nullptr) return;
                 Change change;
                 change.row = row;
                 change.state = state;
@@ -561,6 +563,17 @@ std::vector< RowId > selectedRows() {
         if (item.row != 0) rows.push_back(RowId{item.row});
     }
     return rows;
+}
+
+void deleteSelection() {
+    const ModelView* model = PetariEditor::model();
+    const std::vector< RowId > rows = selectedRows();
+    if (model == nullptr || rows.empty()) return;
+    Op op;
+    op.deletes = rows;
+    op.label = rows.size() == 1 ? "Deleted " + rowName(*model, rows.front()) : "Deleted " + std::to_string(rows.size()) + " objects";
+    enqueueOp(std::move(op));
+    Pick::clearSelection();
 }
 
 bool canUndo() {

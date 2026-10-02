@@ -284,27 +284,24 @@ namespace EditorPicking {
         }
 
         // Select a row's object (the Changes and Outliner lists).
-        // A new row's actor appears when Runtime applies the op (a frame or two later): keep asking.
-        static std::uint64_t sPendingRow = 0;
-        static Pick::Click sPendingMode = Pick::Click::None;
+        // A new row's actor appears when Runtime applies the op (a frame or two later): keep asking, in order.
+        static std::vector< Pick::RowRequest >* sPending = new std::vector< Pick::RowRequest >();
         static int sPendingFrames = 0;
-        std::uint64_t rowId = 0;
-        Pick::Click rowMode = Pick::Click::None;
-        if (Pick::takeSelectRow(&rowId, &rowMode)) {
-            sPendingRow = rowId;
-            sPendingMode = rowMode;
+        for (const Pick::RowRequest& request : Pick::takeSelectRows()) {
+            sPending->push_back(request);
             sPendingFrames = 60;
         }
-        if (sPendingRow != 0) {
-            LiveActor* actor = PetariEditor::actorForRow(PetariEditor::RowId{sPendingRow});
-            if (pickable(actor)) {
-                if (sPendingMode == Pick::Click::Replace) selection.clear();
-                if (std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
-                syncRows(selection);
-                sPendingRow = 0;
-            } else if (--sPendingFrames <= 0) {
-                sPendingRow = 0;
+        while (!sPending->empty()) {
+            const Pick::RowRequest request = sPending->front();
+            LiveActor* actor = PetariEditor::actorForRow(PetariEditor::RowId{request.row});
+            if (!pickable(actor)) {
+                if (--sPendingFrames <= 0) sPending->clear();  // never appeared (a refused op)
+                break;
             }
+            if (request.mode == Pick::Click::Replace) selection.clear();
+            if (std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
+            syncRows(selection);
+            sPending->erase(sPending->begin());
         }
 
         const Pick::Click click = Pick::takeClick();

@@ -165,6 +165,9 @@ void cameraInput(const Area& area) {
         if (ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
             Gizmo::setFrame(static_cast<Gizmo::Frame>((static_cast<int>(Gizmo::frame()) + 1) % 3));
         }
+        // Delete / Backspace: delete the selection (one op, undoable). Cmd+D: duplicate it.
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) deleteSelection();
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D)) Pick::duplicate();
         // M: the play marker onto the ground under the cursor.
         if (ImGui::IsKeyPressed(ImGuiKey_M, false) && inside) Pick::placeMarker();
         // End: drop to the ground along gravity; Shift+End: stand up; Cmd+End: both.

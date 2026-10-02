@@ -420,11 +420,28 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 }
                 // PETARI_EDITOR_TEST_PLACE=1: place a copy of the selection on the ground at the view's centre (the
                 // Browser's Place path).
-                if (t == 150 && std::getenv("PETARI_EDITOR_TEST_PLACE") != nullptr) {
+                // ...then duplicate the placed copy (Cmd+D) and delete the duplicate (Delete).
+                static std::uint64_t sPlaceExample = 0;
+                if (t == 141 && std::getenv("PETARI_EDITOR_TEST_PLACE") != nullptr) {
                     const std::vector<Pick::Item> selected = Pick::selection();
-                    if (!selected.empty() && selected.front().row != 0) {
+                    sPlaceExample = !selected.empty() ? selected.front().row : 0;
+                }
+                if (sPlaceExample != 0) {
+                    if (t == 142) {
                         Editor::cursor(0.0f, -0.3f);
-                        Pick::place(selected.front().row);
+                        Pick::place(sPlaceExample);
+                    }
+                    if (t == 150) Pick::duplicate();
+                    if (t == 158) {
+                        const PetariEditor::ModelView* model = PetariEditor::model();
+                        const std::vector<Pick::Item> selected = Pick::selection();
+                        if (model != nullptr && !selected.empty() && selected.front().row != 0) {
+                            PetariEditor::Command remove{PetariEditor::Command::Kind::Apply};
+                            remove.op.label = "Deleted the duplicate";
+                            remove.op.deletes.push_back(PetariEditor::RowId{selected.front().row});
+                            PetariEditor::enqueue(std::move(remove));
+                            std::fputs("[editor-test] delete the selection\n", stderr);
+                        }
                     }
                 }
                 if (t == 160) {
