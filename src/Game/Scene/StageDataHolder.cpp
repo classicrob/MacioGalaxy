@@ -1,4 +1,7 @@
 #include "Game/Scene/StageDataHolder.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
+#endif
 #include "Game/NameObj/NameObjFactory.hpp"
 #include "Game/Scene/PlacementInfoOrdered.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
@@ -351,6 +354,13 @@ const StageDataHolder* StageDataHolder::findPlacedStageDataHolder(const JMapInfo
                      rIter.mInfo->mData->mEntrySize * rIter.mIndex;
 #else
     s32 data = (s32)rIter.mInfo->mData + rIter.mInfo->mData->mDataOffset + rIter.mInfo->mData->mEntrySize * rIter.mIndex;
+#endif
+
+#ifdef PETARI_NATIVE
+    // Rows the level editor synthesized outside a loaded archive (TECH.md 2.2): -1 when off.
+    if (s32 syntheticZone = PetariEditor::Hooks::findSyntheticZone(data); syntheticZone >= 0) {
+        return MR::getStageDataHolder()->getStageDataHolderFromZoneId(syntheticZone);
+    }
 #endif
 
     if (_E4 <= data && data < _E8) {

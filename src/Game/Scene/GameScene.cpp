@@ -48,6 +48,10 @@ extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/PhotoCamera.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
+#include "Game/Editor/EditorScene.hpp"
+#include <petari/editor/runtime.hpp>
+#include <petari/editor_settings.hpp>
+#include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
 // StorySequenceExecutor.cpp
 bool petariDirectStageMove(GalaxyMoveArgument* pMoveArgument, const char* pStage, s32 selected, const char* pLabel);
@@ -84,6 +88,9 @@ GameScene::GameScene()
 }
 
 GameScene::~GameScene() {
+#ifdef PETARI_NATIVE
+    PetariEditor::Hooks::sceneDestroyed();
+#endif
     MR::destroySceneMessage();
     NPCFunction::deleteNPCData();
     MR::onStarPointerSceneOut();
@@ -92,6 +99,8 @@ GameScene::~GameScene() {
 void GameScene::init() {
 #ifdef PETARI_NATIVE
     EditorCamera::abandon();  // a scene rebuilt under Edit mode (a reload) starts outside it
+    // Before any list is sized: the level editor's headroom follows the Mods-page switch.
+    PetariEditor::Hooks::syncSwitch(PetariNative::EditorSettings::enabled());
 #endif
     SceneFunction::createHioBasicNode(this);
     SceneFunction::startStageFileLoad();
@@ -197,6 +206,10 @@ void GameScene::update() {
         EditorCamera::start();
         setNerve(GET_NERVE(GameScene, GameSceneEditMode));
     }
+#endif
+#ifdef PETARI_NATIVE
+    PetariEditor::Runtime::tick();  // the level editor's commands and SceneSync; nothing while it is off
+    EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
 #endif
     mPauseCtrl->updateNerve();
     updateNerve();
