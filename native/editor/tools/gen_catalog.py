@@ -195,6 +195,13 @@ def main():
                     entry["links"].append({"kind": kind, "field": field, "required": True})
                 else:
                     link["required"] = True
+    # Where each class is placed on the disc (gen_class_tables.py): the table the editor adds new rows to.
+    tables_path = ROOT / "native/editor/catalog/tables.json"
+    if tables_path.is_file():
+        tables = json.loads(tables_path.read_text())["tables"]
+        for entry in out:
+            if entry["name"] in tables:
+                entry["table"] = tables[entry["name"]]
     target = ROOT / "native/editor/catalog/generated.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]

@@ -86,7 +86,12 @@ struct ClassInfo {
     std::string thumbnailJoint;    // optional joint to frame
     std::string appearSound;       // SE name for placement feedback; empty: none
     std::vector< Preset > presets;  // empty: the class is placed with its args' defaults
+    std::string table;  // the table it is placed in on the disc, layer left out ("jmp/mapparts/mappartsinfo"); empty: not on the disc
 };
+
+/// The table a new row of `info` goes in, in `layer` ("common", "layera"): `table` with the layer
+/// put in; when the disc never places the class, by category (areas, cameras) or objinfo.
+std::string tablePath(const ClassInfo& info, const std::string& layer);
 
 /// Loads the shipped catalog (generated.json, then curated.json, embedded in the binary). Called once;
 /// later calls do nothing. False and *pError when the shipped files are missing or broken.

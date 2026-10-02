@@ -282,7 +282,7 @@ namespace {
     }
 
     // Rebuild the scene from the model (TECH.md 2.6): the edited archives replace the cached ones.
-    void startReload(Session::After after, bool fromStart = false) {
+    void startReload(Session::After after, bool fromStart = false, int scenario = -1) {
         PetariNative::HostAllocationScope host;
         Session& s = session();
         for (auto& [path, bytes] : s.model->changedArchives()) {
@@ -293,7 +293,7 @@ namespace {
         s.reloadFromScene = Hooks::sceneSerial();
         s.reloadStartMs = nowMs();
         Core::setMode(Mode::Reloading);
-        EditorReload::requestReload(fromStart || after == Session::After::PlayStart);
+        EditorReload::requestReload(fromStart || after == Session::After::PlayStart, scenario);
     }
 
     void play(PlayFrom from) {
@@ -411,9 +411,24 @@ namespace {
                 }
                 break;
             }
-            case Command::Kind::SwitchScenario:
-                Core::reportError("Not available yet in this build");  // editor/fast-reload, editor/save-mod
-                break;
+            case Command::Kind::SwitchScenario: {
+                if (command.index == s.model->scenario()) {
+                    break;
+                }
+                bool switched;
+                {
+                    PetariNative::HostAllocationScope host;
+                    switched = s.model->setScenario(command.index);
+                }
+                if (!switched) {
+                    Core::reportError("There is no mission " + std::to_string(command.index));
+                    break;
+                }
+                std::fprintf(stderr, "[editor] switching to mission %d\n", command.index);
+                startReload(Session::After::Edit, true, command.index);
+                requeueRest();
+                return;
+            }
             }
         }
     }
@@ -439,6 +454,7 @@ void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITO
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
+void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 
 bool reloadScene(bool fromStart) {
     Session& s = session();
@@ -479,9 +495,11 @@ void tick(bool playable) {
     reloadTestTick();
     saveTestTick();
     brushTestTick();
+    redrawTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
-    if (mode() != Mode::Off && pStage != nullptr) {
+    // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
+    if (mode() != Mode::Off && mode() != Mode::Reloading && pStage != nullptr) {
         PetariNative::HostAllocationScope host;
         if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
             loadModel(pStage, EditorScene::scenario());

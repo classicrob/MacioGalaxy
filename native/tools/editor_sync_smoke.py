@@ -28,14 +28,14 @@ ROOT = Path(__file__).resolve().parents[2]
 STAGE, SCENARIO = "EggStarGalaxy", 1
 
 
-def run(args, name, extra):
+def run(args, name, extra, stage=STAGE):
     user = args.output / f"{name}-user"
     shutil.rmtree(user, ignore_errors=True)
     sweep.load_fixture_module().create(args.source, user, "stage")
     log = args.output / f"{name}.log"
-    command, env_extra = sweep.app_command(args, user, STAGE, SCENARIO)
+    command, env_extra = sweep.app_command(args, user, stage, SCENARIO)
     env = dict(os.environ, **env_extra)
-    for key in ("PETARI_EDITOR", "PETARI_EDITOR_SYNC_TEST", "PETARI_EDITOR_HOOKS_TEST"):
+    for key in ("PETARI_EDITOR", "PETARI_MODS", "PETARI_EDITOR_SYNC_TEST", "PETARI_EDITOR_HOOKS_TEST", "PETARI_EDITOR_REDRAW_TEST"):
         env.pop(key, None)
     env.update(PETARI_LOCK_CLASS="functional", **extra)
     full = [str(args.lock), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die", str(args.timeout)] + command
@@ -45,7 +45,7 @@ def run(args, name, extra):
     return {
         "name": name, "status": status,
         "result": (re.findall(r"PETARI SMOKE RESULT: (\w+)", text) or [None])[-1],
-        "hooks": re.findall(r"\[editor-sync\] (.*)", text),
+        "hooks": re.findall(r"\[editor-(?:sync|redraw)\] (.*)", text),
     }
 
 
@@ -60,22 +60,32 @@ def main():
     parser.add_argument("--timeout", type=int, default=900)
     parser.add_argument("--frames", type=int, default=12000)
     parser.add_argument("--idle-frames", type=int, default=400)
+    parser.add_argument("--only-redraw", action="store_true", help="run only the NPC re-create case")
     args = parser.parse_args()
     args.pipeline_policy = "default"
     args.output.mkdir(parents=True, exist_ok=True)
 
-    off = run(args, "1-editor-off", {})
-    on = run(args, "2-editor-on", {"PETARI_EDITOR": "1", "PETARI_EDITOR_SYNC_TEST": "1"})
+    if args.only_redraw:
+        off = on = None
+    else:
+        off = run(args, "1-editor-off", {})
+        on = run(args, "2-editor-on", {"PETARI_EDITOR": "1", "PETARI_EDITOR_SYNC_TEST": "1"})
+    # An NPC (LOD models, a shadow): the gizmo drop's live re-create must draw it once.
+    redraw = run(args, "3-redraw-rabbit", {"PETARI_EDITOR": "1", "PETARI_MODS": "LevelEditor", "PETARI_EDITOR_REDRAW_TEST": "Rabbit"}, "CosmosGardenGalaxy")
     failures = []
-    if off["result"] != "PASS":
+    if off is None:
+        pass
+    elif off["result"] != "PASS":
         failures.append(f"editor off: stage smoke {off['result']}")
-    if off["hooks"]:
+    if off is not None and off["hooks"]:
         failures.append(f"editor off: editor hooks ran: {off['hooks'][:2]}")
-    if "PASS" not in on["hooks"]:
+    if on is not None and "PASS" not in on["hooks"]:
         failures.append(f"editor on: hooks check did not pass: {on['hooks'][-3:]}")
-    if on["result"] != "PASS":
+    if on is not None and on["result"] != "PASS":
         failures.append(f"editor on: stage smoke {on['result']}")
-    for r in (off, on):
+    if "PASS" not in redraw["hooks"]:
+        failures.append(f"redraw: {redraw['hooks'][-3:]}")
+    for r in [r for r in (off, on, redraw) if r is not None]:
         print(f"{r['name']}: exit {r['status']}, smoke {r['result']}")
         for line in r["hooks"]:
             print(f"  [editor-sync] {line}")

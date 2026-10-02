@@ -76,6 +76,8 @@ public:
     /// Edits since the last markSaved().
     bool unsaved() const { return serialAtCursor() != mSavedSerial; }
     void markSaved();
+    /// The mission being edited (1..missionCount()); the edits and history are kept. False when out of range.
+    bool setScenario(int scenario);
 
     // output
     /// Every zone archive that differs from the disc: (disc path, plain RARC bytes).

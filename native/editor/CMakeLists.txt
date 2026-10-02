@@ -47,7 +47,8 @@ target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
 # game code (src/Game/Editor), so only the app and the link check link it.
-add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp runtime/brush_test.cpp)
+add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
+    runtime/redraw_test.cpp runtime/brush_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_native_config)
 if(TARGET petari_platform_dvd)
