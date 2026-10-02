@@ -158,6 +158,11 @@ namespace TestServer {
         if (!gEnabled) {
             return;
         }
+        static int sBeat = 0;
+        if (++sBeat % 300 == 1) {
+            std::fprintf(stderr, "[test-server] alive: beat %d action %d pending %d stage %s\n", sBeat, actionNerve, gHavePending,
+                         EditorScene::stageName() != nullptr ? EditorScene::stageName() : "-");
+        }
         const bool playable = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isPlayerDead();
         if (gHavePending && gPending.isReload) {
             if (!PetariEditor::Runtime::reloading()) {
