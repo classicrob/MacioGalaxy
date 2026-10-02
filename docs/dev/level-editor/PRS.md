@@ -49,5 +49,5 @@ Each editor topic branch (`editor/<topic>`) is tested in a clean worktree and me
   and `GameScene::init` (kept both independent lines: `Hooks::syncSwitch(...)` from scene-sync, then
   `EditorCamera::abandon()` from picking-outline). Owners should glance at them.
 - Main was merged into level-editor first (`dd2713608`: never-restore-windows fix `3df2658a4`, `native_audio_sdl` labelled timing), no conflicts.
-  PR 8 carries a TEMPORARY registerDefaults for window state in background smoke mode (its author's note); it is redundant with main's
-  fix now and should be dropped by its owner.
+  PR 8 carried a TEMPORARY registerDefaults for window state in background smoke mode; it was redundant with main's fix and
+  was dropped on `editor/m2-api` (checked: `native/app/app_main.cpp` at the tip has only main's single implementation).
