@@ -531,7 +531,16 @@ void GameScene::drawOdhCapture() const {
 }
 
 void GameScene::startStagePlayFirst() {
+#ifdef PETARI_NATIVE
+    // Test-only (PETARI_FAST_BOOT=1, set by the smoke tools): no galaxy fly-over camera at stage start.
+    static const bool fastBoot = [] {
+        const char* pFast = std::getenv("PETARI_FAST_BOOT");
+        return pFast != nullptr && pFast[0] == '1';
+    }();
+    if (isValidScenarioOpeningCamera() && !fastBoot) {
+#else
     if (isValidScenarioOpeningCamera()) {
+#endif
         setNerve(GET_NERVE(GameScene, GameSceneScenarioOpeningCamera));
 
         if (!MR::isBeginScenarioStarter()) {
