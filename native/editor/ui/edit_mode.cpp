@@ -18,6 +18,7 @@ namespace {
 
 namespace Settings = PetariNative::EditorSettings;
 namespace Pick = PetariNative::EditorPick;
+namespace Gizmo = PetariNative::EditorGizmo;
 
 constexpr float kLookDegreesPerPoint = 0.15f;   // right-drag (fly), as photo mode
 constexpr float kOrbitDegreesPerPoint = 0.30f;  // middle- or Option-drag
@@ -131,6 +132,28 @@ void cameraInput(const Area& area) {
     }
     if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Pick::clearSelection();
 
+    // The gizmo (UX section 6): the left button over the viewport presses and releases it (an
+    // Option-drag orbits instead); Cmd suspends snapping for the drag.
+    if (inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) Gizmo::release();
+    Gizmo::setSnapSuspended(io.KeyCtrl || io.KeySuper);
+    if (!io.WantTextInput && gDrag != Drag::Look) {
+        // Q W E R: select, move, rotate, scale (while flying, those keys fly).
+        if (ImGui::IsKeyPressed(ImGuiKey_Q, false)) Gizmo::setMode(Gizmo::Mode::Select);
+        if (ImGui::IsKeyPressed(ImGuiKey_W, false)) Gizmo::setMode(Gizmo::Mode::Move);
+        if (ImGui::IsKeyPressed(ImGuiKey_E, false)) Gizmo::setMode(Gizmo::Mode::Rotate);
+        if (ImGui::IsKeyPressed(ImGuiKey_R, false) && !io.KeyCtrl && !io.KeySuper) Gizmo::setMode(Gizmo::Mode::Scale);
+        if (ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
+            Gizmo::setFrame(static_cast<Gizmo::Frame>((static_cast<int>(Gizmo::frame()) + 1) % 3));
+        }
+        // End: drop to the ground along gravity; Shift+End: stand up; Cmd+End: both.
+        if (ImGui::IsKeyPressed(ImGuiKey_End, false)) {
+            Gizmo::ground(io.KeyCtrl || io.KeySuper ? Gizmo::Ground::Both
+                          : io.KeyShift            ? Gizmo::Ground::StandUp
+                                                   : Gizmo::Ground::Drop);
+        }
+    }
+
     // Keys, unless a text field has them.
     if (!io.WantTextInput) {
         if (ImGui::IsKeyPressed(ImGuiKey_F, false) && !io.KeyCtrl && !io.KeySuper) Settings::frame();
@@ -183,6 +206,22 @@ void drawPickMarks(const Area& area) {
     list->PopClipRect();
 }
 
+// The gizmo's handles, as the game projected them (lines in viewport coordinates).
+void drawGizmo(const Area& area) {
+    const Gizmo::View view = Gizmo::view();
+    if (!view.visible || view.lines.empty()) return;
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    list->PushClipRect(ImVec2(area.x, area.y), ImVec2(area.x + area.w, area.y + area.h), true);
+    auto at = [&](float x, float y) { return ImVec2(area.x + (x * 0.5f + 0.5f) * area.w, area.y + (0.5f - y * 0.5f) * area.h); };
+    for (const Gizmo::Line& line : view.lines) {
+        list->AddLine(at(line.x0, line.y0), at(line.x1, line.y1), IM_COL32(0, 10, 20, 120), line.width + 2.0f);
+    }
+    for (const Gizmo::Line& line : view.lines) {
+        list->AddLine(at(line.x0, line.y0), at(line.x1, line.y1), line.color, line.width);
+    }
+    list->PopClipRect();
+}
+
 }  // namespace
 
 void updateEditMode(float windowWidth, float windowHeight) {
@@ -213,6 +252,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
     const Area area = cameraArea(windowWidth, windowHeight);
     cameraInput(area);
     drawPickMarks(area);
+    drawGizmo(area);
 }
 
 }  // namespace PetariEditor::Ui

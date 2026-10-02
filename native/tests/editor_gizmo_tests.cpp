@@ -45,7 +45,7 @@ void testEuler() {
 void testFrames() {
     // A planet's side: gravity pulls along -X, so up is +X; front follows the object's front, flattened.
     const Basis f = gravityFrame({1, 0, 0}, {0.3f, 0, 1});
-    check(near(f.y, {1, 0, 0}) && near(f.z, {0, 0, 1}) && near(f.x, {0, 1, 0}), "gravity frame on a planet's side");
+    check(near(f.y, {1, 0, 0}) && near(f.z, {0, 0, 1}) && near(f.x, {0, -1, 0}), "gravity frame on a planet's side (right = up x front)");
     // Front along up (looking straight down): still a valid frame.
     const Basis g = gravityFrame({0, 1, 0}, {0, 5, 0});
     check(near(length(g.z), 1.0f) && near(dot(g.z, g.y), 0.0f), "front along up falls back");

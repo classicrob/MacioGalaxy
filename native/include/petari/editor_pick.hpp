@@ -26,11 +26,13 @@ enum class Click : std::uint8_t { None, Replace, Add, Toggle };
 void setHoverWanted(bool wanted);  // the pointer is over the viewport (not dragging the camera)
 void click(Click mode);            // a click over the viewport
 void clearSelection();             // Esc, or Edit mode left
+void selectByName(const char* name);  // select the first object with this row or class name (search, tests)
 
 // Game, Edit nerve: the requests, then the answers.
 bool hoverWanted();
 Click takeClick();
 bool takeClear();
+bool takeSelectByName(char* name, int size);
 void publish(const Item* hover, const std::vector<Item>& selection);
 
 // UI: the last answers.
@@ -40,3 +42,48 @@ std::vector<Item> selection();
 void resetForTesting();
 
 }  // namespace PetariNative::EditorPick
+
+// The transform gizmo (docs/dev/level-editor/UX.md section 6): the UI says what the mouse and keys
+// do; the game's Edit nerve moves the selection and publishes the handles to draw.
+namespace PetariNative::EditorGizmo {
+
+enum class Mode : std::uint8_t { Select, Move, Rotate, Scale };  // Q W E R
+enum class Frame : std::uint8_t { Gravity, Local, World };       // the gizmo's axes (","" cycles)
+enum class Ground : std::uint8_t { Drop = 1, StandUp = 2, Both = 3 };  // End, Shift+End, Cmd+End
+
+void setMode(Mode mode);
+Mode mode();
+void setFrame(Frame frame);
+Frame frame();
+
+// UI, overlay: the left button over the viewport (not an Option-drag, which orbits).
+void press();
+void release();
+void setSnapSuspended(bool suspended);  // Cmd held: no snapping for this drag
+void ground(Ground what);
+
+struct Take {
+    bool pressed = false, released = false, snapSuspended = false;
+    int ground = 0;  // a Ground value, 0 none
+};
+Take take();  // game, once per frame
+
+// What the game publishes for the UI to draw: lines in viewport coordinates (-1..1, y up).
+struct Line {
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    std::uint32_t color = 0xFFFFFFFF;  // ImGui's ABGR
+    float width = 2.0f;
+};
+struct View {
+    bool visible = false;
+    bool dragging = false;   // a gizmo or object drag is under way (the UI holds back the click)
+    std::vector<Line> lines;
+    float originX = 0, originY = 0;
+    char status[96] = {};    // for the footer: "Move  X +120.0" ...
+};
+void publish(const View& view);
+View view();
+
+void resetForTesting();
+
+}  // namespace PetariNative::EditorGizmo

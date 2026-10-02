@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's camera over the frozen scene (Game/Camera/EditorCamera.hpp).
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorGizmo.hpp"
 #include "Game/Camera/EditorPicking.hpp"
 #include "Game/AudioLib/AudSystem.hpp"
 #include "Game/AudioLib/AudWrap.hpp"
@@ -277,6 +278,7 @@ namespace EditorCamera {
         view.cursorX = in.cursorX;
         view.cursorY = in.cursorY;
         EditorPicking::update(view);
+        EditorGizmo::update(view);
         return false;
     }
 
@@ -288,6 +290,7 @@ namespace EditorCamera {
         GameSystemFunction::onPauseEndAllRumble();
         AudWrap::getSystem()->exitPauseMenu();
         gState.active = false;
+        EditorGizmo::reset();
         EditorPicking::reset();
         petari_editor_set_active(0);
         PetariEditor::notifyEditLeft();
@@ -301,6 +304,7 @@ namespace EditorCamera {
     void abandon() {
         if (!gState.active) return;
         gState.active = false;
+        EditorGizmo::reset();
         EditorPicking::reset();  // the old scene's actors are gone: drop them before anything looks
         GameSystemFunction::onPauseEndAllRumble();
         AudWrap::getSystem()->exitPauseMenu();

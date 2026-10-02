@@ -214,6 +214,24 @@ namespace EditorPicking {
         const float tanY = std::tan(view.fovy * 0.5f * kDeg), tanX = tanY * view.aspect;
         const V ray = normalized(add(forward, add(mul(right, view.cursorX * tanX), mul(up, view.cursorY * tanY))));
 
+        // Select by name (search, test drivers): the first pickable object whose row or class name matches.
+        if (char name[64]; Pick::takeSelectByName(name, sizeof(name))) {
+            if (ClippingActorInfoList* list = allActors()) {
+                for (int i = 0; i < list->_4; i++) {
+                    LiveActor* actor = list->mClippingActorList[i] != nullptr ? list->mClippingActorList[i]->mActor : nullptr;
+                    if (!pickable(actor)) continue;
+                    const PetariEditor::RowId row = PetariEditor::rowForActor(actor);
+                    const char* rowName = row.valid() && PetariEditor::model() != nullptr ? PetariEditor::model()->objectName(row) : nullptr;
+                    if ((rowName != nullptr && std::strcmp(rowName, name) == 0) || className(actor) == name) {
+                        selection.clear();
+                        selection.push_back(actor);
+                        break;
+                    }
+                }
+            }
+            std::fprintf(stderr, "[editor] select %s: %d object(s)\n", name, static_cast< int >(selection.size()));
+        }
+
         const Pick::Click click = Pick::takeClick();
         const bool wantHover = Pick::hoverWanted();
         Hit under;
