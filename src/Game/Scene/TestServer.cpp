@@ -10,6 +10,7 @@
 #include <petari/editor/runtime.hpp>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
+#include <petari/smoke_phase.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -25,7 +26,6 @@
 
 namespace fs = std::filesystem;
 
-extern "C" int petari_class_sweep_go;  // the stage smoke sets it when its checks are done and it idles in the Tail
 
 namespace {
     // State that outlives a scene must not live in std containers: the game's allocator can put their buffers on the
@@ -162,7 +162,7 @@ namespace TestServer {
                 std::fprintf(stderr, "[test-server] listening on %s\n", pDir);
             }
         }
-        if (!gEnabled || petari_class_sweep_go == 0) {
+        if (!gEnabled || !PetariNative::SmokePhase::stageChecksDone.load()) {
             return;  // not before the stage smoke is idling: it would end the run on a stage change in an earlier phase
         }
         static int sBeat = 0;

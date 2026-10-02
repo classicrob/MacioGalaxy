@@ -11,8 +11,6 @@
 #include <cstdlib>
 #include <cstring>
 
-extern "C" int petari_class_sweep_go;
-
 namespace PetariNative::App::Smoke {
 
 namespace {
@@ -356,7 +354,6 @@ Step StageDriver::step(const Observation& o) {
         return step;
     }
     if (mPhase == Phase::Tail && std::getenv("PETARI_TEST_SERVER") != nullptr) {
-        petari_class_sweep_go = 1;  // the test server takes commands from here
         PetariNative::SmokePhase::stageChecksDone.store(true);
         return step;  // the test server warps between stages; it ends the run
     }
@@ -778,7 +775,6 @@ void StageDriver::exercise(const Observation& o, Step& step) {
         break;
     }
     case Phase::Tail:
-        if (petari_class_sweep_go == 0) petari_class_sweep_go = 1;  // class sweep: start once the checks are done
         PetariNative::SmokePhase::stageChecksDone.store(true);
         if (mPhaseFrames >= mConfig.tailFrames && std::getenv("PETARI_TEST_SERVER") == nullptr) {  // the test server ends the run
             finish(Result::Pass,

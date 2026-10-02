@@ -19,6 +19,7 @@
 #include "Game/Util/SceneUtil.hpp"
 #include <JSystem/JGadget/hashcode.hpp>
 #include <petari/editor/runtime_hooks.hpp>
+#include <petari/smoke_phase.hpp>
 
 #include <chrono>
 #include <cmath>
@@ -30,8 +31,6 @@
 #include <string>
 #include <unistd.h>
 #include <vector>
-
-extern "C" int petari_class_sweep_go = 0;
 
 // Output protocol (stderr, one line each; native/tools/class_sweep.py parses it):
 //   [class-sweep] BEGIN <i> <name>          before anything of the item runs
@@ -489,7 +488,7 @@ namespace ClassSweep {
             return;
         }
         if (gFrame < 0) {
-            if (!actionNerve || petari_class_sweep_go == 0) {
+            if (!actionNerve || !PetariNative::SmokePhase::stageChecksDone.load()) {
                 return;
             }
             gFrame = 0;
