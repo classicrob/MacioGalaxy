@@ -56,6 +56,9 @@ std::vector< std::string > archiveOverridePaths();
 void setEditorReload(bool active);
 bool editorReload();
 
+/// Game-side editor code (src/Game/Editor) reports a failure to the UI's toasts (status().lastError).
+void reportError(const char* pMessage);
+
 /// Bumps each time a scene ends (SceneSync rebinds after a reload).
 std::uint32_t sceneSerial();
 
