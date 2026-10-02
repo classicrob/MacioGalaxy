@@ -356,29 +356,7 @@ App::FrameStats::Phase framePhaseForPipelines() {
 
 }  // namespace
 
-namespace {
-// After a crash macOS can show "reopen windows?" at the next launch and hang it before frame 0 (the class
-// sweep crashes the app on purpose). registerDefaults is per-process: nothing is stored. THROWAWAY: the UI
-// worker's launch-path fix replaces this at the merge into level-editor.
-void disableWindowRestoration() {
-    const auto cls = [](const char* name) { return reinterpret_cast<id>(objc_getClass(name)); };
-    const auto send0 = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend);
-    const auto sendBool = reinterpret_cast<id (*)(id, SEL, BOOL)>(objc_msgSend);
-    const auto sendCString = reinterpret_cast<id (*)(id, SEL, const char*)>(objc_msgSend);
-    const auto makeDict = reinterpret_cast<id (*)(id, SEL, const id*, const id*, unsigned long)>(objc_msgSend);
-    const auto registerDefaults = reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend);
-    const id yes = sendBool(cls("NSNumber"), sel_registerName("numberWithBool:"), YES);
-    const id no = sendBool(cls("NSNumber"), sel_registerName("numberWithBool:"), NO);
-    const id keys[2] = {sendCString(cls("NSString"), sel_registerName("stringWithUTF8String:"), "ApplePersistenceIgnoreState"),
-                        sendCString(cls("NSString"), sel_registerName("stringWithUTF8String:"), "NSQuitAlwaysKeepsWindows")};
-    const id values[2] = {yes, no};
-    const id defaults = makeDict(cls("NSDictionary"), sel_registerName("dictionaryWithObjects:forKeys:count:"), values, keys, 2);
-    registerDefaults(send0(cls("NSUserDefaults"), sel_registerName("standardUserDefaults")), sel_registerName("registerDefaults:"), defaults);
-}
-}  // namespace
-
 int main(int argc, char** argv) {
-    disableWindowRestoration();
     // The allocation-site check's symbol table, before any game thread runs
     // (building it on a first game allocation would be a startup hitch).
     PetariNative::prepareAllocationSymbols();
