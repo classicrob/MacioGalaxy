@@ -668,6 +668,24 @@ The Checks run on the EditModel at every op (cheap, incremental) and block savin
 | Save: `GALA` records keyed by a 16-bit name hash; unknown records are dropped at the next save | Progress lost when the mod is off; possible hash collision with a real galaxy | The registry rejects colliding names. Mod galaxies' records go to a **sidecar** `<user>/mods-saves/<Mod>.bin`, and `GameData.bin` stays vanilla-shaped |
 | Observatory: domes, map panes, `Mini<G>` miniatures (names hard-coded; a dome holds at most 5) | Not shown | Not in v1: mod galaxies are reached from Level Select (UX agreed). Domes later |
 
+**S8 (spike, `editor/galaxy-registry`).**
+- [new-galaxies.md](new-galaxies.md) lists every crash site, with file:line and a guard for each. The table above was missing several:
+  - the pause menu's `PauseMenu::init` name lookup at **stage load**;
+  - **any** Power Star in **any** galaxy, vanilla included, once a new galaxy is parsed (`getGalaxyNumCanOpen`);
+  - the next stage after leaving (`strcmp(nullptr)`);
+  - the 75-row pause star list;
+  - comet-schedule null pointers.
+- What the spike implements:
+  - The registry: `native/platform/dvd/mod_galaxy.cpp`, read from `<mod>/galaxy.json` at start-up.
+  - Native hooks: the message overlay, null-flag guards, `JMapInfoIter::getValue` reading nothing past its table (every `GalaxyID` lookup), music borrowing, and the parser.
+  - The parser takes only disc galaxies and registered ones, refuses a save-key collision, and caps at 64. Spin-driver records go up to 64.
+- **Result.** `editor_galaxy_smoke.py` builds a skeleton galaxy (`petari_terrain_bake --galaxy`: the baked box planet, cube gravity, a start and Power Star 1) outside every compiled-in table. The game:
+  - enters it with the registry's names;
+  - plays the star get;
+  - returns to the Comet Observatory (`GrandGalaxyNo` 0);
+  - saves (see the S8 row in 7 for the restart check).
+- The save sidecar, Level Select's Mod galaxies group and the remaining caps are M4 work (new-galaxies.md marks them *Proposed*).
+
 **`galaxy.json`** (in the mod, user-made, so no Nintendo data):
 - name and short name per language
 - mission names
@@ -845,7 +863,7 @@ live, undoable, no Dolphin round trip.
 | S5 | Selection hull outline through a J3D material override on Aurora | 3.4 | 2 days |
 | S6 | **KCL round trip**: generate KCL for a box/sphere brush in memory, create a collision part from it live, walk on it | Terrain collision path (6). **Done** (7.1) | 4 days |
 | S7 | **Minimal BDL**: write a one-material, one-joint BDL from a mesh, with the material cloned from a disc model, and render it through `ModelObj` | Terrain rendering path (6). **Done** (7.1) | 1 week |
-| S8 | **New galaxy loads**: a skeleton galaxy with one Power Star, outside `GalaxyID.bcsv`, entered through a registry prototype; collect the star, save, reload. Find every crash site | 5.7 | 3-4 days |
+| S8 | **New galaxy loads**: a skeleton galaxy with one Power Star, outside `GalaxyID.bcsv`, entered through a registry prototype; collect the star, save, reload. Find every crash site | 5.7. **Done** (5.7, new-galaxies.md) | 3-4 days |
 
 ### 7.1 Spike results: terrain (S6, S7)
 
