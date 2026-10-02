@@ -298,8 +298,9 @@ def run_batch(args, stage, scenario, jobs, batch_dir, tag):
         seed = warm_seed.ensure(warm_args(a.app))
         warm_seed.prepare(warm_args(a.app, user=user))
         env["PETARI_SHADER_SEED_DIR"] = str(seed)
+    # taskpolicy -b: macOS background QoS, so the sweep only uses spare CPU and never slows other workers' builds and smokes.
     full = [str(main / "build/locked-app.sh"), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die",
-            str(args.timeout)] + command
+            str(args.timeout)] + ([] if args.normal_priority else ["/usr/bin/taskpolicy", "-b"]) + command
     log = batch_dir / f"{tag}.log"
     status, stalled, startup = run_process(full, env, log, args.timeout, args.stall)
     (batch_dir / f"{tag}.startup").write_text("%s\n" % ("none" if startup is None else f"{startup:.1f}"))
@@ -788,10 +789,11 @@ def main():
         p.add_argument("--batch", type=int, default=20, help="classes per app process")
         p.add_argument("--observe", type=int, default=24, help="frames each class runs before the observation")
         p.add_argument("--frames", type=int, default=60000, help="PETARI_SMOKE_FRAMES (an upper bound)")
-        p.add_argument("--timeout", type=int, default=1500, help="seconds per app process, counted inside the app lock")
-        p.add_argument("--stall", type=int, default=120, help="seconds without log output, once the driver runs, before a hang")
+        p.add_argument("--timeout", type=int, default=2400, help="seconds per app process, counted inside the app lock")
+        p.add_argument("--stall", type=int, default=240, help="seconds without log output, once the driver runs, before a hang")
         p.add_argument("--rerun", action="store_true", help="discard recorded results")
         p.add_argument("--keep-logs", action="store_true")
+        p.add_argument("--normal-priority", action="store_true", help="do not run the app under taskpolicy -b")
         p.add_argument("--no-warm-seed", action="store_true", help="start every process cold (no shader seed)")
     args = parser.parse_args()
     sys.exit(args.fn(args) or 0)

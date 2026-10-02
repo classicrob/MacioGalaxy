@@ -26,15 +26,20 @@
 namespace fs = std::filesystem;
 
 namespace {
+    // State that outlives a scene must not live in std containers: the game's allocator can put their buffers on the
+    // scene heap, which a scene change reclaims (the server answered at the title and never again in the stage). POD only.
     bool gChecked = false;
-    fs::path gDir;
+    char gDirText[1024] = {};
     bool gEnabled = false;
+    fs::path dir() {
+        return fs::path(gDirText);
+    }
 
     // A command in flight: warp/reload reply when the new scene is playable again.
     struct Pending {
-        std::string name;
-        std::string what;  // "warp Stage n" / "reload"
-        std::string stage;
+        char name[64] = {};
+        char what[160] = {};  // "warp Stage n" / "reload"
+        char stage[64] = {};
         s32 scenario = 0;
         double since = 0;
         s32 serialBefore = 0;
@@ -50,12 +55,12 @@ namespace {
     }
 
     void reply(const std::string& name, const std::string& text) {
-        const fs::path tmp = gDir / "reply" / (name + ".tmp");
+        const fs::path tmp = dir() / "reply" / (name + ".tmp");
         {
             std::ofstream out(tmp);
             out << text << "\n";
         }
-        fs::rename(tmp, gDir / "reply" / (name + ".txt"));
+        fs::rename(tmp, dir() / "reply" / (name + ".txt"));
         std::fprintf(stderr, "[test-server] reply %s: %s\n", name.c_str(), text.c_str());
     }
 
@@ -104,9 +109,9 @@ namespace {
         }
         if (w[0] == "warp" && w.size() >= 2) {
             gPending = Pending{};
-            gPending.name = name;
-            gPending.what = line;
-            gPending.stage = w[1];
+            std::snprintf(gPending.name, sizeof(gPending.name), "%s", name.c_str());
+            std::snprintf(gPending.what, sizeof(gPending.what), "%s", line.c_str());
+            std::snprintf(gPending.stage, sizeof(gPending.stage), "%s", w[1].c_str());
             gPending.scenario = w.size() >= 3 ? std::atoi(w[2].c_str()) : 1;
             gPending.since = nowMs();
             gPending.serialBefore = static_cast< s32 >(PetariEditor::Hooks::sceneSerial());
@@ -124,9 +129,9 @@ namespace {
                 return true;
             }
             gPending = Pending{};
-            gPending.name = name;
-            gPending.what = line;
-            gPending.stage = EditorScene::stageName() != nullptr ? EditorScene::stageName() : "";
+            std::snprintf(gPending.name, sizeof(gPending.name), "%s", name.c_str());
+            std::snprintf(gPending.what, sizeof(gPending.what), "%s", line.c_str());
+            std::snprintf(gPending.stage, sizeof(gPending.stage), "%s", EditorScene::stageName() != nullptr ? EditorScene::stageName() : "");
             gPending.since = nowMs();
             gPending.isReload = true;
             gHavePending = true;
@@ -149,9 +154,9 @@ namespace TestServer {
             const char* pDir = std::getenv("PETARI_TEST_SERVER");
             gEnabled = pDir != nullptr && pDir[0] != '\0';
             if (gEnabled) {
-                gDir = pDir;
-                fs::create_directories(gDir / "cmd");
-                fs::create_directories(gDir / "reply");
+                std::snprintf(gDirText, sizeof(gDirText), "%s", pDir);
+                fs::create_directories(dir() / "cmd");
+                fs::create_directories(dir() / "reply");
                 std::fprintf(stderr, "[test-server] listening on %s\n", pDir);
             }
         }
@@ -181,13 +186,13 @@ namespace TestServer {
             gPending.leftScene = gPending.leftScene || serial != gPending.serialBefore || !actionNerve;
             gFramesPlayable = (gPending.leftScene && playable) ? gFramesPlayable + 1 : 0;
             const char* stage = EditorScene::stageName();
-            if (gFramesPlayable >= 30 && stage != nullptr && gPending.stage == stage) {
+            if (gFramesPlayable >= 30 && stage != nullptr && std::strcmp(gPending.stage, stage) == 0) {
                 char text[160];
                 std::snprintf(text, sizeof(text), "ok %s in %.0f ms", statusText().c_str(), nowMs() - gPending.since);
                 reply(gPending.name, text);
                 gHavePending = false;
             } else if (nowMs() - gPending.since > 120000) {
-                reply(gPending.name, "error timeout waiting for " + gPending.what);
+                reply(gPending.name, std::string("error timeout waiting for ") + gPending.what);
                 gHavePending = false;
             }
             return;
@@ -199,7 +204,7 @@ namespace TestServer {
         }
         std::vector< fs::path > files;
         std::error_code ec;
-        for (const auto& entry : fs::directory_iterator(gDir / "cmd", ec)) {
+        for (const auto& entry : fs::directory_iterator(dir() / "cmd", ec)) {
             if (entry.path().extension() == ".txt") {
                 files.push_back(entry.path());
             }
