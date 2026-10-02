@@ -161,8 +161,21 @@ def warm_up(args):
     shutil.rmtree(final, ignore_errors=True)
     current.rename(final)
     shutil.rmtree(work, ignore_errors=True)
+    prune(args)
     log(f"published {final}")
     return final
+
+
+def prune(args, keep=3):
+    """Keep the newest `keep` seeds (a seed is ~1.9 GB and each rebuild makes a new one)."""
+    root = Path(args.seed_root)
+    seeds = sorted((p for p in root.iterdir() if p.is_dir() and (p / "seed.json").is_file() and ".warming-" not in p.name),
+                   key=lambda p: (p / "seed.json").stat().st_mtime, reverse=True)
+    for old in seeds[keep:]:
+        if old.name != args.sha[:16]:
+            shutil.rmtree(old, ignore_errors=True)
+            (root / f"{old.name}.lock").unlink(missing_ok=True)
+            print(f"[warm-seed] pruned old seed {old.name}", file=sys.stderr, flush=True)
 
 
 def ensure(args):

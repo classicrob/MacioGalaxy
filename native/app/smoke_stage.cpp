@@ -356,6 +356,8 @@ Step StageDriver::step(const Observation& o) {
         return step;
     }
     if (mPhase == Phase::Tail && std::getenv("PETARI_TEST_SERVER") != nullptr) {
+        petari_class_sweep_go = 1;  // the test server takes commands from here
+        PetariNative::SmokePhase::stageChecksDone.store(true);
         return step;  // the test server warps between stages; it ends the run
     }
     if (mPhase == Phase::Follow) {

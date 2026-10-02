@@ -104,6 +104,7 @@ def cmd_stop(args):
         except (ProcessLookupError, ValueError):
             pass
         pid_file.unlink(missing_ok=True)
+    subprocess.run(["rm", "-rf", str(Path(args.dir) / "user/cache")], check=False)  # ~1.9 GB private cache per run
     return 0
 
 

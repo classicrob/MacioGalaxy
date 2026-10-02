@@ -49,3 +49,9 @@ git log -1 --format=%cd
 ```
 
 Read the build's tail; grepping for "error" alone misses an interrupted build.
+
+## Disk: every run leaves a ~1.9 GB private cache
+
+Delete a finished run's `<run>-user/cache` (keep logs and shots), or run `build/prune-run-artifacts-caches.sh` in the main checkout
+(removes run caches older than 30 min across main and all worktrees, skipping open files). `class_sweep.py` and `test_server.py stop` delete their
+own; `warm_seed.py` keeps only the newest 3 seeds.
