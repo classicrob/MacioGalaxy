@@ -10,8 +10,11 @@ void setModel(const ModelView* pModel);
 std::vector< Command > drainCommands();
 void setMode(Mode mode);
 Status& mutableStatus();
+std::vector< Check >& mutableChecks();
 /// Reports a failed command to the UI (Status::lastError, errorSerial).
 void reportError(const std::string& message);
+/// Reports a success worth a toast (Status::notice, noticeSerial).
+void reportNotice(const std::string& message);
 /// Calls the UI seam hook, if any. Seam only, after the drain and SceneSync.
 void runUiSeamHook();
 const UiCallbacks& uiCallbacks();

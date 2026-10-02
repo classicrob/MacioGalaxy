@@ -2,6 +2,8 @@
 // row <-> actor binding. The EditModel and SceneSync plug in through runtime_core.hpp.
 #include "runtime_core.hpp"
 
+#include <petari/host_allocation.hpp>
+
 #include <unordered_map>
 
 namespace PetariEditor {
@@ -13,6 +15,8 @@ namespace {
         void (*uiSeamHook)() = nullptr;
         UiCallbacks callbacks;
         Status status;
+        std::vector< Check > checks;
+        std::uint64_t nextNewRow = 1;
         std::unordered_map< RowId, LiveActor*, RowIdHash > actorOfRow;
         std::unordered_map< const LiveActor*, RowId > rowOfActor;
     };
@@ -36,6 +40,7 @@ const ModelView* model() {
 }
 
 void enqueue(Command&& command) {
+    PetariNative::HostAllocationScope host;
     session().commands.push_back(std::move(command));
 }
 
@@ -83,6 +88,15 @@ const Status& status() {
     return session().status;
 }
 
+const std::vector< Check >& checks() {
+    return session().checks;
+}
+
+RowId newRowId() {
+    // New rows live in their own id space (bit 63), apart from the model's (zone, table, row) ids.
+    return RowId{(1ull << 63) | session().nextNewRow++};
+}
+
 namespace Core {
     void setModel(const ModelView* pModel) {
         session().model = pModel;
@@ -102,9 +116,20 @@ namespace Core {
         return session().status;
     }
 
+    std::vector< Check >& mutableChecks() {
+        return session().checks;
+    }
+
     void reportError(const std::string& message) {
+    PetariNative::HostAllocationScope host;
         session().status.lastError = message;
         session().status.errorSerial++;
+    }
+
+    void reportNotice(const std::string& message) {
+    PetariNative::HostAllocationScope host;
+        session().status.notice = message;
+        session().status.noticeSerial++;
     }
 
     void runUiSeamHook() {
@@ -118,6 +143,7 @@ namespace Core {
     }
 
     void bindActor(RowId row, LiveActor* pActor) {
+    PetariNative::HostAllocationScope host;
         unbindRow(row);
         auto previous = session().rowOfActor.find(pActor);
         if (previous != session().rowOfActor.end()) {
@@ -128,6 +154,7 @@ namespace Core {
     }
 
     void unbindRow(RowId row) {
+    PetariNative::HostAllocationScope host;
         auto it = session().actorOfRow.find(row);
         if (it != session().actorOfRow.end()) {
             session().rowOfActor.erase(it->second);

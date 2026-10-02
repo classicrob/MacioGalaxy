@@ -85,5 +85,7 @@ Resolved resolveForUser(const std::filesystem::path& userDirectory);
 std::vector<ModInfo> detected();
 std::map<std::string, bool> detectedStates();
 bool setEnabled(const std::string& name, bool on, std::string* error);
+// The user directory given to resolveForUser (empty before that): where the level editor saves mods.
+std::filesystem::path userDirectory();
 
 }  // namespace PetariNative::Platform::ModFolder

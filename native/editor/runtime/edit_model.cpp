@@ -2,6 +2,7 @@
 #include "edit_model.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <iconv.h>
@@ -300,8 +301,14 @@ std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scen
                 }
                 model.cells.push_back(std::move(row));
                 model.origCells.push_back(std::move(original));
+                model.added.push_back(false);
             }
             zone.tables.push_back(std::move(model));
+        }
+        for (int t = 0; t < static_cast< int >(zone.tables.size()); t++) {
+            for (int r = 0; r < zone.tables[t].current.rowCount(); r++) {
+                zone.tables[t].ids.push_back(makeId(static_cast< int >(model->mZones.size()), t, r));
+            }
         }
         model->mZones.push_back(std::move(zone));
     }
@@ -348,12 +355,31 @@ RowId EditModel::makeId(int zone, int table, int row) {
                  static_cast< std::uint64_t >(row + 1)};
 }
 
+// Where a live row is now: its (zone, table) from the id (or the added rows' map), its index by
+// search (adds and deletes shift indices). False for unknown and deleted rows.
 bool EditModel::unpack(RowId id, int* pZone, int* pTable, int* pRow) const {
-    const int zone = static_cast< int >(id.v >> 40) - 1;
-    const int table = static_cast< int >((id.v >> 20) & kField) - 1;
-    const int row = static_cast< int >(id.v & kField) - 1;
-    if (zone < 0 || zone >= zoneCount() || table < 0 || table >= tableCount(zone) || row < 0 ||
-        row >= mZones[zone].tables[table].current.rowCount()) {
+    int zone, table;
+    if (id.v >> 63) {
+        auto it = mNewRowHome.find(id);
+        if (it == mNewRowHome.end()) {
+            return false;
+        }
+        zone = it->second.first;
+        table = it->second.second;
+    } else {
+        zone = static_cast< int >(id.v >> 40) - 1;
+        table = static_cast< int >((id.v >> 20) & kField) - 1;
+    }
+    if (zone < 0 || zone >= zoneCount() || table < 0 || table >= tableCount(zone)) {
+        return false;
+    }
+    const std::vector< RowId >& ids = mZones[zone].tables[table].ids;
+    // Original rows usually sit at their original index: try it first.
+    const int hint = (id.v >> 63) ? -1 : static_cast< int >(id.v & kField) - 1;
+    int row = hint >= 0 && hint < static_cast< int >(ids.size()) && ids[hint] == id
+                  ? hint
+                  : static_cast< int >(std::find(ids.begin(), ids.end(), id) - ids.begin());
+    if (row >= static_cast< int >(ids.size())) {
         return false;
     }
     *pZone = zone;
@@ -412,22 +438,42 @@ void EditModel::forEachRow(int zone, int table, const std::function< void(RowId)
     if (table < 0 || table >= tableCount(zone)) {
         return;
     }
-    for (int r = 0; r < mZones[zone].tables[table].current.rowCount(); r++) {
-        fn(makeId(zone, table, r));
+    for (RowId id : mZones[zone].tables[table].ids) {
+        fn(id);
+    }
+    for (const auto& [id, record] : mDeleted) {
+        if (record.zone == zone && record.table == table) {
+            fn(id);
+        }
     }
 }
 
 bool EditModel::locate(RowId row, int* pZone, int* pTable) const {
     int r;
-    return unpack(row, pZone, pTable, &r);
+    if (unpack(row, pZone, pTable, &r)) {
+        return true;
+    }
+    auto it = mDeleted.find(row);
+    if (it == mDeleted.end()) {
+        return false;
+    }
+    *pZone = it->second.zone;
+    *pTable = it->second.table;
+    return true;
 }
 
 RowState EditModel::state(RowId id) const {
+    if (mDeleted.count(id)) {
+        return RowState::Deleted;
+    }
     int zone, table, row;
     if (!unpack(id, &zone, &table, &row)) {
         return RowState::Original;
     }
     const TableModel& t = mZones[zone].tables[table];
+    if (t.added[row]) {
+        return RowState::Added;
+    }
     const std::vector< Cell >& now = t.cells[row];
     for (size_t c = 0; c < now.size(); c++) {
         const int original = t.original.column(t.columns[c].hash);
@@ -446,7 +492,12 @@ RowState EditModel::state(RowId id) const {
 const Cell* EditModel::cell(RowId id, std::uint32_t column) const {
     int zone, table, row;
     if (!unpack(id, &zone, &table, &row)) {
-        return nullptr;
+        auto it = mDeleted.find(id);  // a deleted row reads as it was
+        if (it == mDeleted.end()) {
+            return nullptr;
+        }
+        const int c = mZones[it->second.zone].tables[it->second.table].current.column(column);
+        return c < 0 || c >= static_cast< int >(it->second.cells.size()) ? nullptr : &it->second.cells[c];
     }
     const TableModel& t = mZones[zone].tables[table];
     const int c = t.current.column(column);
@@ -455,12 +506,18 @@ const Cell* EditModel::cell(RowId id, std::uint32_t column) const {
 
 const Cell* EditModel::originalCell(RowId id, std::uint32_t column) const {
     int zone, table, row;
-    if (!unpack(id, &zone, &table, &row)) {
+    const std::vector< Cell >* pOriginal = nullptr;
+    if (unpack(id, &zone, &table, &row)) {
+        pOriginal = &mZones[zone].tables[table].origCells[row];
+    } else if (auto it = mDeleted.find(id); it != mDeleted.end()) {
+        zone = it->second.zone;
+        table = it->second.table;
+        pOriginal = &it->second.original;
+    } else {
         return nullptr;
     }
-    const TableModel& t = mZones[zone].tables[table];
-    const int c = t.original.column(column);
-    return c < 0 ? nullptr : &t.origCells[row][c];
+    const int c = mZones[zone].tables[table].original.column(column);
+    return c < 0 || c >= static_cast< int >(pOriginal->size()) ? nullptr : &(*pOriginal)[c];
 }
 
 const char* EditModel::objectName(RowId id) const {
@@ -486,6 +543,54 @@ RowTransform EditModel::transform(RowId id) const {
     t.dirDeg = {get("dir_x", 0), get("dir_y", 0), get("dir_z", 0)};
     t.scale = {get("scale_x", 1), get("scale_y", 1), get("scale_z", 1)};
     return t;
+}
+
+int EditModel::missionCount() const {
+    int count = 0;
+    for (int r = 0; r < mScenarioData.rowCount(); r++) {
+        count = std::max(count, intCell(mScenarioData, r, "ScenarioNo", 0));
+    }
+    return count;
+}
+
+const char* EditModel::missionName(int mission) const {
+    for (int r = 0; r < mScenarioData.rowCount(); r++) {
+        if (intCell(mScenarioData, r, "ScenarioNo", -1) == mission) {
+            mNameScratch = sjisToUtf8(stringCell(mScenarioData, r, "ScenarioName"));
+            return mNameScratch.c_str();
+        }
+    }
+    return "";
+}
+
+std::uint32_t EditModel::rowMissions(RowId id) const {
+    int zone = 0, table = 0, row = 0;
+    if (!unpack(id, &zone, &table, &row)) {
+        return 0;
+    }
+    const int layer = mZones[zone].tables[table].layer;
+    std::uint32_t missions = 0;
+    for (int mission = 1; mission <= missionCount() && mission <= 32; mission++) {
+        bool zoneIn = zone == 0;
+        if (!zoneIn) {
+            // Placed by a StageObjInfo row of the galaxy in one of this mission's layers.
+            const std::uint32_t galaxyLayers = activeLayers(0, mission);
+            for (const TableModel& t : mZones[0].tables) {
+                if (zoneIn || t.layer < 0 || !(galaxyLayers & (1u << t.layer)) || t.path.size() < 12 ||
+                    t.path.compare(t.path.size() - 12, 12, "stageobjinfo") != 0) {
+                    continue;
+                }
+                for (int r = 0; r < t.current.rowCount() && !zoneIn; r++) {
+                    zoneIn = stringCell(t.current, r, "name") == mZones[zone].name;
+                }
+            }
+        }
+        const bool layerIn = layer < 0 || (activeLayers(zone, mission) & (1u << layer));
+        if (zoneIn && layerIn) {
+            missions |= 1u << (mission - 1);
+        }
+    }
+    return missions;
 }
 
 const char* EditModel::historyLabel(int index) const {
@@ -516,27 +621,239 @@ void EditModel::writeCell(int zone, int table, int row, std::uint32_t column, co
     stored.type = t.columns[c].type;  // the column's type wins (an Int written to a Short column)
     t.current.set(row, c, toValue(stored));
     t.cells[row][c] = toCell(t.current.get(row, c), t.current.columns()[c].type);  // as the game will read it back
-    mChanged.insert(makeId(zone, table, row));
+    mChanged.insert(t.ids[row]);
     if (zone == 0 && t.path.size() >= 12 && t.path.compare(t.path.size() - 12, 12, "stageobjinfo") == 0) {
         computePlacement();
     }
 }
 
+// ---- structure: rows in and out --------------------------------------------------------------
+
+void EditModel::insertRecord(const RowRecord& record) {
+    TableModel& t = mZones[record.zone].tables[record.table];
+    const int index = std::min(record.index, t.current.rowCount());
+    Formats::Bytes bytes = record.record;
+    bytes.resize(t.current.entrySize(), 0);  // columns added since the row was taken out read as zero
+    t.current.insertRowRecord(index, std::move(bytes));
+    std::vector< Cell > cells;
+    for (int c = 0; c < static_cast< int >(t.columns.size()); c++) {
+        cells.push_back(toCell(t.current.get(index, c), t.current.columns()[c].type));
+    }
+    t.cells.insert(t.cells.begin() + index, std::move(cells));
+    t.origCells.insert(t.origCells.begin() + index, record.original);
+    t.ids.insert(t.ids.begin() + index, record.id);
+    t.added.insert(t.added.begin() + index, record.added);
+    if (record.id.v >> 63) {
+        mNewRowHome[record.id] = {record.zone, record.table};
+    }
+    mDeleted.erase(record.id);
+    mChanged.insert(record.id);
+}
+
+EditModel::RowRecord EditModel::removeRecord(int zone, int table, int row) {
+    TableModel& t = mZones[zone].tables[table];
+    RowRecord record;
+    record.id = t.ids[row];
+    record.zone = zone;
+    record.table = table;
+    record.index = row;
+    record.record = t.current.rowRecord(row);
+    record.cells = t.cells[row];
+    record.original = t.origCells[row];
+    record.added = t.added[row];
+    t.current.removeRow(row);
+    t.cells.erase(t.cells.begin() + row);
+    t.origCells.erase(t.origCells.begin() + row);
+    t.ids.erase(t.ids.begin() + row);
+    t.added.erase(t.added.begin() + row);
+    mChanged.insert(record.id);
+    return record;
+}
+
+// The table at `path` in `zone`, created from a same-named table's columns (another layer's, in
+// this zone or any) when the zone lacks it. -1: no table of that name anywhere.
+int EditModel::ensureTable(int zone, const std::string& rawPath) {
+    std::string path = rawPath;
+    for (char& c : path) {
+        c = static_cast< char >(std::tolower(static_cast< unsigned char >(c)));
+    }
+    for (int t = 0; t < tableCount(zone); t++) {
+        if (mZones[zone].tables[t].path == path) {
+            return t;
+        }
+    }
+    const std::string leaf = path.substr(path.rfind('/') + 1);
+    const TableModel* pSibling = nullptr;
+    for (int z = 0; z < zoneCount() && pSibling == nullptr; z++) {
+        const int first = z == 0 ? zone : (z == zone ? 0 : z);  // this zone first
+        for (const TableModel& t : mZones[first].tables) {
+            if (t.path.substr(t.path.rfind('/') + 1) == leaf) {
+                pSibling = &t;
+                break;
+            }
+        }
+    }
+    if (pSibling == nullptr || path.rfind("jmp/", 0) != 0) {
+        return -1;
+    }
+    TableModel table;
+    table.path = path;
+    table.layer = layerOf(path);
+    table.original = pSibling->current.schemaOnly();
+    table.current = pSibling->current.schemaOnly();
+    table.columns = pSibling->columns;
+    mZones[zone].tables.push_back(std::move(table));
+    mZones[zone].filesAdded = true;
+    return tableCount(zone) - 1;
+}
+
+// One more than every l_id the zone's placement, map part and start tables use.
+std::int32_t EditModel::nextLinkId(int zone) const {
+    std::int32_t next = 0;
+    for (const TableModel& t : mZones[zone].tables) {
+        const int c = t.current.column(Formats::jmapHash("l_id"));
+        if (c < 0 || (t.path.rfind("jmp/placement", 0) != 0 && t.path.rfind("jmp/mapparts", 0) != 0 && t.path.rfind("jmp/start", 0) != 0)) {
+            continue;
+        }
+        for (int r = 0; r < t.current.rowCount(); r++) {
+            next = std::max(next, t.current.get(r, c).i + 1);
+        }
+    }
+    return next;
+}
+
+bool EditModel::addRow(const AddRow& add, Entry* pEntry, std::string* pError) {
+    if (add.zone < 0 || add.zone >= zoneCount()) {
+        *pError = "add: no such zone";
+        return false;
+    }
+    const int table = ensureTable(add.zone, add.table);
+    if (table < 0) {
+        *pError = "add: no table like " + add.table;
+        return false;
+    }
+    TableModel& t = mZones[add.zone].tables[table];
+    // Start from the row copied (same table: its record; another table: its values by column),
+    // else from neutral values.
+    int index;
+    int fromZone = 0, fromTable = 0, fromRow = 0;
+    const bool copy = add.copyOf.valid() && unpack(add.copyOf, &fromZone, &fromTable, &fromRow);
+    if (copy && fromZone == add.zone && fromTable == table) {
+        index = t.current.addRow(fromRow);
+    } else {
+        index = t.current.addRow(-1);
+        for (int c = 0; c < static_cast< int >(t.columns.size()); c++) {
+            const ColumnType type = t.current.columns()[c].type;
+            CellValue neutral;
+            neutral.kind = type == ColumnType::Float ? CellValue::Kind::Float
+                           : (type == ColumnType::StringOffset || type == ColumnType::InlineString) ? CellValue::Kind::String
+                                                                                                  : CellValue::Kind::Int;
+            const std::uint32_t hash = t.columns[c].hash;
+            const bool scale = hash == Formats::jmapHash("scale_x") || hash == Formats::jmapHash("scale_y") || hash == Formats::jmapHash("scale_z");
+            neutral.i = -1;
+            neutral.f = scale ? 1.0f : 0.0f;
+            if (copy) {
+                if (const Cell* pFrom = cell(add.copyOf, hash)) {
+                    neutral = toValue(*pFrom);
+                }
+            }
+            t.current.set(index, c, neutral);
+        }
+    }
+    std::vector< Cell > cells;
+    for (int c = 0; c < static_cast< int >(t.columns.size()); c++) {
+        cells.push_back(toCell(t.current.get(index, c), t.current.columns()[c].type));
+    }
+    const RowId id = add.id.valid() ? add.id : newRowId();
+    t.cells.push_back(std::move(cells));
+    t.origCells.emplace_back();
+    t.ids.push_back(id);
+    t.added.push_back(true);
+    mNewRowHome[id] = {add.zone, table};
+    bool lidGiven = false;
+    for (const AddRow::Value& value : add.cells) {
+        writeCell(add.zone, table, index, value.column, value.value);
+        lidGiven = lidGiven || value.column == Formats::jmapHash("l_id");
+    }
+    if (!lidGiven && t.current.column(Formats::jmapHash("l_id")) >= 0) {
+        writeCell(add.zone, table, index, Formats::jmapHash("l_id"), Cell{CellType::Int, nextLinkId(add.zone) , 0, {}});
+    }
+    mChanged.insert(id);
+    // What redo needs: the finished row.
+    RowRecord record;
+    record.id = id;
+    record.zone = add.zone;
+    record.table = table;
+    record.index = index;
+    record.record = t.current.rowRecord(index);
+    record.added = true;
+    pEntry->inserted.push_back(std::move(record));
+    return true;
+}
+
+void EditModel::undoEntry(const Entry& entry) {
+    for (auto it = entry.removed.rbegin(); it != entry.removed.rend(); ++it) {
+        insertRecord(*it);
+    }
+    for (auto it = entry.changes.rbegin(); it != entry.changes.rend(); ++it) {
+        int zone, table, row;
+        if (unpack(it->row, &zone, &table, &row)) {
+            Cell before = it->before ? *it->before : Cell{it->after.type, -1, 0.0f, {}};
+            writeCell(zone, table, row, it->column, before);
+        }
+    }
+    for (auto it = entry.inserted.rbegin(); it != entry.inserted.rend(); ++it) {
+        int zone, table, row;
+        if (unpack(it->id, &zone, &table, &row)) {
+            removeRecord(zone, table, row);
+            mNewRowHome.erase(it->id);
+        }
+    }
+}
+
+void EditModel::redoEntry(const Entry& entry) {
+    for (const RowRecord& record : entry.inserted) {
+        insertRecord(record);
+    }
+    for (const Change& change : entry.changes) {
+        int zone, table, row;
+        if (unpack(change.row, &zone, &table, &row)) {
+            writeCell(zone, table, row, change.column, change.after);
+        }
+    }
+    for (const RowRecord& record : entry.removed) {
+        int zone, table, row;
+        if (unpack(record.id, &zone, &table, &row)) {
+            mDeleted[record.id] = removeRecord(zone, table, row);
+        }
+    }
+}
+
 bool EditModel::apply(const Op& op, std::string* pError) {
+    std::string error;
     Entry entry;
     entry.label = op.label;
-    // Validate everything first: an op applies whole or not at all.
+    // An op applies whole or not at all: a failure part-way undoes what was done.
+    auto fail = [&](const std::string& message) {
+        undoEntry(entry);
+        if (pError != nullptr) {
+            *pError = message;
+        }
+        return false;
+    };
+    for (const AddRow& add : op.adds) {
+        if (!addRow(add, &entry, &error)) {
+            return fail(error);
+        }
+    }
     std::vector< SetCell > sets = op.sets;
     for (RowId id : op.revertRows) {
         int zone, table, row;
         if (!unpack(id, &zone, &table, &row)) {
-            if (pError != nullptr) {
-                *pError = "revert: unknown row";
-            }
-            return false;
+            return fail("revert: unknown row");
         }
         const TableModel& t = mZones[zone].tables[table];
-        for (size_t c = 0; c < t.columns.size(); c++) {
+        for (size_t c = 0; c < t.columns.size() && !t.added[row]; c++) {
             const int original = t.original.column(t.columns[c].hash);
             if (original >= 0 && !sameCell(t.cells[row][c], t.origCells[row][original])) {
                 sets.push_back(SetCell{id, t.columns[c].hash, t.origCells[row][original]});
@@ -546,15 +863,8 @@ bool EditModel::apply(const Op& op, std::string* pError) {
     for (const SetCell& set : sets) {
         int zone, table, row;
         if (!unpack(set.row, &zone, &table, &row)) {
-            if (pError != nullptr) {
-                *pError = "unknown row";
-            }
-            return false;
+            return fail("unknown row");
         }
-    }
-    for (const SetCell& set : sets) {
-        int zone, table, row;
-        unpack(set.row, &zone, &table, &row);
         Change change;
         change.row = set.row;
         change.column = set.column;
@@ -564,6 +874,15 @@ bool EditModel::apply(const Op& op, std::string* pError) {
         writeCell(zone, table, row, set.column, set.after);
         change.after = *cell(set.row, set.column);
         entry.changes.push_back(std::move(change));
+    }
+    for (RowId id : op.deletes) {
+        int zone, table, row;
+        if (!unpack(id, &zone, &table, &row)) {
+            return fail("delete: unknown row");
+        }
+        RowRecord record = removeRecord(zone, table, row);
+        mDeleted[id] = record;
+        entry.removed.push_back(std::move(record));
     }
     mHistory.resize(mCursor);
     entry.serial = mNextSerial++;
@@ -577,14 +896,7 @@ bool EditModel::undo() {
     if (mCursor == 0) {
         return false;
     }
-    const Entry& entry = mHistory[--mCursor];
-    for (auto it = entry.changes.rbegin(); it != entry.changes.rend(); ++it) {
-        int zone, table, row;
-        if (unpack(it->row, &zone, &table, &row)) {
-            Cell before = it->before ? *it->before : Cell{it->after.type, -1, 0.0f, {}};
-            writeCell(zone, table, row, it->column, before);
-        }
-    }
+    undoEntry(mHistory[--mCursor]);
     mRevision++;
     return true;
 }
@@ -593,13 +905,7 @@ bool EditModel::redo() {
     if (mCursor >= historySize()) {
         return false;
     }
-    const Entry& entry = mHistory[mCursor++];
-    for (const Change& change : entry.changes) {
-        int zone, table, row;
-        if (unpack(change.row, &zone, &table, &row)) {
-            writeCell(zone, table, row, change.column, change.after);
-        }
-    }
+    redoEntry(mHistory[mCursor++]);
     mRevision++;
     return true;
 }
@@ -635,13 +941,33 @@ std::vector< std::pair< std::string, Formats::Bytes > > EditModel::changedArchiv
         Formats::Archive archive = zone.archive;
         bool edited = false;
         for (const TableModel& table : zone.tables) {
+            const Bytes* pLoaded = zone.archive.file(table.path);
+            if (pLoaded == nullptr) {
+                continue;  // a table made in this session: added with the archive rebuild below
+            }
             Bytes now = table.current.build();
-            if (now != *zone.archive.file(table.path)) {
+            if (now != *pLoaded) {
                 archive.replace(table.path, std::move(now));
                 edited = true;
             }
         }
-        Bytes built = archive.build();
+        Bytes built;
+        if (zone.filesAdded) {
+            // A new table: a new archive (every file, the new ones included).
+            std::vector< std::pair< std::string, Bytes > > files;
+            for (const std::string& path : zone.archive.files()) {
+                files.emplace_back(path, *archive.file(path));
+            }
+            for (const TableModel& table : zone.tables) {
+                if (!zone.archive.has(table.path)) {
+                    files.emplace_back(table.path, table.current.build());
+                }
+            }
+            built = Formats::Archive::create(zone.archive.root(), files).build();
+            edited = true;
+        } else {
+            built = archive.build();
+        }
         // Changed means "differs from the disc" when the disc is known (a mod's earlier edits
         // count), else "edited since loading".
         const bool changed = zone.discPlain.empty() ? edited : built != zone.discPlain;
@@ -656,7 +982,7 @@ RowId EditModel::rowAt(int zone, int table, int row) const {
     if (table < 0 || table >= tableCount(zone) || row < 0 || row >= mZones[zone].tables[table].current.rowCount()) {
         return {};
     }
-    return makeId(zone, table, row);
+    return mZones[zone].tables[table].ids[row];
 }
 
 int EditModel::tableLayer(int zone, int table) const {

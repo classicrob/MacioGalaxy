@@ -4,10 +4,12 @@
 
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
+#include "save_mod.hpp"
 
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
 #include <petari/editor/runtime_hooks.hpp>
+#include <petari/host_allocation.hpp>
 #include <petari/platform/dvd.hpp>
 #include <revolution/dvd.h>
 
@@ -42,6 +44,7 @@ namespace {
         std::uint32_t reloadFromScene = 0;
         double reloadStartMs = 0;
         bool teleportPending = false;
+        bool plainReload = false;  // reloadScene() without an edit session
     };
 
     Session& session() {
@@ -82,6 +85,7 @@ namespace {
     }
 
     void loadModel(const char* pStage, int scenario) {
+        PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
@@ -100,6 +104,7 @@ namespace {
 
     // After every scene build: the actors placement made, by row (Hooks::placed records them).
     void bindPlacements() {
+        PetariNative::HostAllocationScope host;
         Session& s = session();
         s.actors.clear();
         s.liveRows.clear();
@@ -162,6 +167,11 @@ namespace {
             s.pending.insert(id);
             return;
         }
+        if (m.state(id) == RowState::Deleted) {
+            retireRow(id);
+            s.pending.erase(id);
+            return;
+        }
         if (!m.zonePlaced(zone) || layer < 0 || !(m.activeLayers(zone, m.scenario()) & (1u << layer))) {
             return;  // not in this mission's scene; nothing to show
         }
@@ -172,11 +182,15 @@ namespace {
         }
         int rowIndex = 0;
         const Formats::Table* pTable = m.rowTable(id, &rowIndex);
-        auto row = std::make_unique< LiveRow >();
-        row->bytes = pTable->buildSingleRow(rowIndex);
-        row->info.attach(row->bytes.data());
-        row->info.setName("ObjInfo");
-        Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
+        std::unique_ptr< LiveRow > row;
+        {
+            PetariNative::HostAllocationScope host;  // the row is editor data; the actor (below) is the game's
+            row = std::make_unique< LiveRow >();
+            row->bytes = pTable->buildSingleRow(rowIndex);
+            row->info.attach(row->bytes.data());
+            row->info.setName("ObjInfo");
+            Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
+        }
         EditorScene::Created created;
         const char* pError = "";
         if (!EditorScene::createFromRow(JMapInfoIter(&row->info, 0), &created, &pError)) {
@@ -228,7 +242,8 @@ namespace {
     }
 
     // Rebuild the scene from the model (TECH.md 2.6): the edited archives replace the cached ones.
-    void startReload(Session::After after) {
+    void startReload(Session::After after, bool fromStart = false) {
+        PetariNative::HostAllocationScope host;
         Session& s = session();
         for (auto& [path, bytes] : s.model->changedArchives()) {
             Hooks::setArchiveOverride(path, std::move(bytes));
@@ -238,7 +253,7 @@ namespace {
         s.reloadFromScene = Hooks::sceneSerial();
         s.reloadStartMs = nowMs();
         Core::setMode(Mode::Reloading);
-        EditorReload::requestReload(after == Session::After::PlayStart);
+        EditorReload::requestReload(fromStart || after == Session::After::PlayStart);
     }
 
     void play(PlayFrom from) {
@@ -283,7 +298,11 @@ namespace {
 
     void drain() {
         Session& s = session();
-        std::vector< Command > commands = Core::drainCommands();
+        std::vector< Command > commands;
+        {
+            PetariNative::HostAllocationScope host;
+            commands = Core::drainCommands();
+        }
         for (size_t i = 0; i < commands.size(); i++) {
             Command& command = commands[i];
             auto requeueRest = [&]() {
@@ -297,7 +316,8 @@ namespace {
             }
             std::string error;
             switch (command.kind) {
-            case Command::Kind::Apply:
+            case Command::Kind::Apply: {
+                PetariNative::HostAllocationScope host;
                 for (const SetCell& set : command.op.sets) {
                     s.previewing.erase(set.row);  // re-created from the row
                 }
@@ -305,15 +325,22 @@ namespace {
                     Core::reportError(command.op.label + ": " + error);
                 }
                 break;
-            case Command::Kind::Undo:
+            }
+            case Command::Kind::Undo: {
+                PetariNative::HostAllocationScope host;
                 s.model->undo();
                 break;
-            case Command::Kind::Redo:
+            }
+            case Command::Kind::Redo: {
+                PetariNative::HostAllocationScope host;
                 s.model->redo();
                 break;
-            case Command::Kind::JumpHistory:
+            }
+            case Command::Kind::JumpHistory: {
+                PetariNative::HostAllocationScope host;
                 s.model->jumpTo(command.index);
                 break;
+            }
             case Command::Kind::Preview:
                 preview(command);
                 break;
@@ -332,7 +359,18 @@ namespace {
                 startReload(Session::After::Edit);
                 requeueRest();
                 return;
-            case Command::Kind::SaveMod:
+            case Command::Kind::SaveMod: {
+                PetariNative::HostAllocationScope host;
+                std::string notice;
+                if (saveFullArchiveMod(*s.model, command.modName, &notice, &error)) {
+                    s.model->markSaved();
+                    Core::reportNotice(notice);
+                    std::fprintf(stderr, "[editor] %s\n", notice.c_str());
+                } else {
+                    Core::reportError("Save: " + error);
+                }
+                break;
+            }
             case Command::Kind::SwitchScenario:
                 Core::reportError("Not available yet in this build");  // editor/fast-reload, editor/save-mod
                 break;
@@ -341,6 +379,7 @@ namespace {
     }
 
     void updateStatus() {
+        PetariNative::HostAllocationScope host;
         Session& s = session();
         Status& st = Core::mutableStatus();
         st.pendingCount = static_cast< int >(s.pending.size());
@@ -351,22 +390,57 @@ namespace {
         st.heapFree = heapFree;
         st.heapTotal = heapTotal;
         st.capacities = {{"Objects", EditorScene::liveActorCount(), EditorScene::liveActorLimit()},
-                         {"Gravity fields", EditorScene::gravityCount(), 128}};
+                         {"Gravity fields", EditorScene::gravityCount(), 128},
+                         {"Archives", EditorScene::mountedArchiveCount(), EditorScene::mountedArchiveLimit()}};
     }
 }  // namespace
 
 void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
+void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
+
+bool reloadScene(bool fromStart) {
+    Session& s = session();
+    if (mode() == Mode::Reloading || s.plainReload || EditorScene::stageName() == nullptr) {
+        return false;
+    }
+    if (s.model && mode() == Mode::Editing) {
+        // The editor's own Reload (edits included); fromStart: from the mission's start, then Edit.
+        startReload(Session::After::Edit, fromStart);
+        return true;
+    }
+    Hooks::setEditorReload(true);
+    s.plainReload = true;
+    s.reloadFromScene = Hooks::sceneSerial();
+    s.reloadStartMs = nowMs();
+    EditorReload::requestReload(fromStart);
+    return true;
+}
+
+bool reloading() {
+    return mode() == Mode::Reloading || session().plainReload;
+}
+
+void plainReloadTestTick(bool playable);  // reload_test.cpp (PETARI_EDITOR_PLAIN_RELOAD_TEST)
 
 void tick(bool playable) {
+    plainReloadTestTick(playable);
+    // A plain reloadScene() completes whether or not the editor is on.
+    if (session().plainReload && Hooks::sceneSerial() != session().reloadFromScene && playable) {
+        session().plainReload = false;
+        Hooks::setEditorReload(false);
+        std::fprintf(stderr, "[editor] scene reload done in %.0f ms\n", nowMs() - session().reloadStartMs);
+    }
     if (!Hooks::enabled()) {
         return;
     }
     syncTestTick();
     reloadTestTick();
+    saveTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     if (mode() != Mode::Off && pStage != nullptr) {
+        PetariNative::HostAllocationScope host;
         if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
             loadModel(pStage, EditorScene::scenario());
         }
@@ -393,8 +467,16 @@ void tick(bool playable) {
         s.teleportPending = false;
     }
     drain();
-    for (RowId id : s.model->takeChangedRows()) {
+    std::set< RowId > changed;
+    {
+        PetariNative::HostAllocationScope host;
+        changed = s.model->takeChangedRows();
+    }
+    for (RowId id : changed) {
         syncRow(id);
+    }
+    if (!changed.empty()) {
+        EditorScene::flushConnectionRequests();  // Edit mode is frozen: no movement step to do it
     }
     updateStatus();
     Core::runUiSeamHook();

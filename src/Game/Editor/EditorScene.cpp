@@ -13,6 +13,8 @@
 #include "Game/Util/JMapUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
+#include "Game/System/FileLoader.hpp"
+#include "Game/Util/SingletonHolder.hpp"
 #include "Game/Gravity/PlanetGravityManager.hpp"
 #include "Game/Scene/StageDataHolder.hpp"
 #include "Game/Util/MemoryUtil.hpp"
@@ -76,6 +78,11 @@ namespace EditorScene {
             return false;
         }
 
+        // ArchiveHolder holds 0x180 mounted archives, unchecked (Good Egg uses about 350).
+        if (mountedArchiveCount() >= mountedArchiveLimit() - 16) {
+            *ppError = "the game's archive limit is reached";
+            return false;
+        }
         // The archives placement would have mounted at load (synchronous; 1-2 ms each from disk).
         if (shapeId != -1) {
             MR::requestMountModelChangableObjArchives(pName, shapeId);
@@ -101,6 +108,26 @@ namespace EditorScene {
         pOut->mFirstActor = pOut->mActorCount > 0 ? pGroup->getActor(actorsBefore) : nullptr;
         pOut->mFirstIndex = actorsBefore;
         return true;
+    }
+
+    void flushConnectionRequests() {
+        // The order of SceneFunction::executeMovementList.
+        MR::executeRequirementConnectMovement();
+        MR::executeRequirementConnectDraw();
+        MR::executeRequirementDisconnectMovement();
+        MR::executeRequirementDisconnectDraw();
+    }
+
+    bool isConnectedToDraw(const LiveActor* pActor) {
+        return executeHolder()->isConnectToDraw(pActor);
+    }
+
+    s32 mountedArchiveCount() {
+        return SingletonHolder< FileLoader >::get()->mArchiveHolder->mEntries.size();
+    }
+
+    s32 mountedArchiveLimit() {
+        return 0x180;  // ArchiveHolder::ArchiveHolder
     }
 
     LiveActor* actorAt(s32 index) {
@@ -182,9 +209,10 @@ namespace EditorScene {
             return;
         }
         if (!MR::isDead(pActor)) {
-            pActor->makeActorDead();
+            pActor->makeActorDead();  // also takes it out of clipping (the dead list)
         }
-        MR::invalidateClipping(pActor);
+        // Not MR::invalidateClipping: on a clipped actor (a view group hiding it, say) it calls
+        // endClipped(), which connects the dead actor to the scene again and draws it.
         MR::hideModel(pActor);
     }
 }  // namespace EditorScene
