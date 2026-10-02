@@ -3,6 +3,7 @@
 
 #include <petari/editor/catalog.hpp>
 #include <petari/editor_pick.hpp>
+#include <petari/editor_settings.hpp>
 #include <petari/home_menu.hpp>
 
 #include "imgui.h"
@@ -18,6 +19,7 @@ namespace PetariEditor::Ui {
 namespace {
 
 namespace Pick = PetariNative::EditorPick;
+namespace Settings = PetariNative::EditorSettings;
 
 const ImVec4 kGold(0.98f, 0.80f, 0.22f, 1.0f);
 const ImVec4 kGreen(0.35f, 0.85f, 0.45f, 1.0f);
@@ -124,6 +126,8 @@ const char* layerTag(const char* path) {
     return tag;
 }
 
+bool gRawTables = false;  // Advanced: the archive's tables as they are (and the layers, UX section 12)
+
 void outlinerRow(const ModelView& model, RowId row, const std::vector< RowId >& selected, const char* layer, const char* suffix = nullptr) {
     ImGui::PushID(static_cast< int >(row.v & 0x7FFFFFFF));
     const RowState state = model.state(row);
@@ -135,7 +139,7 @@ void outlinerRow(const ModelView& model, RowId row, const std::vector< RowId >& 
     if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_AllowOverlap)) {
         Pick::selectRow(row.v, ImGui::GetIO().KeyShift ? Pick::Click::Add : Pick::Click::Replace);
     }
-    if (layer != nullptr) {
+    if (layer != nullptr && gRawTables) {
         ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 18.0f);
         ImGui::TextColored(kDim, "%s", layer);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("In layer %s (missions come with the mission chips)", layer);
@@ -174,7 +178,6 @@ void drawPaths(const ModelView& model, int zone, int pathTable, const std::vecto
     });
 }
 
-bool gRawTables = false;  // Advanced: the archive's tables as they are
 
 void drawRawTables(const ModelView& model, int zone, const std::vector< RowId >& selected) {
     for (int table = 0; table < model.tableCount(zone); table++) {
@@ -331,9 +334,94 @@ void drawHistory(const ModelView& model) {
     }
 }
 
+// ---- Checks (UX section 16) -----------------------------------------------------------------------
+
+std::string gHelp;  // the Inspector's help strip: the hovered field
+std::string gHint;  // a Checks fix's instructions, shown in the help strip for a while
+int gHintFrames = 0;
+std::string gOpenTab;          // a tab to bring forward next frame (the toolbar's checks badge)
+std::uint64_t gFrameRow = 0;   // frame the camera on this row once the game has selected it
+int gFrameWait = 0;
+
+// Select a check's rows (the first one primary) and frame them when the selection lands.
+void showRows(const std::vector< RowId >& rows) {
+    if (rows.empty()) return;
+    for (size_t i = 0; i < rows.size(); i++) Pick::selectRow(rows[i].v, i == 0 ? Pick::Click::Replace : Pick::Click::Add);
+    gFrameRow = rows.front().v;
+    gFrameWait = 30;
+}
+
+void serviceFraming() {
+    if (gFrameRow == 0) return;
+    const std::vector< RowId > rows = selectedRows();
+    if (!rows.empty() && rows.front().v == gFrameRow) {
+        Settings::frame();
+        gFrameRow = 0;
+    } else if (--gFrameWait <= 0) {
+        gFrameRow = 0;  // not an object in the scene (a path point, another mission's): selected in the lists only
+    }
+}
+
+bool emptyOp(const Op& op) { return op.sets.empty() && op.adds.empty() && op.deletes.empty() && op.revertRows.empty(); }
+
+void drawChecks(const ModelView& model) {
+    const std::vector< Check >& all = checks();
+    const CheckCounts counts = countChecks(all);
+    if (all.empty()) {
+        ImGui::TextColored(kDim, "No problems.");
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(kDim, "Checks run as you edit: links to paths or switches that don't exist, objects that need a link, "
+                                 "the game's limits. The galaxy as loaded is the baseline, so only problems your edits add show here.");
+        ImGui::PopTextWrapPos();
+        return;
+    }
+    ImGui::TextColored(kDim, "%d error%s  ·  %d warning%s", counts.errors, counts.errors == 1 ? "" : "s", counts.warnings, counts.warnings == 1 ? "" : "s");
+    ImGui::Separator();
+    for (const Check* check : orderChecks(all)) {
+        ImGui::PushID(check->key.c_str());
+        const bool error = check->severity == Severity::Error;
+        const ImU32 color = error ? IM_COL32(255, 96, 80, 255) : IM_COL32(250, 196, 60, 255);
+        // The mark: a red dot for an error, an amber triangle for a warning.
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float h = ImGui::GetTextLineHeight();
+        if (error) {
+            ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(at.x + 6.0f, at.y + h * 0.5f), 4.5f, color);
+        } else {
+            ImGui::GetWindowDrawList()->AddTriangleFilled(ImVec2(at.x + 6.0f, at.y + 2.0f), ImVec2(at.x + 11.0f, at.y + h - 2.0f),
+                                                          ImVec2(at.x + 1.0f, at.y + h - 2.0f), color);
+        }
+        ImGui::Dummy(ImVec2(16.0f, h));
+        ImGui::SameLine();
+        ImGui::BeginGroup();
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(check->message.c_str());
+        ImGui::PopTextWrapPos();
+        const bool clicked = ImGui::IsItemClicked();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Click to show it");
+        if (!check->fixLabel.empty()) {
+            if (ImGui::SmallButton(check->fixLabel.c_str())) {
+                if (!emptyOp(check->fix)) {
+                    enqueueOp(check->fix);
+                } else {
+                    // A pick flow (fixKind): show the object; its Inspector has the link field to set.
+                    showRows(check->rows);
+                    gHintFrames = 600;
+                    gHint = check->fixKind == "pick-path"     ? "Choose a path: set the object's path field (CommonPath_ID) in the Inspector."
+                            : check->fixKind == "pick-switch" ? "Choose a switch: set the switch field in the Inspector to a number another object uses."
+                            : check->fixKind == "pick-camera" ? "Choose a camera: set CameraSetId in the Inspector."
+                                                              : "";
+                }
+            }
+        }
+        ImGui::EndGroup();
+        if (clicked) showRows(check->rows);
+        ImGui::Spacing();
+        ImGui::PopID();
+    }
+}
+
 // ---- Inspector ------------------------------------------------------------------------------------
 
-std::string gHelp;  // the help strip: the hovered field
 
 void noteHelp(const Column& column, const ModelView& model, RowId row) {
     if (!ImGui::IsItemHovered()) return;
@@ -468,18 +556,25 @@ void argField(const ModelView& model, const std::vector< RowId >& rows, const Ca
         if (ImGui::Checkbox(mixed ? "Mixed" : value == -1 ? "(default)" : "##v", &on)) edited = on ? 1 : 0, commit = true;
         break;
     }
-    default:
-        ImGui::InputInt("##v", &edited, 0, 0);
-        commit = ImGui::IsItemDeactivatedAfterEdit();
-        if (!arg.unit.empty() || value == -1) {
-            // The unit, or the default the class uses, inside the field's right end.
-            const std::string hint = value == -1 ? "default " + argValueText(arg, arg.defaultValue) : arg.unit;
+    default: {
+        // -1 (the class's default) shows as that default, greyed: "6 (default)". Typing a number sets it.
+        const bool isDefault = value == -1 && !mixed;
+        std::int32_t shown = isDefault ? arg.defaultValue : value;
+        if (isDefault) ImGui::PushStyleColor(ImGuiCol_Text, kDim);
+        ImGui::InputScalar("##v", ImGuiDataType_S32, &shown, nullptr, nullptr, mixed ? "Mixed" : isDefault ? "%d (default)" : "%d");
+        if (isDefault) ImGui::PopStyleColor();
+        commit = ImGui::IsItemDeactivatedAfterEdit() && !(isDefault && shown == arg.defaultValue);
+        edited = shown;
+        if (!arg.unit.empty()) {
+            // The unit inside the field's right end.
+            const std::string& hint = arg.unit;
             const ImVec2 end = ImGui::GetItemRectMax();
             const ImVec2 size = ImGui::CalcTextSize(hint.c_str());
             ImGui::GetWindowDrawList()->AddText(ImVec2(end.x - size.x - 6.0f, end.y - ImGui::GetFrameHeight() + ImGui::GetStyle().FramePadding.y),
                                                 ImGui::ColorConvertFloat4ToU32(kDim), hint.c_str());
         }
         break;
+    }
     }
     help();
     if (commit && (edited != value || mixed)) {
@@ -580,6 +675,30 @@ std::string cellText(const Cell& cell) {
     case CellType::StringOffset: return "\"" + cell.s + "\"";
     default: std::snprintf(text, sizeof(text), "%d", cell.i); return text;
     }
+}
+
+CheckCounts countChecks(const std::vector< Check >& all) {
+    CheckCounts counts;
+    for (const Check& check : all) (check.severity == Severity::Error ? counts.errors : counts.warnings)++;
+    return counts;
+}
+
+std::vector< const Check* > orderChecks(const std::vector< Check >& all) {
+    std::vector< const Check* > ordered;
+    for (const Check& check : all) ordered.push_back(&check);
+    std::stable_sort(ordered.begin(), ordered.end(), [](const Check* a, const Check* b) {
+        return a->severity == Severity::Error && b->severity != Severity::Error;
+    });
+    return ordered;
+}
+
+void openTab(const char* name) { gOpenTab = name; }
+
+std::string missionLabel(const ModelView& model, int mission) {
+    const char* name = model.missionName(mission);
+    bool readable = name != nullptr && name[0] != '\0';
+    for (const char* c = name; readable && *c != '\0'; c++) readable = static_cast< unsigned char >(*c) >= 0x20 && static_cast< unsigned char >(*c) < 0x7F;
+    return readable ? std::string(name) : "Mission " + std::to_string(mission);
 }
 
 std::string argValueText(const Catalog::Arg& arg, std::int32_t value) {
@@ -722,13 +841,18 @@ void drawGalaxyWindow(const char* title) {
         if (model == nullptr) {
             ImGui::TextDisabled("Loading the galaxy...");
         } else if (ImGui::BeginTabBar("galaxy")) {
-            // PETARI_EDITOR_TAB=<Outliner|Browser|Changes|History>: open that tab once (screenshots, tests).
+            // PETARI_EDITOR_TAB=<Outliner|Browser|Changes|History|Checks>: open that tab once (screenshots, tests).
             static const char* sOpen = std::getenv("PETARI_EDITOR_TAB");
             auto flags = [&](const char* name) {
+                if (gOpenTab == name) {
+                    gOpenTab.clear();
+                    return ImGuiTabItemFlags_SetSelected;
+                }
                 if (sOpen == nullptr || std::strcmp(sOpen, name) != 0) return ImGuiTabItemFlags_None;
                 sOpen = nullptr;
                 return ImGuiTabItemFlags_SetSelected;
             };
+            serviceFraming();
             if (ImGui::BeginTabItem("Outliner", nullptr, flags("Outliner"))) {
                 ImGui::TextColored(kDim, "%s  ·  mission %d", model->galaxy(), model->scenario());
                 drawOutliner(*model, selectedRows());
@@ -740,13 +864,36 @@ void drawGalaxyWindow(const char* title) {
             }
             const int changeCount = static_cast< int >(collectChanges(*model).size());
             char changesLabel[32];
-            std::snprintf(changesLabel, sizeof(changesLabel), changeCount > 0 ? "Changes (%d)###changes" : "Changes###changes", changeCount);
-            if (ImGui::BeginTabItem(changesLabel, nullptr, flags("Changes"))) {
-                drawChanges(*model);
+            std::snprintf(changesLabel, sizeof(changesLabel), changeCount > 0 ? "Changes %d###changes" : "Changes###changes", changeCount);
+            // Changes and History share a tab (UX section 16: History is a view of the same edits): a switch at the top.
+            static bool sHistory = false;
+            ImGuiTabItemFlags changesFlags = flags("Changes");
+            if (const ImGuiTabItemFlags history = flags("History"); history != ImGuiTabItemFlags_None) {
+                changesFlags = history;
+                sHistory = true;
+            }
+            if (ImGui::BeginTabItem(changesLabel, nullptr, changesFlags)) {
+                if (ImGui::RadioButton("Changes", !sHistory)) sHistory = false;
+                ImGui::SameLine();
+                if (ImGui::RadioButton("History", sHistory)) sHistory = true;
+                ImGui::SameLine();
+                ImGui::TextColored(kDim, "Cmd+Z / Cmd+Shift+Z");
+                if (sHistory) {
+                    drawHistory(*model);
+                } else {
+                    drawChanges(*model);
+                }
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("History", nullptr, flags("History"))) {
-                drawHistory(*model);
+            const CheckCounts counts = countChecks(checks());
+            char checksLabel[32];
+            std::snprintf(checksLabel, sizeof(checksLabel), counts.errors + counts.warnings > 0 ? "Checks %d###checks" : "Checks###checks",
+                          counts.errors + counts.warnings);
+            if (counts.errors > 0) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
+            const bool checksOpen = ImGui::BeginTabItem(checksLabel, nullptr, flags("Checks"));
+            if (counts.errors > 0) ImGui::PopStyleColor();
+            if (checksOpen) {
+                drawChecks(*model);
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();
@@ -809,8 +956,7 @@ void drawInspectorWindow(const char* title) {
                     ImGui::SmallButton(label);
                     ImGui::PopStyleColor(2);
                     if (ImGui::IsItemHovered()) {
-                        const char* name = model->missionName(mission);
-                        ImGui::SetTooltip("%s: %s", name != nullptr && name[0] != '\0' ? name : "Mission", in ? "appears" : "does not appear");
+                        ImGui::SetTooltip("%s: %s", missionLabel(*model, mission).c_str(), in ? "appears" : "does not appear");
                         gHelp = "Which missions this object appears in (its layer). Changing it comes with mission editing.";
                     }
                 }
@@ -841,8 +987,10 @@ void drawInspectorWindow(const char* title) {
                     field(*model, rows, column, info);
                 }
             }
+            if (gHelp.empty() && gHintFrames > 0) gHelp = gHint;
             if (gHelp.empty() && info != nullptr && !info->description.empty()) gHelp = info->displayName + ": " + info->description;
         }
+        if (gHintFrames > 0) gHintFrames--;
         // The help strip at the foot: the hovered field (UX section 8).
         const float strip = ImGui::GetTextLineHeightWithSpacing() * 2.5f;
         if (ImGui::GetContentRegionAvail().y > strip) ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetContentRegionAvail().y - strip);

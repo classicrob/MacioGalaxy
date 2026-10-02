@@ -1,7 +1,8 @@
-// Saving an edit as a Full-archive mod (TECH.md 5.1): the edited zone archives, Yaz0-compressed as
-// the community's tools write them, in <user>/mods/<Name>/files/StageData/, which today's mod
-// loader reads (native/MODS.md). The mod is switched on for the next start; during the session the
-// edits already show (reloads inject them).
+// Saving an edit as a mod (TECH.md 5.1). A patch by default: edits/<Galaxy>.json, row ops against
+// the player's disc that the mod loader builds into archives at start-up (petari/editor/patch.hpp),
+// so the mod holds no game data. Or Full archives: the edited zone archives, Yaz0-compressed as the
+// community's tools write them, in files/StageData/. The mod is switched on for the next start;
+// during the session the edits already show (reloads inject them).
 #include "edit_model.hpp"
 #include "save_mod.hpp"
 
@@ -16,6 +17,7 @@
 #include <iterator>
 #include <optional>
 #include <system_error>
+#include <vector>
 
 namespace PetariEditor::Runtime {
 namespace fs = std::filesystem;
@@ -82,7 +84,7 @@ namespace {
     }
 }  // namespace
 
-bool saveFullArchiveMod(const EditModel& model, const std::string& modName, std::string* pNotice, std::string* pError) {
+bool saveMod(const EditModel& model, const std::string& modName, bool fullArchives, std::string* pNotice, std::string* pError) {
     if (!validName(modName)) {
         *pError = "a mod name uses letters, digits, spaces, '-', '_' and '.'";
         return false;
@@ -99,15 +101,45 @@ bool saveFullArchiveMod(const EditModel& model, const std::string& modName, std:
         return false;
     }
 
-    // Every zone archive that differs from the disc; the others are removed from the mod, so an
-    // edit reverted since the last save takes effect.
+    const fs::path patchFile = root / "edits" / (std::string(model.galaxy()) + ".json");
     int written = 0;
     std::set< std::string > changed;
-    // Terrain brushes become generated planets (petari/editor/terrain/bake.hpp), so the mod plays
-    // without the editor.
+    std::string summary;
+    if (!fullArchives) {
+        // The patch, plus the zones it can't express (a mod's own zones) as whole archives. This
+        // galaxy's other archives leave the mod: the patch holds every difference from the disc.
+        const EditModel::PatchOut patch = model.patch();
+        if (patch.json.empty()) {
+            fs::remove(patchFile, ec);
+        } else if (!writeAtomically(patchFile, Formats::Bytes(patch.json.begin(), patch.json.end()), pError)) {
+            return false;
+        }
+        for (auto& [discPath, plain] : patch.wholeArchives) {
+            if (!writeAtomically(root / "files" / discPath.substr(1), Formats::yaz0Encode(plain), pError)) {
+                return false;
+            }
+            changed.insert(discPath);
+        }
+        for (int zone = 0; zone < model.zoneCount(); zone++) {
+            const std::string discPath = std::string("/StageData/") + model.zoneName(zone) + ".arc";
+            if (!changed.count(discPath)) {
+                fs::remove(root / "files" / discPath.substr(1), ec);
+            }
+        }
+        summary = std::to_string(patch.ops) + (patch.ops == 1 ? " edit" : " edits") + " as a patch";
+        if (!patch.wholeArchives.empty()) {
+            summary += " and " + std::to_string(patch.wholeArchives.size()) + " new zone archive" + (patch.wholeArchives.size() == 1 ? "" : "s");
+        }
+    }
+    // Full archives: every zone archive that differs from the disc; the others are removed from the
+    // mod, so an edit reverted since the last save takes effect. Terrain brushes become generated
+    // planets (petari/editor/terrain/bake.hpp), so the mod plays without the editor. (A patch
+    // holds no game data: its brush rows travel as row ops, and the loader bakes them.)
     Terrain::BakeInput bake;
-    for (auto& [discPath, plain] : model.changedArchives()) {
-        bake.stageArchives[discPath] = plain;
+    if (fullArchives) {
+        for (auto& [discPath, plain] : model.changedArchives()) {
+            bake.stageArchives[discPath] = plain;
+        }
     }
     bake.readDisc = readMountedDisc;
     const Terrain::BakeOutput baked = Terrain::bakeBrushes(bake);
@@ -133,16 +165,27 @@ bool saveFullArchiveMod(const EditModel& model, const std::string& modName, std:
             planets.insert(root / "files" / discPath.substr(1));
         }
     }
+    std::vector< fs::path > stale;
     for (const auto& entry : fs::directory_iterator(root / "files" / "ObjectData", ec)) {
         const std::string name = entry.path().filename().string();
         if ((name.rfind("EditorBrush", 0) == 0 || (name == "PlanetMapDataTable.arc" && baked.brushes == 0)) && !planets.count(entry.path())) {
-            fs::remove(entry.path(), ec);
+            stale.push_back(entry.path());
         }
     }
-    for (int zone = 0; zone < model.zoneCount(); zone++) {
-        const std::string discPath = std::string("/StageData/") + model.zoneName(zone) + ".arc";
-        if (!changed.count(discPath)) {
-            fs::remove(root / "files" / discPath.substr(1), ec);
+    for (const fs::path& path : stale) {
+        fs::remove(path, ec);
+    }
+    if (fullArchives) {
+        for (int zone = 0; zone < model.zoneCount(); zone++) {
+            const std::string discPath = std::string("/StageData/") + model.zoneName(zone) + ".arc";
+            if (!changed.count(discPath)) {
+                fs::remove(root / "files" / discPath.substr(1), ec);
+            }
+        }
+        fs::remove(patchFile, ec);  // the loader would build it over these
+        summary = std::to_string(written) + (written == 1 ? " archive" : " archives");
+        if (baked.brushes > 0) {
+            summary += " and " + std::to_string(baked.brushes) + (baked.brushes == 1 ? " terrain brush" : " terrain brushes");
         }
     }
     if (!fs::exists(root / "mod.txt", ec)) {
@@ -155,9 +198,7 @@ bool saveFullArchiveMod(const EditModel& model, const std::string& modName, std:
     }
     std::string enableError;
     PetariNative::Platform::ModFolder::setEnabled(modName, true, &enableError);
-    *pNotice = "Saved " + std::to_string(written) + (written == 1 ? " archive" : " archives") +
-               (baked.brushes > 0 ? " and " + std::to_string(baked.brushes) + (baked.brushes == 1 ? " terrain brush" : " terrain brushes") : "") +
-               " to mods/" + modName +
+    *pNotice = "Saved " + summary + " to mods/" + modName +
                (enableError.empty() ? " (on from the next start)" : " (turn it on in the Mods page: " + enableError + ")");
     return true;
 }

@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <string>
 #include <vector>
 
 namespace PetariEditor::Ui {
@@ -33,6 +34,7 @@ enum class Drag { None, Look, Orbit, Pan };
 bool gWasActive = false;
 bool gCallbacksSet = false;
 bool gForcedVisible = false;  // shown by PETARI_EDITOR_DOCK before Edit mode existed
+bool gWasShown = false;      // the layout's last shown state (Edit, or a reload from it)
 Drag gDrag = Drag::None;
 std::chrono::steady_clock::time_point gLastScroll{};
 
@@ -231,7 +233,10 @@ void drawPickMarks(const Area& area) {
         float r;
         if (!selected && toScreen(hover, &c, &r)) {
             list->AddCircle(c, r, rgba(0.40f, 0.86f, 1.0f, 0.95f), 0, 2.0f);
-            label(ImVec2(c.x, c.y - r - ImGui::GetTextLineHeight() - 12.0f), shownName(hover.name), rgba(0.40f, 0.86f, 1.0f, 1.0f));
+            // Hover names the class too ("Goomba · Kuribo"); the selection's label is the name alone.
+            std::string text = shownName(hover.name);
+            if (text != hover.name) text += std::string("  ·  ") + hover.name;
+            label(ImVec2(c.x, c.y - r - ImGui::GetTextLineHeight() - 12.0f), text.c_str(), rgba(0.40f, 0.86f, 1.0f, 1.0f));
         }
     }
     list->PopClipRect();
@@ -299,8 +304,14 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (active != gWasActive) {
         gWasActive = active;
         gDrag = Drag::None;
-        if (!gForcedVisible) setVisible(active);
         if (!active) Pick::setHoverWanted(false);  // (Runtime is told by the game's Edit nerve)
+    }
+    // The layout stays up through a reload (Reload, a mission switch, Play's rebuild) so the panels and the
+    // "Loading mission 2..." toast don't flash away; it goes when Play hands the game over.
+    const bool shown = active || mode() == Mode::Reloading;
+    if (shown != gWasShown) {
+        gWasShown = shown;
+        if (!gForcedVisible) setVisible(shown);
     }
     if (!active) {
         return;

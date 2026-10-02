@@ -177,7 +177,7 @@ struct Command {
         Play,            // from
         Reload,          // rebuild the scene from the model; stay in Edit
         SetPlayMarker,   // markerPos (+ markerUp, markerFront)
-        SaveMod,         // modName; M1 writes Full archives (TECH.md 5.1)
+        SaveMod,         // modName, fullArchives: a patch (default; no game data) or Full archives (TECH.md 5.1)
         SwitchScenario,  // index = the mission to edit, 1-based: a reload into it from its start, back in Edit; edits and history kept
     } kind;
     Op op;
@@ -187,6 +187,7 @@ struct Command {
     PlayFrom from = PlayFrom::Marker;
     Vec3 markerPos, markerUp, markerFront;
     std::string modName;
+    bool fullArchives = false;  // SaveMod: Full archives (Whitehole, Dolphin) instead of a patch
 };
 
 void enqueue(Command&& command);

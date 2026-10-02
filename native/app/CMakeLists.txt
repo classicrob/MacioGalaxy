@@ -42,7 +42,7 @@ if(NOT _petari_app_standalone)
     add_library(petari_app_platform STATIC platform_host.cpp smoke_game.cpp collision_probe.cpp frame_phase.cpp soak_telemetry.cpp progress_observe.cpp)
     target_link_libraries(petari_app_platform PUBLIC petari_native_config petari_boot
         petari_platform_os petari_platform_vi petari_platform_dvd petari_platform_nand petari_platform_sc
-        petari_audio_sdl petari_host_runtime petari_app_smoke petari_milestone)
+        petari_audio_sdl petari_host_runtime petari_app_smoke petari_milestone petari_editor_patch)
 
     add_library(petari_app_host STATIC frame_seam.cpp frame_stats.cpp spike_profiler.cpp input_events.cpp pipeline_startup.cpp)
     target_include_directories(petari_app_host PUBLIC ${PETARI_REPO_ROOT}/native/include)

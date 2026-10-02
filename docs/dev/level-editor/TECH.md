@@ -1017,7 +1017,25 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.
 - **Catalog and Checks** (`editor/catalog`):
   - `native/editor/catalog/generated.json` comes from `native/editor/tools/gen_catalog.py`, a decomp scan of all 1,183 factory classes: args and their types, switches, rail-capable, archives, category. It folds in the class sweep's `sweep.json` when present (required links).
-  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 152 most-placed classes. These were researched against the decomp in our own words; no community data.
+  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 210 most-placed classes (the last 58 from the UI worker's list of the most common uncurated classes in five galaxies). These were researched against the decomp in our own words; no community data.
   - Both are embedded in the binary. The user's `<user>/editor/catalog/*.json` override them, and planets come from the disc's PlanetMapDataTable at session start.
   - The Checks engine (`runtime/checks.cpp`) reports only problems the edits introduce. The galaxy as loaded is the baseline, so vanilla Good Egg shows 0.
   - Kinds: unknown classes; missing required links; paths that don't exist or have fewer than 2 points; switch ids out of range or unused by the class; a zone switch only one row uses; duplicate l_ids. Most come with fix Ops or a UI fix kind.
+- **Missions** (`editor/switch-scenario`): `SwitchScenario` sets the model's mission and reloads into it from its start (a type-5 move with that scenario and selected scenario). The model, its history and its edits are kept. While the reload is under way, `tick` does not reload the model, even though the scene still reports the old mission. Each switch takes 1.7-2 s, because the mission's other zones load.
+- **Patch mods** (`editor/patch-mods`; 5.1, 5.3; `native/editor/include/petari/editor/patch.hpp`):
+  - **Save:** Save writes a patch by default: `edits/<Galaxy>.json` from `EditModel::patch()`. `Command::fullArchives` writes Full archives instead.
+    - Each form removes the other's files for that galaxy.
+    - Zones the disc doesn't have can't be patched, so they are saved whole under `files/`.
+  - **Diffing:** the writer diffs every table against the **disc's**, not the loaded source.
+    - Rows map to disc rows by position when the model's original is the disc table; otherwise by equal cells, then by name and l_id.
+    - So re-saving on top of the player's own enabled mod still gives a disc-relative patch that carries both sessions' edits.
+  - **Ops:** `set` and `delete` name the disc row and its fingerprint (a hash of its cells, strings included). `add` carries every cell and its final index (`at`), so point tables keep their order. New layers' tables use `addFile` with `schemaOf` (a disc table with the same columns) or a column list; new columns use `addColumn`.
+  - **Applying:** `Patch::build` applies each mod in turn (addFile, addColumn, set, delete, add) to rows that remember their disc index, so mods merge.
+    - A later (higher-priority) mod wins a cell.
+    - A delete repeated by a second mod is a no-op, and a set on a deleted row is dropped.
+    - A fingerprint mismatch (another disc) keeps that mod's ops out of that archive, with a log line.
+  - **Loader:** `ModFolder::setPatchBuilder` (set by the app) lets the platform layer call the builder without depending on editor code.
+    - `resolveForUser(user, disc)` builds every enabled patch mod into `<user>/mods-cache/<key>/files/` (plain RARC; the key covers the patches and the disc files' size and time) and reuses that cache on later starts.
+    - The built archives are claimed at the rank of the highest patch mod, ahead of its own `files/` (an older full save of the same mod loses quietly). A higher-priority full-archive mod still wins its paths.
+  - **Size:** Good Egg with a move, a delete, a duplicate and a new layer's table comes to 5 ops, 2.6 KB.
+  - **Tests:** `native_editor_model` (round trip on the synthetic galaxy and Good Egg, re-save over the built mod, two-mod merge, another disc refused, the loader cache) and `native_mod_folder` (claiming and precedence). Live: `editor_save_smoke.py` saves Full archives, saves again as a patch over them, then starts with the mod: the loader builds the archive and the Octoomba stands 600 units up.
