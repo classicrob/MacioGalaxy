@@ -311,10 +311,16 @@ def run_stage(args, stage, scenario, jobs):
         t0 = time.time()
         records, parsed, status, stalled = run_batch(args, stage, scenario, batch, out, tag)
         keys = set()
+        retry = []
         for record in records:
+            if record["status"] not in PASS and record["batch_size"] > 1:
+                # Failed behind other classes: it runs again as the first class of the next process (fresh, so its
+                # failure is its own); that run is what gets recorded.
+                retry.append(record["key"])
+                continue
             append_result(results_path, record)
             keys.add(record["key"])
-        progressed = len(records)
+        progressed = len(records) if keys else 0
         bad = [r for r in records if r["status"] not in PASS]
         print(f"[{stage}] {tag}: {len(batch)} jobs, {progressed} recorded, {len(bad)} not ok "
               f"({'done' if parsed['done'] else 'abort ' + str(parsed['abort']) if parsed['abort'] else 'stalled' if stalled else 'exit ' + str(status)}) "
@@ -327,6 +333,7 @@ def run_stage(args, stage, scenario, jobs):
         else:
             infra_failures = 0
         pending = [j for j in pending if job_key(j["class"], j["mode"], j["overrides"]) not in keys]
+        pending.sort(key=lambda j: job_key(j["class"], j["mode"], j["overrides"]) not in retry)  # stable: retries first
         # A batch that aborted (player died) leaves its in-flight class recorded as kills-player; the rest run again.
     confirm_failures(args, stage, scenario, out)
     return True
@@ -613,7 +620,70 @@ def cmd_report(args):
     data = build_catalog(args, stages)
     CATALOG.mkdir(parents=True, exist_ok=True)
     (CATALOG / "sweep.json").write_text(json.dumps(data, indent=1) + "\n")
-    print(f"wrote {CATALOG / 'sweep.json'}: {len(data['classes'])} classes")
+    (CATALOG / "SWEEP.md").write_text(render_markdown(data))
+    print(f"wrote {CATALOG / 'sweep.json'} and SWEEP.md: {len(data['classes'])} classes")
+
+
+def render_markdown(data):
+    """The generated tables of SWEEP.md. Method and caveats are fixed text; numbers come from the data."""
+    stages = [s["stage"] for s in data["stages"]]
+    lines = ["# Class sweep (spike S2): results", "",
+             f"Generated {data['generated']} by `native/tools/class_sweep.py report` from `sweep.json`. Do not edit the tables by hand.", "",
+             SWEEP_METHOD, "", "## Results per stage", ""]
+    order = SEVERITY + ["untested"]
+    lines += ["| status | " + " | ".join(stages) + " | any stage (worst) |", "| --- |" + " --- |" * (len(stages) + 1)]
+    for status in order:
+        row = [sum(1 for c in data["classes"] if c["results"].get(s, {}).get("status") == status) for s in stages]
+        worst = sum(1 for c in data["classes"] if c["summary"] == status)
+        if any(row) or worst:
+            lines.append(f"| {status} | " + " | ".join(map(str, row)) + f" | {worst} |")
+    lines += ["", "## Failing classes", "",
+              "Failures with empty links, worst stage first. `links` is the bisect verdict: the link fields that made the class work "
+              "(value = the id used), `none` if nothing helped.", "",
+              "| class | stage: status | where | links that fix it |", "| --- | --- | --- | --- |"]
+    for c in data["classes"]:
+        bad = {s: r for s, r in c["results"].items() if r["status"] in ("crash", "assert", "oom", "exception", "hang", "kills-player", "nan")}
+        if not bad:
+            continue
+        status = "; ".join(f"{s}: {r['status']}" for s, r in bad.items())
+        top = next((r["crash"]["top_frames"][0] for r in bad.values() if r.get("crash", {}).get("top_frames")), "")
+        panic = next((r["crash"]["panic"] for r in bad.values() if r.get("crash", {}).get("panic")), "")
+        where = (top or panic)[:70].replace("|", "/")
+        links = []
+        for s, r in bad.items():
+            verdict = r.get("links")
+            if verdict and verdict["result"] == "required":
+                links.append(f"{s}: " + (", ".join(f"{k}={v}" for k, v in verdict["fields"].items()) or "none needed"))
+            elif verdict:
+                links.append(f"{s}: unresolved")
+        lines.append(f"| {c['class']} | {status} | {where} | {'; '.join(links) or '-'} |")
+    lines += ["", "## Classes that need archives mounted", "",
+              f"{sum(1 for c in data['classes'] if any(r['nonresident'] for r in c['results'].values()))} classes had an archive that was "
+              "not resident in the stage (listed per class in `sweep.json`: `archives`, per stage `nonresident`).", ""]
+    return "\n".join(lines) + "\n"
+
+
+SWEEP_METHOD = """## Method
+
+- **Driver:** `src/Game/Scene/ClassSweep.cpp` (PETARI_NATIVE, off unless `PETARI_CLASS_SWEEP_JOBS` is set), on the S1 spike hooks.
+  For each class it mounts the game's archive list for the class (and waits), synthesizes a one-row ObjInfo from a row of the
+  stage (the stage's own row of that class if any, else the first ObjInfo row renamed, args -1), sets every link field
+  (CameraSetId, SW_*, MessageId, CastId, ViewGroupId, CommonPath_ID, ClippingGroupId, GroupId, DemoGroupId, MapParts_ID) to -1, creates
+  the class 400 units in front of and 250 up from Mario, runs 24 frames, classifies, then kills what it made. Area-like creators get a 20-unit scale.
+- **Harness:** `native/tools/class_sweep.py`. Batches of 25 classes per background-smoke process through `build/locked-app.sh`.
+  A crash, assert or hang is attributed to the class that was in flight (log markers BEGIN/CREATED/RESULT/KILLED), the sweep
+  resumes after it, and every failure from a multi-class batch is re-run alone in a fresh process (a class that passes alone is
+  recorded ok with a note). The resume point is `results.jsonl`.
+- **Bisect:** for failing classes, `keep` (the stage's own row's links) and then real ids harvested from the same fields of the stage's
+  rows, reduced one field at a time while the class still passes.
+- **Statuses:** see `statuses` in `sweep.json`. `invisible` and `dead` are heuristics from actor flags, not pixels.
+
+## Caveats
+
+- Classes are created once, in a stage that is already running. A pass says it did not crash in 24 frames, not that it behaves.
+- Spawned objects with a template row keep the template's arguments; synthesized ones have all args -1 (defaults).
+- Planet classes (PlanetMapCreator names, not in `cCreateTable`) are not covered.
+- Areas and gravity are created tiny and left registered (no unregister), so later classes in a batch may be affected."""
 
 
 # --- commands ----------------------------------------------------------------------------------------------
