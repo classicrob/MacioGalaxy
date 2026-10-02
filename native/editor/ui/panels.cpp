@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cctype>
 #include <cstring>
 
@@ -521,6 +522,8 @@ std::vector< Change > collectChanges(const ModelView& model) {
             model.forEachRow(zone, table, [&](RowId row) {
                 const RowState state = model.state(row);
                 if (state == RowState::Original) return;
+                // Added, then deleted: nothing changed (a deleted row with no disc values was never on the disc).
+                if (state == RowState::Deleted && !columns.empty() && model.originalCell(row, columns.front().hash) == nullptr) return;
                 Change change;
                 change.row = row;
                 change.state = state;
@@ -562,6 +565,17 @@ std::vector< RowId > selectedRows() {
     return rows;
 }
 
+void deleteSelection() {
+    const ModelView* model = PetariEditor::model();
+    const std::vector< RowId > rows = selectedRows();
+    if (model == nullptr || rows.empty()) return;
+    Op op;
+    op.deletes = rows;
+    op.label = rows.size() == 1 ? "Deleted " + rowName(*model, rows.front()) : "Deleted " + std::to_string(rows.size()) + " objects";
+    enqueueOp(std::move(op));
+    Pick::clearSelection();
+}
+
 bool canUndo() {
     const ModelView* model = PetariEditor::model();
     return model != nullptr && model->historyCursor() > 0;
@@ -588,19 +602,30 @@ void drawGalaxyWindow(const char* title) {
         if (model == nullptr) {
             ImGui::TextDisabled("Loading the galaxy...");
         } else if (ImGui::BeginTabBar("galaxy")) {
-            if (ImGui::BeginTabItem("Outliner")) {
+            // PETARI_EDITOR_TAB=<Outliner|Browser|Changes|History>: open that tab once (screenshots, tests).
+            static const char* sOpen = std::getenv("PETARI_EDITOR_TAB");
+            auto flags = [&](const char* name) {
+                if (sOpen == nullptr || std::strcmp(sOpen, name) != 0) return ImGuiTabItemFlags_None;
+                sOpen = nullptr;
+                return ImGuiTabItemFlags_SetSelected;
+            };
+            if (ImGui::BeginTabItem("Outliner", nullptr, flags("Outliner"))) {
                 ImGui::TextColored(kDim, "%s  ·  mission %d", model->galaxy(), model->scenario());
                 drawOutliner(*model, selectedRows());
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Browser", nullptr, flags("Browser"))) {
+                drawBrowser(*model);
                 ImGui::EndTabItem();
             }
             const int changeCount = static_cast< int >(collectChanges(*model).size());
             char changesLabel[32];
             std::snprintf(changesLabel, sizeof(changesLabel), changeCount > 0 ? "Changes (%d)###changes" : "Changes###changes", changeCount);
-            if (ImGui::BeginTabItem(changesLabel)) {
+            if (ImGui::BeginTabItem(changesLabel, nullptr, flags("Changes"))) {
                 drawChanges(*model);
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("History")) {
+            if (ImGui::BeginTabItem("History", nullptr, flags("History"))) {
                 drawHistory(*model);
                 ImGui::EndTabItem();
             }
@@ -644,6 +669,30 @@ void drawInspectorWindow(const char* title) {
             if (state != RowState::Original) {
                 ImGui::SameLine();
                 ImGui::TextColored(stateColor(state), state == RowState::Added ? "added" : state == RowState::Deleted ? "deleted" : "changed");
+            }
+            // Appears in (UX section 12): the missions this object is part of.
+            if (const int missions = model->missionCount(); missions > 0) {
+                section("Appears in", "missions");
+                const std::uint32_t bits = model->rowMissions(primary);
+                for (int mission = 1; mission <= missions; mission++) {
+                    if (mission > 1) ImGui::SameLine(0.0f, 4.0f);
+                    const bool in = (bits & (1u << (mission - 1))) != 0;
+                    ImGui::PushStyleColor(ImGuiCol_Button, in ? ImVec4(0.98f, 0.80f, 0.22f, 0.80f) : ImVec4(1.0f, 1.0f, 1.0f, 0.06f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, in ? ImVec4(0.30f, 0.17f, 0.02f, 1.0f) : kDim);
+                    char label[16];
+                    std::snprintf(label, sizeof(label), "%d##m%d", mission, mission);
+                    ImGui::SmallButton(label);
+                    ImGui::PopStyleColor(2);
+                    if (ImGui::IsItemHovered()) {
+                        const char* name = model->missionName(mission);
+                        ImGui::SetTooltip("%s: %s", name != nullptr && name[0] != '\0' ? name : "Mission", in ? "appears" : "does not appear");
+                        gHelp = "Which missions this object appears in (its layer). Changing it comes with mission editing.";
+                    }
+                }
+                if (bits == 0) {
+                    ImGui::SameLine();
+                    ImGui::TextColored(kDim, "in no mission");
+                }
             }
             if (model->hasTransform(primary)) {
                 section("Transform", "row space");

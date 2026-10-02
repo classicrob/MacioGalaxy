@@ -23,7 +23,9 @@
 #include <string>
 #include <fstream>
 #ifdef PETARI_EDITOR_UI
+#include <aurora/imgui.h>
 #include <petari/editor/ui.hpp>
+extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height);
 #endif
 #include <petari/test_fixture.hpp>
 #include <petari/unlocked_save.hpp>
@@ -436,6 +438,32 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     std::fputs("[editor-test] LevelEditor tap (play)\n", stderr);
                     Editor::toggle();
                 }
+                // PETARI_EDITOR_TEST_PLACE=1: place a copy of the selection on the ground at the view's centre (the
+                // Browser's Place path).
+                // ...then duplicate the placed copy (Cmd+D) and delete the duplicate (Delete).
+                static std::uint64_t sPlaceExample = 0;
+                if (t == 141 && std::getenv("PETARI_EDITOR_TEST_PLACE") != nullptr) {
+                    const std::vector<Pick::Item> selected = Pick::selection();
+                    sPlaceExample = !selected.empty() ? selected.front().row : 0;
+                }
+                if (sPlaceExample != 0) {
+                    if (t == 142) {
+                        Editor::cursor(0.0f, -0.3f);
+                        Pick::place(sPlaceExample);
+                    }
+                    if (t == 150) Pick::duplicate();
+                    if (t == 158) {
+                        const PetariEditor::ModelView* model = PetariEditor::model();
+                        const std::vector<Pick::Item> selected = Pick::selection();
+                        if (model != nullptr && !selected.empty() && selected.front().row != 0) {
+                            PetariEditor::Command remove{PetariEditor::Command::Kind::Apply};
+                            remove.op.label = "Deleted the duplicate";
+                            remove.op.deletes.push_back(PetariEditor::RowId{selected.front().row});
+                            PetariEditor::enqueue(std::move(remove));
+                            std::fputs("[editor-test] delete the selection\n", stderr);
+                        }
+                    }
+                }
                 if (t == 160) {
                     const PetariEditor::ModelView* model = PetariEditor::model();
                     std::fprintf(stderr, "[editor-test] gizmo: history %d (%s, %s)\n", model != nullptr ? model->historySize() : -1,
@@ -661,6 +689,13 @@ int main(int argc, char** argv) {
     if (!PetariEditor::Ui::installFonts(SDL_GetWindowDisplayScale(static_cast<SDL_Window*>(info.window)))) {
         std::fprintf(stderr, "petari: editor panels use the built-in font (no system UI font)\n");
     }
+    PetariEditor::Ui::setThumbnailHost(
+        [](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height) {
+            return petari_present_take_readback(copy, rgba, capacity, width, height);
+        },
+        [](unsigned width, unsigned height, const void* rgba) {
+            return static_cast<unsigned long long>(aurora_imgui_add_texture(width, height, rgba));
+        });
     // Development: the editor's docked layout from the start (the Edit mode shows it normally).
     if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
         PetariEditor::Ui::setVisible(true);

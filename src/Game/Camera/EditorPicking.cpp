@@ -284,15 +284,24 @@ namespace EditorPicking {
         }
 
         // Select a row's object (the Changes and Outliner lists).
-        std::uint64_t rowId = 0;
-        Pick::Click rowMode = Pick::Click::None;
-        if (Pick::takeSelectRow(&rowId, &rowMode)) {
-            const PetariEditor::RowId id{rowId};
-            const Pick::Click mode = rowMode;
-            LiveActor* actor = PetariEditor::actorForRow(id);
-            if (mode == Pick::Click::Replace) selection.clear();
-            if (pickable(actor) && std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
+        // A new row's actor appears when Runtime applies the op (a frame or two later): keep asking, in order.
+        static std::vector< Pick::RowRequest >* sPending = new std::vector< Pick::RowRequest >();
+        static int sPendingFrames = 0;
+        for (const Pick::RowRequest& request : Pick::takeSelectRows()) {
+            sPending->push_back(request);
+            sPendingFrames = 60;
+        }
+        while (!sPending->empty()) {
+            const Pick::RowRequest request = sPending->front();
+            LiveActor* actor = PetariEditor::actorForRow(PetariEditor::RowId{request.row});
+            if (!pickable(actor)) {
+                if (--sPendingFrames <= 0) sPending->clear();  // never appeared (a refused op)
+                break;
+            }
+            if (request.mode == Pick::Click::Replace) selection.clear();
+            if (std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
             syncRows(selection);
+            sPending->erase(sPending->begin());
         }
 
         const Pick::Click click = Pick::takeClick();
@@ -348,6 +357,14 @@ namespace EditorPicking {
         const V half = mul(sub(hi, lo), 0.5f);
         *radius = std::sqrt(dot(half, half));
         return true;
+    }
+
+    void bounds(LiveActor* actor, float center[3], float* radius) {
+        const Hit h = describe(actor);
+        center[0] = h.center.x;
+        center[1] = h.center.y;
+        center[2] = h.center.z;
+        *radius = h.radius;
     }
 
     LiveActor* hoverActor() {

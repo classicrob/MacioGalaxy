@@ -53,6 +53,15 @@ int petari_present_content_area_pixels(unsigned* width, unsigned* height);
  * while editing, when the HUD is hidden (2D layouts would stretch). Main thread. */
 void petari_present_set_free_aspect(int enabled);
 
+/* The level editor's thumbnails (docs/dev/level-editor/TECH.md 3.5): read back the RGBA8 image the
+ * game copied with GXCopyTex to `copy` this frame, once the frame has run. Pixels of the key colour
+ * (255, 0, 255) come back transparent. Game thread (the copy's frame). */
+void petari_present_request_readback(const void* copy);
+/* A finished readback of `copy`: width * height * 4 bytes of RGBA, rows top first. 1 when it was ready
+ * (and is then forgotten), 0 while pending or unknown, -1 when `capacity` is too small (width and height
+ * are set and the image is kept: call again). Any thread. */
+int petari_present_take_readback(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height);
+
 #ifdef __cplusplus
 }
 #endif

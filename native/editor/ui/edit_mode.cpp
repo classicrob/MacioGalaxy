@@ -116,6 +116,21 @@ void cameraInput(const Area& area) {
         }
     }
 
+    // Placing (the Browser, UX section 7): a card dropped on the viewport, or a click while Place is armed,
+    // puts a copy of its example on the ground under the cursor (instead of selecting).
+    bool placed = false;
+    if (inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        if (const ImGuiPayload* payload = ImGui::GetDragDropPayload(); payload != nullptr && payload->IsDataType(kPlacePayload)) {
+            Pick::place(*static_cast<const std::uint64_t*>(payload->Data));
+            placed = true;
+        } else if (armedPlacement() != 0 && !io.KeyAlt) {
+            Pick::place(armedPlacement());
+            placed = true;
+        }
+    }
+    const bool escapeDisarms = armedPlacement() != 0 && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false);
+    if (escapeDisarms) disarmPlacement();
+
     // Picking: hover while the pointer rests over the viewport; a click (not an Option-drag) selects.
     // Shift adds, Cmd toggles (Figma, UX section 6). Esc deselects.
     // (Set on changes only, so a test driver's hover is not undone by a pointer outside the window.)
@@ -125,17 +140,17 @@ void cameraInput(const Area& area) {
         sHover = hover;
         Pick::setHoverWanted(hover);
     }
-    if (inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !io.KeyAlt &&
+    if (!placed && armedPlacement() == 0 && inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !io.KeyAlt &&
         ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x * ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x +
                 ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y * ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y <
             16.0f) {
         Pick::click(io.KeyShift ? Pick::Click::Add : (io.KeyCtrl || io.KeySuper) ? Pick::Click::Toggle : Pick::Click::Replace);
     }
-    if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Pick::clearSelection();
+    if (!escapeDisarms && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Pick::clearSelection();
 
     // The gizmo (UX section 6): the left button over the viewport presses and releases it (an
     // Option-drag orbits instead); Cmd suspends snapping for the drag.
-    if (inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
+    if (inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) Gizmo::release();
     Gizmo::setSnapSuspended(io.KeyCtrl || io.KeySuper);
     // What a Tab tap plays: Shift resumes the frozen moment, Option plays from the mission start
@@ -150,6 +165,9 @@ void cameraInput(const Area& area) {
         if (ImGui::IsKeyPressed(ImGuiKey_Comma, false)) {
             Gizmo::setFrame(static_cast<Gizmo::Frame>((static_cast<int>(Gizmo::frame()) + 1) % 3));
         }
+        // Delete / Backspace: delete the selection (one op, undoable). Cmd+D: duplicate it.
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) deleteSelection();
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D)) Pick::duplicate();
         // M: the play marker onto the ground under the cursor.
         if (ImGui::IsKeyPressed(ImGuiKey_M, false) && inside) Pick::placeMarker();
         // End: drop to the ground along gravity; Shift+End: stand up; Cmd+End: both.
@@ -218,6 +236,16 @@ void drawGizmo(const Area& area) {
     ImDrawList* list = ImGui::GetForegroundDrawList();
     list->PushClipRect(ImVec2(area.x, area.y), ImVec2(area.x + area.w, area.y + area.h), true);
     auto at = [&](float x, float y) { return ImVec2(area.x + (x * 0.5f + 0.5f) * area.w, area.y + (0.5f - y * 0.5f) * area.h); };
+    // Other missions' objects: faint dashed rings with their names (UX section 12).
+    for (const Gizmo::View::Ghost& ghost : view.ghosts) {
+        const ImVec2 c = at(ghost.x, ghost.y);
+        const float r = std::fmax(ghost.radius * area.h, 6.0f);
+        for (int i = 0; i < 12; i += 2) {
+            list->PathArcTo(c, r, 6.2831853f * i / 12, 6.2831853f * (i + 1) / 12, 4);
+            list->PathStroke(rgba(1.0f, 1.0f, 1.0f, 0.45f), 0, 1.5f);
+        }
+        if (r > 10.0f) list->AddText(ImVec2(c.x - ImGui::CalcTextSize(ghost.name).x * 0.5f, c.y + r + 2.0f), rgba(1.0f, 1.0f, 1.0f, 0.55f), ghost.name);
+    }
     if (view.marker) {
         // A dashed cyan ring at Mario's feet and its label (the mockup's play marker).
         const ImVec2 c = at(view.markerX, view.markerY);
