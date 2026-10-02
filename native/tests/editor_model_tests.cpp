@@ -471,6 +471,45 @@ void testPatch() {
     std::ifstream in(first[0].second, std::ios::binary);
     const F::Bytes cached((std::istreambuf_iterator< char >(in)), std::istreambuf_iterator< char >());
     check(sameArchive(cached, built[0].bytes, &error), "the cached archive: " + error);
+
+    // Asset builders (terrain): run after the row edits; a mod one rejects is built without.
+    fs::create_directories(root / "mods/Gen/edits");
+    fs::create_directories(root / "mods/Bad/edits");
+    std::ofstream(root / "mods/Gen/edits/TestGalaxy.json") << patch.json;  // A's edits, as Gen
+    std::ofstream(root / "mods/Bad/edits/TestGalaxy.json") << b->patch().json;
+    int calls = 0;
+    PetariEditor::Patch::registerAssetBuilder("test-1", [&](const fs::path& modRoot, const PetariEditor::Patch::DiscReader&,
+                                                            std::vector< Built >* pInOut, std::vector< std::string >*, std::string* pError) {
+        calls++;
+        if (modRoot.filename() == "Bad") {
+            *pError = "a broken brush";
+            return false;
+        }
+        if (modRoot.filename() == "Gen") pInOut->push_back(Built{"ObjectData/Generated.arc", F::Archive::create("generated", {}).build(), {"Gen"}});
+        return true;
+    });
+    log.clear();
+    auto generated = PetariEditor::Patch::buildForLoader({root / "mods/Gen", root / "mods/Bad"}, root / "disc/files", root / "cache", &log);
+    bool sawGenerated = false, sawZone = false;
+    for (const auto& [path, file] : generated) {
+        sawGenerated |= path == "ObjectData/Generated.arc" && fs::is_regular_file(file);
+        if (path == "StageData/TestZone.arc") {
+            std::ifstream zoneIn(file, std::ios::binary);
+            const F::Bytes zone((std::istreambuf_iterator< char >(zoneIn)), std::istreambuf_iterator< char >());
+            sawZone = floatIn(zone, "jmp/placement/layera/objinfo", "Kuribo", "pos_y") == 55.0f &&
+                      floatIn(zone, "jmp/placement/layera/objinfo", "Coin", "pos_z") == 0.0f;  // Bad's edit is left out
+        }
+    }
+    bool saidBad = false;
+    for (const std::string& line : log) saidBad |= line.find("mod Bad: not applied: a broken brush") != std::string::npos;
+    check(sawGenerated && sawZone && saidBad, "a builder's files are served; a mod it rejects is built without");
+    const int before = calls;
+    PetariEditor::Patch::buildForLoader({root / "mods/Gen", root / "mods/Bad"}, root / "disc/files", root / "cache", &log);
+    check(calls == before, "cached: the builders don't run again");
+    fs::create_directories(root / "mods/Gen/assets");
+    std::ofstream(root / "mods/Gen/assets/brush.json") << "{}";
+    PetariEditor::Patch::buildForLoader({root / "mods/Gen", root / "mods/Bad"}, root / "disc/files", root / "cache", &log);
+    check(calls > before, "a changed asset rebuilds");
     fs::remove_all(root);
 }
 
