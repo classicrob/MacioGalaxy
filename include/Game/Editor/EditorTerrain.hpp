@@ -63,6 +63,9 @@ namespace EditorTerrain {
     /// it is registered with the editor's archive overrides (PetariEditor::Hooks), so the game's
     /// loaders mount it from memory as if it were on the disc.
     void injectArchive(const char* pPath, const void* pBytes, u32 size);
+    /// Unmounts an archive injectArchive served once its model has been replaced (the retired
+    /// actor keeps its model data: only the archive slot, of the game's 384, is freed).
+    void releaseArchive(const char* pPath);
 
     /// A ModelObj drawing `pModelName` (archive /ObjectData/<pModelName>.arc) with the matrix
     /// `pMtx` (e.g. a Part's mBaseMtx, so the model follows it), in the Planet draw buffer.

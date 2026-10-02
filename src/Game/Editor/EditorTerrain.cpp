@@ -16,6 +16,9 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/LiveActor/ModelObj.hpp"
+#include "Game/System/ArchiveHolder.hpp"
+#include "Game/System/FileLoader.hpp"
+#include "Game/Util/SingletonHolder.hpp"
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/host_allocation.hpp>
 #include <vector>
@@ -204,6 +207,16 @@ namespace EditorTerrain {
         PetariNative::HostAllocationScope host;
         const u8* pData = static_cast< const u8* >(pBytes);
         PetariEditor::Hooks::setArchiveOverride(pPath, std::vector< u8 >(pData, pData + size));
+    }
+
+    void releaseArchive(const char* pPath) {
+        FileLoader* pLoader = SingletonHolder< FileLoader >::get();
+        pLoader->mArchiveHolder->nativeRemove(pPath);
+        if (pLoader->isLoaded(pPath)) {
+            pLoader->removeFile(pPath);
+        }
+        PetariNative::HostAllocationScope host;
+        PetariEditor::Hooks::removeArchiveOverride(pPath);
     }
 
     LiveActor* createModel(const char* pName, const char* pModelName, MtxPtr pMtx, const char** ppError) {

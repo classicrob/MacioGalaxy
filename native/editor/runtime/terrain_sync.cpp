@@ -48,6 +48,7 @@ namespace {
 
     struct LiveBrush {
         EditorTerrain::Part* part = nullptr;
+        const char* archive = nullptr;  // the model's archive path (released when replaced)
         Built built;
         std::size_t triangles = 0;
     };
@@ -271,11 +272,16 @@ void syncBrush(const EditModel& model, RowId id) {
 
     if (!archive.empty()) {
         const char* pName = persistent(name);
-        EditorTerrain::injectArchive(persistent("/ObjectData/" + name + ".arc"), archive.data(), static_cast< u32 >(archive.size()));
+        const char* pPath = persistent("/ObjectData/" + name + ".arc");
+        EditorTerrain::injectArchive(pPath, archive.data(), static_cast< u32 >(archive.size()));
         const char* pError = "";
         LiveActor* pModel = EditorTerrain::createModel(pName, pName, entry.part->mBaseMtx.toMtxPtr(), &pError);
         if (pModel != nullptr) {
             entry.part->setModel(pModel);
+            if (entry.archive != nullptr) {
+                EditorTerrain::releaseArchive(entry.archive);  // the old model keeps its data
+            }
+            entry.archive = pPath;
         } else {
             Core::reportError(std::string("Brush model: ") + pError);
         }

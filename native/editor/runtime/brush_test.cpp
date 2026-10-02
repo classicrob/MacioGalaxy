@@ -42,6 +42,7 @@ namespace {
         LiveActor* firstModel = nullptr;
         int onBrush = 0;
         int playFrame = 0;
+        int archives = 0;  // mounted archives before the resize
         TVec3f start;  // Mario before the test (he goes back there before the brush is deleted)
     };
     State gState;
@@ -164,12 +165,17 @@ void brushTestTick() {
     if (s.playFrame < 0) {
         const int since = frame + s.playFrame;
         if (since == 5) {
+            s.archives = status().capacities.size() > 2 ? status().capacities[2].used : -1;
             enqueue(apply("Resize brush", s.brush, "scale_x", f(1.5f)));
         }
         if (since == 10) {
             EditorTerrain::Part* p = part(s.brush);
-            std::fprintf(stderr, "[editor-brush] resized: same part %d, built scale %.2f, new model %d\n", p == s.part,
-                         p != nullptr ? p->mBuiltScale.x : 0.0f, p != nullptr && p->mModel != s.firstModel);
+            const int archives = status().capacities.size() > 2 ? status().capacities[2].used : -1;
+            std::fprintf(stderr, "[editor-brush] resized: same part %d, built scale %.2f, new model %d; mounted archives %d -> %d\n", p == s.part,
+                         p != nullptr ? p->mBuiltScale.x : 0.0f, p != nullptr && p->mModel != s.firstModel, s.archives, archives);
+            if (archives > s.archives) {
+                return finish("FAIL: rebuilding the brush's model took another archive slot");
+            }
             if (p == nullptr || p != s.part || std::fabs(p->mBuiltScale.x - 1.5f) > 0.01f || p->mModel == s.firstModel) {
                 return finish("FAIL: resizing did not rebuild the brush in place");
             }

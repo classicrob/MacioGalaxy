@@ -130,12 +130,13 @@ namespace {
     }
 
     // A brush row: bottom centre `base`, size / 1000 as the scale, shape and look in Obj_arg0-3.
-    void addBrushRow(F::Table& table, std::int32_t id, const T::Vec3& base, const T::Vec3& scale, T::BrushShape shape, int material) {
+    void addBrushRow(F::Table& table, std::int32_t id, const T::Vec3& base, const T::Vec3& scale, T::BrushShape shape, int material,
+                     bool fittedGravity = true) {
         const int row = addPlacementRow(table, T::kBrushClass, id, base, scale);
         set(table, row, "Obj_arg0", integer(static_cast< int >(shape)));
         set(table, row, "Obj_arg1", integer(material));
         set(table, row, "Obj_arg2", integer(0));
-        set(table, row, "Obj_arg3", integer(1));
+        set(table, row, "Obj_arg3", integer(fittedGravity ? 1 : 0));
     }
 
     // Bakes the brushes of `archives` and writes every file of the result below `out`.
@@ -195,6 +196,12 @@ namespace {
         F::Table& objects = tables.at("jmp/placement/common/objinfo");
         F::Table& start = tables.at("jmp/start/common/startinfo");
         addBrushRow(objects, 0, {0, -150, 0}, {3, 0.3f, 3}, T::BrushShape::Box, 0);  // top face at y = 150
+        // A small blockout around it: a wood pillar and a metal ramp on the box (the box's gravity),
+        // a floating ice platform, and a grass planetoid with its own gravity.
+        addBrushRow(objects, 3, {-900, 150, -700}, {0.6f, 1.5f, 0.6f}, T::BrushShape::Cylinder, 4, false);
+        addBrushRow(objects, 4, {700, 150, -500}, {0.8f, 0.4f, 1.2f}, T::BrushShape::Ramp, 5, false);
+        addBrushRow(objects, 5, {0, 900, -2600}, {1.2f, 0.2f, 1.2f}, T::BrushShape::Box, 6);
+        addBrushRow(objects, 6, {2600, 700, 600}, {1.4f, 1.4f, 1.4f}, T::BrushShape::Sphere, 1);
         // Power Star 1 just above the top face, where Mario lands from the start.
         const int star = addPlacementRow(objects, "PowerStar", 1, {0, 260, 0}, {1, 1, 1});
         set(objects, star, "Obj_arg0", integer(1));

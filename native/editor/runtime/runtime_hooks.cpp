@@ -117,6 +117,10 @@ void clearArchiveOverrides() {
     overrides().clear();
 }
 
+void removeArchiveOverride(const std::string& path) {
+    overrides().erase(lowerPath(path.c_str()));
+}
+
 const std::vector< std::uint8_t >* archiveOverride(const char* pPath) {
     if (overrides().empty()) {
         return nullptr;  // asked for every file lookup (MR::isFileExist): no allocation when unused
