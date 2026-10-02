@@ -98,9 +98,9 @@ GameScene::~GameScene() {
 
 void GameScene::init() {
 #ifdef PETARI_NATIVE
-    EditorCamera::abandon();  // a scene rebuilt under Edit mode (a reload) starts outside it
     // Before any list is sized: the level editor's headroom follows the Mods-page switch.
     PetariEditor::Hooks::syncSwitch(PetariNative::EditorSettings::enabled());
+    EditorCamera::abandon();  // a scene rebuilt under Edit mode (a reload) starts outside it
 #endif
     SceneFunction::createHioBasicNode(this);
     SceneFunction::startStageFileLoad();
