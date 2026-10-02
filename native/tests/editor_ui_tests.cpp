@@ -85,7 +85,8 @@ struct FakeModel : ModelView {
         R rabbit{{3}, 1, RowState::Original, {}, {}};
         rabbit.disc = {{cols[0].hash, cellS("Rabbit")}, {cols[1].hash, cellF(1)}, {cols[2].hash, cellF(2)}, {cols[3].hash, cellI(1)}};
         rabbit.now = rabbit.disc;
-        rows = {coin, goomba, rabbit};
+        R ghost{{4}, 1, RowState::Deleted, {{cols[0].hash, cellS("Coin")}}, {}};  // added, then deleted
+        rows = {coin, goomba, rabbit, ghost};
     }
     const R* find(RowId id) const {
         for (const R& r : rows) if (r.id == id) return &r;
@@ -130,7 +131,7 @@ struct FakeModel : ModelView {
     int historyCursor() const override { return 0; }
     const char* historyLabel(int) const override { return ""; }
     int missionCount() const override { return 1; }
-    const char* missionName(int) const override { return ""; }
+    const char* missionName(int) const override { return "Test mission"; }
     std::uint32_t rowMissions(RowId) const override { return 1; }
 };
 
@@ -138,7 +139,7 @@ void testPanelsLogic() {
     namespace Ui = PetariEditor::Ui;
     const FakeModel model;
     const std::vector< Ui::Change > changes = Ui::collectChanges(model);
-    CHECK(changes.size() == 2);
+    CHECK(changes.size() == 2);  // the added-then-deleted Coin is no change
     CHECK(changes[0].name == "Coin" && changes[0].state == RowState::Changed && changes[0].zone == 0);
     // pos_x and pos_y read as one "Position"; an unnamed field by its hash.
     CHECK(changes[0].columns.size() == 2 && changes[0].columns[0] == "Position" && changes[0].columns[1] == "0x12345678");
@@ -165,6 +166,59 @@ void testPanelsLogic() {
     CHECK(Ui::sameCell(a, b) && Ui::cellText(a) == "2.5");
     b.type = CellType::Int;
     CHECK(!Ui::sameCell(a, b));
+    // The Browser: one card per class placed, with its count and examples; search by name.
+    const std::vector< Ui::BrowserEntry > entries = Ui::collectBrowserEntries(model);
+    CHECK(entries.size() == 3);  // Coin, Kuribo, Rabbit (sorted by name; deleted rows do not count)
+    CHECK(entries[0].className == "Coin" && entries[0].count == 1 && entries[0].examples.size() == 1 && entries[0].category == "Objects");
+    CHECK(Ui::filterEntries(entries, "kur", "").size() == 1 && Ui::filterEntries(entries, "kur", "")[0]->className == "Kuribo");
+    CHECK(Ui::filterEntries(entries, "", "").size() == 3 && Ui::filterEntries(entries, "zzz", "").empty());
+    CHECK(Ui::filterEntries(entries, "", "Planets").empty());
+
+    // Named settings in words: enum labels (including a named -1), on/off, numbers with units, "default".
+    {
+        PetariEditor::Catalog::Arg walk;
+        walk.type = PetariEditor::Catalog::ArgType::Enum;
+        walk.choices = {{-1, "Yes"}, {0, "No"}, {2, "Sleeps"}};
+        CHECK(Ui::argValueText(walk, -1) == "Yes" && Ui::argValueText(walk, 2) == "Sleeps" && Ui::argValueText(walk, 7) == "7 (unlisted)");
+        walk.choices = {{0, "Walks"}};
+        CHECK(Ui::argValueText(walk, -1) == "default");
+        PetariEditor::Catalog::Arg flag;
+        flag.type = PetariEditor::Catalog::ArgType::Bool;
+        CHECK(Ui::argValueText(flag, 1) == "on" && Ui::argValueText(flag, 0) == "off" && Ui::argValueText(flag, -1) == "default");
+        PetariEditor::Catalog::Arg wait;
+        wait.unit = "frames";
+        CHECK(Ui::argValueText(wait, 120) == "120 frames" && Ui::argValueText(wait, -1) == "default");
+    }
+
+    // Card names: one line when they fit, else two at a space or CamelCase boundary, the rest ellipsized.
+    {
+        const auto chars = [](const std::string& text) { return static_cast< float >(text.size()); };  // 1 per character
+        CHECK(Ui::cardLabelLines("Goomba", 10.0f, chars) == std::vector< std::string >{"Goomba"});
+        CHECK((Ui::cardLabelLines("1-Up Mushroom", 10.0f, chars) == std::vector< std::string >{"1-Up", "Mushroom"}));
+        CHECK((Ui::cardLabelLines("BenefitItemInvincible", 12.0f, chars) == std::vector< std::string >{"BenefitItem", "Invincible"}));
+        CHECK((Ui::cardLabelLines("AudioEffectCube", 12.0f, chars) == std::vector< std::string >{"AudioEffect", "Cube"}));
+        const std::vector< std::string > long_ = Ui::cardLabelLines("ReverseGravityRoomPressGroundC", 12.0f, chars);
+        CHECK(long_.size() == 2 && long_[0] == "Reverse" && long_[1].size() <= 12 && long_[1].substr(long_[1].size() - 3) == "...");
+        const std::vector< std::string > noBreak = Ui::cardLabelLines("abcdefghijklmnopqrstuvwxyz", 10.0f, chars);
+        CHECK(noBreak.size() == 2 && noBreak[0] == "abcdefghij" && noBreak[1] == "klmnopq...");
+    }
+
+    // Thumbnails: cropped to the drawn part, squared and padded, inside the image; nothing drawn fails.
+    {
+        std::vector< unsigned char > rgba(100 * 100 * 4, 0);
+        float uv[4];
+        CHECK(!Ui::thumbnailCrop(rgba.data(), 100, 100, uv));
+        for (int y = 70; y < 90; y++) {
+            for (int x = 10; x < 30; x++) rgba[(y * 100 + x) * 4 + 3] = 255;  // a 20x20 square low left
+        }
+        CHECK(Ui::thumbnailCrop(rgba.data(), 100, 100, uv));
+        CHECK(std::fabs((uv[2] - uv[0]) - 0.224f) < 0.01f && std::fabs((uv[3] - uv[1]) - 0.224f) < 0.01f);
+        CHECK(std::fabs((uv[0] + uv[2]) * 0.5f - 0.2f) < 0.01f && std::fabs((uv[1] + uv[3]) * 0.5f - 0.8f) < 0.01f);
+        for (int x = 0; x < 100; x++) rgba[(50 * 100 + x) * 4 + 3] = 255;  // a full-width line: the crop clamps to the image
+        CHECK(Ui::thumbnailCrop(rgba.data(), 100, 100, uv));
+        CHECK(uv[0] >= 0.0f && uv[1] >= 0.0f && uv[2] <= 1.0f && uv[3] <= 1.0f);
+    }
+
     Column unnamedColumn;
     unnamedColumn.hash = 0xABCDEF01u;
     CHECK(Ui::columnLabel(unnamedColumn) == "0xabcdef01");

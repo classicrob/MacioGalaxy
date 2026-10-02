@@ -178,7 +178,7 @@ struct Command {
         Reload,          // rebuild the scene from the model; stay in Edit
         SetPlayMarker,   // markerPos (+ markerUp, markerFront)
         SaveMod,         // modName; M1 writes Full archives (TECH.md 5.1)
-        SwitchScenario,  // index = the mission to edit (a reload)
+        SwitchScenario,  // index = the mission to edit, 1-based: a reload into it from its start, back in Edit; edits and history kept
     } kind;
     Op op;
     int index = 0;

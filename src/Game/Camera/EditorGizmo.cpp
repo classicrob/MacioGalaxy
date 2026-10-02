@@ -2,7 +2,9 @@
 // The level editor's transform gizmo (Game/Camera/EditorGizmo.hpp, UX.md section 6).
 #include "Game/Camera/EditorGizmo.hpp"
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/LiveActor/HitSensor.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
+#include "Game/Map/HitInfo.hpp"
 #include "Game/Util/CollisionPartsFilter.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/MapUtil.hpp"
@@ -13,9 +15,11 @@
 #include <petari/editor_pick.hpp>
 #include <petari/host_allocation.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace {
@@ -414,6 +418,95 @@ namespace {
         std::snprintf(gStatus, sizeof(gStatus), "%s", status);
     }
 
+    // The Browser's Place (UX section 7): a copy of the example row (class and settings) on the ground
+    // under the cursor, upright for the gravity there and facing the camera, in the zone that owns that
+    // ground (else the example's). One op; the new row is selected once Runtime has created it.
+    void place(const Camera& cam, float cx, float cy, PetariEditor::RowId example) {
+        const PetariEditor::ModelView* model = PetariEditor::model();
+        int exampleZone = 0, exampleTable = 0;
+        if (model == nullptr || !model->locate(example, &exampleZone, &exampleTable)) return;
+        TVec3f point;
+        Triangle triangle;
+        const V3 ray = cam.ray(cx, cy);
+        if (!MR::getFirstPolyOnLineToMap(&point, &triangle, tv(cam.eye), tv(ray * kRayLength))) {
+            std::fprintf(stderr, "[editor] place: no ground under the cursor\n");
+            return;
+        }
+        int zone = exampleZone;
+        if (triangle.mSensor != nullptr && triangle.mSensor->mHost != nullptr) {
+            const PetariEditor::RowId host = PetariEditor::rowForActor(triangle.mSensor->mHost);
+            int hostZone = 0, hostTable = 0;
+            if (host.valid() && model->locate(host, &hostZone, &hostTable)) zone = hostZone;
+        }
+        Item item;
+        item.zone = zone;
+        item.pos = v(point);
+        const V3 up = gravityUp(item.pos, {0, 1, 0});
+        item.basis = G::gravityFrame(up, cam.forward * -1.0f);  // facing the camera
+        const PetariEditor::RowTransform exampleTransform = model->transform(example);
+        item.scale = {exampleTransform.scale.x, exampleTransform.scale.y, exampleTransform.scale.z};
+        const PetariEditor::RowTransform t = toRow(item);
+
+        PetariEditor::AddRow add;
+        add.id = PetariEditor::newRowId();
+        add.zone = zone;
+        add.table = model->tablePath(exampleZone, exampleTable);
+        add.copyOf = example;
+        static const char* const kColumns[9] = {"pos_x", "pos_y", "pos_z", "dir_x", "dir_y", "dir_z", "scale_x", "scale_y", "scale_z"};
+        const float values[9] = {t.pos.x, t.pos.y, t.pos.z, t.dirDeg.x, t.dirDeg.y, t.dirDeg.z, t.scale.x, t.scale.y, t.scale.z};
+        for (int c = 0; c < 9; c++) add.cells.push_back({PetariEditor::columnHash(kColumns[c]), floatCell(values[c])});
+        PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
+        const char* name = model->objectName(example);
+        command.op.label = std::string("Placed ") + (name != nullptr ? name : "object");
+        command.op.adds.push_back(add);
+        std::fprintf(stderr, "[editor] place %s in %s at (%.0f, %.0f, %.0f)\n", name != nullptr ? name : "?", model->zoneName(zone), point.x,
+                     point.y, point.z);
+        PetariEditor::enqueue(std::move(command));
+        PetariNative::EditorPick::selectRow(add.id.v, PetariNative::EditorPick::Click::Replace);
+    }
+
+    // Cmd+D (UX section 6): a copy of each selected object one step ahead along its gravity frame's front,
+    // settled on the ground there; one op; the copies become the selection.
+    void duplicate() {
+        std::vector< Item > items = gather();
+        if (items.empty()) return;
+        const PetariEditor::ModelView* model = PetariEditor::model();
+        PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
+        std::vector< PetariEditor::RowId > copies;
+        for (const Item& start : items) {
+            int zone = 0, table = 0;
+            if (!model->locate(start.row, &zone, &table)) continue;
+            Item copy = start;
+            const G::Basis frame = G::gravityFrame(gravityUp(start.pos, start.basis.y), start.basis.z);
+            copy.pos = start.pos + frame.z * 150.0f;
+            settle(copy, start);
+            const PetariEditor::RowTransform t = toRow(copy);
+            PetariEditor::AddRow add;
+            add.id = PetariEditor::newRowId();
+            add.zone = zone;
+            add.table = model->tablePath(zone, table);
+            add.copyOf = start.row;
+            static const char* const kColumns[3] = {"pos_x", "pos_y", "pos_z"};
+            const float values[3] = {t.pos.x, t.pos.y, t.pos.z};
+            for (int c = 0; c < 3; c++) add.cells.push_back({PetariEditor::columnHash(kColumns[c]), floatCell(values[c])});
+            static const char* const kDir[3] = {"dir_x", "dir_y", "dir_z"};
+            const float dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z};
+            for (int c = 0; c < 3; c++) add.cells.push_back({PetariEditor::columnHash(kDir[c]), floatCell(dir[c])});
+            copies.push_back(add.id);
+            command.op.adds.push_back(add);
+        }
+        const char* name = items.size() == 1 ? model->objectName(items[0].row) : nullptr;
+        char label[96];
+        if (items.size() == 1) std::snprintf(label, sizeof(label), "Duplicated %s", name != nullptr ? name : "object");
+        else std::snprintf(label, sizeof(label), "Duplicated %d objects", static_cast< int >(items.size()));
+        command.op.label = label;
+        std::fprintf(stderr, "[editor] %s\n", label);
+        PetariEditor::enqueue(std::move(command));
+        for (size_t i = 0; i < copies.size(); i++) {
+            PetariNative::EditorPick::selectRow(copies[i].v, i == 0 ? PetariNative::EditorPick::Click::Replace : PetariNative::EditorPick::Click::Add);
+        }
+    }
+
     void groundCommand(int what) {
         std::vector< Item > items = gather();
         if (items.empty()) return;
@@ -437,6 +530,7 @@ namespace EditorGizmo {
         PetariNative::HostAllocationScope host;
         const UI::Take input = UI::take();
         if (input.ground != 0 && !gDrag.active) groundCommand(input.ground);
+        if (PetariNative::EditorPick::takeDuplicate() && !gDrag.active) duplicate();
 
         const Camera cam = cameraOf(view);
         UI::View out;
@@ -452,6 +546,9 @@ namespace EditorGizmo {
                 sendMarker();
             }
         }
+        if (const std::uint64_t example = PetariNative::EditorPick::takePlace(); example != 0) {
+            place(cam, view.cursorX, view.cursorY, PetariEditor::RowId{example});
+        }
         if (PetariNative::EditorPick::takePlaceMarker()) {
             V3 ground;
             if (hitGround(cam.eye, cam.ray(view.cursorX, view.cursorY) * kRayLength, nullptr, &ground)) {
@@ -466,6 +563,37 @@ namespace EditorGizmo {
         if (gMarker.valid && cam.project(gMarker.pos, &out.markerX, &out.markerY)) {
             out.marker = true;
             out.markerRadius = 60.0f / cam.worldPerHeight(gMarker.pos);  // Mario's footprint
+        }
+        // Other missions' objects as ghosts (UX section 12): rows not in the mission being edited, placed
+        // through their zone; the nearest few hundred in front of the camera.
+        if (UI::showGhosts()) {
+            if (const PetariEditor::ModelView* model = PetariEditor::model(); model != nullptr && model->scenario() > 0) {
+                const std::uint32_t current = 1u << (model->scenario() - 1);
+                std::vector< std::pair< float, UI::View::Ghost > > found;
+                for (int zone = 0; zone < model->zoneCount(); zone++) {
+                    if (!model->zonePlaced(zone)) continue;
+                    const PetariEditor::Mtx34 m = model->zoneWorldMatrix(zone);
+                    const G::Basis zb = zoneBasis(m);
+                    for (int table = 0; table < model->tableCount(zone); table++) {
+                        const char* path = model->tablePath(zone, table);
+                        if (std::strstr(path, "objinfo") == nullptr || std::strstr(path, "stageobjinfo") != nullptr) continue;
+                        model->forEachRow(zone, table, [&](PetariEditor::RowId row) {
+                            if (model->state(row) == PetariEditor::RowState::Deleted || !model->hasTransform(row)) return;
+                            if ((model->rowMissions(row) & current) != 0) return;
+                            const PetariEditor::RowTransform t = model->transform(row);
+                            const V3 world = apply(zb, {t.pos.x, t.pos.y, t.pos.z}) + V3{m.m[0][3], m.m[1][3], m.m[2][3]};
+                            UI::View::Ghost ghost;
+                            if (!cam.project(world, &ghost.x, &ghost.y) || std::fabs(ghost.x) > 1.1f || std::fabs(ghost.y) > 1.1f) return;
+                            ghost.radius = 80.0f / cam.worldPerHeight(world);
+                            const char* name = model->objectName(row);
+                            std::snprintf(ghost.name, sizeof(ghost.name), "%s", name != nullptr ? name : "?");
+                            found.push_back({G::length(world - cam.eye), ghost});
+                        });
+                    }
+                }
+                std::sort(found.begin(), found.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                for (size_t i = 0; i < found.size() && i < 300; i++) out.ghosts.push_back(found[i].second);
+            }
         }
         std::vector< Item > items = gDrag.active ? *gDrag.items : gather();
         if (items.empty()) {

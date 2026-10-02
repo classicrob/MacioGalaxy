@@ -3,8 +3,10 @@
 // seams) and edit only through PetariEditor::enqueue. Internal to petari_editor_ui.
 #pragma once
 
+#include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -14,6 +16,7 @@ namespace PetariEditor::Ui {
 void drawGalaxyWindow(const char* title);
 void drawInspectorWindow(const char* title);
 // Cmd+Z / Cmd+Shift+Z (and the toolbar's buttons): whether there is something to undo / redo.
+void deleteSelection();  // Delete: one op removing the selected rows
 bool canUndo();
 bool canRedo();
 void undo();
@@ -23,6 +26,9 @@ void redo();
 
 bool sameCell(const Cell& a, const Cell& b);
 std::string cellText(const Cell& cell);
+// A named setting's value in words: the enum's label, "on"/"off", or the number with its unit; -1 is "default"
+// unless the enum names it.
+std::string argValueText(const Catalog::Arg& arg, std::int32_t value);
 // The field's label: its known name, else its hash as 0x%08x.
 std::string columnLabel(const Column& column);
 
@@ -45,5 +51,31 @@ std::vector< Change > collectChanges(const ModelView& model);
 
 // The selection's rows (from the game's picking), the first one primary.
 std::vector< RowId > selectedRows();
+
+// ---- the Browser (browser.cpp, UX section 7) ----
+
+struct BrowserEntry {
+    std::string className;    // the placement name, "Kuribo"
+    std::string displayName;  // the catalog's, else the class name
+    std::string description;
+    std::string category;     // "Enemies", ... (from the catalog, else from the table)
+    std::vector< std::string > aliases;
+    int count = 0;            // placed in this galaxy
+    std::vector< RowId > examples;  // some of those placements (the first is what Place copies)
+};
+// Every class placed in the galaxy, plus the catalog's placeable classes, by display name.
+std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model);
+// Matching a search and a category (empty: all): names first, then contains; this galaxy's first.
+std::vector< const BrowserEntry* > filterEntries(const std::vector< BrowserEntry >& entries, const std::string& query, const std::string& category);
+void drawBrowser(const ModelView& model);
+// Stamp mode: the example row each click in the viewport places (0: off).
+std::uint64_t armedPlacement();
+void disarmPlacement();
+extern const char* const kPlacePayload;
+// A card's name on at most two lines of `width`: split after a space or at a CamelCase boundary, the second
+// line ellipsized if it still doesn't fit. measure: a string's width.
+std::vector< std::string > cardLabelLines(const std::string& text, float width, const std::function< float(const std::string&) >& measure);
+// A thumbnail's drawn part (alpha > 0) as a padded square, in UVs (u0, v0, u1, v1); false if nothing was drawn.
+bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, float uv[4]);  // ImGui drag-and-drop payload: a card dragged onto the viewport
 
 }  // namespace PetariEditor::Ui

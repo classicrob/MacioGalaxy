@@ -74,6 +74,11 @@ void testCatalog() {
     brush.description = "replaced";
     C::addClass(brush);
     check(C::find("EditorBrush")->description == "replaced", "addClass replaces");
+    // Where new rows go: the disc's table with the layer put in; by category when never placed.
+    check(C::tablePath(*C::find("Kuribo"), "common") == "jmp/placement/common/objinfo", "Goomba: objinfo");
+    check(C::find("RailMoveObj") == nullptr || C::tablePath(*C::find("RailMoveObj"), "layera") == "jmp/mapparts/layera/mappartsinfo",
+          "map parts: jmp/mapparts");
+    check(C::tablePath(*C::find("EditorBrush"), "common") == "jmp/placement/common/objinfo", "not on the disc: objinfo");
     // Curated entries (native/editor/catalog/curated.json) name the common classes.
     check(kuribo->displayName == "Goomba" && kuribo->curated && !kuribo->description.empty(), "Kuribo is the Goomba");
     check(C::find("Takobo")->displayName == "Octoomba" && C::find("SuperSpinDriver")->displayName == "Launch Star", "curated names");

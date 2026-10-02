@@ -157,6 +157,12 @@ void testSynthetic() {
     // Missions: the zone is placed in every mission (a Common StageObjInfo row); its layer A rows
     // appear in mission 1 (mask 1), layer B in mission 2 (mask 2), the galaxy's Common rows in both.
     check(m->missionCount() == 2, "two missions");
+    {
+        const std::uint64_t before = m->revision();
+        check(m->setScenario(2) && m->scenario() == 2 && m->revision() == before + 1, "switch to mission 2");
+        check(!m->setScenario(3) && !m->setScenario(0) && m->scenario() == 2, "no mission 3");
+        check(m->setScenario(1) && m->scenario() == 1, "back to mission 1");
+    }
     const E::RowId takobo = findRow(*m, 1, "jmp/placement/layerb/objinfo", "Takobo");
     const E::RowId galaxyCoin = findRow(*m, 0, "jmp/placement/common/objinfo", "Coin");
     check(m->rowMissions(kuribo) == 0b01 && m->rowMissions(takobo) == 0b10 && m->rowMissions(galaxyCoin) == 0b11, "rows' missions");

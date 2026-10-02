@@ -17,6 +17,8 @@ namespace EditorPicking {
     bool selectionBounds(float center[3], float* radius);
     // Edit mode left: drop the selection's actors (the rows are kept by the UI).
     void reset();
+    // An actor's bounds: its clipping sphere, else its collision's, else a small sphere at its position.
+    void bounds(LiveActor* actor, float center[3], float* radius);
     // For drawing (game thread): the hovered actor (null: none) and the selection.
     LiveActor* hoverActor();
     int selectedCount();

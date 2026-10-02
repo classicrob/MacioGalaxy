@@ -29,14 +29,23 @@ void clearSelection();             // Esc, or Edit mode left
 void selectByName(const char* name);  // select the first object with this row or class name (search, tests)
 void selectRow(std::uint64_t row, Click mode);  // select a row's object (the Changes and Outliner lists)
 void placeMarker();  // M: the play marker onto the ground under the cursor
+// Place a copy of `exampleRow` (its class and settings) on the ground under the cursor (the Browser).
+void place(std::uint64_t exampleRow);
+void duplicate();  // Cmd+D: copies of the selection, a step ahead along its gravity frame's front
 
 // Game, Edit nerve: the requests, then the answers.
 bool hoverWanted();
 Click takeClick();
 bool takeClear();
 bool takeSelectByName(char* name, int size);
-bool takeSelectRow(std::uint64_t* row, Click* mode);
+struct RowRequest {
+    std::uint64_t row = 0;
+    Click mode = Click::Replace;
+};
+std::vector<RowRequest> takeSelectRows();  // in order
 bool takePlaceMarker();
+std::uint64_t takePlace();  // 0: none
+bool takeDuplicate();
 void publish(const Item* hover, const std::vector<Item>& selection);
 
 // UI: the last answers.
@@ -44,6 +53,15 @@ bool hover(Item* out);
 std::vector<Item> selection();
 
 void resetForTesting();
+
+// Thumbnails (UX section 7, TECH.md 3.5): the UI asks for a class (with up to kThumbnailExamples placed
+// rows); the game renders the first one with a live model offscreen and publishes where it copied the
+// image (nullptr: none could be drawn).
+constexpr int kThumbnailExamples = 4;
+void requestThumbnail(const char* className, const std::uint64_t* exampleRows, int count);
+bool takeThumbnailRequest(char* className, int size, std::uint64_t exampleRows[kThumbnailExamples]);  // unused slots 0
+void publishThumbnail(const char* className, const void* copy);  // game: the GXCopyTex destination
+bool takeThumbnail(char* className, int size, const void** copy);  // UI: read it back from the presenter
 
 }  // namespace PetariNative::EditorPick
 
@@ -65,6 +83,8 @@ void press();
 void release();
 void setSnapSuspended(bool suspended);  // Cmd held: no snapping for this drag
 void ground(Ground what);
+void setShowGhosts(bool show);  // other missions' objects (default on)
+bool showGhosts();
 
 struct Take {
     bool pressed = false, released = false, snapSuspended = false;
@@ -84,6 +104,12 @@ struct View {
     std::vector<Line> lines;
     float originX = 0, originY = 0;
     char status[96] = {};    // for the footer: "Move  X +120.0" ...
+    // Objects of other missions (UX section 12), drawn as ghosts while "Other missions" is on.
+    struct Ghost {
+        float x = 0, y = 0, radius = 0;  // viewport coordinates; radius in viewport heights
+        char name[40] = {};
+    };
+    std::vector<Ghost> ghosts;
     // The play marker (UX section 3): where Play puts Mario.
     bool marker = false;
     float markerX = 0, markerY = 0, markerRadius = 0;  // viewport coordinates; radius in viewport heights
