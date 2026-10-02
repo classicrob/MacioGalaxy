@@ -72,9 +72,9 @@ namespace EditorGalaxyTest {
             }
         }
         if (verify) {
-            // PETARI_EDITOR_GALAXY_SHOTS=<dir>: the galaxy, two seconds after entering it.
+            // PETARI_EDITOR_GALAXY_SHOTS=<dir>: the galaxy, four seconds into play (Mario has landed).
             static s32 sShotFrame = 0;
-            if (const char* pDir = std::getenv("PETARI_EDITOR_GALAXY_SHOTS"); pDir != nullptr && stage == sGalaxy && ++sShotFrame == 120) {
+            if (const char* pDir = std::getenv("PETARI_EDITOR_GALAXY_SHOTS"); pDir != nullptr && sEntered && stage == sGalaxy && ++sShotFrame == 240) {
                 char path[512];
                 std::snprintf(path, sizeof(path), "%s/galaxy-%s.png", pDir, sGalaxy);
                 PetariNative::Screenshot::request(path);
