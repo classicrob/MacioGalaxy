@@ -182,9 +182,10 @@ namespace EditorScene {
             return;
         }
         if (!MR::isDead(pActor)) {
-            pActor->makeActorDead();
+            pActor->makeActorDead();  // also takes it out of clipping (the dead list)
         }
-        MR::invalidateClipping(pActor);
+        // Not MR::invalidateClipping: on a clipped actor (a view group hiding it, say) it calls
+        // endClipped(), which connects the dead actor to the scene again and draws it.
         MR::hideModel(pActor);
     }
 }  // namespace EditorScene

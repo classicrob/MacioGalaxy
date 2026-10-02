@@ -152,12 +152,22 @@ void testSynthetic() {
     check(m->apply(E::Op{"Nudge", {setFloat(coin, "pos_x", 9.0f)}, {}}, &error) && m->historySize() == 2, "redo tail dropped");
     check(m->jumpTo(0) && m->state(kuribo) == E::RowState::Original, "jump to the start");
 
+    // Missions: the zone is placed in every mission (a Common StageObjInfo row); its layer A rows
+    // appear in mission 1 (mask 1), layer B in mission 2 (mask 2), the galaxy's Common rows in both.
+    check(m->missionCount() == 2, "two missions");
+    const E::RowId takobo = findRow(*m, 1, "jmp/placement/layerb/objinfo", "Takobo");
+    const E::RowId galaxyCoin = findRow(*m, 0, "jmp/placement/common/objinfo", "Coin");
+    check(m->rowMissions(kuribo) == 0b01 && m->rowMissions(takobo) == 0b10 && m->rowMissions(galaxyCoin) == 0b11, "rows' missions");
+    E::Op add{"Add", {}, {}, {E::AddRow{}}, {}};
+    check(!m->apply(add, &error) && !error.empty(), "adding rows is refused until structural ops land");
+
     // Moving a zone's StageObjInfo row moves the zone.
     const E::RowId zoneRow = findRow(*m, 0, "jmp/placement/common/stageobjinfo", "TestZone");
     check(m->apply(E::Op{"Move zone", {setFloat(zoneRow, "pos_x", -50.0f)}, {}}, &error) && m->zoneWorldMatrix(1).m[0][3] == -50.0f,
           "zone matrix follows its row");
     check(!m->apply(E::Op{"Bad", {setFloat(E::RowId{12345}, "pos_x", 0)}, {}}, &error) && !error.empty(), "unknown row refused");
     check(m->historySize() == 1, "a refused op records nothing");
+    check((E::newRowId().v >> 63) == 1 && E::newRowId() != E::newRowId(), "new row ids are their own, distinct");
     check(m->revision() > 1, "revision bumps");
 }
 

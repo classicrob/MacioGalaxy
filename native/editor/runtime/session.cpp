@@ -4,6 +4,7 @@
 
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
+#include "save_mod.hpp"
 
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -332,7 +333,17 @@ namespace {
                 startReload(Session::After::Edit);
                 requeueRest();
                 return;
-            case Command::Kind::SaveMod:
+            case Command::Kind::SaveMod: {
+                std::string notice;
+                if (saveFullArchiveMod(*s.model, command.modName, &notice, &error)) {
+                    s.model->markSaved();
+                    Core::reportNotice(notice);
+                    std::fprintf(stderr, "[editor] %s\n", notice.c_str());
+                } else {
+                    Core::reportError("Save: " + error);
+                }
+                break;
+            }
             case Command::Kind::SwitchScenario:
                 Core::reportError("Not available yet in this build");  // editor/fast-reload, editor/save-mod
                 break;
@@ -357,6 +368,7 @@ namespace {
 
 void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
+void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 
 void tick(bool playable) {
     if (!Hooks::enabled()) {
@@ -364,6 +376,7 @@ void tick(bool playable) {
     }
     syncTestTick();
     reloadTestTick();
+    saveTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     if (mode() != Mode::Off && pStage != nullptr) {

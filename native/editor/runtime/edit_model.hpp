@@ -56,6 +56,9 @@ public:
     const char* objectName(RowId row) const override;
     bool hasTransform(RowId row) const override;
     RowTransform transform(RowId row) const override;
+    int missionCount() const override;
+    const char* missionName(int mission) const override;
+    std::uint32_t rowMissions(RowId row) const override;
     int historySize() const override { return static_cast< int >(mHistory.size()); }
     int historyCursor() const override { return mCursor; }
     const char* historyLabel(int index) const override;

@@ -488,6 +488,54 @@ RowTransform EditModel::transform(RowId id) const {
     return t;
 }
 
+int EditModel::missionCount() const {
+    int count = 0;
+    for (int r = 0; r < mScenarioData.rowCount(); r++) {
+        count = std::max(count, intCell(mScenarioData, r, "ScenarioNo", 0));
+    }
+    return count;
+}
+
+const char* EditModel::missionName(int mission) const {
+    for (int r = 0; r < mScenarioData.rowCount(); r++) {
+        if (intCell(mScenarioData, r, "ScenarioNo", -1) == mission) {
+            mNameScratch = sjisToUtf8(stringCell(mScenarioData, r, "ScenarioName"));
+            return mNameScratch.c_str();
+        }
+    }
+    return "";
+}
+
+std::uint32_t EditModel::rowMissions(RowId id) const {
+    int zone = 0, table = 0, row = 0;
+    if (!unpack(id, &zone, &table, &row)) {
+        return 0;
+    }
+    const int layer = mZones[zone].tables[table].layer;
+    std::uint32_t missions = 0;
+    for (int mission = 1; mission <= missionCount() && mission <= 32; mission++) {
+        bool zoneIn = zone == 0;
+        if (!zoneIn) {
+            // Placed by a StageObjInfo row of the galaxy in one of this mission's layers.
+            const std::uint32_t galaxyLayers = activeLayers(0, mission);
+            for (const TableModel& t : mZones[0].tables) {
+                if (zoneIn || t.layer < 0 || !(galaxyLayers & (1u << t.layer)) || t.path.size() < 12 ||
+                    t.path.compare(t.path.size() - 12, 12, "stageobjinfo") != 0) {
+                    continue;
+                }
+                for (int r = 0; r < t.current.rowCount() && !zoneIn; r++) {
+                    zoneIn = stringCell(t.current, r, "name") == mZones[zone].name;
+                }
+            }
+        }
+        const bool layerIn = layer < 0 || (activeLayers(zone, mission) & (1u << layer));
+        if (zoneIn && layerIn) {
+            missions |= 1u << (mission - 1);
+        }
+    }
+    return missions;
+}
+
 const char* EditModel::historyLabel(int index) const {
     return index >= 0 && index < historySize() ? mHistory[index].label.c_str() : "";
 }
@@ -523,6 +571,12 @@ void EditModel::writeCell(int zone, int table, int row, std::uint32_t column, co
 }
 
 bool EditModel::apply(const Op& op, std::string* pError) {
+    if (!op.adds.empty() || !op.deletes.empty()) {
+        if (pError != nullptr) {
+            *pError = "adding and deleting objects is not available yet";  // editor/structural-ops
+        }
+        return false;
+    }
     Entry entry;
     entry.label = op.label;
     // Validate everything first: an op applies whole or not at all.
