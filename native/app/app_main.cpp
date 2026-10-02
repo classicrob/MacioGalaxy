@@ -8,6 +8,7 @@
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_hints.h>
+#include <CoreFoundation/CoreFoundation.h>
 #include <objc/message.h>
 #include <objc/runtime.h>
 #include <pthread/qos.h>
@@ -53,6 +54,21 @@ extern "C" void petari_gx_pipeline_set_gameplay(bool gameplay);
 namespace App = PetariNative::App;
 
 namespace {
+
+// A game never restores its windows. Without this, after Petari crashed (a test sweep crashes it on
+// purpose) macOS asks "reopen windows?" in a modal alert at the next launch, which blocks the game
+// (and background test runs) before the first frame. Registration domain only: nothing is persisted.
+void disableWindowRestoration() {
+    const void* keys[2] = {CFSTR("ApplePersistenceIgnoreState"), CFSTR("NSQuitAlwaysKeepsWindows")};
+    const void* values[2] = {kCFBooleanTrue, kCFBooleanFalse};
+    CFDictionaryRef defaults = CFDictionaryCreate(nullptr, keys, values, 2, &kCFTypeDictionaryKeyCallBacks,
+                                                  &kCFTypeDictionaryValueCallBacks);
+    const auto sendObject = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend);
+    const id standard = sendObject(reinterpret_cast<id>(objc_getClass("NSUserDefaults")), sel_registerName("standardUserDefaults"));
+    reinterpret_cast<void (*)(id, SEL, CFDictionaryRef)>(objc_msgSend)(standard, sel_registerName("registerDefaults:"), defaults);
+    CFRelease(defaults);
+}
+
 
 void logMessage(AuroraLogLevel level, const char* module, const char* message, unsigned int length) {
     std::fprintf(stderr, "[%s] %.*s\n", module, static_cast<int>(length), message);
@@ -441,6 +457,8 @@ App::FrameStats::Phase framePhaseForPipelines() {
 }  // namespace
 
 int main(int argc, char** argv) {
+    // Before SDL starts AppKit (NSApplication finishes launching there).
+    disableWindowRestoration();
     // The allocation-site check's symbol table, before any game thread runs
     // (building it on a first game allocation would be a startup hitch).
     PetariNative::prepareAllocationSymbols();
