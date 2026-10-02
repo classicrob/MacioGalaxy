@@ -978,7 +978,7 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.
 - **Catalog and Checks** (`editor/catalog`):
   - `native/editor/catalog/generated.json` comes from `native/editor/tools/gen_catalog.py`, a decomp scan of all 1,183 factory classes: args and their types, switches, rail-capable, archives, category. It folds in the class sweep's `sweep.json` when present (required links).
-  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 152 most-placed classes. These were researched against the decomp in our own words; no community data.
+  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 210 most-placed classes (the last 58 from the UI worker's list of the most common uncurated classes in five galaxies). These were researched against the decomp in our own words; no community data.
   - Both are embedded in the binary. The user's `<user>/editor/catalog/*.json` override them, and planets come from the disc's PlanetMapDataTable at session start.
   - The Checks engine (`runtime/checks.cpp`) reports only problems the edits introduce. The galaxy as loaded is the baseline, so vanilla Good Egg shows 0.
   - Kinds: unknown classes; missing required links; paths that don't exist or have fewer than 2 points; switch ids out of range or unused by the class; a zone switch only one row uses; duplicate l_ids. Most come with fix Ops or a UI fix kind.
