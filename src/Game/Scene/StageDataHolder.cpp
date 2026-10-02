@@ -1,4 +1,7 @@
 #include "Game/Scene/StageDataHolder.hpp"
+#ifdef PETARI_NATIVE
+#include "Game/Scene/ClassSweep.hpp"
+#endif
 #include "Game/NameObj/NameObjFactory.hpp"
 #include "Game/Scene/PlacementInfoOrdered.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
@@ -351,6 +354,12 @@ const StageDataHolder* StageDataHolder::findPlacedStageDataHolder(const JMapInfo
                      rIter.mInfo->mData->mEntrySize * rIter.mIndex;
 #else
     s32 data = (s32)rIter.mInfo->mData + rIter.mInfo->mData->mDataOffset + rIter.mInfo->mData->mEntrySize * rIter.mIndex;
+#endif
+
+#ifdef PETARI_NATIVE
+    if (s32 syntheticZone = ClassSweep::findSyntheticZone(data); syntheticZone >= 0) {
+        return MR::getStageDataHolder()->getStageDataHolderFromZoneId(syntheticZone);
+    }
 #endif
 
     if (_E4 <= data && data < _E8) {

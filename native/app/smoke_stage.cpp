@@ -10,6 +10,8 @@
 #include <cstdlib>
 #include <cstring>
 
+extern "C" int petari_class_sweep_go;
+
 namespace PetariNative::App::Smoke {
 
 namespace {
@@ -452,7 +454,8 @@ Step StageDriver::step(const Observation& o) {
             mReadyFrame = mFrame;
             note("stage ready: frame " + std::to_string(mFrame) + ", Mario at " + text(position(o)) +
                  (o.playerOnGround ? ", on the ground" : ", in the air"));
-            next(mConfig.warp && !mWarped ? Phase::Warp : Phase::Idle);
+            // Class sweep: skip the movement script; the sweep driver runs while the smoke idles in the Tail.
+            next(std::getenv("PETARI_CLASS_SWEEP_JOBS") != nullptr ? Phase::Tail : mConfig.warp && !mWarped ? Phase::Warp : Phase::Idle);
         } else if (mPhaseFrames >= kReadyLimit) {
             finish(Result::Fail, std::string("not ready: gameplay never became ready (player ") +
                                      (o.playerValid ? "present" : "missing") + ", demo " +
@@ -731,6 +734,7 @@ void StageDriver::exercise(const Observation& o, Step& step) {
         break;
     }
     case Phase::Tail:
+        if (petari_class_sweep_go == 0) petari_class_sweep_go = 1;  // class sweep: start once the checks are done
         if (mPhaseFrames >= mConfig.tailFrames) {
             finish(Result::Pass,
                    "loaded, ready, pause menu opened and closed, " + std::to_string(mConfig.tailFrames) +
