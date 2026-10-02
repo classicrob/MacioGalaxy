@@ -12,12 +12,21 @@
 
 namespace PetariEditor::Ui {
 
-// The left dock's window ("Galaxy": Outliner, Changes, History) and the Inspector.
+// The left dock's window ("Galaxy": Outliner, Browser, Changes, History, Checks) and the Inspector.
 void drawGalaxyWindow(const char* title);
 void drawInspectorWindow(const char* title);
 // Cmd+Z / Cmd+Shift+Z (and the toolbar's buttons): whether there is something to undo / redo.
 void deleteSelection();  // Delete: one op removing the selected rows
 bool canUndo();
+// Bring a Galaxy tab forward ("Checks": the toolbar's badge).
+void openTab(const char* name);
+struct CheckCounts {
+    int errors = 0;
+    int warnings = 0;
+};
+CheckCounts countChecks(const std::vector< Check >& all);
+// Errors first, then warnings, each in Runtime's order.
+std::vector< const Check* > orderChecks(const std::vector< Check >& all);
 bool canRedo();
 void undo();
 void redo();

@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <string>
 #include <vector>
 
 namespace PetariEditor::Ui {
@@ -231,7 +232,10 @@ void drawPickMarks(const Area& area) {
         float r;
         if (!selected && toScreen(hover, &c, &r)) {
             list->AddCircle(c, r, rgba(0.40f, 0.86f, 1.0f, 0.95f), 0, 2.0f);
-            label(ImVec2(c.x, c.y - r - ImGui::GetTextLineHeight() - 12.0f), shownName(hover.name), rgba(0.40f, 0.86f, 1.0f, 1.0f));
+            // Hover names the class too ("Goomba · Kuribo"); the selection's label is the name alone.
+            std::string text = shownName(hover.name);
+            if (text != hover.name) text += std::string("  ·  ") + hover.name;
+            label(ImVec2(c.x, c.y - r - ImGui::GetTextLineHeight() - 12.0f), text.c_str(), rgba(0.40f, 0.86f, 1.0f, 1.0f));
         }
     }
     list->PopClipRect();
