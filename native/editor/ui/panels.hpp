@@ -66,6 +66,8 @@ void drawBrowser(const ModelView& model);
 // Stamp mode: the example row each click in the viewport places (0: off).
 std::uint64_t armedPlacement();
 void disarmPlacement();
-extern const char* const kPlacePayload;  // ImGui drag-and-drop payload: a card dragged onto the viewport
+extern const char* const kPlacePayload;
+// A thumbnail's drawn part (alpha > 0) as a padded square, in UVs (u0, v0, u1, v1); false if nothing was drawn.
+bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, float uv[4]);  // ImGui drag-and-drop payload: a card dragged onto the viewport
 
 }  // namespace PetariEditor::Ui

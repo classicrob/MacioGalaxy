@@ -359,6 +359,14 @@ namespace EditorPicking {
         return true;
     }
 
+    void bounds(LiveActor* actor, float center[3], float* radius) {
+        const Hit h = describe(actor);
+        center[0] = h.center.x;
+        center[1] = h.center.y;
+        center[2] = h.center.z;
+        *radius = h.radius;
+    }
+
     LiveActor* hoverActor() {
         return gHover != nullptr && pickable(gHover) ? gHover : nullptr;
     }

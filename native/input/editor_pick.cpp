@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 namespace PetariNative::EditorPick {
@@ -82,6 +83,51 @@ std::vector<Item> selection() {
     HostAllocationScope host;
     std::lock_guard<std::mutex> lock(gMutex);
     return gSelection;
+}
+
+namespace {
+struct ThumbRequest {
+    char name[64] = {};
+    std::uint64_t rows[kThumbnailExamples] = {};
+    const void* copy = nullptr;
+};
+std::vector<ThumbRequest> gThumbRequests, gThumbsDone;  // under gMutex
+}  // namespace
+
+void requestThumbnail(const char* className, const std::uint64_t* exampleRows, int count) {
+    HostAllocationScope host;
+    std::lock_guard<std::mutex> lock(gMutex);
+    for (const ThumbRequest& r : gThumbRequests) {
+        if (std::strcmp(r.name, className) == 0) return;
+    }
+    ThumbRequest r;
+    std::snprintf(r.name, sizeof(r.name), "%s", className);
+    for (int i = 0; i < count && i < kThumbnailExamples; i++) r.rows[i] = exampleRows[i];
+    gThumbRequests.push_back(r);
+}
+bool takeThumbnailRequest(char* className, int size, std::uint64_t exampleRows[kThumbnailExamples]) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    if (gThumbRequests.empty()) return false;
+    std::snprintf(className, static_cast<size_t>(size), "%s", gThumbRequests.front().name);
+    for (int i = 0; i < kThumbnailExamples; i++) exampleRows[i] = gThumbRequests.front().rows[i];
+    gThumbRequests.erase(gThumbRequests.begin());
+    return true;
+}
+void publishThumbnail(const char* className, const void* copy) {
+    HostAllocationScope host;
+    std::lock_guard<std::mutex> lock(gMutex);
+    ThumbRequest r;
+    std::snprintf(r.name, sizeof(r.name), "%s", className);
+    r.copy = copy;
+    gThumbsDone.push_back(r);
+}
+bool takeThumbnail(char* className, int size, const void** copy) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    if (gThumbsDone.empty()) return false;
+    std::snprintf(className, static_cast<size_t>(size), "%s", gThumbsDone.front().name);
+    *copy = gThumbsDone.front().copy;
+    gThumbsDone.erase(gThumbsDone.begin());
+    return true;
 }
 
 void resetForTesting() {

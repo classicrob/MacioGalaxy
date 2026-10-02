@@ -2,6 +2,8 @@
 // catalog's classes once it is filled), searchable, by category, with examples and Place.
 #include "panels.hpp"
 
+#include <petari/editor/ui.hpp>
+
 #include <petari/editor/catalog.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/home_menu.hpp>
@@ -53,8 +55,90 @@ std::string gCategory;          // empty: all
 std::string gSelectedClass;     // the card shown in detail
 std::uint64_t gArmed = 0;       // stamp mode: the example row each click places
 
-// A card: a category-coloured tile with the class's initials (thumbnails rendered from the game's
-// models replace the tile when they exist), the name below.
+// Thumbnails: the game draws one requested class a frame (Game/Camera/EditorThumbs) into a copy the
+// presenter reads back; the texture is kept for the session. A few in flight (the game's copies are a
+// pool of 8); a class whose example cannot be drawn times out and keeps its initials.
+struct Thumbnail {
+    ImTextureID texture = 0;
+    const void* copy = nullptr;  // published, being read back
+    ImVec2 uv0{0, 0}, uv1{1, 1};  // the drawn part, squared
+    int waited = 0;              // frames since requested
+    bool failed = false;
+};
+std::map< std::string, Thumbnail > gThumbnails;
+ThumbnailReadback gReadback = nullptr;
+ThumbnailTexture gMakeTexture = nullptr;
+std::vector< unsigned char > gRgba;
+constexpr int kThumbnailsInFlight = 3;
+constexpr int kThumbnailTimeout = 90;  // frames
+
+void serviceThumbnails() {
+    if (gReadback == nullptr) return;
+    char name[64];
+    const void* copy = nullptr;
+    while (Pick::takeThumbnail(name, sizeof(name), &copy)) {
+        Thumbnail& thumb = gThumbnails[name];
+        thumb.copy = copy;
+        thumb.failed = copy == nullptr;  // nothing of that class could be drawn
+    }
+    for (auto& [className, thumb] : gThumbnails) {
+        if (thumb.texture != 0 || thumb.failed) continue;
+        if (thumb.copy != nullptr) {
+            unsigned width = 0, height = 0;
+            int result = gReadback(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
+            if (result < 0) {
+                gRgba.resize(static_cast< size_t >(width) * height * 4);
+                result = gReadback(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
+            }
+            if (result == 1) {
+                thumb.copy = nullptr;
+                float uv[4];
+                if (!thumbnailCrop(gRgba.data(), width, height, uv)) {
+                    thumb.failed = true;  // drawn empty (a model that needs its own draw pass)
+                    continue;
+                }
+                thumb.uv0 = ImVec2(uv[0], uv[1]);
+                thumb.uv1 = ImVec2(uv[2], uv[3]);
+                thumb.texture = static_cast< ImTextureID >(gMakeTexture(width, height, gRgba.data()));
+                continue;
+            }
+        }
+        if (++thumb.waited > kThumbnailTimeout) thumb.failed = true;
+    }
+}
+
+// Asks for a card's thumbnail when it is on screen and few are in flight.
+void wantThumbnail(const BrowserEntry& entry) {
+    if (gReadback == nullptr || entry.examples.empty() || gThumbnails.count(entry.className) != 0) return;
+    int inFlight = 0;
+    for (const auto& [className, thumb] : gThumbnails) inFlight += thumb.texture == 0 && !thumb.failed;
+    if (inFlight >= kThumbnailsInFlight) return;
+    gThumbnails[entry.className] = Thumbnail{};
+    std::uint64_t rows[Pick::kThumbnailExamples] = {};
+    const int count = std::min(static_cast< int >(entry.examples.size()), Pick::kThumbnailExamples);
+    for (int i = 0; i < count; i++) rows[i] = entry.examples[i].v;
+    Pick::requestThumbnail(entry.className.c_str(), rows, count);
+}
+
+// The tile without a thumbnail: a category-coloured disc with the class's initials.
+void drawInitials(ImDrawList* list, const BrowserEntry& entry, ImVec2 min, ImVec2 max, float size) {
+    const ImU32 color = categoryColor(entry.category);
+    list->AddCircleFilled(ImVec2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f), size * 0.30f, color);
+    char initials[3] = {entry.displayName.empty() ? '?' : entry.displayName[0], 0, 0};
+    for (size_t i = 1; i < entry.displayName.size(); i++) {
+        if (std::isupper(static_cast< unsigned char >(entry.displayName[i]))) {
+            initials[1] = entry.displayName[i];
+            break;
+        }
+    }
+    ImFont* galaxy = PetariNative::HomeMenu::galaxyTextFont();
+    ImFont* font = galaxy != nullptr ? galaxy : ImGui::GetFont();
+    const float textSize = size * 0.28f;
+    const ImVec2 text = font->CalcTextSizeA(textSize, 1e9f, 0.0f, initials);
+    list->AddText(font, textSize, ImVec2((min.x + max.x - text.x) * 0.5f, (min.y + max.y - text.y) * 0.5f), IM_COL32(20, 30, 45, 255), initials);
+}
+
+// A card: the class's thumbnail (rendered from its placed example), else its initials tile; the name below.
 bool card(const BrowserEntry& entry, bool selected, float size) {
     ImGui::PushID(entry.className.c_str());
     const ImVec2 min = ImGui::GetCursorScreenPos();
@@ -70,26 +154,24 @@ bool card(const BrowserEntry& entry, bool selected, float size) {
     ImDrawList* list = ImGui::GetWindowDrawList();
     const ImVec2 max(min.x + size, min.y + size);
     list->AddRectFilled(min, max, IM_COL32(8, 60, 90, 230), 10.0f);
-    const ImU32 color = categoryColor(entry.category);
-    list->AddCircleFilled(ImVec2((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f), size * 0.30f, color);
-    char initials[3] = {entry.displayName.empty() ? '?' : entry.displayName[0], 0, 0};
-    for (size_t i = 1; i < entry.displayName.size(); i++) {
-        if (std::isupper(static_cast< unsigned char >(entry.displayName[i]))) {
-            initials[1] = entry.displayName[i];
-            break;
-        }
+    if (ImGui::IsItemVisible()) wantThumbnail(entry);
+    auto thumb = gThumbnails.find(entry.className);
+    if (thumb != gThumbnails.end() && thumb->second.texture != 0) {
+        list->AddImageRounded(thumb->second.texture, ImVec2(min.x + 3.0f, min.y + 3.0f), ImVec2(max.x - 3.0f, max.y - 3.0f),
+                              thumb->second.uv0, thumb->second.uv1, IM_COL32_WHITE, 8.0f);
+    } else {
+        drawInitials(list, entry, min, max, size);
     }
-    ImFont* galaxy = PetariNative::HomeMenu::galaxyTextFont();
-    ImFont* font = galaxy != nullptr ? galaxy : ImGui::GetFont();
-    const float textSize = size * 0.28f;
-    const ImVec2 text = font->CalcTextSizeA(textSize, 1e9f, 0.0f, initials);
-    list->AddText(font, textSize, ImVec2((min.x + max.x - text.x) * 0.5f, (min.y + max.y - text.y) * 0.5f), IM_COL32(20, 30, 45, 255), initials);
     list->AddRect(min, max, selected ? IM_COL32(250, 204, 56, 255) : hovered ? IM_COL32(102, 219, 255, 255) : IM_COL32(102, 219, 255, 80),
                   10.0f, 0, selected ? 2.5f : 1.5f);
     if (entry.count > 0) {
         char count[16];
         std::snprintf(count, sizeof(count), "%d", entry.count);
-        list->AddText(ImVec2(max.x - ImGui::CalcTextSize(count).x - 6.0f, min.y + 4.0f), IM_COL32(200, 230, 255, 220), count);
+        const ImVec2 countSize = ImGui::CalcTextSize(count);
+        const ImVec2 at(max.x - countSize.x - 6.0f, min.y + 4.0f);
+        list->AddRectFilled(ImVec2(at.x - 4.0f, at.y), ImVec2(at.x + countSize.x + 4.0f, at.y + countSize.y), IM_COL32(8, 40, 64, 190),
+                            countSize.y * 0.5f);
+        list->AddText(at, IM_COL32(200, 230, 255, 230), count);
     }
     // The name, clipped to the card.
     list->PushClipRect(ImVec2(min.x, max.y), ImVec2(max.x, max.y + ImGui::GetTextLineHeight() + 6.0f), true);
@@ -180,6 +262,7 @@ void disarmPlacement() {
 }
 
 void drawBrowser(const ModelView& model) {
+    serviceThumbnails();
     if (gRevision != model.revision()) {
         gRevision = model.revision();
         gEntries = collectBrowserEntries(model);
@@ -250,6 +333,28 @@ void drawBrowser(const ModelView& model) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each click in the viewport places a copy of the first example, settings included. Or drag the card onto the viewport.");
         }
     }
+}
+
+bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, float uv[4]) {
+    int x0 = static_cast< int >(width), y0 = static_cast< int >(height), x1 = -1, y1 = -1;
+    for (int y = 0; y < static_cast< int >(height); y++) {
+        for (int x = 0; x < static_cast< int >(width); x++) {
+            if (rgba[(static_cast< size_t >(y) * width + x) * 4 + 3] == 0) continue;
+            x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x), y1 = std::max(y1, y);
+        }
+    }
+    if (x1 < 0) return false;
+    // A square around the drawn part, 6% padding, kept inside the image.
+    const float side = std::max(x1 - x0, y1 - y0) + 1.0f;
+    const float half = std::min(side * 0.56f, std::min(width, height) * 0.5f);
+    const float cx = std::clamp((x0 + x1 + 1) * 0.5f, half, width - half), cy = std::clamp((y0 + y1 + 1) * 0.5f, half, height - half);
+    uv[0] = (cx - half) / width, uv[1] = (cy - half) / height, uv[2] = (cx + half) / width, uv[3] = (cy + half) / height;
+    return true;
+}
+
+void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture) {
+    gReadback = readback;
+    gMakeTexture = texture;
 }
 
 }  // namespace PetariEditor::Ui

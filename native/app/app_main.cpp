@@ -23,7 +23,9 @@
 #include <string>
 #include <fstream>
 #ifdef PETARI_EDITOR_UI
+#include <aurora/imgui.h>
 #include <petari/editor/ui.hpp>
+extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height);
 #endif
 #include <petari/test_fixture.hpp>
 #include <petari/unlocked_save.hpp>
@@ -678,6 +680,13 @@ int main(int argc, char** argv) {
     if (!PetariEditor::Ui::installFonts(SDL_GetWindowDisplayScale(static_cast<SDL_Window*>(info.window)))) {
         std::fprintf(stderr, "petari: editor panels use the built-in font (no system UI font)\n");
     }
+    PetariEditor::Ui::setThumbnailHost(
+        [](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height) {
+            return petari_present_take_readback(copy, rgba, capacity, width, height);
+        },
+        [](unsigned width, unsigned height, const void* rgba) {
+            return static_cast<unsigned long long>(aurora_imgui_add_texture(width, height, rgba));
+        });
     // Development: the editor's docked layout from the start (the Edit mode shows it normally).
     if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
         PetariEditor::Ui::setVisible(true);

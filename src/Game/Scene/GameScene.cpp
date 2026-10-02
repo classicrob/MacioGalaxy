@@ -45,6 +45,7 @@
 extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/EditorCamera.hpp"
 #include "Game/Camera/EditorDraw.hpp"
+#include "Game/Camera/EditorThumbs.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
@@ -437,6 +438,9 @@ void GameScene::draw3D() const {
         return;
     }
 
+#ifdef PETARI_NATIVE
+    EditorThumbs::render();  // the level editor's Browser: one model offscreen, copied out
+#endif
     CategoryList::execute(MR::DrawType_AstroDomeSkyClear);
     MR::loadViewMtx();
     MR::loadProjectionMtx();

@@ -16,6 +16,7 @@
 #include <mutex>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -205,6 +206,118 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
   rgb[id.y * size.x + id.x] = (c.r << 16u) | (c.g << 8u) | c.b;
 }
 )";
+
+constexpr const char* kRgbaShader = R"(
+@group(0) @binding(0) var src: texture_2d<f32>;
+@group(0) @binding(1) var<storage, read_write> rgba: array<u32>;
+@compute @workgroup_size(8, 8, 1)
+fn main(@builtin(global_invocation_id) id: vec3u) {
+  let size = textureDimensions(src);
+  if (id.x >= size.x || id.y >= size.y) { return; }
+  let c = vec4u(round(clamp(textureLoad(src, vec2i(id.xy), 0), vec4f(0), vec4f(1)) * 255.0));
+  rgba[id.y * size.x + id.x] = (c.a << 24u) | (c.b << 16u) | (c.g << 8u) | c.r;
+}
+)";
+
+// The editor's thumbnails: requested copies (main thread) and finished images (any thread).
+struct Readback {
+  std::vector<unsigned char> rgba;
+  uint32_t width = 0, height = 0;
+};
+std::vector<std::pair<const void*, int>> gReadbackRequests;  // copy address, frames left to find it
+std::mutex gReadbackMutex;
+std::vector<std::pair<const void*, Readback>> gReadbackDone;
+
+// Render worker: an RGBA8 copy texture to straight RGBA bytes; the key colour becomes transparent.
+bool readRgba(const aurora::gfx::TextureHandle& texture, Readback& out, const void* copy) {
+  PetariNative::HostAllocationScope host;
+  using aurora::webgpu::g_device;
+  using aurora::webgpu::g_queue;
+  out.width = texture->size.width;
+  out.height = texture->size.height;
+  const uint64_t bytes = uint64_t(out.width) * out.height * 4;
+  static wgpu::ComputePipeline* pipeline = nullptr;
+  if (!pipeline) {
+    const wgpu::ShaderSourceWGSL wgsl{wgpu::ShaderSourceWGSL::Init{.code = kRgbaShader}};
+    const wgpu::ShaderModuleDescriptor moduleDesc{.nextInChain = &wgsl, .label = "Petari editor thumbnail"};
+    const auto module = g_device.CreateShaderModule(&moduleDesc);
+    const wgpu::ComputePipelineDescriptor pipelineDesc{
+        .label = "Petari editor thumbnail", .compute = wgpu::ComputeState{.module = module, .entryPoint = "main"}};
+    pipeline = new wgpu::ComputePipeline(g_device.CreateComputePipeline(&pipelineDesc));
+  }
+  const wgpu::BufferDescriptor storageDesc{
+      .label = "Petari thumbnail storage", .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc, .size = bytes};
+  const auto storage = g_device.CreateBuffer(&storageDesc);
+  const wgpu::BufferDescriptor readDesc{
+      .label = "Petari thumbnail readback", .usage = wgpu::BufferUsage::MapRead | wgpu::BufferUsage::CopyDst, .size = bytes};
+  const auto readback = g_device.CreateBuffer(&readDesc);
+  const std::array entries{wgpu::BindGroupEntry{.binding = 0, .textureView = texture->sampleTextureView},
+                           wgpu::BindGroupEntry{.binding = 1, .buffer = storage, .size = bytes}};
+  const wgpu::BindGroupDescriptor bindDesc{
+      .label = "Petari thumbnail", .layout = pipeline->GetBindGroupLayout(0), .entryCount = entries.size(), .entries = entries.data()};
+  const auto binding = g_device.CreateBindGroup(&bindDesc);
+  const auto encoder = g_device.CreateCommandEncoder();
+  const auto pass = encoder.BeginComputePass();
+  pass.SetPipeline(*pipeline);
+  pass.SetBindGroup(0, binding);
+  pass.DispatchWorkgroups((out.width + 7) / 8, (out.height + 7) / 8);
+  pass.End();
+  encoder.CopyBufferToBuffer(storage, 0, readback, 0, bytes);
+  const auto commands = encoder.Finish();
+  g_queue.Submit(1, &commands);
+  std::atomic<int> state{0};
+  readback.MapAsync(wgpu::MapMode::Read, 0, bytes, wgpu::CallbackMode::AllowSpontaneous,
+                    [&state](wgpu::MapAsyncStatus status, wgpu::StringView) { state = status == wgpu::MapAsyncStatus::Success ? 1 : -1; });
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (state == 0 && std::chrono::steady_clock::now() < deadline) {
+    aurora::webgpu::g_instance.ProcessEvents();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  if (state != 1) return false;
+  const auto* data = static_cast<const unsigned char*>(readback.GetConstMappedRange(0, bytes));
+  out.rgba.assign(data, data + bytes);
+  readback.Unmap();
+  // Development: PETARI_EDITOR_THUMB_DUMP=<dir> writes each copy as read, before keying.
+  if (const char* dir = std::getenv("PETARI_EDITOR_THUMB_DUMP"); dir && *dir) {
+    static int serial = 0;
+    std::vector<unsigned char> rgb;
+    for (size_t i = 0; i + 3 < out.rgba.size(); i += 4) rgb.insert(rgb.end(), {out.rgba[i], out.rgba[i + 1], out.rgba[i + 2]});
+    PetariNative::writePngRgb(std::string(dir) + "/thumb-" + std::to_string(serial++) + "-" + std::to_string(reinterpret_cast<uintptr_t>(copy) & 0xffffff) + ".png", out.width, out.height, rgb.data());
+  }
+  for (size_t i = 0; i + 3 < out.rgba.size(); i += 4) {
+    // The key colour (and its near neighbours, from filtering at the edges) is the background.
+    if (out.rgba[i] > 240 && out.rgba[i + 1] < 16 && out.rgba[i + 2] > 240) {
+      out.rgba[i] = out.rgba[i + 1] = out.rgba[i + 2] = out.rgba[i + 3] = 0;
+    } else {
+      out.rgba[i + 3] = 255;
+    }
+  }
+  return true;
+}
+
+// Main thread, in take(): requested copies the GPU has made are read back on the render worker.
+void serviceReadbacks() {
+  if (gReadbackRequests.empty()) return;
+  const auto& copies = aurora::gx::g_gxState.copyTextures;
+  for (size_t i = 0; i < gReadbackRequests.size();) {
+    auto& [address, framesLeft] = gReadbackRequests[i];
+    const auto it = copies.find(address);
+    if (it != copies.end() && it->second) {
+      aurora::gfx::render_worker::enqueue_work([address = address, texture = it->second.handle] {
+        Readback result;
+        if (readRgba(texture, result, address)) {
+          std::lock_guard<std::mutex> lock(gReadbackMutex);
+          gReadbackDone.emplace_back(address, std::move(result));
+        }
+      });
+      gReadbackRequests.erase(gReadbackRequests.begin() + static_cast<long>(i));
+    } else if (--framesLeft <= 0) {
+      gReadbackRequests.erase(gReadbackRequests.begin() + static_cast<long>(i));
+    } else {
+      i++;
+    }
+  }
+}
 
 bool readXfb(const aurora::gfx::TextureHandle& xfb, std::vector<unsigned char>& rgb, uint32_t& width, uint32_t& height) {
   PetariNative::HostAllocationScope host;
@@ -421,6 +534,7 @@ Frame takeImpl() noexcept {
 
 Frame take() noexcept {
   requestAreaResizeIfSettled();
+  serviceReadbacks();
   Frame frame = takeImpl();
   if (frame.active && hashConfig().enabled) {
     static uint64_t presented = 0;
@@ -616,6 +730,27 @@ void petari_present_set_content_area(float x, float y, float width, float height
   gAreaSet.store(set);
   gAreaResizePending = true;
   gAreaChanged = std::chrono::steady_clock::now();
+}
+
+void petari_present_request_readback(const void* copy) {
+  PetariNative::HostAllocationScope host;
+  petari_present::gReadbackRequests.emplace_back(copy, 8);
+}
+
+int petari_present_take_readback(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height) {
+  using namespace petari_present;
+  std::lock_guard<std::mutex> lock(gReadbackMutex);
+  for (size_t i = 0; i < gReadbackDone.size(); i++) {
+    if (gReadbackDone[i].first != copy) continue;
+    const Readback& r = gReadbackDone[i].second;
+    *width = r.width;
+    *height = r.height;
+    if (rgba == nullptr || capacity < r.rgba.size()) return -1;  // too small: the size is reported, the image kept
+    std::memcpy(rgba, r.rgba.data(), r.rgba.size());
+    gReadbackDone.erase(gReadbackDone.begin() + static_cast<long>(i));
+    return 1;
+  }
+  return 0;
 }
 
 void petari_present_set_free_aspect(int enabled) {

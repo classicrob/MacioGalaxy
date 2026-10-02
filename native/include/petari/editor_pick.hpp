@@ -54,6 +54,15 @@ std::vector<Item> selection();
 
 void resetForTesting();
 
+// Thumbnails (UX section 7, TECH.md 3.5): the UI asks for a class (with up to kThumbnailExamples placed
+// rows); the game renders the first one with a live model offscreen and publishes where it copied the
+// image (nullptr: none could be drawn).
+constexpr int kThumbnailExamples = 4;
+void requestThumbnail(const char* className, const std::uint64_t* exampleRows, int count);
+bool takeThumbnailRequest(char* className, int size, std::uint64_t exampleRows[kThumbnailExamples]);  // unused slots 0
+void publishThumbnail(const char* className, const void* copy);  // game: the GXCopyTex destination
+bool takeThumbnail(char* className, int size, const void** copy);  // UI: read it back from the presenter
+
 }  // namespace PetariNative::EditorPick
 
 // The transform gizmo (docs/dev/level-editor/UX.md section 6): the UI says what the mouse and keys

@@ -174,6 +174,22 @@ void testPanelsLogic() {
     CHECK(Ui::filterEntries(entries, "", "").size() == 3 && Ui::filterEntries(entries, "zzz", "").empty());
     CHECK(Ui::filterEntries(entries, "", "Planets").empty());
 
+    // Thumbnails: cropped to the drawn part, squared and padded, inside the image; nothing drawn fails.
+    {
+        std::vector< unsigned char > rgba(100 * 100 * 4, 0);
+        float uv[4];
+        CHECK(!Ui::thumbnailCrop(rgba.data(), 100, 100, uv));
+        for (int y = 70; y < 90; y++) {
+            for (int x = 10; x < 30; x++) rgba[(y * 100 + x) * 4 + 3] = 255;  // a 20x20 square low left
+        }
+        CHECK(Ui::thumbnailCrop(rgba.data(), 100, 100, uv));
+        CHECK(std::fabs((uv[2] - uv[0]) - 0.224f) < 0.01f && std::fabs((uv[3] - uv[1]) - 0.224f) < 0.01f);
+        CHECK(std::fabs((uv[0] + uv[2]) * 0.5f - 0.2f) < 0.01f && std::fabs((uv[1] + uv[3]) * 0.5f - 0.8f) < 0.01f);
+        for (int x = 0; x < 100; x++) rgba[(50 * 100 + x) * 4 + 3] = 255;  // a full-width line: the crop clamps to the image
+        CHECK(Ui::thumbnailCrop(rgba.data(), 100, 100, uv));
+        CHECK(uv[0] >= 0.0f && uv[1] >= 0.0f && uv[2] <= 1.0f && uv[3] <= 1.0f);
+    }
+
     Column unnamedColumn;
     unnamedColumn.hash = 0xABCDEF01u;
     CHECK(Ui::columnLabel(unnamedColumn) == "0xabcdef01");
