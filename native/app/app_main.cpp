@@ -20,6 +20,9 @@
 #include <cstring>
 #include <string>
 #include <fstream>
+#ifdef PETARI_EDITOR_UI
+#include <petari/editor/ui.hpp>
+#endif
 #include <petari/test_fixture.hpp>
 #include <petari/unlocked_save.hpp>
 #include <petari/pipeline_startup.hpp>
@@ -513,6 +516,16 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "petari: menus use the built-in font: %s\n", fontError.c_str());
         }
     }
+#ifdef PETARI_EDITOR_UI
+    // The level editor's data font: macOS's own UI font, read from the system (not shipped).
+    if (!PetariEditor::Ui::installFonts(SDL_GetWindowDisplayScale(static_cast<SDL_Window*>(info.window)))) {
+        std::fprintf(stderr, "petari: editor panels use the built-in font (no system UI font)\n");
+    }
+    // Development: the editor's docked layout from the start (the Edit mode shows it normally).
+    if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
+        PetariEditor::Ui::setVisible(true);
+    }
+#endif
     App::LatencyReport::configureLayer(info.window);
     if (!prepareKnownPipelines(static_cast<SDL_Window*>(info.window))) {
         aurora_shutdown();
