@@ -80,8 +80,8 @@ namespace EditorReload {
     /// the path has no override, is already loaded, or no archive slot is left.
     bool injectOverriddenArchive(const char* pPath);
     /// A same-stage restart (the miss path's move, without the miss): at the restart point, or
-    /// at the mission's start when fromStart.
-    void requestReload(bool fromStart);
+    /// at the mission's start when fromStart. scenario > 0: into that mission instead (from its start).
+    void requestReload(bool fromStart, s32 scenario = -1);
     /// Puts Mario at a world position, standing (normal play only).
     void teleportPlayer(f32 x, f32 y, f32 z);
 }  // namespace EditorReload
