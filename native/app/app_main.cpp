@@ -29,6 +29,8 @@
 #include <petari/unlocked_save.hpp>
 #include <petari/pipeline_startup.hpp>
 #include <petari/mods.hpp>
+#include <petari/platform/mod_folder.hpp>
+#include <petari/platform/mod_galaxy.hpp>
 #include <petari/progress.hpp>
 #include <petari/camera_input.h>
 #include <petari/camera_settings.hpp>
@@ -172,14 +174,6 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
             std::fputs("petari: --stage is for normal play; test fixtures use PETARI_STAGE\n", stderr);
             return false;
         }
-        std::string stage, error;
-        if (!App::LaunchStage::resolve(launchStage, launchScenario, &stage, &error)) {
-            std::fprintf(stderr, "petari: --stage: %s\n", error.c_str());
-            return false;
-        }
-        PetariNative::PlayerLaunch::stage = stage;
-        PetariNative::PlayerLaunch::scenario = launchScenario;
-        std::fprintf(stderr, "PETARI LAUNCH: after a file loads, going to %s mission %d\n", stage.c_str(), launchScenario);
     }
     if (!unlockedSave.empty()) {
         // Rewrites a saved file: only an explicit, marked, isolated directory.
@@ -255,6 +249,20 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
             return false;
         }
         paths->user = std::filesystem::path(home) / "Library/Application Support/Petari";
+    }
+    if (!launchStage.empty()) {
+        // Mod galaxies (galaxy.json of the user's enabled folder mods) are destinations too.
+        std::vector<std::string> galaxyLog;
+        PetariNative::Platform::ModGalaxy::load(PetariNative::Platform::ModFolder::enabledRoots(paths->user), &galaxyLog);
+        for (const std::string& line : galaxyLog) std::fprintf(stderr, "[mods] %s\n", line.c_str());
+        std::string stage, error;
+        if (!App::LaunchStage::resolve(launchStage, launchScenario, &stage, &error)) {
+            std::fprintf(stderr, "petari: --stage: %s\n", error.c_str());
+            return false;
+        }
+        PetariNative::PlayerLaunch::stage = stage;
+        PetariNative::PlayerLaunch::scenario = launchScenario;
+        std::fprintf(stderr, "PETARI LAUNCH: after a file loads, going to %s mission %d\n", stage.c_str(), launchScenario);
     }
     return true;
 }
@@ -489,6 +497,15 @@ int main(int argc, char** argv) {
     App::Paths paths;
     for (int i = 1; i + 1 < argc; ++i) {
         if (std::strcmp(argv[i], "--stage") == 0 && std::strcmp(argv[i + 1], "list") == 0) {
+            // The enabled mods' galaxies are listed too (for --user, else the normal user folder).
+            std::filesystem::path user;
+            for (int k = 1; k + 1 < argc; ++k) {
+                if (std::strcmp(argv[k], "--user") == 0) user = argv[k + 1];
+            }
+            const char* home = std::getenv("HOME");
+            if (user.empty() && home != nullptr) user = std::filesystem::path(home) / "Library/Application Support/Petari";
+            std::vector<std::string> galaxyLog;
+            if (!user.empty()) PetariNative::Platform::ModGalaxy::load(PetariNative::Platform::ModFolder::enabledRoots(user), &galaxyLog);
             App::LaunchStage::printList(stdout);
             return 0;
         }

@@ -80,6 +80,10 @@ std::vector<std::filesystem::path> searchDirectories(const std::filesystem::path
 // remembers the directory for the menu calls below.
 Resolved resolveForUser(const std::filesystem::path& userDirectory);
 
+// The roots (mods/<ModName>) of the enabled mods for a user directory, in precedence order
+// (searchDirectories + effectiveStates). The mod galaxy registry reads their galaxy.json.
+std::vector<std::filesystem::path> enabledRoots(const std::filesystem::path& userDirectory);
+
 // The Home menu's Mod folder page: the mods found for the directory given to
 // resolveForUser (none before that), and the saved enable state of one of them.
 std::vector<ModInfo> detected();

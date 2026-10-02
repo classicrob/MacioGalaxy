@@ -50,6 +50,13 @@ add_library(petari_home_menu STATIC home_menu.cpp hbm_bridge.cpp launch_stage.cp
 target_include_directories(petari_home_menu PUBLIC include ${PETARI_REPO_ROOT}/native/include)
 target_link_libraries(petari_home_menu PUBLIC petari_native_config)
 target_compile_features(petari_home_menu PUBLIC cxx_std_17)
+# launch_stage.cpp lists the mod galaxy registry's galaxies (native/platform/dvd/mod_galaxy.cpp).
+target_include_directories(petari_home_menu PUBLIC ${PETARI_REPO_ROOT}/native/platform/include)
+if(TARGET petari_platform_dvd)
+    target_link_libraries(petari_home_menu PUBLIC petari_platform_dvd)
+else()
+    target_sources(petari_home_menu PRIVATE ${PETARI_REPO_ROOT}/native/platform/dvd/mod_galaxy.cpp)
+endif()
 target_link_libraries(petari_home_menu PUBLIC petari_host_runtime)  # progress.cpp: HostAllocationScope
 # The Controls page lists the live bindings when the input layer is in the
 # build (the root adds native/input first). Standalone builds show no lines.
