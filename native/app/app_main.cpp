@@ -210,8 +210,18 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
     }
     if (stageFixture) {
         const std::string& stage = PetariNative::TestFixture::stage;
-        if (!std::filesystem::is_regular_file(paths->disc / "files/StageData" / stage / (stage + "Scenario.arc"))) {
-            std::fprintf(stderr, "petari: PETARI_STAGE %s has no StageData/%s/%sScenario.arc on the disc\n",
+        const std::filesystem::path scenario = std::filesystem::path("StageData") / stage / (stage + "Scenario.arc");
+        bool found = std::filesystem::is_regular_file(paths->disc / "files" / scenario);
+        // A new galaxy from a folder mod (<user>/mods/<Mod>/files/...); the overlay decides later
+        // whether that mod is enabled.
+        std::error_code ec;
+        if (!found && !paths->user.empty() && std::filesystem::is_directory(paths->user / "mods", ec)) {
+            for (const auto& mod : std::filesystem::directory_iterator(paths->user / "mods", ec)) {
+                found = found || std::filesystem::is_regular_file(mod.path() / "files" / scenario, ec);
+            }
+        }
+        if (!found) {
+            std::fprintf(stderr, "petari: PETARI_STAGE %s has no StageData/%s/%sScenario.arc on the disc or in a mod folder\n",
                          stage.c_str(), stage.c_str(), stage.c_str());
             return false;
         }

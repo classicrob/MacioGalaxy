@@ -3,6 +3,9 @@
 #include "Game/GameAudio/AudStageBgmWrap.hpp"
 #include "Game/Util/StringUtil.hpp"
 #include <JSystem/JAudio2/JAISound.hpp>
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 // TODO: bgm state enum
 
@@ -112,6 +115,12 @@ namespace {
     };
 
     const StageBgm* findDataElement(const char* pStageName) {
+#ifdef PETARI_NATIVE
+        // A mod galaxy plays the music of the disc galaxy it borrows from (galaxy.json, TECH.md 5.7).
+        if (const char* pBorrowed = PetariNative::Platform::ModGalaxy::musicFrom(pStageName)) {
+            pStageName = pBorrowed;
+        }
+#endif
         for (u32 idx = 0; idx < ARRAY_SIZE(sStageBgmSet); idx++) {
             const StageBgm* bgm = &sStageBgmSet[idx];
             if (MR::isEqualString(pStageName, bgm->mStageName)) {
