@@ -26,6 +26,12 @@ namespace EditorScene {
     /// loaded archive). False and *ppError: nothing was created.
     bool createFromRow(const JMapInfoIter& rIter, Created* pOut, const char** ppError);
 
+    /// For objects the editor makes itself (not from a row's class, e.g. terrain parts): the
+    /// scene's execute-entry count before creating them, then lateConnect(that count) after
+    /// their init, which connects them as createFromRow does.
+    s32 executeCount();
+    void lateConnect(s32 executeBefore);
+
     /// Removes an actor the editor created or replaced: dead, hidden, out of clipping. Its
     /// memory stays (nothing is freed mid-scene; TECH.md 2.3).
     void retire(LiveActor* pActor);

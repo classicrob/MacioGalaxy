@@ -208,7 +208,7 @@ endif()
 
 add_subdirectory(native/home_menu)
 add_subdirectory(native/editor)  # the level editor (docs/dev/level-editor/TECH.md)
-target_link_libraries(petari_game_objects PRIVATE petari_editor_core)  # the editor's engine hooks (src/Game/Editor)
+target_link_libraries(petari_game_objects PRIVATE petari_editor_core petari_editor_terrain)  # the editor's engine hooks (src/Game/Editor)
 if(TARGET petari_link_check)
     target_link_libraries(petari_link_check PRIVATE petari_editor_runtime)
 endif()
