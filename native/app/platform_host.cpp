@@ -84,16 +84,13 @@ bool preparePlatform(const Paths& paths, std::string* error) {
         auto resolved = Platform::ModFolder::resolveForUser(paths.user);
         for (const std::string& line : resolved.log) std::fprintf(stderr, "[mods] %s\n", line.c_str());
         mountOptions.overlay = std::move(resolved.files);
-        // New galaxies of the enabled mods (galaxy.json; docs/dev/level-editor/TECH.md 5.7).
-        std::vector<std::filesystem::path> roots;
-        const auto states = Platform::ModFolder::detectedStates();
-        for (const auto& mod : Platform::ModFolder::detected()) {
-            auto state = states.find(mod.name);
-            if (state != states.end() && state->second) roots.push_back(mod.root);
+        // New galaxies of the enabled mods (galaxy.json; docs/dev/level-editor/TECH.md 5.7), unless
+        // --stage loaded them already.
+        if (Platform::ModGalaxy::all().empty()) {
+            std::vector<std::string> galaxyLog;
+            Platform::ModGalaxy::load(Platform::ModFolder::enabledRoots(paths.user), &galaxyLog);
+            for (const std::string& line : galaxyLog) std::fprintf(stderr, "[mods] %s\n", line.c_str());
         }
-        std::vector<std::string> galaxyLog;
-        Platform::ModGalaxy::load(roots, &galaxyLog);
-        for (const std::string& line : galaxyLog) std::fprintf(stderr, "[mods] %s\n", line.c_str());
     }
     if (!Platform::DVD::mount(mountOptions, error)) {
         *error = "disc " + paths.disc.string() + ": " + *error;
