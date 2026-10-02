@@ -26,6 +26,15 @@ target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_core PUBLIC petari_native_config)
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
+# The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
+# game code (src/Game/Editor), so only the app and the link check link it.
+add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/sync_test.cpp)
+target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
+target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_native_config)
+if(TARGET petari_platform_dvd)
+    target_link_libraries(petari_editor_runtime PRIVATE petari_platform_dvd)
+endif()
+
 if(BUILD_TESTING)
     add_executable(petari_editor_api_tests ${PETARI_REPO_ROOT}/native/tests/editor_api_tests.cpp)
     target_include_directories(petari_editor_api_tests PRIVATE runtime)

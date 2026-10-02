@@ -627,6 +627,17 @@ std::vector< std::pair< std::string, Formats::Bytes > > EditModel::changedArchiv
     return out;
 }
 
+RowId EditModel::rowAt(int zone, int table, int row) const {
+    if (table < 0 || table >= tableCount(zone) || row < 0 || row >= mZones[zone].tables[table].current.rowCount()) {
+        return {};
+    }
+    return makeId(zone, table, row);
+}
+
+int EditModel::tableLayer(int zone, int table) const {
+    return table >= 0 && table < tableCount(zone) ? mZones[zone].tables[table].layer : -1;
+}
+
 const Formats::Table* EditModel::rowTable(RowId id, int* pRowIndex) const {
     int zone, table, row;
     if (!unpack(id, &zone, &table, &row)) {
