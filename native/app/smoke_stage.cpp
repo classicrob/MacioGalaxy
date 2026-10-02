@@ -350,6 +350,9 @@ Step StageDriver::step(const Observation& o) {
         finish(Result::Fail, "frame limit " + std::to_string(mFrameLimit) + " reached while " + phase(), step);
         return step;
     }
+    if (mPhase == Phase::Tail && std::getenv("PETARI_TEST_SERVER") != nullptr) {
+        return step;  // the test server warps between stages; it ends the run
+    }
     if (o.scene != "Game" || o.stage != mConfig.stage) {
         finish(Result::Fail, "left the stage while " + std::string(phase()) + ": now scene " + o.scene + " stage " + o.stage,
                step);
