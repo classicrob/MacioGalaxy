@@ -15,6 +15,7 @@
 #include <petari/screenshot.hpp>
 #include <petari/smoke_phase.hpp>
 
+#include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
 #include "Game/LiveActor/HitSensor.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -41,6 +42,7 @@ namespace {
         LiveActor* firstModel = nullptr;
         int onBrush = 0;
         int playFrame = 0;
+        TVec3f start;  // Mario before the test (he goes back there before the brush is deleted)
     };
     State gState;
 
@@ -87,6 +89,7 @@ void brushTestTick() {
             return;
         }
         s.frame = 0;
+        s.start = *MR::getPlayerPos();
         notifyEditEntered();
         return;
     }
@@ -185,6 +188,7 @@ void brushTestTick() {
             if (pArg == nullptr || pArg->i != 0) {
                 return finish("FAIL: undo did not restore the material");
             }
+            EditorReload::teleportPlayer(s.start.x, s.start.y, s.start.z);  // off the brush first
             Command del{Command::Kind::Apply};
             del.op.label = "Delete brush";
             del.op.deletes.push_back(s.brush);
