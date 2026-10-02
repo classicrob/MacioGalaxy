@@ -2,6 +2,8 @@
 #include "Game/Scene/TestServer.hpp"
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/AllLiveActorGroup.hpp"
+#include "Game/Scene/SceneObjHolder.hpp"
+#include "Game/Util/DemoUtil.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
