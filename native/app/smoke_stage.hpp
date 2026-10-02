@@ -64,6 +64,11 @@ struct StageConfig {
     // run's controls.txt ends with ModCappyThrow=Key:F and Shake=Key:R. The game's own pause menu
     // is marked "pause" in any run.
     bool homeTour = false;
+    // PETARI_STAGE_FOLLOW=1: leaving the stage (a Power Star, a game over) is not a failure. The
+    // smoke follows the game wherever it goes, tapping A every 45 frames (result screens, the
+    // save prompt), and passes when a game-side check sets SmokePhase::followDone (e.g. the level
+    // editor's new-galaxy check, src/Game/Editor/EditorGalaxyTest.cpp), or fails at the frame limit.
+    bool follow = false;
 };
 
 // PETARI_SMOKE=stage: reads PETARI_STAGE, PETARI_SCENARIO and
@@ -86,7 +91,7 @@ public:
     bool wantsPlayer() const { return mPhase != Phase::Boot || mBoot.wantsPlayer(); }
 
 private:
-    enum class Phase { Boot, Load, Ready, Warp, Idle, Walk, Jump, Spin, Camera, PauseOpen, Paused, PauseClose, HomeTour, Probe, Tail, Done };
+    enum class Phase { Boot, Load, Ready, Warp, Idle, Walk, Jump, Spin, Camera, PauseOpen, Paused, PauseClose, HomeTour, Probe, Tail, Follow, Done };
     struct Check {
         std::string name;
         const char* status;  // "ok", "warn" or "fail"
@@ -121,6 +126,8 @@ private:
     bool mDemoStarted = false;       // FileSelector.DemoStartWait seen
     unsigned long mReadyFrames = 0;
     unsigned long mTalkTapAt = 0;
+    unsigned long mFollowTapAt = 0;
+    unsigned long mFollowPointing = 0;
     unsigned long mTalkFrames = 0;
     unsigned long mLockFrames = 0;
     bool mWarped = false;             // the warp was requested (once per run)   // consecutive exercise frames with player control off

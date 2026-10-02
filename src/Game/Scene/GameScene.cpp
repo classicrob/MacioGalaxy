@@ -49,6 +49,8 @@ extern "C" void petari_os_preemption_point(void);
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
 #include "Game/Editor/EditorScene.hpp"
+#include "Game/Editor/EditorGalaxyTest.hpp"
+#include "Game/Editor/EditorTerrain.hpp"
 #include <petari/editor/runtime.hpp>
 #include <petari/editor_settings.hpp>
 #include <petari/editor/runtime_hooks.hpp>
@@ -210,6 +212,8 @@ void GameScene::update() {
 #ifdef PETARI_NATIVE
     PetariEditor::Runtime::tick(isPermitToPauseMenu());  // the level editor's commands and SceneSync; nothing while it is off
     EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
+    EditorTerrainTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_TERRAIN_TEST
+    EditorGalaxyTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_GALAXY_TEST
 #endif
     mPauseCtrl->updateNerve();
     updateNerve();

@@ -3,6 +3,9 @@
 #include "Game/Util/EventUtil.hpp"
 #include "Game/Util/StringUtil.hpp"
 #include <JSystem/JAudio2/JAISound.hpp>
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 struct StageBgmData {
     /* 0x00 */ const char* mSceneName;
@@ -111,6 +114,12 @@ inline JAISoundID getScenarioBgmData(int index, int scenarioNo) {
 }
 
 JAISoundID AudStageBgmWrap::changeStageNameToSoundID(const char* pSceneName, const char* pStageName, s32 scenarioNo) {
+#ifdef PETARI_NATIVE
+    // A mod galaxy plays the music of the disc galaxy it borrows from (galaxy.json, TECH.md 5.7).
+    if (const char* pBorrowed = PetariNative::Platform::ModGalaxy::musicFrom(pStageName)) {
+        pStageName = pBorrowed;
+    }
+#endif
     JAISoundID soundID = -1;
     JAISoundID koopaAppearBgm = getKoopaFortressAppearBgm(pStageName);
     if (koopaAppearBgm != -1) {

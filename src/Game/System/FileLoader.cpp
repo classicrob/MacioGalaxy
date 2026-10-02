@@ -2,6 +2,9 @@
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/StringUtil.hpp"
 #include <JSystem/JKernel/JKRExpHeap.hpp>
+#ifdef PETARI_NATIVE
+#include "Game/Editor/EditorScene.hpp"
+#endif
 
 FileLoader::FileLoader() {
     mLoaderThread = nullptr;
@@ -38,6 +41,12 @@ void FileLoader::requestLoadToMainRAM(const char* pName, u8* pData, JKRHeap* pHe
 }
 
 void FileLoader::requestMountArchive(const char* pName, JKRHeap* pHeap, bool jam) {
+#ifdef PETARI_NATIVE
+    // The level editor's archives (edited stages, generated terrain parts); none while it is off.
+    if (EditorReload::injectOverriddenArchive(pName)) {
+        return;
+    }
+#endif
     if (isNeedToLoad(pName)) {
         if (pHeap == nullptr) {
             pHeap = MR::getCurrentHeap();

@@ -29,6 +29,15 @@ add_custom_command(OUTPUT ${_petari_catalog_cpp}
     DEPENDS ${_petari_catalog_dir}/generated.json ${_petari_catalog_dir}/curated.json ${_petari_catalog_dir}/embed_catalog.cmake
     COMMENT "Embedding the editor catalog")
 
+# Terrain (TECH.md section 6): meshes and brushes, the KCL + .pa writer, the J3D model writer. Pure C++ (no game code).
+add_library(petari_editor_terrain STATIC terrain/mesh.cpp terrain/kcl_writer.cpp terrain/model_writer.cpp)
+target_include_directories(petari_editor_terrain PUBLIC include)
+target_link_libraries(petari_editor_terrain PUBLIC petari_editor_formats)
+target_compile_features(petari_editor_terrain PUBLIC cxx_std_17)
+# Bakes brushes into a Full-archive mod (planet archives, PlanetMapDataTable, placement rows).
+add_executable(petari_terrain_bake tools/terrain_bake.cpp)
+target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
+
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
 add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/json.cpp
     ${_petari_catalog_cpp})
@@ -68,6 +77,35 @@ if(BUILD_TESTING)
     target_include_directories(petari_editor_model_tests PRIVATE runtime)
     target_link_libraries(petari_editor_model_tests PRIVATE petari_editor_model petari_editor_core)
     add_test(NAME native_editor_model COMMAND petari_editor_model_tests)
+
+    # The KCL writer round-tripped through the game's own collision server (KCollision.cpp).
+    if(TARGET petari_j3d)
+        add_executable(petari_editor_terrain_kcl_tests
+            ${PETARI_REPO_ROOT}/native/tests/editor_terrain_kcl_tests.cpp
+            ${PETARI_REPO_ROOT}/native/tests/heap_diagnostics.cpp
+            ${PETARI_REPO_ROOT}/src/Game/Map/KCollision.cpp
+            ${PETARI_REPO_ROOT}/src/Game/Map/KCollisionPlus.cpp
+            ${PETARI_REPO_ROOT}/src/Game/Util/JMapInfo.cpp
+            ${PETARI_REPO_ROOT}/src/Game/Util/MathUtil.cpp
+            ${PETARI_REPO_ROOT}/src/JSystem/JGadget/hashcode.cpp)
+        petari_encode_target_sources(petari_editor_terrain_kcl_tests)
+        target_compile_definitions(petari_editor_terrain_kcl_tests PRIVATE
+            PETARI_TEST_DISC_FILES="${PETARI_REPO_ROOT}/build/game-data/RMGE01/files")
+        target_link_libraries(petari_editor_terrain_kcl_tests PRIVATE petari_j3d petari_editor_terrain)
+        target_link_options(petari_editor_terrain_kcl_tests PRIVATE -Wl,-dead_strip)
+        add_test(NAME native_editor_terrain_kcl COMMAND petari_editor_terrain_kcl_tests)
+
+        # The model writer's output loaded by the game's J3D loader (donor materials from the disc).
+        add_executable(petari_editor_terrain_model_tests
+            ${PETARI_REPO_ROOT}/native/tests/editor_terrain_model_tests.cpp
+            ${PETARI_REPO_ROOT}/native/tests/heap_diagnostics.cpp
+            ${PETARI_REPO_ROOT}/native/gx/legacy_commands.cpp)
+        target_compile_definitions(petari_editor_terrain_model_tests PRIVATE
+            PETARI_TEST_DISC_FILES="${PETARI_REPO_ROOT}/build/game-data/RMGE01/files")
+        target_link_libraries(petari_editor_terrain_model_tests PRIVATE petari_j3d petari_editor_terrain)
+        target_link_options(petari_editor_terrain_model_tests PRIVATE -Wl,-dead_strip)
+        add_test(NAME native_editor_terrain_model COMMAND petari_editor_terrain_model_tests)
+    endif()
 endif()
 
 # The panels, camera and gizmo (Dear ImGui; needs aurora's imgui target and the Home menu's fonts).

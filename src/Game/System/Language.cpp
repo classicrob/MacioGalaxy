@@ -10,6 +10,10 @@
 #include <revolution/dvd.h>
 #include <cstdio>
 #include <cstdlib>
+#ifdef PETARI_NATIVE
+#include <cstring>
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 #endif
 
 #define REGION_EU 0
@@ -127,6 +131,27 @@ namespace {
         {LANGUAGE_EUDUTCH, "EuDutch"},       {LANGUAGE_CNSIMPCHINESE, "CnSimpChinese"}, {LANGUAGE_KRKOREAN, "KrKorean"},
     };
 };  // namespace
+
+#ifdef PETARI_NATIVE
+namespace {
+    // The mod galaxy registry's language code for the game's language ("UsEnglish" -> "en"), for
+    // mod galaxies' names (TECH.md 5.7).
+    const char* modGalaxyLanguage() {
+        const char* pPrefix = MR::getCurrentLanguagePrefix();
+        static const char* const sCodes[][2] = {{"English", "en"}, {"French", "fr"}, {"Spanish", "es"}, {"German", "de"},
+                                                {"Italian", "it"}, {"Dutch", "nl"},  {"Japanese", "ja"}, {"Korean", "ko"},
+                                                {"Chinese", "zh"}};
+        for (const auto& rCode : sCodes) {
+            if (pPrefix != nullptr && std::strstr(pPrefix, rCode[0]) != nullptr) {
+                return rCode[1];
+            }
+        }
+        return "en";
+    }
+
+    const bool sModGalaxyLanguage = (PetariNative::Platform::ModGalaxy::setLanguageProvider(&modGalaxyLanguage), true);
+}  // namespace
+#endif
 
 namespace MR {
     u32 getDecidedLanguageFromIPL() {
