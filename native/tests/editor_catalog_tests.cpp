@@ -44,6 +44,8 @@ void testCatalog() {
         << R"({"classes": [{"name": "Kuribo", "aliases": ["mushroom guy"], "args": [{"index": 1, "name": "Patrol radius", "help": "units"}]},
                            {"name": "NoSuchClassAnywhere", "displayName": "nope"}]})";
     std::ofstream(user / "editor" / "catalog" / "broken.json") << "{ not json";
+    std::ofstream(user / "editor" / "catalog" / "presets.json")
+        << R"({"classes": [{"name": "Coin", "presets": [{"label": "Spinning", "args": {"0": 1}}, {"label": "Still", "args": {"0": -1}}]}]})";
     std::string error;
     check(C::loadWithUser(user.string(), &error), "loads: " + error);
     check(C::classes().size() > 1100, "every factory class (" + std::to_string(C::classes().size()) + ")");
@@ -59,6 +61,19 @@ void testCatalog() {
     check(alias, "search finds aliases");
     check(!C::search("Kuri").empty() && C::search("zzzzzz").empty(), "search");
     check(std::string(C::categoryName(C::Category::Gravity)) == "Gravity", "category names");
+    const C::ClassInfo* coin = C::find("Coin");
+    check(coin && coin->presets.size() == 2 && coin->presets[0].label == "Spinning" && coin->presets[0].args[0] == std::make_pair(0, 1),
+          "presets from a file");
+    C::ClassInfo brush;
+    brush.name = "EditorBrush";
+    brush.displayName = "Terrain brush";
+    brush.category = C::Category::Planet;
+    brush.presets = {{"Box", {{0, 0}}}, {"Sphere", {{0, 1}}}};
+    C::addClass(brush);
+    check(C::find("editorbrush") && C::find("EditorBrush")->presets.size() == 2, "addClass");
+    brush.description = "replaced";
+    C::addClass(brush);
+    check(C::find("EditorBrush")->description == "replaced", "addClass replaces");
     // Curated entries (native/editor/catalog/curated.json) name the common classes.
     check(kuribo->displayName == "Goomba" && kuribo->curated && !kuribo->description.empty(), "Kuribo is the Goomba");
     check(C::find("Takobo")->displayName == "Octoomba" && C::find("SuperSpinDriver")->displayName == "Launch Star", "curated names");

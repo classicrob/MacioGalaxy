@@ -6,6 +6,7 @@
 #include "petari/editor/json.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -74,6 +75,17 @@ namespace {
         if (e.has("thumbnailArchive")) info.thumbnailArchive = e["thumbnailArchive"].asString();
         if (e.has("thumbnailJoint")) info.thumbnailJoint = e["thumbnailJoint"].asString();
         if (e.has("curated")) info.curated = e["curated"].asBool(false);
+        if (e.has("presets")) {
+            info.presets.clear();
+            for (const Json::Value& p : e["presets"].items()) {
+                Preset preset;
+                preset.label = p["label"].asString();
+                for (const auto& [index, value] : p["args"].members()) {
+                    preset.args.emplace_back(std::atoi(index.c_str()), value.asInt());
+                }
+                info.presets.push_back(std::move(preset));
+            }
+        }
         for (const Json::Value& alias : e["aliases"].items()) {
             info.aliases.push_back(alias.asString());
         }
@@ -153,6 +165,18 @@ namespace {
 
     bool gLoaded = false;
 }  // namespace
+
+void addClass(ClassInfo info) {
+    auto it = std::find_if(store().begin(), store().end(), [&](const ClassInfo& c) { return lower(c.name) == lower(info.name); });
+    if (it != store().end()) {
+        *it = std::move(info);
+    } else {
+        store().push_back(std::move(info));
+    }
+    std::sort(store().begin(), store().end(), [](const ClassInfo& a, const ClassInfo& b) {
+        return lower(a.displayName) < lower(b.displayName);
+    });
+}
 
 void addPlanets(const std::vector< std::string >& names) {
     for (const std::string& name : names) {

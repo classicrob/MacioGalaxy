@@ -44,10 +44,19 @@ namespace {
 
     const char* const kSwitchFields[] = {"SW_APPEAR", "SW_DEAD", "SW_A", "SW_B", "SW_SLEEP", "SW_PARAM", "SW_AWAKE"};
 
+    std::vector< CheckProvider >& providers() {
+        static std::vector< CheckProvider > sProviders;
+        return sProviders;
+    }
+
     struct SwitchUse {
         std::vector< RowId > readers, writers;
     };
 }  // namespace
+
+void registerCheckProvider(CheckProvider provider) {
+    providers().push_back(provider);
+}
 
 std::vector< Check > computeChecks(const ModelView& m) {
     std::vector< Check > out;
@@ -180,6 +189,52 @@ std::vector< Check > computeChecks(const ModelView& m) {
                                 (use.readers.empty() ? "; nothing waits for it" : "; nothing turns it on"),
                             {row}, "", Op{}, "pick-switch"});
     }
+    // The galaxy as a whole (the save and the game's screens have fixed room).
+    const int missions = m.missionCount();
+    if (missions > 8) {
+        out.push_back(Check{"missions-over-8", Severity::Error,
+                            std::to_string(missions) + " missions: the save keeps stars and coin records for 8 per galaxy", {}, "", Op{}, ""});
+    } else if (missions > 7) {
+        out.push_back(Check{"missions-over-7", Severity::Warning,
+                            std::to_string(missions) + " missions: the mission select and pause screens show 7", {}, "", Op{}, ""});
+    }
+    {
+        const std::string name = m.galaxy();
+        bool valid = !name.empty() && name.size() <= 40;
+        for (char c : name) {
+            valid = valid && ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_');
+        }
+        if (!valid) {
+            out.push_back(Check{"galaxy-name", Severity::Error,
+                                "The galaxy's name must be 1-40 letters, digits or '_' (it names its files)", {}, "", Op{}, ""});
+        }
+    }
+    // Launch Stars keep their flight paths in a store of 16 per mission (SpinDriverPathStorage).
+    for (int mission = 1; mission <= missions && mission <= 32; mission++) {
+        std::vector< RowId > launchers;
+        for (int zone = 0; zone < m.zoneCount(); zone++) {
+            for (int t = 0; t < m.tableCount(zone); t++) {
+                if (!isPlacementTable(m.tablePath(zone, t))) continue;
+                m.forEachRow(zone, t, [&](RowId row) {
+                    const char* pName = m.objectName(row);
+                    if (pName != nullptr && std::string(pName).rfind("SuperSpinDriver", 0) == 0 && m.state(row) != RowState::Deleted &&
+                        (m.rowMissions(row) & (1u << (mission - 1)))) {
+                        launchers.push_back(row);
+                    }
+                });
+            }
+        }
+        if (launchers.size() > 16) {
+            out.push_back(Check{"launch-stars:" + std::to_string(mission), Severity::Error,
+                                "Mission " + std::to_string(mission) + " has " + std::to_string(launchers.size()) +
+                                    " Launch Stars; the game keeps paths for 16",
+                                launchers, "", Op{}, ""});
+        }
+    }
+    for (CheckProvider provider : providers()) {
+        provider(m, out);
+    }
+
     // Errors first, then by key, so the panel's order is stable.
     std::stable_sort(out.begin(), out.end(), [](const Check& a, const Check& b) {
         if (a.severity != b.severity) return a.severity == Severity::Error;

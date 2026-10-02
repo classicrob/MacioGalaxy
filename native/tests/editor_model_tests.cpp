@@ -287,6 +287,25 @@ void testChecks() {
     for (const E::Check& c : E::computeChecks(*m))
         for (E::RowId r : c.rows) takoboFlagged = takoboFlagged || r == takobo;
     check(takoboFlagged, "mission 2's rows are checked too (the layer is used by a mission)");
+    // Galaxy-wide: 17 Launch Stars in mission 1 is one too many.
+    E::Op many{"Launch Stars", {}, {}, {}, {}};
+    for (int i = 0; i < 17; i++) {
+        E::AddRow add;
+        add.zone = 1;
+        add.table = "jmp/placement/layera/objinfo";
+        add.cells.push_back({E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, "SuperSpinDriver"}});
+        many.adds.push_back(add);
+    }
+    check(m->apply(many, &error), error);
+    const std::vector< E::Check > galaxyChecks = E::computeChecks(*m);
+    const E::Check* stars = find(galaxyChecks, "launch-stars:1");
+    check(stars && stars->rows.size() == 17, "17 Launch Stars in a mission");
+    static int sProvided = 0;
+    E::registerCheckProvider([](const E::ModelView&, std::vector< E::Check >& out) {
+        sProvided++;
+        out.push_back(E::Check{"provider-test", E::Severity::Warning, "from a provider", {}, "", E::Op{}, ""});
+    });
+    check(find(E::computeChecks(*m), "provider-test") != nullptr && sProvided > 0, "check providers");
 }
 
 void testModOverDisc() {
