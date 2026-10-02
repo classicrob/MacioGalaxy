@@ -54,6 +54,7 @@ extern "C" void petari_os_preemption_point(void);
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
 #include "Game/Scene/ClassSweep.hpp"
+#include "Game/Scene/TestServer.hpp"
 // StorySequenceExecutor.cpp
 bool petariDirectStageMove(GalaxyMoveArgument* pMoveArgument, const char* pStage, s32 selected, const char* pLabel);
 #endif
@@ -214,6 +215,7 @@ void GameScene::update() {
 #endif
 #ifdef PETARI_NATIVE
     ClassSweep::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));
+    TestServer::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));
 #endif
     mPauseCtrl->updateNerve();
     updateNerve();

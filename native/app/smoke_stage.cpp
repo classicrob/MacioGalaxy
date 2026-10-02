@@ -466,7 +466,7 @@ Step StageDriver::step(const Observation& o) {
         }
         return step;
     }
-    if (!o.playerValid && PetariNative::SmokePhase::editorReloading.load()) {
+    if (!o.playerValid && (PetariNative::SmokePhase::editorReloading.load() || std::getenv("PETARI_TEST_SERVER") != nullptr)) {
         return step;  // the level editor is rebuilding the scene
     }
     if (!o.playerValid) {
@@ -740,7 +740,7 @@ void StageDriver::exercise(const Observation& o, Step& step) {
     case Phase::Tail:
         if (petari_class_sweep_go == 0) petari_class_sweep_go = 1;  // class sweep: start once the checks are done
         PetariNative::SmokePhase::stageChecksDone.store(true);
-        if (mPhaseFrames >= mConfig.tailFrames) {
+        if (mPhaseFrames >= mConfig.tailFrames && std::getenv("PETARI_TEST_SERVER") == nullptr) {  // the test server ends the run
             finish(Result::Pass,
                    "loaded, ready, pause menu opened and closed, " + std::to_string(mConfig.tailFrames) +
                        " idle frames after the checks; walks responsive " + std::to_string(mWalksOk) + "/4",
