@@ -81,7 +81,7 @@ def cmd_start(args):
         if proc.poll() is not None:
             sys.exit(f"test-server: the app exited ({proc.returncode}); see {directory}/server.log")
         text = send(directory, "status", 5)
-        if text.startswith("ok") and "not-playable" not in text:
+        if text.startswith("ok") and "not-playable" not in text and f"stage={args.stage} " in text:
             print(f"{directory}\nready in {time.time() - t0:.1f} s: {text}")
             return 0
         time.sleep(1)
