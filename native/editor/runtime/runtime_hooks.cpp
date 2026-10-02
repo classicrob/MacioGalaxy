@@ -1,6 +1,8 @@
 // The editor's engine hooks (petari/editor/runtime_hooks.hpp): the on switch, headroom, and the
 // synthesized-row registry.
 #include "petari/editor/runtime_hooks.hpp"
+#include "runtime_core.hpp"
+#include <petari/host_allocation.hpp>
 
 #include <petari/smoke_phase.hpp>
 
@@ -48,6 +50,7 @@ std::uint32_t withHeadroom(std::uint32_t count) {
 }
 
 void registerRows(const void* pBegin, std::size_t size, std::int32_t zoneId) {
+    PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
     const auto begin = reinterpret_cast< std::uintptr_t >(pBegin);
     ranges().push_back({begin, begin + size, zoneId});
 }
@@ -80,6 +83,7 @@ namespace {
 }  // namespace
 
 void notePlaced(const void* pTableData, int row, void* pActor) {
+    PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
     placedList().push_back({pTableData, row, pActor});
 }
 
@@ -105,6 +109,7 @@ namespace {
 }  // namespace
 
 void setArchiveOverride(const std::string& path, std::vector< std::uint8_t > bytes) {
+    PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
     overrides()[lowerPath(path.c_str())] = {path, std::move(bytes)};
 }
 
@@ -113,16 +118,23 @@ void clearArchiveOverrides() {
 }
 
 const std::vector< std::uint8_t >* archiveOverride(const char* pPath) {
+    PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
     auto it = overrides().find(lowerPath(pPath));
     return it == overrides().end() ? nullptr : &it->second.second;
 }
 
 std::vector< std::string > archiveOverridePaths() {
+    PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
     std::vector< std::string > out;
     for (const auto& [key, entry] : overrides()) {
         out.push_back(entry.first);
     }
     return out;
+}
+
+void reportError(const char* pMessage) {
+    PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
+    Core::reportError(pMessage);
 }
 
 void setEditorReload(bool active) {

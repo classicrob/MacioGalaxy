@@ -35,6 +35,8 @@ namespace EditorScene {
     s32 liveActorCount();
     s32 liveActorLimit();
     s32 gravityCount();  // registered gravity fields (limit 128, no unregister)
+    s32 mountedArchiveCount();  // archives in ArchiveHolder (limit mountedArchiveLimit(), unchecked by the game)
+    s32 mountedArchiveLimit();
 
     /// The current stage and mission ("EggStarGalaxy", 1); null when no stage is loaded.
     const char* stageName();

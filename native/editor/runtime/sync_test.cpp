@@ -2,9 +2,12 @@
 // and PETARI_EDITOR_SYNC_TEST=1, once the stage smoke's checks are done it plays the UI's part
 // through edit_api.hpp on Good Egg: enter Edit; move a placed Octoomba by an op (its actor must be
 // re-created at the new place); undo (re-created back); preview a Coin and cancel (moved, then
-// back); an edit SceneSync can't apply live (pending). Logs "[editor-sync] PASS" or
+// back); an edit SceneSync can't apply live (pending); duplicate the Octoomba (an added row with
+// its own actor) and delete the copy (its actor retired). Logs "[editor-sync] PASS" or
 // "[editor-sync] FAIL: <reason>".
 #include "runtime_core.hpp"
+
+#include <petari/host_allocation.hpp>
 
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
@@ -39,6 +42,8 @@ namespace {
     }
 
     struct State {
+        RowId copy;
+        LiveActor* copyActor = nullptr;
         int frame = -1;
         bool done = false;
         RowId takobo, coin, start;
@@ -63,6 +68,7 @@ namespace {
 }  // namespace
 
 void syncTestTick() {
+    PetariNative::HostAllocationScope host;  // test bookkeeping (the actors it checks are only read)
     static const bool sOn = [] {
         const char* p = std::getenv("PETARI_EDITOR_SYNC_TEST");
         return p != nullptr && p[0] == '1';
@@ -134,9 +140,40 @@ void syncTestTick() {
     if (f == 22) {
         if (s.start.valid() && (status().pendingCount != 1 || !status().dirty))
             return finish("FAIL: an edit to a start point should wait for a reload");
-        std::fprintf(stderr, "[editor-sync] objects %d/%d, gravity %d/%d, scene heap %u KB free of %u KB\n", status().capacities[0].used,
-                     status().capacities[0].limit, status().capacities[1].used, status().capacities[1].limit, status().heapFree / 1024,
-                     status().heapTotal / 1024);
+        std::fprintf(stderr, "[editor-sync] objects %d/%d, gravity %d/%d, archives %d/%d, scene heap %u KB free of %u KB\n",
+                     status().capacities[0].used, status().capacities[0].limit, status().capacities[1].used, status().capacities[1].limit,
+                     status().capacities[2].used, status().capacities[2].limit, status().heapFree / 1024, status().heapTotal / 1024);
+        // Duplicate the Octoomba 500 units away: an added row with its own live actor.
+        int zone = 0, table = 0;
+        m->locate(s.takobo, &zone, &table);
+        s.copy = newRowId();
+        Command dup{Command::Kind::Apply};
+        dup.op.label = "Duplicate Octoomba";
+        AddRow add;
+        add.id = s.copy;
+        add.zone = zone;
+        add.table = m->tablePath(zone, table);
+        add.copyOf = s.takobo;
+        add.cells.push_back({columnHash("pos_x"), Cell{CellType::Float, 0, m->transform(s.takobo).pos.x + 500.0f, {}}});
+        dup.op.adds.push_back(add);
+        enqueue(std::move(dup));
+    }
+    if (f == 26) {
+        s.copyActor = actorForRow(s.copy);
+        LiveActor* original = actorForRow(s.takobo);
+        const float d = s.copyActor && original ? distance(s.copyActor->mPosition, original->mPosition) : 0;
+        std::fprintf(stderr, "[editor-sync] duplicate: state %d, actor %d, %.0f from the original\n", static_cast< int >(model()->state(s.copy)),
+                     s.copyActor != nullptr, d);
+        if (s.copyActor == nullptr || MR::isDead(s.copyActor) || model()->state(s.copy) != RowState::Added || d < 350.0f)
+            return finish("FAIL: the duplicate has no live actor of its own");
+        Command del{Command::Kind::Apply};
+        del.op.label = "Delete Octoomba";
+        del.op.deletes.push_back(s.copy);
+        enqueue(std::move(del));
+    }
+    if (f == 30) {
+        if (actorForRow(s.copy) != nullptr || !MR::isDead(s.copyActor) || model()->state(s.copy) != RowState::Deleted)
+            return finish("FAIL: deleting the duplicate left its actor");
         finish("PASS");
     }
 }

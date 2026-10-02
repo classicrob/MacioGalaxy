@@ -7,6 +7,8 @@
 // "[editor-reload] PASS" or "[editor-reload] FAIL: <reason>".
 #include "runtime_core.hpp"
 
+#include <petari/host_allocation.hpp>
+
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include <petari/editor_settings.hpp>
@@ -62,6 +64,7 @@ namespace {
 }  // namespace
 
 void reloadTestTick() {
+    PetariNative::HostAllocationScope host;  // test bookkeeping (the actors it checks are only read)
     static const bool sOn = [] {
         const char* p = std::getenv("PETARI_EDITOR_RELOAD_TEST");
         return p != nullptr && p[0] == '1';

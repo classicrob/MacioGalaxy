@@ -36,6 +36,7 @@ public:
     static std::optional< Archive > parse(const Bytes& raw);
 
     bool wasCompressed() const { return mCompressed; }
+    const std::string& root() const { return mRoot; }
     /// Lower-case paths below the root folder ("jmp/placement/layera/objinfo"), in entry order.
     std::vector< std::string > files() const;
     bool has(const std::string& path) const;
@@ -101,6 +102,7 @@ public:
     const std::vector< TableColumn >& columns() const { return mColumns; }
     int column(std::uint32_t hash) const;  // index, or -1
     int rowCount() const { return static_cast< int >(mRows.size()); }
+    std::uint32_t entrySize() const { return mEntrySize; }
 
     CellValue get(int row, int column) const;
     void set(int row, int column, const CellValue& value);
@@ -110,6 +112,17 @@ public:
     /// Appends a row copied from `copyOf` (or zeroed, strings empty, when -1). Returns its index.
     int addRow(int copyOf = -1);
     void removeRow(int row);
+    /// A row's raw record (its strings stay valid in this table's pool, which never shrinks).
+    Bytes rowRecord(int row) const { return mRows[row]; }
+    /// Puts a record from rowRecord() back at `index`.
+    void insertRowRecord(int index, Bytes record) { mRows.insert(mRows.begin() + index, std::move(record)); }
+    /// This table's columns with no rows (a new layer's table).
+    Table schemaOnly() const {
+        Table t = *this;
+        t.mRows.clear();
+        t.mStrings.clear();
+        return t;
+    }
 
     Bytes build() const;
     /// A table with this table's columns and only row `row` (for creating one object live).

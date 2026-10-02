@@ -2,6 +2,8 @@
 // row <-> actor binding. The EditModel and SceneSync plug in through runtime_core.hpp.
 #include "runtime_core.hpp"
 
+#include <petari/host_allocation.hpp>
+
 #include <unordered_map>
 
 namespace PetariEditor {
@@ -38,6 +40,7 @@ const ModelView* model() {
 }
 
 void enqueue(Command&& command) {
+    PetariNative::HostAllocationScope host;
     session().commands.push_back(std::move(command));
 }
 
@@ -118,11 +121,13 @@ namespace Core {
     }
 
     void reportError(const std::string& message) {
+    PetariNative::HostAllocationScope host;
         session().status.lastError = message;
         session().status.errorSerial++;
     }
 
     void reportNotice(const std::string& message) {
+    PetariNative::HostAllocationScope host;
         session().status.notice = message;
         session().status.noticeSerial++;
     }
@@ -138,6 +143,7 @@ namespace Core {
     }
 
     void bindActor(RowId row, LiveActor* pActor) {
+    PetariNative::HostAllocationScope host;
         unbindRow(row);
         auto previous = session().rowOfActor.find(pActor);
         if (previous != session().rowOfActor.end()) {
@@ -148,6 +154,7 @@ namespace Core {
     }
 
     void unbindRow(RowId row) {
+    PetariNative::HostAllocationScope host;
         auto it = session().actorOfRow.find(row);
         if (it != session().actorOfRow.end()) {
             session().rowOfActor.erase(it->second);
