@@ -374,6 +374,7 @@ if(_petari_build_testing)
     target_link_libraries(petari_audio_sdl_tests PRIVATE petari_audio_sdl)
     add_test(NAME native_audio_sdl COMMAND petari_audio_sdl_tests)
     set_tests_properties(native_audio_sdl PROPERTIES ENVIRONMENT "SDL_AUDIODRIVER=dummy" TIMEOUT 15)
+    set_tests_properties(native_audio_sdl PROPERTIES LABELS timing)  # real-time audio: quiet Mac only (fails in full parallel runs under load)
 endif()
 
 include("${CMAKE_SOURCE_DIR}/native/cmake/GameLibraries.cmake")
