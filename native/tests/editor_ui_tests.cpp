@@ -129,6 +129,9 @@ struct FakeModel : ModelView {
     int historySize() const override { return 0; }
     int historyCursor() const override { return 0; }
     const char* historyLabel(int) const override { return ""; }
+    int missionCount() const override { return 1; }
+    const char* missionName(int) const override { return ""; }
+    std::uint32_t rowMissions(RowId) const override { return 1; }
 };
 
 void testPanelsLogic() {
