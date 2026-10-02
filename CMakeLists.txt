@@ -208,6 +208,7 @@ endif()
 
 add_subdirectory(native/home_menu)
 target_link_libraries(petari_game_objects PRIVATE petari_home_menu)
+add_subdirectory(native/editor/ui)  # the level editor's panels (needs aurora's imgui target)
 if(TARGET petari_link_check)
     target_link_libraries(petari_link_check PRIVATE petari_home_menu petari_sdk_mem)
 endif()

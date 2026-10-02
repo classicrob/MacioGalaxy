@@ -49,9 +49,16 @@ if(NOT _petari_app_standalone)
     # Deliberately not petari_native_config: no SDK include paths next to Aurora's.
     target_link_libraries(petari_app_host PUBLIC aurora::core petari_input_sdl3 petari_home_menu_imgui
         petari_host_runtime petari_app_smoke)
+    if(TARGET petari_editor_ui)
+        target_link_libraries(petari_app_host PUBLIC petari_editor_ui)
+        target_compile_definitions(petari_app_host PRIVATE PETARI_EDITOR_UI=1)
+    endif()
 
     add_executable(petari MACOSX_BUNDLE app_main.cpp smoke_storage.cpp pipeline_cache_dir.cpp latency_report.cpp)
     target_link_libraries(petari PRIVATE petari_app_host petari_app_platform aurora::core aurora::main SQLite::SQLite3)
+    if(TARGET petari_editor_ui)
+        target_compile_definitions(petari PRIVATE PETARI_EDITOR_UI=1)
+    endif()
     # A real bundle identity: macOS uses it for the Dock/menu name, window state,
     # permissions and app identification. User data stays at the explicit path in app_main.
     set_target_properties(petari PROPERTIES OUTPUT_NAME "Petari"

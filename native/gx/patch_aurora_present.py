@@ -258,7 +258,7 @@ def patch_aurora(text):
         '  // Petari: the frame shows the XFB that VI latched (present_aurora.hpp).\n'
         '  auto petariPresent = petari_present::take();\n'
         '  const auto& presentSource = webgpu::present_source();\n'
-        '  const auto viewport = webgpu::calculate_present_viewport(\n'
+        '  const auto viewport = petari_present::present_viewport(\n'
         '      webgpu::g_graphicsConfig.surfaceConfiguration.width, webgpu::g_graphicsConfig.surfaceConfiguration.height,\n'
         '      petariPresent.active ? petariPresent.aspectWidth : presentSource.size.width,\n'
         '      petariPresent.active ? petariPresent.aspectHeight : presentSource.size.height);\n')
@@ -348,11 +348,23 @@ def patch_window(text):
     text = replace_once(text, 'namespace aurora::window {\n',
                         '// Petari: the displayed image\'s aspect (native/gx/present/present.h); 0 while\n'
                         '// XFBs are not presented.\n'
-                        'extern "C" int petari_present_content_aspect(unsigned* width, unsigned* height);\n\n'
+                        'extern "C" int petari_present_content_aspect(unsigned* width, unsigned* height);\n'
+                        '// Petari: the level editor\'s docked viewport, in drawable pixels; 0 when none.\n'
+                        'extern "C" int petari_present_content_area_pixels(unsigned* width, unsigned* height);\n\n'
                         'namespace aurora::window {\n')
     text = replace_once(text,
                         '  if (g_frameBufferAspectFit) {\n'
                         '    const auto [baseW, baseH] = vi::configured_fb_size();\n',
+                        '  // Petari: in the level editor the game image fills the docked viewport, so\n'
+                        '  // the EFB is sized from it rather than from the whole drawable.\n'
+                        '  {\n'
+                        '    unsigned areaW = 0;\n'
+                        '    unsigned areaH = 0;\n'
+                        '    if (petari_present_content_area_pixels(&areaW, &areaH) != 0) {\n'
+                        '      fb_w = std::min(fb_w, static_cast<int>(areaW));\n'
+                        '      fb_h = std::min(fb_h, static_cast<int>(areaH));\n'
+                        '    }\n'
+                        '  }\n'
                         '  // Petari: the EFB has the displayed image\'s aspect (the game draws 16:9\n'
                         '  // anamorphically into its 640-wide frame, so the logical size is not it).\n'
                         '  {\n'
