@@ -44,6 +44,7 @@ namespace {
         std::uint32_t reloadFromScene = 0;
         double reloadStartMs = 0;
         bool teleportPending = false;
+        bool plainReload = false;  // reloadScene() without an edit session
     };
 
     Session& session() {
@@ -241,7 +242,7 @@ namespace {
     }
 
     // Rebuild the scene from the model (TECH.md 2.6): the edited archives replace the cached ones.
-    void startReload(Session::After after) {
+    void startReload(Session::After after, bool fromStart = false) {
         PetariNative::HostAllocationScope host;
         Session& s = session();
         for (auto& [path, bytes] : s.model->changedArchives()) {
@@ -252,7 +253,7 @@ namespace {
         s.reloadFromScene = Hooks::sceneSerial();
         s.reloadStartMs = nowMs();
         Core::setMode(Mode::Reloading);
-        EditorReload::requestReload(after == Session::After::PlayStart);
+        EditorReload::requestReload(fromStart || after == Session::After::PlayStart);
     }
 
     void play(PlayFrom from) {
@@ -398,7 +399,38 @@ void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITO
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 
+bool reloadScene(bool fromStart) {
+    Session& s = session();
+    if (mode() == Mode::Reloading || s.plainReload || EditorScene::stageName() == nullptr) {
+        return false;
+    }
+    if (s.model && mode() == Mode::Editing) {
+        // The editor's own Reload (edits included); fromStart: from the mission's start, then Edit.
+        startReload(Session::After::Edit, fromStart);
+        return true;
+    }
+    Hooks::setEditorReload(true);
+    s.plainReload = true;
+    s.reloadFromScene = Hooks::sceneSerial();
+    s.reloadStartMs = nowMs();
+    EditorReload::requestReload(fromStart);
+    return true;
+}
+
+bool reloading() {
+    return mode() == Mode::Reloading || session().plainReload;
+}
+
+void plainReloadTestTick(bool playable);  // reload_test.cpp (PETARI_EDITOR_PLAIN_RELOAD_TEST)
+
 void tick(bool playable) {
+    plainReloadTestTick(playable);
+    // A plain reloadScene() completes whether or not the editor is on.
+    if (session().plainReload && Hooks::sceneSerial() != session().reloadFromScene && playable) {
+        session().plainReload = false;
+        Hooks::setEditorReload(false);
+        std::fprintf(stderr, "[editor] scene reload done in %.0f ms\n", nowMs() - session().reloadStartMs);
+    }
     if (!Hooks::enabled()) {
         return;
     }
