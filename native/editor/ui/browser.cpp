@@ -14,6 +14,7 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <map>
 
 namespace PetariEditor::Ui {
@@ -142,7 +143,8 @@ void drawInitials(ImDrawList* list, const BrowserEntry& entry, ImVec2 min, ImVec
 bool card(const BrowserEntry& entry, bool selected, float size) {
     ImGui::PushID(entry.className.c_str());
     const ImVec2 min = ImGui::GetCursorScreenPos();
-    const bool clicked = ImGui::InvisibleButton("card", ImVec2(size, size + ImGui::GetTextLineHeight() + 6.0f));
+    const float lineHeight = ImGui::GetTextLineHeight();
+    const bool clicked = ImGui::InvisibleButton("card", ImVec2(size, size + lineHeight * 2.0f + 4.0f));
     const bool hovered = ImGui::IsItemHovered();
     // Drag a card onto the viewport to place it (edit_mode.cpp places it where the button comes up).
     if (!entry.examples.empty() && ImGui::BeginDragDropSource()) {
@@ -173,12 +175,15 @@ bool card(const BrowserEntry& entry, bool selected, float size) {
                             countSize.y * 0.5f);
         list->AddText(at, IM_COL32(200, 230, 255, 230), count);
     }
-    // The name, clipped to the card.
-    list->PushClipRect(ImVec2(min.x, max.y), ImVec2(max.x, max.y + ImGui::GetTextLineHeight() + 6.0f), true);
-    const ImVec2 nameSize = ImGui::CalcTextSize(entry.displayName.c_str());
-    list->AddText(ImVec2(min.x + std::max(0.0f, (size - nameSize.x) * 0.5f), max.y + 3.0f), IM_COL32(230, 245, 255, 255),
-                  entry.displayName.c_str());
-    list->PopClipRect();
+    // The name below, on up to two lines (the tooltip has it whole).
+    const std::vector< std::string > lines = cardLabelLines(entry.displayName, size + 6.0f, [](const std::string& text) {
+        return ImGui::CalcTextSize(text.c_str()).x;
+    });
+    for (size_t i = 0; i < lines.size(); i++) {
+        const float width = ImGui::CalcTextSize(lines[i].c_str()).x;
+        list->AddText(ImVec2(min.x + (size - width) * 0.5f, max.y + 2.0f + lineHeight * static_cast< float >(i)), IM_COL32(230, 245, 255, 255),
+                      lines[i].c_str());
+    }
     ImGui::PopID();
     return clicked;
 }
@@ -296,7 +301,18 @@ void drawBrowser(const ModelView& model) {
     for (size_t i = 0; i < shown.size(); i++) {
         if (i % perRow != 0) ImGui::SameLine(0.0f, gap);
         if (card(*shown[i], shown[i]->className == gSelectedClass, size)) gSelectedClass = shown[i]->className;
-        if (ImGui::IsItemHovered() && !shown[i]->description.empty()) ImGui::SetTooltip("%s", shown[i]->description.c_str());
+        if (ImGui::IsItemHovered()) {
+            const BrowserEntry& entry = *shown[i];
+            ImGui::BeginTooltip();
+            ImGui::TextUnformatted(entry.displayName.c_str());
+            if (entry.className != entry.displayName) ImGui::TextDisabled("%s", entry.className.c_str());
+            if (!entry.description.empty()) {
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
+                ImGui::TextUnformatted(entry.description.c_str());
+                ImGui::PopTextWrapPos();
+            }
+            ImGui::EndTooltip();
+        }
     }
     if (shown.empty()) ImGui::TextDisabled("Nothing matches.");
     ImGui::EndChild();
@@ -333,6 +349,35 @@ void drawBrowser(const ModelView& model) {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each click in the viewport places a copy of the first example, settings included. Or drag the card onto the viewport.");
         }
     }
+}
+
+std::vector< std::string > cardLabelLines(const std::string& text, float width, const std::function< float(const std::string&) >& measure) {
+    if (measure(text) <= width) return {text};
+    // Break points: after a space, or before a capital that follows a lower-case letter or digit ("Benefit|Item").
+    std::vector< size_t > breaks;
+    for (size_t i = 1; i < text.size(); i++) {
+        const unsigned char c = static_cast< unsigned char >(text[i]), p = static_cast< unsigned char >(text[i - 1]);
+        if (p == ' ' || (std::isupper(c) && (std::islower(p) || std::isdigit(p)))) breaks.push_back(i);
+    }
+    auto trim = [](std::string s) {
+        while (!s.empty() && s.back() == ' ') s.pop_back();
+        return s;
+    };
+    auto ellipsize = [&](std::string s) {
+        if (measure(s) <= width) return s;
+        while (!s.empty() && measure(s + "...") > width) s.pop_back();
+        return trim(s) + "...";
+    };
+    // The longest first line that fits, broken at a break point; else at the last character that fits.
+    size_t split = 0;
+    for (size_t at : breaks) {
+        if (measure(trim(text.substr(0, at))) <= width) split = at;
+    }
+    if (split == 0) {
+        split = 1;
+        while (split < text.size() && measure(text.substr(0, split + 1)) <= width) split++;
+    }
+    return {trim(text.substr(0, split)), ellipsize(text.substr(split))};
 }
 
 bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, float uv[4]) {

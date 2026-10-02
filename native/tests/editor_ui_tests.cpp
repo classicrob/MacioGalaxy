@@ -174,6 +174,35 @@ void testPanelsLogic() {
     CHECK(Ui::filterEntries(entries, "", "").size() == 3 && Ui::filterEntries(entries, "zzz", "").empty());
     CHECK(Ui::filterEntries(entries, "", "Planets").empty());
 
+    // Named settings in words: enum labels (including a named -1), on/off, numbers with units, "default".
+    {
+        PetariEditor::Catalog::Arg walk;
+        walk.type = PetariEditor::Catalog::ArgType::Enum;
+        walk.choices = {{-1, "Yes"}, {0, "No"}, {2, "Sleeps"}};
+        CHECK(Ui::argValueText(walk, -1) == "Yes" && Ui::argValueText(walk, 2) == "Sleeps" && Ui::argValueText(walk, 7) == "7 (unlisted)");
+        walk.choices = {{0, "Walks"}};
+        CHECK(Ui::argValueText(walk, -1) == "default");
+        PetariEditor::Catalog::Arg flag;
+        flag.type = PetariEditor::Catalog::ArgType::Bool;
+        CHECK(Ui::argValueText(flag, 1) == "on" && Ui::argValueText(flag, 0) == "off" && Ui::argValueText(flag, -1) == "default");
+        PetariEditor::Catalog::Arg wait;
+        wait.unit = "frames";
+        CHECK(Ui::argValueText(wait, 120) == "120 frames" && Ui::argValueText(wait, -1) == "default");
+    }
+
+    // Card names: one line when they fit, else two at a space or CamelCase boundary, the rest ellipsized.
+    {
+        const auto chars = [](const std::string& text) { return static_cast< float >(text.size()); };  // 1 per character
+        CHECK(Ui::cardLabelLines("Goomba", 10.0f, chars) == std::vector< std::string >{"Goomba"});
+        CHECK((Ui::cardLabelLines("1-Up Mushroom", 10.0f, chars) == std::vector< std::string >{"1-Up", "Mushroom"}));
+        CHECK((Ui::cardLabelLines("BenefitItemInvincible", 12.0f, chars) == std::vector< std::string >{"BenefitItem", "Invincible"}));
+        CHECK((Ui::cardLabelLines("AudioEffectCube", 12.0f, chars) == std::vector< std::string >{"AudioEffect", "Cube"}));
+        const std::vector< std::string > long_ = Ui::cardLabelLines("ReverseGravityRoomPressGroundC", 12.0f, chars);
+        CHECK(long_.size() == 2 && long_[0] == "Reverse" && long_[1].size() <= 12 && long_[1].substr(long_[1].size() - 3) == "...");
+        const std::vector< std::string > noBreak = Ui::cardLabelLines("abcdefghijklmnopqrstuvwxyz", 10.0f, chars);
+        CHECK(noBreak.size() == 2 && noBreak[0] == "abcdefghij" && noBreak[1] == "klmnopq...");
+    }
+
     // Thumbnails: cropped to the drawn part, squared and padded, inside the image; nothing drawn fails.
     {
         std::vector< unsigned char > rgba(100 * 100 * 4, 0);

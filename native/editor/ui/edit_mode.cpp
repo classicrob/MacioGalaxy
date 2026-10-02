@@ -3,6 +3,7 @@
 #include "edit_mode.hpp"
 #include "panels.hpp"
 
+#include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor/ui.hpp>
 #include <petari/editor_pick.hpp>
@@ -191,6 +192,12 @@ ImU32 rgba(float r, float g, float b, float a) {
 
 // Until the selection outline draws in the scene (S5): rings around the hovered and selected objects'
 // bounds, in the selection's gold and the hover's cyan (UX section 4 "The look"), with their names.
+// An object's name for the viewport's labels: the catalog's ("Goomba"), else the class name.
+const char* shownName(const char* name) {
+    const Catalog::ClassInfo* info = Catalog::find(name);
+    return info != nullptr && !info->displayName.empty() ? info->displayName.c_str() : name;
+}
+
 void drawPickMarks(const Area& area) {
     ImDrawList* list = ImGui::GetForegroundDrawList();
     list->PushClipRect(ImVec2(area.x, area.y), ImVec2(area.x + area.w, area.y + area.h), true);
@@ -214,7 +221,7 @@ void drawPickMarks(const Area& area) {
         if (!toScreen(item, &c, &r)) continue;
         // The model has its own outline in the scene (EditorDraw); the ring only hints at the bounds.
         list->AddCircle(c, r, rgba(0.98f, 0.80f, 0.22f, 0.30f), 0, 1.5f);
-        label(ImVec2(c.x, c.y + r + 6.0f), item.name, rgba(0.98f, 0.80f, 0.22f, 1.0f));
+        label(ImVec2(c.x, c.y + r + 6.0f), shownName(item.name), rgba(0.98f, 0.80f, 0.22f, 1.0f));
     }
     Pick::Item hover;
     if (Pick::hover(&hover)) {
@@ -224,7 +231,7 @@ void drawPickMarks(const Area& area) {
         float r;
         if (!selected && toScreen(hover, &c, &r)) {
             list->AddCircle(c, r, rgba(0.40f, 0.86f, 1.0f, 0.95f), 0, 2.0f);
-            label(ImVec2(c.x, c.y - r - ImGui::GetTextLineHeight() - 12.0f), hover.name, rgba(0.40f, 0.86f, 1.0f, 1.0f));
+            label(ImVec2(c.x, c.y - r - ImGui::GetTextLineHeight() - 12.0f), shownName(hover.name), rgba(0.40f, 0.86f, 1.0f, 1.0f));
         }
     }
     list->PopClipRect();
@@ -244,7 +251,7 @@ void drawGizmo(const Area& area) {
             list->PathArcTo(c, r, 6.2831853f * i / 12, 6.2831853f * (i + 1) / 12, 4);
             list->PathStroke(rgba(1.0f, 1.0f, 1.0f, 0.45f), 0, 1.5f);
         }
-        if (r > 10.0f) list->AddText(ImVec2(c.x - ImGui::CalcTextSize(ghost.name).x * 0.5f, c.y + r + 2.0f), rgba(1.0f, 1.0f, 1.0f, 0.55f), ghost.name);
+        if (r > 10.0f) list->AddText(ImVec2(c.x - ImGui::CalcTextSize(shownName(ghost.name)).x * 0.5f, c.y + r + 2.0f), rgba(1.0f, 1.0f, 1.0f, 0.55f), shownName(ghost.name));
     }
     if (view.marker) {
         // A dashed cyan ring at Mario's feet and its label (the mockup's play marker).
