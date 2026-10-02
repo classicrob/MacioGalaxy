@@ -881,10 +881,27 @@ in the tech worker's thread storage (`spike/run1..run7`), not in the repo
 
 ---
 
-## 9. Open questions for the user (technical)
+## 9. Decisions (the user, 2026-10-02)
 
-1. **Patch mods by default** (no Nintendo data; built from each player's disc at start-up), with Full archives as an export option (UX Q5)? Recommended: yes.
-2. **New galaxies are Petari-only** unless someone writes an executable patch for the real game. Edits to existing galaxies stay portable. Acceptable?
-3. **Mesh gravity** (a Petari-only gravity class for imported shapes) is deferred; v1 fits the game's own gravity shapes to terrain. OK?
-4. **Accessibility:** ImGui gives no VoiceOver support. Accept for v1?
-5. **Third-party libraries for terrain** (Manifold for booleans, cgltf, tinyobjloader, meshoptimizer; all MIT or Apache-2.0) are fine to vendor?
+The open questions are resolved; the user took every recommendation (SUMMARY.md has the UX ones):
+
+1. **Patch mods by default** (no Nintendo data; built from each player's disc at start-up), with Full-archive export as an option. M1 writes Full archives first because today's loader reads them; the patch loader is M2.
+2. **New galaxies are Petari-only** (the mod galaxy registry, 5.7). Edits to existing galaxies stay portable.
+3. **Mesh gravity is deferred.** Terrain gets fitted game gravity shapes (6.3).
+4. **No VoiceOver in v1** (ImGui).
+5. **MIT/Apache libraries** for terrain (Manifold, cgltf, tinyobjloader, meshoptimizer) may be vendored when needed.
+6. The editor is **off until switched on once** in the Home menu (Mods page, "Level editor"). With it off, the game is unchanged: no runtime hooks run, and no headroom is reserved at load.
+7. **Formats and the catalog** are shared with Supernova (SMGCommunity, MIT) where practical: plain JSON, documented here.
+
+## 10. Implementation notes (build phase)
+
+- **Branches.** `level-editor` is the integration branch; each topic gets its own `editor/<topic>` branch (docs/dev/WORKTREES.md workflow).
+- **Interface.** The UI <-> Runtime contract is `native/editor/include/petari/editor/edit_api.hpp`. It refines 2.10, as agreed with the UI worker:
+  - The UI reads the EditModel directly from the overlay (main thread, never mutated there) and touches actors only in its seam hook.
+  - There is no separate snapshot struct; `status()` carries the toolbar, meter and Checks data.
+  - Selection and the editor camera are UI state.
+  - Runtime owns Play and Reload, and calls back into the UI (`leaveEdit`, `resumeEdit`, `sceneRebuilt`).
+- **Code layout.**
+  - `native/editor/runtime/`: the EditModel, ops, SceneSync, reload, save.
+  - `native/editor/ui/`: panels, camera, gizmo, picking.
+  - Game-side hooks in `src/` stay `PETARI_NATIVE` and do nothing while the editor is off.
