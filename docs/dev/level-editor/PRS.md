@@ -15,6 +15,7 @@ Each editor topic branch (`editor/<topic>`) is tested in a clean worktree and me
 | 6 | `editor/scene-sync`: SceneSync, the editor runtime in the frame (session, row/actor binding, command drain, live re-creation of changed rows); based on level-editor `424853073` | `level-editor` | `b7cf48af9` | build ok incl. the app; 113/113 |
 | 7 | `editor/picking-outline`: picking, hover and selection in Edit mode, plus Runtime's wiring (stacked on camera-input) | `level-editor` | `6a957caa3` | build ok incl. the app; 113/113; two mechanical merge conflicts resolved by the integrator (below) |
 | 8 | `editor/fast-reload`: reload from the model and Play (S3, ~0.3-0.5 s same-stage reload); stacked on scene-sync | `level-editor` (after merging main) | `ba71d24c2` | build ok incl. the app; 112/112 incl. `native_editor_model` |
+| 9 | `editor/save-mod` + `editor/m2-api` (self-merged by the runtime worker): Full-archive mod save; retire no longer re-draws a clipped actor; the M2 interface (catalog API, add/delete ops, checks, missions); drops the temporary window-restore guard (main's fix is in) | `level-editor` (after PR 8) | (this merge) | merged tree: build ok incl. the app; `ctest -R "native_editor|native_input|native_home_menu|native_platform_dvd|native_mod_folder"` 9/9; live: `editor_save_smoke.py`, `editor_reload_smoke.py`, `editor_sync_smoke.py` PASS |
 
 ## Notes
 
