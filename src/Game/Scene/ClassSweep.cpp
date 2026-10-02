@@ -544,6 +544,17 @@ namespace ClassSweep {
                           c.tplLinks.empty() ? "-" : c.tplLinks.c_str());
             gCreatedText = text;
             std::fprintf(stderr, "[class-sweep] CREATED %d %s created=%d\n", gCurrent, rJob.name.c_str(), c.created);
+            {
+                // Where did the new actors land against the requested spot (checks the zone conversion).
+                AllLiveActorGroup* pGroup = MR::getAllLiveActorGroup();
+                double nearest = -1;
+                for (s32 i = gActorsBefore; i < pGroup->getObjNum(); i++) {
+                    LiveActor* a = pGroup->getActor(i);
+                    double d = len(add({a->mPosition.x, a->mPosition.y, a->mPosition.z}, mul(gSpawnPos, -1.0f)));
+                    nearest = nearest < 0 ? d : std::fmin(nearest, d);
+                }
+                std::fprintf(stderr, "[class-sweep] NOTE spawn_dist=%.0f\n", nearest);
+            }
             gStep = Observing;
             gStepFrame = 0;
             break;
