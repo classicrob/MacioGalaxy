@@ -389,7 +389,7 @@ def confirm_failures(args, stage, scenario, out):
     neighbours (heap, lists), not itself broken."""
     results_path = out / "results.jsonl"
     results = load_results(results_path)
-    todo = [r for r in results.values() if r["status"] not in PASS and r["batch_size"] > 1 and r.get("confirm") is None and False
+    todo = [r for r in results.values() if r["status"] not in PASS and r["batch_size"] > 1 and r.get("confirm") is None
             and not any(f"{f}=" in r["overrides"] for f in LINK_FIELDS)]
     for record in todo:
         job = {"class": record["class"], "mode": record["mode"], "overrides": record["overrides"]}
