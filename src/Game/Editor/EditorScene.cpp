@@ -19,6 +19,8 @@
 #include "Game/Scene/StageDataHolder.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/MtxUtil.hpp"
+#include "Game/Util/MessageUtil.hpp"
+#include "Game/Screen/MessageTagSkipTagProcessor.hpp"
 #include <JSystem/JKernel/JKRArchive.hpp>
 #include <JSystem/JKernel/JKRSolidHeap.hpp>
 #include <cmath>
@@ -156,6 +158,48 @@ namespace EditorScene {
 
     s32 scenario() {
         return MR::getCurrentScenarioNo();
+    }
+
+    bool scenarioName(const char* pGalaxy, s32 scenario, char* pOut, u32 size) {
+        const wchar_t* pText = MR::getScenarioNameOnCurrentLanguage(pGalaxy, scenario);
+        u32 at = 0;
+        auto put = [&](u32 c) {
+            const u32 need = c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+            if (at + need >= size) return;
+            if (need == 1) {
+                pOut[at++] = static_cast< char >(c);
+            } else if (need == 2) {
+                pOut[at++] = static_cast< char >(0xC0 | (c >> 6));
+                pOut[at++] = static_cast< char >(0x80 | (c & 0x3F));
+            } else if (need == 3) {
+                pOut[at++] = static_cast< char >(0xE0 | (c >> 12));
+                pOut[at++] = static_cast< char >(0x80 | ((c >> 6) & 0x3F));
+                pOut[at++] = static_cast< char >(0x80 | (c & 0x3F));
+            } else {
+                pOut[at++] = static_cast< char >(0xF0 | (c >> 18));
+                pOut[at++] = static_cast< char >(0x80 | ((c >> 12) & 0x3F));
+                pOut[at++] = static_cast< char >(0x80 | ((c >> 6) & 0x3F));
+                pOut[at++] = static_cast< char >(0x80 | (c & 0x3F));
+            }
+        };
+        // Host-order UTF-16 code units (MessageData); 0x1A starts a tag (colour, icon), skipped.
+        for (const wchar_t* p = pText; p != nullptr && *p != 0;) {
+            const u32 unit = static_cast< u16 >(*p);
+            if (unit == 0x1A) {
+                p++;
+                p += MessageEditorMessageTag(p).getSkipLength();
+                continue;
+            }
+            p++;
+            if (unit >= 0xD800 && unit < 0xDC00 && static_cast< u16 >(*p) >= 0xDC00 && static_cast< u16 >(*p) < 0xE000) {
+                put(0x10000 + ((unit - 0xD800) << 10) + (static_cast< u16 >(*p) - 0xDC00));
+                p++;
+            } else if (unit != L'\n') {
+                put(unit);
+            }
+        }
+        if (size > 0) pOut[at < size ? at : size - 1] = '\0';
+        return pText != nullptr && at > 0;
     }
 
     const void* tableData(s32 zoneId, const char* pPath) {

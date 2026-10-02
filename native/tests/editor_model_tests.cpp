@@ -165,6 +165,9 @@ void testSynthetic() {
         check(m->setScenario(2) && m->scenario() == 2 && m->revision() == before + 1, "switch to mission 2");
         check(!m->setScenario(3) && !m->setScenario(0) && m->scenario() == 2, "no mission 3");
         check(m->setScenario(1) && m->scenario() == 1, "back to mission 1");
+        m->setMissionNames({"Bunnies in the Wind", ""});
+        check(std::string(m->missionName(1)) == "Bunnies in the Wind", "the player-facing mission name");
+        m->setMissionNames({});
     }
     const E::RowId takobo = findRow(*m, 1, "jmp/placement/layerb/objinfo", "Takobo");
     const E::RowId galaxyCoin = findRow(*m, 0, "jmp/placement/common/objinfo", "Coin");
