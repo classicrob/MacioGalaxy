@@ -32,6 +32,11 @@ public:
     /* 0x10 */ OSMessageQueue mQueue;
     /* 0x30 */ OSMessage mMessage;
     /* 0x34 */ bool mContextSet;
+#ifdef PETARI_NATIVE
+    // The path, kept only for a file that is not on the disc (mEntryNum -1: archives the level
+    // editor serves from memory), so findEntry can tell such files apart.
+    char* mNativePath;
+#endif
 };
 
 class FileHolder {

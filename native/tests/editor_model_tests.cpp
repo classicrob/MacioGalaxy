@@ -3,7 +3,9 @@
 // reads, ops, undo/redo/jump, revert, added columns, changed archives and the saved state; and,
 // with an extracted disc, Good Egg itself. No game code.
 
+#include "checks.hpp"
 #include "edit_model.hpp"
+#include <petari/editor/catalog.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -238,6 +240,74 @@ void testStructure() {
     check(rows == 3, "and its first add was taken back");
 }
 
+// The Checks engine on the synthetic galaxy (the catalog is the shipped one).
+void testChecks() {
+    std::map< std::string, F::Bytes > disc = syntheticDisc();
+    E::FileSource source = [&](const std::string& path) -> std::optional< F::Bytes > {
+        auto it = disc.find(path);
+        return it == disc.end() ? std::nullopt : std::optional< F::Bytes >(it->second);
+    };
+    std::string error;
+    std::unique_ptr< E::EditModel > m = E::EditModel::load("TestGalaxy", 1, source, &error);
+    check(PetariEditor::Catalog::load(&error), "catalog: " + error);
+    auto find = [](const std::vector< E::Check >& checks, const std::string& prefix) -> const E::Check* {
+        for (const E::Check& c : checks)
+            if (c.key.rfind(prefix, 0) == 0) return &c;
+        return nullptr;
+    };
+    check(E::computeChecks(*m).empty(), "a clean galaxy has no problems");
+    const E::RowId kuribo = findRow(*m, 1, "jmp/placement/layera/objinfo", "Kuribo");
+    const E::RowId coin = findRow(*m, 1, "jmp/placement/layera/objinfo", "Coin");
+    auto set = [&](E::RowId row, const char* column, int value) {
+        check(m->apply(E::Op{"set", {E::SetCell{row, E::columnHash(column), E::Cell{E::CellType::Int, value, 0, {}}}}, {}}, &error), error);
+    };
+    auto setName = [&](E::RowId row, const char* name) {
+        check(m->apply(E::Op{"name", {E::SetCell{row, E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, name}}}, {}}, &error),
+              error);
+    };
+    set(kuribo, "CommonPath_ID", 3);
+    set(kuribo, "SW_APPEAR", 5);
+    set(coin, "l_id", 5);
+    std::vector< E::Check > checks = E::computeChecks(*m);
+    const E::Check* path = find(checks, "dangling-path:");
+    check(path && path->severity == E::Severity::Error && path->rows.front() == kuribo && !path->fix.sets.empty(),
+          "a path that doesn't exist, with an unlink fix");
+    check(find(checks, "switch-alone:") != nullptr, "a switch only one row uses");
+    check(find(checks, "duplicate-lid:") != nullptr, "duplicate link ids");
+    check(checks.front().severity == E::Severity::Error, "errors first");
+    check(m->apply(path->fix, &error) && !find(E::computeChecks(*m), "dangling-path:"), "the fix clears it");
+    set(kuribo, "SW_B", 500);
+    check(find(E::computeChecks(*m), "switch-range:") != nullptr, "a switch id out of range");
+    setName(coin, "NoSuchObjectClass");
+    check(find(E::computeChecks(*m), "unknown-class:") != nullptr, "an unknown class");
+    // Rows in no mission (an unused layer) are not checked.
+    const E::RowId takobo = findRow(*m, 1, "jmp/placement/layerb/objinfo", "Takobo");
+    set(takobo, "SW_B", 600);
+    bool takoboFlagged = false;
+    for (const E::Check& c : E::computeChecks(*m))
+        for (E::RowId r : c.rows) takoboFlagged = takoboFlagged || r == takobo;
+    check(takoboFlagged, "mission 2's rows are checked too (the layer is used by a mission)");
+    // Galaxy-wide: 17 Launch Stars in mission 1 is one too many.
+    E::Op many{"Launch Stars", {}, {}, {}, {}};
+    for (int i = 0; i < 17; i++) {
+        E::AddRow add;
+        add.zone = 1;
+        add.table = "jmp/placement/layera/objinfo";
+        add.cells.push_back({E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, "SuperSpinDriver"}});
+        many.adds.push_back(add);
+    }
+    check(m->apply(many, &error), error);
+    const std::vector< E::Check > galaxyChecks = E::computeChecks(*m);
+    const E::Check* stars = find(galaxyChecks, "launch-stars:1");
+    check(stars && stars->rows.size() == 17, "17 Launch Stars in a mission");
+    static int sProvided = 0;
+    E::registerCheckProvider([](const E::ModelView&, std::vector< E::Check >& out) {
+        sProvided++;
+        out.push_back(E::Check{"provider-test", E::Severity::Warning, "from a provider", {}, "", E::Op{}, ""});
+    });
+    check(find(E::computeChecks(*m), "provider-test") != nullptr && sProvided > 0, "check providers");
+}
+
 void testModOverDisc() {
     std::map< std::string, F::Bytes > disc = syntheticDisc();
     std::map< std::string, F::Bytes > modded = disc;
@@ -308,6 +378,7 @@ int main() {
     testSynthetic();
     testModOverDisc();
     testStructure();
+    testChecks();
     testDisc();
     std::printf("editor model: %d checks passed\n", checks);
     return 0;

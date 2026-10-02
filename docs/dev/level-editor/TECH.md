@@ -292,7 +292,7 @@ tracks each one and refuses (with a Check) before the limit.
 | Camera chunks | 1,024 | `src/Game/Camera/CameraParamChunkHolder.cpp:12` |
 | Area managers | 80 types; per type 16-160 | `include/Game/AreaObj/AreaObjContainer.hpp:31` |
 | Demo casts | 512 actors / 64 layouts / 128 NameObjs; 32 groups x 192 | `src/Game/Demo/DemoDirector.cpp:22` |
-| Resource holders / archives | 512 / 384 | `ResourceHolderManager` |
+| Resource holders / mounted archives | 512 / 384; the archive add is unchecked, and Good Egg uses about 350 (S6) | `ResourceHolderManager`, `ArchiveHolder` (`mEntries.init(0x180)`) |
 | Draw-buffer models per group | 1-256 (MapObj 256, NPC 80, Planet 64) | `SceneNameObjListExecutor.cpp:289+` |
 | Child zones | 24 | `include/Game/Scene/StageDataHolder.hpp` |
 
@@ -668,6 +668,28 @@ The Checks run on the EditModel at every op (cheap, incremental) and block savin
 | Save: `GALA` records keyed by a 16-bit name hash; unknown records are dropped at the next save | Progress lost when the mod is off; possible hash collision with a real galaxy | The registry rejects colliding names. Mod galaxies' records go to a **sidecar** `<user>/mods-saves/<Mod>.bin`, and `GameData.bin` stays vanilla-shaped |
 | Observatory: domes, map panes, `Mini<G>` miniatures (names hard-coded; a dome holds at most 5) | Not shown | Not in v1: mod galaxies are reached from Level Select (UX agreed). Domes later |
 
+**S8 (spike, `editor/galaxy-registry`).**
+- [new-galaxies.md](new-galaxies.md) lists every crash site, with file:line and a guard for each. The table above was missing several:
+  - the pause menu's `PauseMenu::init` name lookup at **stage load**;
+  - **any** Power Star in **any** galaxy, vanilla included, once a new galaxy is parsed (`getGalaxyNumCanOpen`);
+  - the next stage after leaving (`strcmp(nullptr)`);
+  - the 75-row pause star list;
+  - comet-schedule null pointers.
+- What the spike implements:
+  - The registry: `native/platform/dvd/mod_galaxy.cpp`, read from `<mod>/galaxy.json` at start-up.
+  - Native hooks: the message overlay, null-flag guards, `JMapInfoIter::getValue` reading nothing past its table (every `GalaxyID` lookup), music borrowing, and the parser.
+  - The parser takes only disc galaxies and registered ones, refuses a save-key collision, and caps at 64. Spin-driver records go up to 64.
+- **Result.** `editor_galaxy_smoke.py` builds a skeleton galaxy (`petari_terrain_bake --galaxy`: the baked box planet, cube gravity, a start and Power Star 1) outside every compiled-in table. The game:
+  - enters it with the registry's names;
+  - plays the star get;
+  - returns to the Comet Observatory (`GrandGalaxyNo` 0);
+  - saves (see the S8 row in 7 for the restart check).
+- Since then:
+  - **Level Select / `--stage`** list mod galaxies in their own section.
+  - **The save sidecar** is done, as JSON rather than `.bin` (`<user>/mods-saves/<Mod>.json`, so it is readable and mergeable). `GameData.bin` keeps only the disc's galaxies.
+  - The comet null guard, the pause star-list cap, and leaving mod stars out of the game's totals are done.
+- What remains is M4 work: `SPN1` in the sidecar, the 8-mission and 7-star editor Checks (new-galaxies.md marks them *Proposed*).
+
 **`galaxy.json`** (in the mod, user-made, so no Nintendo data):
 - name and short name per language
 - mission names
@@ -702,7 +724,7 @@ existing galaxies stay fully portable.
   - `buildSyntheticKcl` (`native/tests/kcl_tests.cpp:82-143`), with octree branches and shared lists.
   - A minimal complete BDL builder: one joint, one material (MAT3 + MDL3), one shape, one texture (`native/tests/j3d_load_tests.cpp:118-123`; every block in `j3d_model_tests.cpp`).
   - A Python KCL reader (`native/tools/observatory_static_collision.py:121-132`).
-- **KCL limits.** u16 indices (at most 65,535 triangles per file), 512 collision parts per zone, 32 hits per query. Surfaces come from the `.pa` attribute row per triangle: `Floor_code` (Normal, Death, Ice, Sand, Slip, Damage*...), `Wall_code`, `Sound_code`, `Camera_through` (`src/Game/Map/CollisionCode.cpp`).
+- **KCL limits.** u16 indices for positions, normals and prisms. **Normals run out first.** Each triangle has a face normal and three edge normals, and they are shared only when equal. That gives at most about **16,000 triangles per file** (S6: 16,200 fit, 16,562 do not), and disc files also carry about 4 normals per triangle. Also: 512 collision parts per zone, 32 hits per query. Surfaces come from the `.pa` attribute row per triangle: `Floor_code` (Normal, Death, Ice, Sand, Slip, Damage*...), `Wall_code`, `Sound_code`, `Camera_through` (`src/Game/Map/CollisionCode.cpp`).
 - **Gravity is analytic only:**
   - Point, Cube, Disk, DiskTorus, Cone, Plane, PlaneInBox, PlaneInCylinder, Segment, Wire.
   - Shared fields: `Range`, `Priority`, `Power`, `Inverse`.
@@ -731,7 +753,7 @@ existing galaxies stay fully portable.
 1. **Editing (live).**
    - Brushes and imported meshes live in the project as **our own mesh data** (`assets/terrain/*.json` plus binary buffers; user-made, so shareable).
    - On every edit, the editor triangulates the result (CSG for brushes) and builds a `KCLFile` **in memory**: positions, normals, prisms and an octree, which takes milliseconds for blockout-sized meshes. A `CollisionParts` of the right zone uses it in place, so Mario walks on a brush the moment you release it.
-   - Looks during editing are an editor draw pass (3.1): flat-shaded triangles with a per-surface tint, or the chosen game material's base texture.
+   - **Looks during editing use the real model (S7).** The same mesh becomes a J3D model with the chosen game material, served as an in-memory `ObjectData` archive and drawn by a `ModelObj` that follows the collision part. The box takes 3-4 ms and the 1,472-triangle sphere about 11 ms (KCL included). An editor draw pass (3.1) is only needed for selection tints and brush handles.
 2. **Bake (build, on the user's machine).**
    - The patch builder (5.1) writes `ObjectData/<Part>.arc` containing a real BDL, `<Part>.kcl` and `<Part>.pa`.
    - It adds a `PlanetMapDataTable` row and an `ObjNameTable` row, so the part is placed like any planet.
@@ -745,9 +767,24 @@ existing galaxies stay fully portable.
 - The shared mod contains the reference, never the texture. The look is identical on every machine with the game.
 - User-imported textures are the user's own: encoded to CMPR (opaque) or RGB5A3 (alpha) and shipped in the mod.
 
+**S7 result.** The writer emits **J3D2bmd3 (`.bmd`)**, not `.bdl`:
+- The game takes `.bmd` wherever it takes `.bdl` (`ResourceHolder`'s model extensions), and J3D builds the material display lists from MAT3 at load, so **no MDL3** is written.
+- **Material clone.** A compact MAT3 holds the donor material's init entry with every shared pool copied whole, so its indices stay valid, plus the donor's whole TEX1.
+  - The native big-endian converter sizes each MAT3 table by the distance to the next table, so the clone is rebuilt in the donor's table order rather than patched.
+  - Every material of four planets loads cloned onto a box and a sphere (`native_editor_terrain_model`).
+- **Shading.** Disc planet materials are mostly `_v` (lit by vertex colour). The writer's single white CLR0 makes them flat, so it should bake a simple light term into CLR0 (M5).
+- **Texture trimming.** TEX1 is not trimmed to the material's textures yet (M5).
+
 **The BDL writer subset.** Static meshes, one joint (or one per brush group), and materials either cloned (donor) or from three built-in templates (lit textured, lit vertex-colour, unlit). Tri-strips via a simple stripifier, position/normal/UV0 (+colour), and 16-bit indices. This is a small fraction of the J3D format. The test `BlockWriter` is the starting point, and the loader tests become its tests.
 
-**KCL writer.**
+**KCL writer** (S6, `native/editor/terrain/kcl_writer.cpp`):
+- Top cells are the longest extent / 8. A leaf holds at most 24 prisms or is 64 units wide.
+- Identical prism lists are shared; suffix sharing is not done yet.
+- 0.1 ms for a box, 6 ms for a 1,472-triangle sphere, 50 ms for 16,200 triangles.
+- The `.pa` packs the four codes and `camera_id` into one u32, as the disc does.
+- Rebuilding three disc planets' collision through the writer answers 9,000 arrows identically to the originals.
+
+Design notes:
 - Triangles go to prisms. Normals are de-duplicated with a tolerance.
 - The octree has a fixed top-level cell size (power of two around the mesh extent / 8), subdivided until a leaf holds 16 or fewer prisms or reaches a minimum size.
 - Prism lists are shared by suffix, as the disc does.
@@ -828,9 +865,27 @@ live, undoable, no Dolphin round trip.
 | S3 | **Fast reload**: skip the pipeline gate and the wipe on same-stage reloads; serve zone archives from an editor buffer (archive override); profile scene init | ≤2 s reload; row-count changes via reload | 3 days |
 | S4 | Docked viewport: game in an ImGui central node, input mapping, resize | 3.6 | 2 days |
 | S5 | Selection hull outline through a J3D material override on Aurora | 3.4 | 2 days |
-| S6 | **KCL round trip**: generate KCL for a box/sphere brush in memory, create a collision part from it live, walk on it | Terrain collision path (6) | 4 days |
-| S7 | **Minimal BDL**: write a one-material, one-joint BDL from a mesh, with the material cloned from a disc model, and render it through `ModelObj` | Terrain rendering path (6) | 1 week |
-| S8 | **New galaxy loads**: a skeleton galaxy with one Power Star, outside `GalaxyID.bcsv`, entered through a registry prototype; collect the star, save, reload. Find every crash site | 5.7 | 3-4 days |
+| S6 | **KCL round trip**: generate KCL for a box/sphere brush in memory, create a collision part from it live, walk on it | Terrain collision path (6). **Done** (7.1) | 4 days |
+| S7 | **Minimal BDL**: write a one-material, one-joint BDL from a mesh, with the material cloned from a disc model, and render it through `ModelObj` | Terrain rendering path (6). **Done** (7.1) | 1 week |
+| S8 | **New galaxy loads**: a skeleton galaxy with one Power Star, outside `GalaxyID.bcsv`, entered through a registry prototype; collect the star, save, reload. Find every crash site | 5.7. **Done** (5.7, new-galaxies.md) | 3-4 days |
+
+### 7.1 Spike results: terrain (S6, S7)
+
+Branch `editor/terrain-kcl`. Live check: `native/tools/editor_terrain_smoke.py` on the Good Egg stage smoke. Mario is warped onto each part, then the smoke's walks, jump and spin run there.
+
+| Run | What it proves | Result |
+| --- | --- | --- |
+| `native_editor_terrain_kcl` | Generated KCLs go through the game's `KCollisionServer`: corners, arrows against brute force, spheres, `.pa` codes; disc planets rebuilt | Pass |
+| `native_editor_terrain_model` | Generated `.bmd`s load through the game's J3D loader | 36 models from 18 donor materials, all pass |
+| live box / sphere | KCL, J3D model and `ModelObj` built in memory mid-stage, with cube / point gravity fitted in code | Walked about 800 units on each with 2 landings; gravity along the field; `.pa` Sound_code (Stone, Lawn) read from Mario's ground triangle |
+| archive box / sphere | `petari_terrain_bake` writes a Full-archive mod: planet archives (`.bmd`, `.kcl`, `.pa`), `PlanetMapDataTable` rows, ObjInfo and `GlobalCubeGravity`/`GlobalPointGravity` rows | Same checks pass through the game's own placement (`PlanetMap`) |
+
+Changes to the plan:
+- **No separate preview draw.** The live look is the real model (6.3).
+- **About 16k triangles per KCL** (6.1).
+- **`.bmd`, not `.bdl`** (6.3).
+- **Fixed in the game, native only:** `FileHolder` keys files by DVD entry number, and every path not on the disc has -1. So the first such file answered for all of them, and a second generated archive was never mounted (`ResourceHolder::initializeArc` read garbage). `FileHolder::findEntry` now compares names for -1. This matters for every in-memory archive (terrain parts, reload overrides of new files, new galaxies).
+- **Archive capacity:** at most 384 mounted archives, unchecked. The editor refuses at capacity (2.4).
 
 S2 and S3 de-risk M1 and M2. S6 and S7 de-risk terrain and should run early,
 though terrain ships last, because their answer could change the project
@@ -921,3 +976,9 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - Overrides stay for the session, so a death or a Level Select warp into the galaxy also shows the edits.
   - The EditModel reads the unmodded disc as its originals (`DVD::mountInfo().filesDirectory`). A saved mod's edits then count as changes and stay in the next save.
   - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.
+- **Catalog and Checks** (`editor/catalog`):
+  - `native/editor/catalog/generated.json` comes from `native/editor/tools/gen_catalog.py`, a decomp scan of all 1,183 factory classes: args and their types, switches, rail-capable, archives, category. It folds in the class sweep's `sweep.json` when present (required links).
+  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 152 most-placed classes. These were researched against the decomp in our own words; no community data.
+  - Both are embedded in the binary. The user's `<user>/editor/catalog/*.json` override them, and planets come from the disc's PlanetMapDataTable at session start.
+  - The Checks engine (`runtime/checks.cpp`) reports only problems the edits introduce. The galaxy as loaded is the baseline, so vanilla Good Egg shows 0.
+  - Kinds: unknown classes; missing required links; paths that don't exist or have fewer than 2 points; switch ids out of range or unused by the class; a zone switch only one row uses; duplicate l_ids. Most come with fix Ops or a UI fix kind.

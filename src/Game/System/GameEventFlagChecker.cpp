@@ -4,6 +4,9 @@
 #include "Game/System/GameEventFlagStorage.hpp"
 #include "Game/System/GameEventFlagTable.hpp"
 #include "Game/Util/SingletonHolder.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 GameEventFlagChecker::GameEventFlagChecker(GameDataHolder* pHolder) : mDataHolder(pHolder), mFlagStorage(nullptr) {
     SingletonHolder< GameEventFlagTableInstance >::init();
@@ -13,6 +16,13 @@ GameEventFlagChecker::GameEventFlagChecker(GameDataHolder* pHolder) : mDataHolde
 
 bool GameEventFlagChecker::canOn(const char* pFlagName) const {
     const GameEventFlag* pFlag = GameEventFlagTable::findFlag(pFlagName);
+#ifdef PETARI_NATIVE
+    // No flag (the table is compiled in): a mod galaxy's own flag (its name) is open; anything
+    // else is off. The Wii read through the null flag (TECH.md 5.7).
+    if (pFlag == nullptr) {
+        return PetariNative::Platform::ModGalaxy::find(pFlagName) != nullptr;
+    }
+#endif
 
     switch (pFlag->mType) {
     case GameEventFlag::Type_None:
@@ -66,6 +76,11 @@ bool GameEventFlagChecker::canOn(const char* pFlagName) const {
 }
 bool GameEventFlagChecker::isOn(const char* pFlagName) const {
     const GameEventFlag* pFlag = GameEventFlagTable::findFlag(pFlagName);
+#ifdef PETARI_NATIVE
+    if (pFlag == nullptr) {
+        return PetariNative::Platform::ModGalaxy::find(pFlagName) != nullptr;
+    }
+#endif
 
     if ((pFlag->mSaveFlag & 0x1) != 0) {
         return canOn(pFlagName);

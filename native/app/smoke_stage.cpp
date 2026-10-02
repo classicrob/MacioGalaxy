@@ -167,6 +167,7 @@ bool stageEnabledFromEnvironment(StageConfig* config) {
     config->scenario = static_cast<int>(number);
     config->tailFrames = environmentNumber("PETARI_STAGE_IDLE_FRAMES", 600);
     config->probe = environmentNumber("PETARI_STAGE_PROBE", 0) != 0;
+    config->follow = environmentNumber("PETARI_STAGE_FOLLOW", 0) != 0;
     config->homeTour = environmentNumber("PETARI_STAGE_HOME_TOUR", 0) != 0;
     if (const char* warp = std::getenv("PETARI_STAGE_WARP"); warp != nullptr && warp[0] != '\0') {
         if (std::strncmp(warp, "name:", 5) == 0 && warp[5] != '\0') {
@@ -211,6 +212,7 @@ const char* StageDriver::phase() const {
     case Phase::HomeTour: return "stage: Home menu tour";
     case Phase::Probe: return "stage: lock-up probe";
     case Phase::Tail: return "stage: idling after the checks";
+    case Phase::Follow: return "stage: following the game after leaving the stage";
     case Phase::Done: return "done";
     }
     return "?";
@@ -339,6 +341,9 @@ Step StageDriver::step(const Observation& o) {
     }
     for (const Observation::Prompt& prompt : o.prompts) {
         note("prompt " + prompt.messageId + " type " + std::to_string(prompt.type));
+        if (mPhase == Phase::Follow) {
+            continue;  // following the game: save messages are expected; A is tapped below
+        }
         finish(Result::Blocked, "system prompt " + prompt.messageId + " (type " + std::to_string(prompt.type) + ")", step);
         return step;
     }
@@ -353,7 +358,37 @@ Step StageDriver::step(const Observation& o) {
     if (mPhase == Phase::Tail && std::getenv("PETARI_TEST_SERVER") != nullptr) {
         return step;  // the test server warps between stages; it ends the run
     }
+    if (mPhase == Phase::Follow) {
+        // A yes/no (the save's System_Save00) needs the pointer on Yes, then A.
+        const Observation::Target* yes = nullptr;
+        for (const Observation::Target& target : o.targets) {
+            if (target.id == "Prompt.Yes" && (target.flags & kTargetSelectable)) yes = &target;
+        }
+        if (PetariNative::SmokePhase::followDone.load()) {
+            finish(Result::Pass, "left the stage and followed the game until the game-side check was done", step);
+        } else if (yes != nullptr) {
+            step.pointer = true;
+            step.pointerU = yes->u;
+            step.pointerV = yes->v;
+            step.assertFocus = true;
+            mFollowPointing = (yes->flags & kTargetPointing) ? mFollowPointing + 1 : 0;
+            if (mFollowPointing == 5) {
+                note("following: pointing at Prompt.Yes, pressing A");
+                tap(Button::A, kTapFrames, step);
+            }
+        } else if (mFrame >= mFollowTapAt) {
+            tap(Button::A, kTapFrames, step);
+            mFollowTapAt = mFrame + 45;
+        }
+        return step;
+    }
     if (o.scene != "Game" || o.stage != mConfig.stage) {
+        if (mConfig.follow && mPhase > Phase::Load) {
+            note("left the stage while " + std::string(phase()) + ": now scene " + o.scene + " stage " + o.stage +
+                 "; following the game (PETARI_STAGE_FOLLOW)");
+            next(Phase::Follow);
+            return step;
+        }
         finish(Result::Fail, "left the stage while " + std::string(phase()) + ": now scene " + o.scene + " stage " + o.stage,
                step);
         return step;

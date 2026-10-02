@@ -118,6 +118,9 @@ void clearArchiveOverrides() {
 }
 
 const std::vector< std::uint8_t >* archiveOverride(const char* pPath) {
+    if (overrides().empty()) {
+        return nullptr;  // asked for every file lookup (MR::isFileExist): no allocation when unused
+    }
     PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
     auto it = overrides().find(lowerPath(pPath));
     return it == overrides().end() ? nullptr : &it->second.second;

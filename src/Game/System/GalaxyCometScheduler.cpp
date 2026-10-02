@@ -387,6 +387,11 @@ bool GalaxyCometScheduler::isCometLand(const char* pGalaxyName) const {
 s32 GalaxyCometScheduler::getEncounterCometPowerStarId(const char* pGalaxyName) const {
     MR::makeGalaxyStatusAccessor(pGalaxyName);
     GalaxyCometTimeTable* timeTable = findFromGalaxy(pGalaxyName);
+#ifdef PETARI_NATIVE
+    if (timeTable == nullptr) {
+        return -1;  // a galaxy with no comet schedule (a mod galaxy, TECH.md 5.7)
+    }
+#endif
 
     switch (timeTable->getCometCategory()) {
     case COMET_CATEGORY_NORMAL:

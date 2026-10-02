@@ -1,7 +1,11 @@
 #include "petari/launch_stage.hpp"
 
+#include <petari/platform/mod_galaxy.hpp>
+
 #include <cctype>
+#include <deque>
 #include <iterator>
+#include <vector>
 
 namespace PetariNative::App::LaunchStage {
 namespace {
@@ -63,22 +67,50 @@ std::string key(const std::string& text) {
     return out;
 }
 
+constexpr int kModDome = 7;
+
+// The disc's list, then the registry's galaxies. Rebuilt when the registry has more galaxies than
+// the list; the strings live in a deque so earlier Galaxy pointers stay valid.
+const std::vector<Galaxy>& allGalaxies() {
+    static std::vector<Galaxy> list(std::begin(kGalaxies), std::end(kGalaxies));
+    static std::deque<std::string> strings;
+    static std::size_t modCount = 0;
+    const std::vector<const Platform::ModGalaxy::Galaxy*> mods = Platform::ModGalaxy::all();
+    if (mods.size() != modCount) {
+        list.assign(std::begin(kGalaxies), std::end(kGalaxies));
+        for (const Platform::ModGalaxy::Galaxy* mod : mods) {
+            std::string title;
+            for (const char16_t c : mod->title.at("en")) title += c < 0x80 ? static_cast<char>(c) : '?';
+            strings.push_back(mod->name);
+            const char* stage = strings.back().c_str();
+            strings.push_back(key(mod->name));
+            const char* alias = strings.back().c_str();
+            strings.push_back(title);
+            const int missions = mod->missions.empty() ? 1 : static_cast<int>(mod->missions.size());
+            list.push_back({stage, alias, strings.back().c_str(), kModDome, missions, "", ""});
+        }
+        modCount = mods.size();
+    }
+    return list;
+}
+
 }  // namespace
 
 const Galaxy* galaxies(int* count) {
-    *count = static_cast<int>(std::size(kGalaxies));
-    return kGalaxies;
+    const std::vector<Galaxy>& list = allGalaxies();
+    *count = static_cast<int>(list.size());
+    return list.data();
 }
 
 const char* domeName(int dome) {
-    static const char* const kNames[] = {"Elsewhere", "Terrace", "Fountain", "Kitchen", "Bedroom", "Engine Room", "Garden"};
+    static const char* const kNames[] = {"Elsewhere", "Terrace", "Fountain", "Kitchen", "Bedroom", "Engine Room", "Garden", "Mod galaxies"};
     return dome >= 0 && dome < static_cast<int>(std::size(kNames)) ? kNames[dome] : "Elsewhere";
 }
 
 const Galaxy* find(const std::string& name) {
     const std::string wanted = key(name);
     if (wanted.empty()) return nullptr;
-    for (const Galaxy& galaxy : kGalaxies) {
+    for (const Galaxy& galaxy : allGalaxies()) {
         if (key(galaxy.alias) == wanted || key(galaxy.stage) == wanted || key(galaxy.name) == wanted) return &galaxy;
     }
     return nullptr;
@@ -101,10 +133,10 @@ bool resolve(const std::string& name, int scenario, std::string* stage, std::str
 
 void printList(std::FILE* out) {
     std::fputs("Galaxies for --stage (alias, internal name, missions; C = comet, H = hidden star):\n", out);
-    for (int dome = 1; dome <= 7; ++dome) {
-        const int section = dome == 7 ? 0 : dome;
+    for (int dome = 1; dome <= 8; ++dome) {
+        const int section = dome == 7 ? 0 : dome == 8 ? kModDome : dome;
         std::fprintf(out, "\n%s\n", domeName(section));
-        for (const Galaxy& g : kGalaxies) {
+        for (const Galaxy& g : allGalaxies()) {
             if (g.dome != section) continue;
             std::string missions;
             for (int m = 1; m <= g.missions; ++m) {
