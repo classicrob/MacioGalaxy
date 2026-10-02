@@ -107,6 +107,13 @@ public:
     virtual bool hasTransform(RowId row) const = 0;
     virtual RowTransform transform(RowId row) const = 0;
 
+    // missions (TECH.md 1.4; UX section 12)
+    virtual int missionCount() const = 0;                // scenarios of the galaxy
+    virtual const char* missionName(int mission) const = 0;  // 1-based; the ScenarioData name ("" if none)
+    /// The missions a row appears in: bit n-1 = mission n. A row appears where its layer is active
+    /// and its zone is placed. 0: in no mission (an unused layer).
+    virtual std::uint32_t rowMissions(RowId row) const = 0;
+
     // history (Edit menu, History list)
     virtual int historySize() const = 0;    // ops recorded
     virtual int historyCursor() const = 0;  // ops applied: undo = cursor > 0, redo = cursor < size
@@ -124,13 +131,32 @@ struct SetCell {
     Cell after;                // Runtime records the "before" value itself
 };
 
-/// One undo step. M1 needs cell sets and reverts; adding and deleting rows join in M2
-/// (new members, so this stays source-compatible).
+/// A new row (TECH.md 5.3). Reserve its id with newRowId() to select it in the same frame;
+/// left invalid, Runtime assigns one.
+struct AddRow {
+    RowId id;
+    int zone = 0;
+    std::string table;    // "jmp/placement/layera/objinfo"; a layer table the zone lacks is created
+    RowId copyOf;         // duplicate, paste, array: every cell of that row first (optional)
+    struct Value {
+        std::uint32_t column = 0;
+        Cell value;
+    };
+    std::vector< Value > cells;  // override copyOf's (or the table's neutral values)
+};
+
+/// One undo step. Applied in this order: adds, sets (which may name added rows), deletes,
+/// reverts.
 struct Op {
     std::string label;              // "Move Star Bunny", "Set Obj_arg1 on 3 objects", "Revert Coin"
     std::vector< SetCell > sets;
     std::vector< RowId > revertRows;  // every cell of these rows back to the disc value
+    std::vector< AddRow > adds;
+    std::vector< RowId > deletes;
 };
+
+/// A fresh id for a row the UI is about to add (main thread).
+RowId newRowId();
 
 // ---- commands (UI -> Runtime, drained in order at the seam) -----------------------------------------
 
@@ -222,5 +248,23 @@ struct Status {
 };
 /// Updated at each seam.
 const Status& status();
+
+// ---- checks (TECH.md 5.5; UX section 16) ----------------------------------------------------------
+
+enum class Severity : std::uint8_t { Error, Warning };
+
+struct Check {
+    std::string key;  // stable across revisions while the problem lasts ("missing-rail:<row>")
+    Severity severity = Severity::Warning;
+    std::string message;          // "Launch Star needs a path"
+    std::vector< RowId > rows;    // the rows involved, first = the one to select
+    std::string fixLabel;         // "Remove the switch", "" = no fix
+    Op fix;                       // applied as one undo step when chosen; empty: see fixKind
+    std::string fixKind;          // a UI flow instead of an Op: "pick-path", "pick-switch", "pick-camera"; "" = none
+};
+
+/// The current problems, refreshed at the seam when the model's revision changes. Errors would
+/// crash or break the game; warnings are probably unintended.
+const std::vector< Check >& checks();
 
 }  // namespace PetariEditor

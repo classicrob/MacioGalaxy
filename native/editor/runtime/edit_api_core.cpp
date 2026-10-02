@@ -13,6 +13,8 @@ namespace {
         void (*uiSeamHook)() = nullptr;
         UiCallbacks callbacks;
         Status status;
+        std::vector< Check > checks;
+        std::uint64_t nextNewRow = 1;
         std::unordered_map< RowId, LiveActor*, RowIdHash > actorOfRow;
         std::unordered_map< const LiveActor*, RowId > rowOfActor;
     };
@@ -83,6 +85,15 @@ const Status& status() {
     return session().status;
 }
 
+const std::vector< Check >& checks() {
+    return session().checks;
+}
+
+RowId newRowId() {
+    // New rows live in their own id space (bit 63), apart from the model's (zone, table, row) ids.
+    return RowId{(1ull << 63) | session().nextNewRow++};
+}
+
 namespace Core {
     void setModel(const ModelView* pModel) {
         session().model = pModel;
@@ -100,6 +111,10 @@ namespace Core {
 
     Status& mutableStatus() {
         return session().status;
+    }
+
+    std::vector< Check >& mutableChecks() {
+        return session().checks;
     }
 
     void reportError(const std::string& message) {
