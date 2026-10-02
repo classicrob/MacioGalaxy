@@ -217,7 +217,7 @@ def record_for(job, index, item, parsed, stalled, exit_status, batch_size):
 # --- running the app -----------------------------------------------------------------------------------
 
 def run_process(command, env, log_path, total_seconds, stall_seconds):
-    """Runs command, returns (exit_status, stalled, startup_seconds): startup is launch (lock wait included) to the
+    """Runs command, returns (exit_status, stalled, startup_seconds): startup is the app's first log line (lock wait excluded) to the
     driver's first frame, None if it never began. The stall watchdog starts once the driver has begun (before that
     the total alarm applies); a stalled process is killed as a group."""
     with log_path.open("wb") as stream:
@@ -225,6 +225,7 @@ def run_process(command, env, log_path, total_seconds, stall_seconds):
         stalled = False
         began = None
         launched = time.time()
+        launched_app = None  # when the app's first line appeared: lock waiting is not startup
         startup = None
         deadline = time.time() + total_seconds + 3600  # the lock wait is not counted against the run
         while True:
@@ -235,9 +236,12 @@ def run_process(command, env, log_path, total_seconds, stall_seconds):
             if time.time() > deadline:
                 stalled = True
             elif log_path.stat().st_size > 0 and began is None:
-                if b"[class-sweep] start:" in log_path.read_bytes()[-2_000_000:]:
+                head = log_path.read_bytes()[-2_000_000:]
+                if launched_app is None and b"PETARI FIXTURE" in head:
+                    launched_app = time.time()  # the lock was granted and the app is running
+                if b"[class-sweep] start:" in head:
                     began = time.time()
-                    startup = began - launched
+                    startup = began - (launched_app or launched)
             elif began is not None:
                 if time.time() - log_path.stat().st_mtime > stall_seconds:
                     stalled = True
