@@ -32,7 +32,8 @@ namespace EditorScene {
     s32 executeCount();
     void lateConnect(s32 executeBefore);
 
-    /// Removes an actor the editor created or replaced: dead, hidden, out of clipping. Its
+    /// Removes an actor the editor created or replaced: dead (out of the scene's lists and
+    /// clipping) and hidden. Its
     /// memory stays (nothing is freed mid-scene; TECH.md 2.3).
     void retire(LiveActor* pActor);
 

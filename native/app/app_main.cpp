@@ -531,24 +531,6 @@ int main(int argc, char** argv) {
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0", SDL_HINT_OVERRIDE);
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "0", SDL_HINT_OVERRIDE);
         SDL_SetEventFilter(App::SmokeBackground::eventFilter, nullptr);
-        // After a Petari crash (any build shares the bundle id) AppKit may ask at launch
-        // whether to reopen windows, in a modal nobody can answer for a hidden window:
-        // the run then hangs before its first frame. Ignore saved window state for this
-        // process only (the registration domain; nothing is written to the user's defaults).
-        {
-            const auto sendClass = reinterpret_cast<id (*)(id, SEL)>(objc_msgSend);
-            const auto withBool = reinterpret_cast<id (*)(id, SEL, BOOL)>(objc_msgSend);
-            const auto withString = reinterpret_cast<id (*)(id, SEL, const char*)>(objc_msgSend);
-            const auto withObjectForKey = reinterpret_cast<id (*)(id, SEL, id, id)>(objc_msgSend);
-            const auto registerDefaults = reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend);
-            const id yes = withBool(reinterpret_cast<id>(objc_getClass("NSNumber")), sel_registerName("numberWithBool:"), YES);
-            const id key = withString(reinterpret_cast<id>(objc_getClass("NSString")), sel_registerName("stringWithUTF8String:"),
-                                      "ApplePersistenceIgnoreState");
-            const id values = withObjectForKey(reinterpret_cast<id>(objc_getClass("NSDictionary")),
-                                               sel_registerName("dictionaryWithObject:forKey:"), yes, key);
-            const id defaults = sendClass(reinterpret_cast<id>(objc_getClass("NSUserDefaults")), sel_registerName("standardUserDefaults"));
-            registerDefaults(defaults, sel_registerName("registerDefaults:"), values);
-        }
         // Let SDL install its Cocoa application/delegate first, before creating
         // any window. Accessory policy avoids normal foreground application activation.
         if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {

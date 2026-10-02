@@ -384,6 +384,11 @@ std::map<std::string, bool> detectedStates() {
     return gUser.empty() ? std::map<std::string, bool>{} : effectiveStates(gUser / "mods.txt");
 }
 
+fs::path userDirectory() {
+    std::lock_guard<std::mutex> lock(gUserMutex);
+    return gUser;
+}
+
 bool setEnabled(const std::string& name, bool on, std::string* error) {
     std::lock_guard<std::mutex> lock(gUserMutex);
     if (gUser.empty()) {
