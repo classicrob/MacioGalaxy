@@ -32,6 +32,10 @@ void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture);
 // windowWidth/Height are the ImGui display size (window points).
 void drawFrame(float windowWidth, float windowHeight);
 
+// Edit another mission (the toolbar's mission chips): Runtime reloads into it (~2 s, with a toast) and
+// keeps the edits and history.
+void switchMission(int mission);
+
 // The central node (the game's viewport) in window points, from the last drawFrame;
 // false while hidden or in Focus mode.
 bool viewportRect(float* x, float* y, float* width, float* height);

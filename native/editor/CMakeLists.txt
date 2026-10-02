@@ -7,18 +7,25 @@ cmake_minimum_required(VERSION 3.25)
 get_filename_component(PETARI_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
 # Disc formats (Yaz0, RARC, BCSV): pure C++, shared by the runtime, the mod loader and tests.
-add_library(petari_editor_formats STATIC formats/formats.cpp)
+add_library(petari_editor_formats STATIC formats/formats.cpp runtime/json.cpp)
 target_include_directories(petari_editor_formats PUBLIC include)
 target_compile_features(petari_editor_formats PUBLIC cxx_std_17)
+if(APPLE)
+    target_link_libraries(petari_editor_formats PRIVATE iconv)  # Shift-JIS <-> UTF-8
+endif()
+
+# Patch mods (TECH.md 5.1, 5.3): edits as row ops against the player's disc, built into archives
+# by the mod loader at start-up. Pure C++.
+add_library(petari_editor_patch STATIC patch/patch.cpp)
+target_include_directories(petari_editor_patch PUBLIC include)
+target_link_libraries(petari_editor_patch PUBLIC petari_editor_formats)
+target_compile_features(petari_editor_patch PUBLIC cxx_std_17)
 
 # The EditModel: one galaxy's tables, ops and undo, changed archives. Pure C++ (tested alone).
 add_library(petari_editor_model STATIC runtime/edit_model.cpp runtime/checks.cpp)
 target_include_directories(petari_editor_model PUBLIC include PRIVATE runtime)
-target_link_libraries(petari_editor_model PUBLIC petari_editor_formats petari_editor_core)
+target_link_libraries(petari_editor_model PUBLIC petari_editor_formats petari_editor_patch petari_editor_core)
 target_compile_features(petari_editor_model PUBLIC cxx_std_17)
-if(APPLE)
-    target_link_libraries(petari_editor_model PRIVATE iconv)  # Shift-JIS <-> UTF-8
-endif()
 
 # The object catalog's shipped files, embedded (TECH.md 2.11; native/editor/catalog).
 set(_petari_catalog_dir ${CMAKE_CURRENT_SOURCE_DIR}/catalog)
@@ -39,10 +46,10 @@ add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/json.cpp
+add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp
     ${_petari_catalog_cpp})
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
-target_link_libraries(petari_editor_core PUBLIC petari_native_config petari_host_runtime)
+target_link_libraries(petari_editor_core PUBLIC petari_editor_formats petari_native_config petari_host_runtime)
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls

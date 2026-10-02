@@ -6,6 +6,7 @@
 #include "checks.hpp"
 #include "edit_model.hpp"
 #include <petari/editor/catalog.hpp>
+#include <petari/editor/patch.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -14,6 +15,8 @@
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
+#include <unistd.h>
 
 namespace E = PetariEditor;
 namespace F = PetariEditor::Formats;
@@ -342,6 +345,132 @@ void testModOverDisc() {
           "without the disc source the loaded data is the original");
 }
 
+// Two archives hold the same tables (row order, every cell by column) and the same other files.
+bool sameArchive(const F::Bytes& a, const F::Bytes& b, std::string* pWhy) {
+    std::optional< F::Archive > x = F::Archive::parse(a), y = F::Archive::parse(b);
+    if (!x || !y) return *pWhy = "not archives", false;
+    const std::vector< std::string > xFiles = x->files(), yFiles = y->files();
+    const std::set< std::string > files(xFiles.begin(), xFiles.end()), other(yFiles.begin(), yFiles.end());
+    if (files != other) return *pWhy = "different files", false;
+    for (const std::string& path : files) {
+        std::optional< F::Table > s = F::Table::parse(*x->file(path)), t = F::Table::parse(*y->file(path));
+        if (!s || !t) {
+            if (*x->file(path) != *y->file(path)) return *pWhy = path + " differs", false;
+            continue;
+        }
+        if (s->rowCount() != t->rowCount() || s->columns().size() != t->columns().size()) return *pWhy = path + ": rows or columns", false;
+        for (int c = 0; c < static_cast< int >(s->columns().size()); c++) {
+            const int tc = t->column(s->columns()[c].hash);
+            if (tc < 0) return *pWhy = path + ": a column is missing", false;
+            for (int r = 0; r < s->rowCount(); r++) {
+                if (s->get(r, c) != t->get(r, tc)) return *pWhy = path + " row " + std::to_string(r) + " differs", false;
+            }
+        }
+    }
+    return true;
+}
+
+float floatIn(const F::Bytes& archive, const char* pTable, const char* pName, const char* pColumn) {
+    std::optional< F::Archive > a = F::Archive::parse(archive);
+    std::optional< F::Table > t = F::Table::parse(*a->file(pTable));
+    const int name = t->column(F::jmapHash("name")), column = t->column(F::jmapHash(pColumn));
+    for (int r = 0; r < t->rowCount(); r++)
+        if (t->get(r, name).s == pName) return t->get(r, column).f;
+    return -12345.0f;
+}
+
+// Patch mods: the model's edits as a patch, built onto the disc as the loader does, give the
+// tables the model saves itself; a re-save over the built mod gives the same; mods merge; a
+// different disc is refused; the loader's cache.
+void testPatch() {
+    using PetariEditor::Patch::Built;
+    std::map< std::string, F::Bytes > disc = syntheticDisc();
+    auto from = [](const std::map< std::string, F::Bytes >& files) {
+        return [&files](const std::string& path) -> std::optional< F::Bytes > {
+            auto it = files.find(path[0] == '/' ? path : "/" + path);
+            return it == files.end() ? std::nullopt : std::optional< F::Bytes >(it->second);
+        };
+    };
+    std::string error;
+    std::unique_ptr< E::EditModel > m = E::EditModel::load("TestGalaxy", 1, from(disc), &error, from(disc));
+    check(m != nullptr && m->patch().json.empty(), "no edits, no patch");
+    const E::RowId kuribo = findRow(*m, 1, "jmp/placement/layera/objinfo", "Kuribo");
+    const E::RowId takobo = findRow(*m, 1, "jmp/placement/layerb/objinfo", "Takobo");
+    E::Op edits{"Edits", {setFloat(kuribo, "pos_y", 55.0f), E::SetCell{kuribo, E::columnHash("SW_A"), E::Cell{E::CellType::Int, 12, 0, {}}}},
+                {}, {}, {takobo}};
+    E::AddRow copy;
+    copy.zone = 1;
+    copy.table = "jmp/placement/layera/objinfo";
+    copy.copyOf = kuribo;
+    E::AddRow fresh;
+    fresh.zone = 1;
+    fresh.table = "jmp/placement/layerc/objinfo";
+    fresh.cells.push_back({E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, "StarPiece"}});
+    edits.adds = {copy, fresh};
+    check(m->apply(edits, &error), "edits: " + error);
+    const E::EditModel::PatchOut patch = m->patch();
+    check(!patch.json.empty() && patch.wholeArchives.empty(), "a patch");
+    check(patch.json.find("\"op\": \"delete\"") != std::string::npos && patch.json.find("\"addColumn\"") != std::string::npos &&
+              patch.json.find("\"addFile\"") != std::string::npos,
+          "delete, addColumn and addFile ops");
+    std::vector< std::string > log;
+    std::vector< Built > built = PetariEditor::Patch::build({{"A", patch.json}}, from(disc), &log);
+    auto changed = m->changedArchives();
+    check(built.size() == changed.size() && built.size() == 1, "one archive built");
+    check(sameArchive(built[0].bytes, changed[0].second, &error), "the built archive is the model's: " + error);
+
+    // Saving again over the built mod (the editor loads the mod, the disc is the base).
+    std::map< std::string, F::Bytes > modded = disc;
+    modded["/" + built[0].path] = built[0].bytes;
+    std::unique_ptr< E::EditModel > again = E::EditModel::load("TestGalaxy", 1, from(modded), &error, from(disc));
+    std::vector< Built > rebuilt = PetariEditor::Patch::build({{"A", again->patch().json}}, from(disc), &log);
+    check(rebuilt.size() == 1 && sameArchive(rebuilt[0].bytes, built[0].bytes, &error), "a re-save gives the same archive: " + error);
+
+    // A second mod: merged where they don't overlap, the later (higher priority) one wins where they do.
+    std::unique_ptr< E::EditModel > b = E::EditModel::load("TestGalaxy", 1, from(disc), &error, from(disc));
+    const E::RowId coinB = findRow(*b, 1, "jmp/placement/layera/objinfo", "Coin");
+    const E::RowId kuriboB = findRow(*b, 1, "jmp/placement/layera/objinfo", "Kuribo");
+    check(b->apply(E::Op{"B", {setFloat(coinB, "pos_z", 7.0f), setFloat(kuriboB, "pos_y", 1.0f)}, {}}, &error), error);
+    std::vector< Built > merged = PetariEditor::Patch::build({{"A", patch.json}, {"B", b->patch().json}}, from(disc), &log);
+    check(merged.size() == 1 && merged[0].mods.size() == 2, "both mods in one archive");
+    check(floatIn(merged[0].bytes, "jmp/placement/layera/objinfo", "Coin", "pos_z") == 7.0f &&
+              floatIn(merged[0].bytes, "jmp/placement/layera/objinfo", "Kuribo", "pos_y") == 1.0f,
+          "merged; the later mod wins on the same cell");
+    check(F::Archive::parse(merged[0].bytes)->has("jmp/placement/layerc/objinfo"), "and A's new table is kept");
+
+    // Another disc (Kuribo differs): A's rows don't fit, so the archive isn't built from A.
+    std::map< std::string, F::Bytes > other = disc;
+    other["/StageData/TestZone.arc"] = F::Archive::create(
+        "stage", {{"jmp/Placement/LayerA/ObjInfo", table(kObj, {{str("Kuribo"), i32(5), f32(11), f32(20), f32(30), i32(2)},
+                                                                 {str("Coin"), i32(6), f32(0), f32(0), f32(0), i32(-1)}})},
+                  {"jmp/Placement/LayerB/ObjInfo", table(kObj, {{str("Takobo"), i32(7), f32(0), f32(0), f32(0), i32(-1)}})}})
+                                           .build();
+    log.clear();
+    check(PetariEditor::Patch::build({{"A", patch.json}}, from(other), &log).empty() && !log.empty() &&
+              log.back().find("another disc") != std::string::npos,
+          "a different disc is refused: " + (log.empty() ? std::string() : log.back()));
+
+    // The loader's step: built into the cache once, then read from it.
+    const fs::path root = fs::temp_directory_path() / ("petari-patch-test-" + std::to_string(::getpid()));
+    fs::remove_all(root);
+    for (const auto& [path, bytes] : disc) {
+        fs::create_directories((root / "disc/files" / path.substr(1)).parent_path());
+        std::ofstream(root / "disc/files" / path.substr(1), std::ios::binary).write(reinterpret_cast< const char* >(bytes.data()), bytes.size());
+    }
+    fs::create_directories(root / "mods/A/edits");
+    std::ofstream(root / "mods/A/edits/TestGalaxy.json") << patch.json;
+    log.clear();
+    auto first = PetariEditor::Patch::buildForLoader({root / "mods/A"}, root / "disc/files", root / "cache", &log);
+    auto second = PetariEditor::Patch::buildForLoader({root / "mods/A"}, root / "disc/files", root / "cache", &log);
+    check(first.size() == 1 && first[0].first == "StageData/TestZone.arc" && fs::is_regular_file(first[0].second), "the loader builds");
+    check(second.size() == 1 && second[0].second == first[0].second && log.back().find("from the cache") != std::string::npos,
+          "and then reads its cache");
+    std::ifstream in(first[0].second, std::ios::binary);
+    const F::Bytes cached((std::istreambuf_iterator< char >(in)), std::istreambuf_iterator< char >());
+    check(sameArchive(cached, built[0].bytes, &error), "the cached archive: " + error);
+    fs::remove_all(root);
+}
+
 void testDisc() {
     const fs::path files = PETARI_TEST_DISC_FILES;
     if (!fs::is_directory(files / "StageData")) {
@@ -377,6 +506,31 @@ void testDisc() {
     }
     check(named * 10 >= total * 9, "at least 90% of Good Egg's columns are named");
     std::printf("editor model: Good Egg %d zones, %d/%d columns named\n", m->zoneCount(), named, total);
+
+    // A patch of real edits (a move, a delete, a duplicate, a new layer's table, every row of a
+    // zone touched) builds the archives the model saves.
+    std::unique_ptr< E::EditModel > p = E::EditModel::load("EggStarGalaxy", 1, source, &error, source);
+    const E::RowId tako = findRow(*p, soramame, "jmp/placement/layera/objinfo", "Takobo");
+    const E::RowId coin = findRow(*p, soramame, "jmp/placement/layera/objinfo", "Coin");
+    E::Op op{"Edits", {setFloat(tako, "pos_y", p->transform(tako).pos.y + 300.0f)}, {}, {}, {coin}};
+    E::AddRow dup;
+    dup.zone = soramame;
+    dup.table = "jmp/placement/layera/objinfo";
+    dup.copyOf = tako;
+    E::AddRow fresh;
+    fresh.zone = soramame;
+    fresh.table = "jmp/placement/layerd/objinfo";
+    fresh.copyOf = tako;
+    op.adds = {dup, fresh};
+    check(p->apply(op, &error), "Good Egg edits: " + error);
+    const E::EditModel::PatchOut patch = p->patch();
+    std::vector< std::string > log;
+    auto built = PetariEditor::Patch::build({{"Test", patch.json}}, [&](const std::string& path) { return source("/" + path); }, &log);
+    auto changed = p->changedArchives();
+    check(built.size() == 1 && changed.size() == 1 && "/" + built[0].path == changed[0].first, "Good Egg: one archive patched");
+    check(sameArchive(built[0].bytes, changed[0].second, &error), "Good Egg: the patch builds the model's archive: " + error);
+    check(patch.json.find("Takobo") != std::string::npos && patch.json.size() < 16384, "a small patch (" + std::to_string(patch.json.size()) + " bytes)");
+    std::printf("editor model: Good Egg patch %d ops, %zu bytes\n", patch.ops, patch.json.size());
 }
 }  // namespace
 
@@ -385,6 +539,7 @@ int main() {
     testModOverDisc();
     testStructure();
     testChecks();
+    testPatch();
     testDisc();
     std::printf("editor model: %d checks passed\n", checks);
     return 0;

@@ -11,6 +11,7 @@
 #include <petari/boot.hpp>
 #include <petari/platform/crash.hpp>
 #include <petari/platform/diagnostics.hpp>
+#include <petari/editor/patch.hpp>
 #include <petari/platform/dvd.hpp>
 #include <petari/platform/mod_folder.hpp>
 #include <petari/platform/mod_galaxy.hpp>
@@ -81,7 +82,9 @@ bool preparePlatform(const Paths& paths, std::string* error) {
     // case the disc is unchanged for every file the mods do not supply.
     Platform::DVD::MountOptions mountOptions{paths.disc};
     {
-        auto resolved = Platform::ModFolder::resolveForUser(paths.user);
+        // Level editor patch mods are built from this disc at start-up (docs/dev/level-editor/TECH.md 5.1).
+        Platform::ModFolder::setPatchBuilder(&PetariEditor::Patch::buildForLoader);
+        auto resolved = Platform::ModFolder::resolveForUser(paths.user, paths.disc);
         for (const std::string& line : resolved.log) std::fprintf(stderr, "[mods] %s\n", line.c_str());
         mountOptions.overlay = std::move(resolved.files);
         // Mod galaxies' progress is saved beside the save, never in it (TECH.md 5.7).

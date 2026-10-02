@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <iconv.h>
 #include <memory>
 #include <unordered_map>
 
@@ -747,6 +748,41 @@ Bytes Table::build() const {
     out.insert(out.end(), mStrings.begin(), mStrings.end());
     out.resize((out.size() + 31) & ~std::size_t(31), '@');
     return out;
+}
+
+// ---- Shift-JIS ----------------------------------------------------------------------------------
+
+namespace {
+std::string convert(const std::string& text, const char* pFrom, const char* pTo) {
+    bool ascii = std::all_of(text.begin(), text.end(), [](char c) { return static_cast< unsigned char >(c) < 0x80; });
+    if (ascii) {
+        return text;
+    }
+    iconv_t cd = iconv_open(pTo, pFrom);
+    if (cd == reinterpret_cast< iconv_t >(-1)) {
+        return text;
+    }
+    std::string out(text.size() * 4 + 4, '\0');
+    char* pIn = const_cast< char* >(text.data());
+    size_t inLeft = text.size();
+    char* pOut = out.data();
+    size_t outLeft = out.size();
+    const size_t result = iconv(cd, &pIn, &inLeft, &pOut, &outLeft);
+    iconv_close(cd);
+    if (result == static_cast< size_t >(-1)) {
+        return text;
+    }
+    out.resize(out.size() - outLeft);
+    return out;
+}
+}  // namespace
+
+std::string sjisToUtf8(const std::string& sjis) {
+    return convert(sjis, "CP932", "UTF-8");
+}
+
+std::string utf8ToSjis(const std::string& utf8) {
+    return convert(utf8, "UTF-8", "CP932");
 }
 
 }  // namespace PetariEditor::Formats

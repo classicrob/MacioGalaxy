@@ -235,6 +235,41 @@ int main() {
         }
     }
 
+    // Level editor patch mods (edits/*.json): the builder's archives are claimed at the rank of the
+    // highest patch mod, before its own files/; a higher full-archive mod still wins its paths.
+    {
+        const fs::path pm = root / "patchmods";
+        write(pm / "Edited/edits/EggStarGalaxy.json", "{}");
+        write(pm / "Edited/files/StageData/SoramameZone.arc", arc("stale-full"));  // an older full save of the same mod
+        write(pm / "Edited/mod.txt", "priority=1\n");
+        write(pm / "Full/files/StageData/Other.arc", arc("full-other"));
+        write(pm / "Full/mod.txt", "priority=2\n");
+        write(root / "built/StageData/SoramameZone.arc", arc("built"));
+        write(root / "built/StageData/Other.arc", arc("built-other"));
+        const auto found = MF::discover({pm});
+        check(found.size() == 2 && found[0].name == "Edited" && found[0].hasEdits && !found[1].hasEdits, "edits/ is detected");
+        std::vector<fs::path> seenRoots;
+        MF::setPatchBuilder([&](const std::vector<fs::path>& roots, const fs::path& discFiles, const fs::path&, std::vector<std::string>*) {
+            seenRoots = roots;
+            check(discFiles == root / "disc", "the builder gets the disc's files/");
+            return std::vector<std::pair<std::string, fs::path>>{{"StageData/SoramameZone.arc", root / "built/StageData/SoramameZone.arc"},
+                                                                 {"StageData/Other.arc", root / "built/StageData/Other.arc"}};
+        });
+        MF::PatchContext context{root / "disc", root / "cache"};
+        const auto r = MF::resolve(found, {{"Edited", true}, {"Full", true}}, &context);
+        check(seenRoots == std::vector<fs::path>{pm / "Edited"}, "only patch mods are built");
+        const auto* zone = find(r, "StageData/SoramameZone.arc");
+        check(zone && zone->mod == "Edited" && read(zone->host) == arc("built"), "the built archive beats the mod's own old full archive");
+        const auto* other = find(r, "StageData/Other.arc");
+        check(other && other->mod == "Full" && read(other->host) == arc("full-other"), "a higher full-archive mod wins its path");
+        const auto none = MF::resolve(found, {{"Edited", true}});
+        bool said = false;
+        for (const auto& line : none.log) said |= line.find("not applied") != std::string::npos;
+        check(said && find(none, "StageData/SoramameZone.arc") && read(find(none, "StageData/SoramameZone.arc")->host) == arc("stale-full"),
+              "without a disc the edits are skipped (logged) and the files/ are used");
+        MF::setPatchBuilder(nullptr);
+    }
+
     fs::remove_all(root);
     std::printf("mod folder tests passed (%d checks)\n", checks);
     return 0;

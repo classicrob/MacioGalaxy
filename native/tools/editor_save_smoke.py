@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
-"""Live check of saving an edit as a mod (docs/dev/level-editor/TECH.md 5.1, Full archives).
+"""Live check of saving an edit as a mod (docs/dev/level-editor/TECH.md 5.1: Full archives, then a patch).
 
-Three launches of the stage smoke on EggStarGalaxy mission 1:
+Four launches of the stage smoke on EggStarGalaxy mission 1:
 
   1. editor off, PETARI_PLACEMENT_TRACE=Takobo   -> where the disc places each Octoomba
-  2. PETARI_EDITOR=1, PETARI_MODS=LevelEditor, PETARI_EDITOR_SAVE_TEST=EditorSaveTest
-                                                 -> native/editor/runtime/save_test.cpp enters Edit (Tab path),
-                                                    moves an Octoomba 300 up and saves; the mod folder must hold
-                                                    SoramameZone.arc (Yaz0) with that row moved, mod.txt, and
-                                                    Folder.EditorSaveTest=on in mods.txt
-  3. same user folder, editor off                -> the game opens the mod's archive and places that Octoomba
-                                                    300 units from where run 1 placed it
+  2. PETARI_EDITOR=1, PETARI_MODS=LevelEditor, PETARI_EDITOR_SAVE_TEST=EditorSaveTest,
+     PETARI_EDITOR_SAVE_FORM=full                -> native/editor/runtime/save_test.cpp enters Edit (Tab path),
+                                                    moves an Octoomba 300 up and saves Full archives; the mod
+                                                    folder must hold SoramameZone.arc (Yaz0) with that row
+                                                    moved, mod.txt, and Folder.EditorSaveTest=on in mods.txt
+  3. same user folder, the same but a patch      -> over the saved mod, the Octoomba moves 300 more and the mod
+                                                    is saved as a patch: edits/EggStarGalaxy.json sets that
+                                                    row's pos_y (disc-relative, both edits) and the full
+                                                    archive is gone
+  4. same user folder, editor off                -> the loader builds SoramameZone.arc from the patch, the game
+                                                    opens it and places that Octoomba 600 units from run 1
 
 usage: editor_save_smoke.py --app Petari.app/Contents/MacOS/Petari --output build/editor-save-smoke [--owner editorsave]
 """
 import argparse
+import json
 import math
 import os
 import re
@@ -38,7 +43,7 @@ def run(args, name, user, extra, fresh=True):
     log = args.output / f"{name}.log"
     command, env_extra = sweep.app_command(args, user, STAGE, SCENARIO)
     env = dict(os.environ, **env_extra)
-    for key in ("PETARI_MODS", "PETARI_EDITOR", "PETARI_EDITOR_SAVE_TEST", "PETARI_MOD_FOLDERS"):
+    for key in ("PETARI_MODS", "PETARI_EDITOR", "PETARI_EDITOR_SAVE_TEST", "PETARI_EDITOR_SAVE_FORM", "PETARI_MOD_FOLDERS"):
         env.pop(key, None)
     env.update(PETARI_LOCK_CLASS="functional", PETARI_PLACEMENT_TRACE="Takobo", **extra)
     full = [str(args.lock), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die", str(args.timeout)] + command
@@ -73,10 +78,13 @@ def main():
 
     disc = run(args, "1-disc", args.output / "1-user", {})
     user = args.output / "2-user"
-    save = run(args, "2-edit-and-save", user, {"PETARI_EDITOR": "1", "PETARI_MODS": "LevelEditor", "PETARI_EDITOR_SAVE_TEST": MOD})
-    edited = next((m for line in save["save"] for m in [re.match(r"edited (\w+) l_id (-?\d+) pos_y ([-\d.]+) -> ([-\d.]+)", line)] if m), None)
+    editor = {"PETARI_EDITOR": "1", "PETARI_MODS": "LevelEditor", "PETARI_EDITOR_SAVE_TEST": MOD}
+    edited_re = r"edited (\w+) l_id (-?\d+) pos_y ([-\d.]+) -> ([-\d.]+)"
+    save = run(args, "2-save-full", user, dict(editor, PETARI_EDITOR_SAVE_FORM="full"))
+    edited = next((m for line in save["save"] for m in [re.match(edited_re, line)] if m), None)
+    patched = None
     if "PASS" not in save["save"] or edited is None:
-        failures.append(f"save run: {save['save'][-2:]}")
+        failures.append(f"full save run: {save['save'][-2:]}")
     else:
         lid, after = int(edited.group(2)), float(edited.group(4))
         archive = user / "mods" / MOD / "files/StageData/SoramameZone.arc"
@@ -93,23 +101,47 @@ def main():
         if f"Folder.{MOD}=on" not in mods_txt or not (user / "mods" / MOD / "mod.txt").is_file():
             failures.append("the mod is not switched on, or has no mod.txt")
 
-        play = run(args, "3-mod-on", user, {}, fresh=False)
+        # Again over the saved mod, as a patch.
+        patched = run(args, "3-save-patch", user, editor, fresh=False)
+        again = next((m for line in patched["save"] for m in [re.match(edited_re, line)] if m), None)
+        if "PASS" not in patched["save"] or again is None:
+            failures.append(f"patch save run: {patched['save'][-2:]}")
+        else:
+            final = float(again.group(4))
+            if abs(final - after - 300.0) > 0.1:
+                failures.append(f"the second session did not start from the saved mod ({again.group(3)} != {after})")
+            patch_file = user / "mods" / MOD / "edits/EggStarGalaxy.json"
+            sets = []
+            if patch_file.is_file():
+                doc = json.loads(patch_file.read_text())
+                sets = [op for op in doc["archives"].get("StageData/SoramameZone.arc", [])
+                        if op["op"] == "set" and abs(op["cells"].get("pos_y", 1e9) - final) < 0.1]
+            if not sets:
+                failures.append("the patch does not set the Octoomba's pos_y")
+            if archive.is_file():
+                failures.append("the full archive is still in the mod after saving a patch")
+
+        play = run(args, "4-mod-on", user, {}, fresh=False)
+        if not re.search(r"\[mods\] patch mods: built StageData/SoramameZone.arc", play["text"]):
+            failures.append("the loader did not build the patched archive")
         if not re.search(rf"\[mods\] game opened /StageData/SoramameZone.arc from mod {MOD}", play["text"]):
             failures.append("the game did not open the mod's archive")
         before, now = disc["takobo"].get(lid), play["takobo"].get(lid)
         moved = math.dist(before, now) if before and now else None
         print(f"Octoomba l_id {lid}: disc {before}, with the mod {now}, moved {moved}")
-        if moved is None or abs(moved - 300.0) > 1.0:
-            failures.append("the mod's Octoomba is not 300 units from the disc's")
-        for r in (disc, save, play):
-            if r["result"] != "PASS":
+        if moved is None or abs(moved - 600.0) > 1.0:
+            failures.append("the mod's Octoomba is not 600 units from the disc's (both saves)")
+        for r in (disc, save, patched, play):
+            if r is not None and r["result"] != "PASS":
                 failures.append(f"{r['name']}: stage smoke {r['result']}")
-    for line in save["save"]:
+        for cache in user.glob("mods-cache/*"):
+            print(f"  patch cache: {cache.name} ({sum(f.stat().st_size for f in cache.rglob('*') if f.is_file())} bytes)")
+    for line in save["save"] + (patched["save"] if patched else []):
         print(f"  [editor-save] {line}")
     if failures:
         print("FAIL: " + "; ".join(failures))
         return 1
-    print("PASS: the edit saved as a mod and the game loaded it")
+    print("PASS: the edit saved as Full archives, then as a patch over them, and the game built and loaded it")
     return 0
 
 

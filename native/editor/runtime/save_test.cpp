@@ -1,7 +1,7 @@
 // Live check of saving an edit as a mod (native/tools/editor_save_smoke.py): with
 // PETARI_EDITOR=1, PETARI_MODS=LevelEditor and PETARI_EDITOR_SAVE_TEST=<mod name>, once the stage
 // smoke's checks are done it enters Edit through the UI's Tab path, moves a placed Octoomba 300
-// up and saves the mod. Logs "[editor-save] edited <zone> l_id <n> pos_y <before> -> <after>",
+// up and saves the mod (a patch; Full archives with PETARI_EDITOR_SAVE_FORM=full). Logs "[editor-save] edited <zone> l_id <n> pos_y <before> -> <after>",
 // then "[editor-save] PASS" or "[editor-save] FAIL: <reason>".
 #include "runtime_core.hpp"
 
@@ -70,6 +70,8 @@ void saveTestTick() {
         enqueue(std::move(move));
         Command save{Command::Kind::SaveMod};
         save.modName = sModName;
+        const char* pForm = std::getenv("PETARI_EDITOR_SAVE_FORM");
+        save.fullArchives = pForm != nullptr && std::string(pForm) == "full";
         enqueue(std::move(save));
         s.notices = status().noticeSerial;
         s.phase = 1;
