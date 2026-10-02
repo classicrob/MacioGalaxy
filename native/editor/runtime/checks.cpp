@@ -1,0 +1,191 @@
+// The Checks engine (TECH.md 5.5; edit_api.hpp Check): problems in the EditModel that would crash
+// or break the game, or are probably unintended. Pure model + catalog reads; Runtime recomputes it
+// when the model's revision changes.
+#include "checks.hpp"
+
+#include "edit_model.hpp"
+#include <petari/editor/catalog.hpp>
+
+#include <algorithm>
+#include <cstdlib>
+#include <map>
+#include <set>
+#include <string>
+
+namespace PetariEditor {
+namespace {
+    std::string endOf(const std::string& path) {
+        return path.substr(path.rfind('/') + 1);
+    }
+
+    bool isPlacementTable(const std::string& path) {
+        const std::string leaf = endOf(path);
+        const bool placed = path.rfind("jmp/placement", 0) == 0 || path.rfind("jmp/mapparts", 0) == 0 || path.rfind("jmp/childobj", 0) == 0;
+        return placed && leaf != "stageobjinfo";
+    }
+
+    std::string label(const ModelView& m, RowId row) {
+        const char* pName = m.objectName(row);
+        const Catalog::ClassInfo* pInfo = pName != nullptr ? Catalog::find(pName) : nullptr;
+        return pInfo != nullptr && !pInfo->displayName.empty() ? pInfo->displayName : (pName != nullptr ? pName : "an object");
+    }
+
+    int intCell(const ModelView& m, RowId row, const char* pColumn) {
+        const Cell* pCell = m.cell(row, columnHash(pColumn));
+        return pCell != nullptr ? pCell->i : -1;
+    }
+
+    Op setOp(const std::string& name, RowId row, const char* pColumn, int value) {
+        Op op;
+        op.label = name;
+        op.sets.push_back(SetCell{row, columnHash(pColumn), Cell{CellType::Int, value, 0, {}}});
+        return op;
+    }
+
+    const char* const kSwitchFields[] = {"SW_APPEAR", "SW_DEAD", "SW_A", "SW_B", "SW_SLEEP", "SW_PARAM", "SW_AWAKE"};
+
+    struct SwitchUse {
+        std::vector< RowId > readers, writers;
+    };
+}  // namespace
+
+std::vector< Check > computeChecks(const ModelView& m) {
+    std::vector< Check > out;
+    // Switches by (zone, id): zone-local ids are per zone, ids 1000+ are shared by the galaxy (-1).
+    std::map< std::pair< int, int >, SwitchUse > switches;
+
+    for (int zone = 0; zone < m.zoneCount(); zone++) {
+        // The zone's rails: CommonPathInfo l_ids, and each rail's point count.
+        std::map< int, int > railPoints;  // l_id -> points (-1: unknown)
+        int railTable = -1;
+        std::map< int, int > pointTables;  // CommonPathPointInfo.<n> -> rows
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            const std::string path = m.tablePath(zone, t);
+            if (endOf(path) == "commonpathinfo") railTable = t;
+            if (endOf(path).rfind("commonpathpointinfo.", 0) == 0) {
+                int rows = 0;
+                m.forEachRow(zone, t, [&](RowId row) { rows += m.state(row) != RowState::Deleted; });
+                pointTables[std::atoi(endOf(path).c_str() + 20)] = rows;
+            }
+        }
+        if (railTable >= 0) {
+            int index = 0;
+            m.forEachRow(zone, railTable, [&](RowId row) {
+                if (m.state(row) == RowState::Deleted) return;
+                const int lid = intCell(m, row, "l_id");
+                auto it = pointTables.find(index++);
+                railPoints[lid] = it != pointTables.end() ? it->second : -1;
+                if (it != pointTables.end() && it->second < 2) {
+                    out.push_back(Check{"rail-short:" + std::to_string(row.v), Severity::Error,
+                                        "Path " + std::to_string(lid) + " has " + std::to_string(it->second) + " point" +
+                                            (it->second == 1 ? "" : "s") + "; a path needs at least 2",
+                                        {row}, "", Op{}, ""});
+                }
+            });
+        }
+
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            const std::string path = m.tablePath(zone, t);
+            if (!isPlacementTable(path)) continue;
+            std::map< int, std::vector< RowId > > lids;
+            m.forEachRow(zone, t, [&](RowId row) {
+                if (m.state(row) == RowState::Deleted || m.rowMissions(row) == 0) return;
+                const char* pName = m.objectName(row);
+                const std::string name = pName != nullptr ? pName : "";
+                const Catalog::ClassInfo* pInfo = Catalog::find(name.c_str());
+                const std::string who = label(m, row);
+                const std::string key = std::to_string(row.v);
+                if (pInfo == nullptr && !name.empty()) {
+                    out.push_back(Check{"unknown-class:" + key, Severity::Warning,
+                                        "\"" + name + "\" is not an object the game knows; it will not appear", {row}, "", Op{}, ""});
+                }
+                if (const int lid = intCell(m, row, "l_id"); lid >= 0) lids[lid].push_back(row);
+
+                // Links the class needs, and links pointing nowhere.
+                const int rail = intCell(m, row, "CommonPath_ID");
+                bool railRequired = false;
+                if (pInfo != nullptr) {
+                    for (const Catalog::Link& link : pInfo->links) {
+                        if (!link.required) continue;
+                        if (link.kind == Catalog::LinkKind::Rail) railRequired = true;
+                        if (intCell(m, row, link.field.c_str()) < 0) {
+                            const bool isRail = link.kind == Catalog::LinkKind::Rail;
+                            out.push_back(Check{"missing-link:" + link.field + ":" + key, Severity::Error,
+                                                who + (isRail ? " needs a path" : " needs a " + link.field + " link"), {row}, "",
+                                                Op{}, isRail ? "pick-path" : "pick-" + link.field});
+                        }
+                    }
+                }
+                if (rail >= 0 && railPoints.find(rail) == railPoints.end()) {
+                    Check check{"dangling-path:" + key, Severity::Error,
+                                who + "'s path " + std::to_string(rail) + " doesn't exist in this zone", {row}, "", Op{}, "pick-path"};
+                    if (!railRequired) {
+                        check.fixLabel = "Unlink the path";
+                        check.fix = setOp("Unlink the path", row, "CommonPath_ID", -1);
+                    }
+                    out.push_back(std::move(check));
+                }
+
+                // Switches: ranges, and who reads and writes each.
+                for (const char* pField : kSwitchFields) {
+                    const int id = intCell(m, row, pField);
+                    if (id < 0) continue;
+                    if ((id >= 128 && id < 1000) || id >= 1128) {
+                        out.push_back(Check{"switch-range:" + std::string(pField) + ":" + key, Severity::Error,
+                                            who + "'s " + pField + " " + std::to_string(id) +
+                                                " is out of range (0-127 in the zone, 1000-1127 shared)",
+                                            {row}, "Clear the switch", setOp("Clear the switch", row, pField, -1), ""});
+                        continue;
+                    }
+                    bool write = std::string(pField) == "SW_DEAD";
+                    bool known = false;
+                    if (pInfo != nullptr) {
+                        for (const Catalog::Switch& sw : pInfo->switches) {
+                            if (sw.field == pField) {
+                                write = sw.role == Catalog::SwitchRole::Write;
+                                known = true;
+                            }
+                        }
+                    }
+                    if (!known && pInfo != nullptr && !pInfo->switches.empty()) {
+                        out.push_back(Check{"switch-unused:" + std::string(pField) + ":" + key, Severity::Warning,
+                                            who + " doesn't use " + pField + " (set to " + std::to_string(id) + ")", {row},
+                                            "Clear it", setOp("Clear the switch", row, pField, -1), ""});
+                        continue;
+                    }
+                    SwitchUse& use = switches[{id >= 1000 ? -1 : zone, id}];
+                    (write ? use.writers : use.readers).push_back(row);
+                }
+            });
+            for (const auto& [lid, rows] : lids) {
+                if (rows.size() < 2) continue;
+                for (size_t i = 1; i < rows.size(); i++) {
+                    out.push_back(Check{"duplicate-lid:" + std::to_string(rows[i].v), Severity::Warning,
+                                        "Two objects in " + endOf(path) + " share link id " + std::to_string(lid), {rows[i], rows[0]},
+                                        "", Op{}, ""});
+                }
+            }
+        }
+    }
+
+    // A zone switch used by exactly one row: something waits for (or sets) a number nothing else
+    // uses, most likely a typo. Shared switches (1000+) and multi-row uses are left alone: the game
+    // and classes the catalog can't see (talks, cutscenes, progress) also turn switches on.
+    for (const auto& [where, use] : switches) {
+        if (where.first < 0 || use.readers.size() + use.writers.size() != 1) continue;
+        const std::string id = std::to_string(where.second);
+        const RowId row = use.readers.empty() ? use.writers.front() : use.readers.front();
+        out.push_back(Check{"switch-alone:" + std::to_string(where.first) + ":" + id, Severity::Warning,
+                            "Switch " + id + ": only " + label(m, row) + " uses it" +
+                                (use.readers.empty() ? "; nothing waits for it" : "; nothing turns it on"),
+                            {row}, "", Op{}, "pick-switch"});
+    }
+    // Errors first, then by key, so the panel's order is stable.
+    std::stable_sort(out.begin(), out.end(), [](const Check& a, const Check& b) {
+        if (a.severity != b.severity) return a.severity == Severity::Error;
+        return a.key < b.key;
+    });
+    return out;
+}
+
+}  // namespace PetariEditor
