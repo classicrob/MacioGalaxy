@@ -3,6 +3,7 @@
 // it plays the UI's part through edit_api.hpp:
 //   1. Enter Edit; add an EditorBrush row (a 3000 x 300 x 3000 checker box, fitted gravity) far
 //      from the planets: it must get a live part with collision and a model.
+//      The Browser's thumbnail must find its model through the part (EditorTerrain::partModel).
 //   2. Put the play marker on it and Play: Mario must land and stand on the brush, with its
 //      gravity (straight down). A screenshot is taken (PETARI_EDITOR_BRUSH_SHOTS=<dir>).
 //   3. Back in Edit: resize it (scale_x 3 -> 1.5: rebuilt at the new size), change its material
@@ -22,6 +23,7 @@
 #include "Game/Map/CollisionParts.hpp"
 #include "Game/Map/HitInfo.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 
 #include <cmath>
@@ -128,6 +130,9 @@ void brushTestTick() {
             return finish("FAIL: a brush edit should be live, not pending a reload");
         }
         s.firstModel = s.part->mModel;
+        if (EditorTerrain::partModel(s.part) != MR::getJ3DModel(s.part->mModel)) {
+            return finish("FAIL: the brush's part does not lead to its model (thumbnails)");
+        }
         Command marker{Command::Kind::SetPlayMarker};
         marker.markerPos = {kX + 300.0f, kY + 500.0f, kZ};
         marker.markerUp = {0, 1, 0};

@@ -12,6 +12,7 @@
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/MtxUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
@@ -24,6 +25,20 @@
 #include <vector>
 
 namespace EditorTerrain {
+    namespace {
+        // The scene's parts (no RTTI to tell them from other actors), forgotten with the scene.
+        std::vector< const Part* > sParts;
+        u32 sPartsScene = 0;
+
+        std::vector< const Part* >& sceneParts() {
+            if (sPartsScene != PetariEditor::Hooks::sceneSerial()) {
+                sParts.clear();
+                sPartsScene = PetariEditor::Hooks::sceneSerial();
+            }
+            return sParts;
+        }
+    }  // namespace
+
     Part::Part(const char* pName)
         : LiveActor(pName), mBuiltScale(1.0f, 1.0f, 1.0f), mModel(nullptr), mGravity(nullptr), mGravityKind(GravityShape::Kind::None) {
         mBaseMtx.identity();
@@ -197,7 +212,20 @@ namespace EditorTerrain {
         MR::clearCurrentPlacementZoneId();
         EditorScene::lateConnect(executeBefore);
         pPart->setCollision(pKcl, pPa);
+        {
+            PetariNative::HostAllocationScope host;
+            sceneParts().push_back(pPart);
+        }
         return pPart;
+    }
+
+    J3DModel* partModel(const LiveActor* pActor) {
+        for (const Part* pPart : sceneParts()) {
+            if (pPart == pActor) {
+                return pPart->mModel != nullptr ? MR::getJ3DModel(pPart->mModel) : nullptr;
+            }
+        }
+        return nullptr;
     }
 
     void injectArchive(const char* pPath, const void* pBytes, u32 size) {

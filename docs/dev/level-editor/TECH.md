@@ -847,6 +847,7 @@ Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefo
 - Its fitted gravity lives in the part's own space and follows the matrix (`PlanetGravity::updateMtx`), so moving a brush moves its field.
 - A gizmo scale preview stretches the model and collision. The commit rebuilds them at the new size.
 - Cost: a box rebuilds in about 4 ms, a 1,500-triangle sphere in about 11 ms.
+- The part has no model of its own, so the Browser's thumbnail finds the brush's model through `EditorTerrain::partModel`.
 
 **Bake on save** (`petari/editor/terrain/bake.hpp`, called by `save_mod.cpp`, `petari_terrain_bake`, and the patch-mod builder later).
 - Each brush row becomes a generated planet: `ObjectData/EditorBrush<hash>.arc` (bmd, kcl, pa).

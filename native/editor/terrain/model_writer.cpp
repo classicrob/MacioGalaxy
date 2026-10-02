@@ -487,7 +487,21 @@ ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const Mo
         shp.place(drawInit, 0x28);
         blocks.push_back(shp.finish());
     }
-    blocks.push_back(material.mat3);
+    Bytes mat3 = material.mat3;
+    if (options.bakeLight) {
+        // Some donors light COLOR0 (the vertex colour) with the scene's light 0 as well, which
+        // is placed for their own planet: a brush far from it gets a dark top and lit sides. The
+        // bake is the light, so the vertex colour is drawn as is, like the other "_v" materials.
+        const std::uint32_t chanTable = get32(mat3, 0x28), initTable = get32(mat3, 0x0C);
+        if (chanTable != 0 && initTable + 0x0E <= mat3.size()) {
+            const std::uint16_t color0 = get16(mat3, initTable + 0x0C);
+            const std::size_t chan = chanTable + static_cast< std::size_t >(color0) * 8;
+            if (color0 != 0xFFFF && chan + 8 <= mat3.size() && mat3[chan] != 0 && mat3[chan + 1] == 1) {
+                mat3[chan] = 0;  // lighting off; the material source stays the vertex colour
+            }
+        }
+    }
+    blocks.push_back(mat3);
     blocks.push_back(material.tex1);
 
     Bytes& file = result.model;

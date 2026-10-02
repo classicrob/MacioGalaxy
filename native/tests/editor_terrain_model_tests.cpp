@@ -100,6 +100,9 @@ static bool loadAndCheck(const Bytes& model, const T::Mesh& mesh, const std::str
             darkest = std::min(darkest, pColors[i].r);
         }
         expect(pColors != nullptr && brightest > darkest + 60 && darkest >= 130, "baked vertex light (ambient + sun)");
+        // ... and is the only light: a vertex-coloured COLOR0 is not lit by the scene again.
+        J3DColorChan* pChan = pMaterial != nullptr && pMaterial->getColorBlock() != nullptr ? pMaterial->getColorBlock()->getColorChan(0) : nullptr;
+        expect(pChan == nullptr || pChan->getMatSrc() != GX_SRC_VTX || pChan->getEnable() == 0, "a vertex-coloured COLOR0 is unlit");
         const f32* pUvs = static_cast< const f32* >(pData->getVertexData().getVtxTexCoordArray(0));
         expect(pUvs != nullptr && pUvs[1] == mesh.uvs[1], "UVs (host order)");
         J3DShape* pShape = pData->getShapeNodePointer(0);

@@ -14,6 +14,7 @@
 #include "Game/System/GameDataFunction.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
 #include "Game/Util/MessageUtil.hpp"
+#include "Game/Util/PlayerUtil.hpp"
 #include <petari/screenshot.hpp>
 #include <petari/smoke_phase.hpp>
 
@@ -72,9 +73,13 @@ namespace EditorGalaxyTest {
             }
         }
         if (verify) {
-            // PETARI_EDITOR_GALAXY_SHOTS=<dir>: the galaxy, four seconds into play (Mario has landed).
-            static s32 sShotFrame = 0;
-            if (const char* pDir = std::getenv("PETARI_EDITOR_GALAXY_SHOTS"); pDir != nullptr && sEntered && stage == sGalaxy && ++sShotFrame == 240) {
+            // PETARI_EDITOR_GALAXY_SHOTS=<dir>: the galaxy once Mario has stood a second after his
+            // entrance (or six seconds in).
+            static s32 sShotFrame = 0, sGrounded = 0;
+            sGrounded = sEntered && MR::isOnGroundPlayer() ? sGrounded + 1 : 0;
+            if (const char* pDir = std::getenv("PETARI_EDITOR_GALAXY_SHOTS");
+                pDir != nullptr && sEntered && stage == sGalaxy && sShotFrame >= 0 && (++sShotFrame == 360 || sGrounded == 60)) {
+                sShotFrame = -1;
                 char path[512];
                 std::snprintf(path, sizeof(path), "%s/galaxy-%s.png", pDir, sGalaxy);
                 PetariNative::Screenshot::request(path);

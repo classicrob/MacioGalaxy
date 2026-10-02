@@ -4,6 +4,7 @@
 #include "Game/LiveActor/LiveActor.hpp"
 #include <JSystem/JGeometry.hpp>
 
+class J3DModel;
 class PlanetGravity;
 
 // The level editor's terrain in a running scene (docs/dev/level-editor/TECH.md 6.3): a part whose
@@ -58,6 +59,10 @@ namespace EditorTerrain {
     /// Creates a part at `rPos` (world space, zone 0) with the given collision, and connects it to
     /// the scene like EditorScene::createFromRow. Null and *ppError on failure.
     Part* createPart(const char* pName, const TVec3f& rPos, void* pKcl, const void* pPa, const char** ppError);
+
+    /// The model drawn for `pActor` when it is one of this scene's parts (a brush row's actor
+    /// has no model of its own: the editor's thumbnails), else null.
+    J3DModel* partModel(const LiveActor* pActor);
 
     /// Serves `pBytes` (a plain RARC) as the archive `pPath` ("/ObjectData/EditorTerrainBox.arc"):
     /// it is registered with the editor's archive overrides (PetariEditor::Hooks), so the game's
