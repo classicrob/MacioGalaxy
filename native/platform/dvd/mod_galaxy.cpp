@@ -296,6 +296,7 @@ namespace {
     }
 
     std::mutex gMutex;
+    const char* (*gLanguageProvider)() = nullptr;
     std::deque< Galaxy > gGalaxies;  // deque: message pointers stay valid as galaxies are added
 
     const std::u16string* pick(const std::map< std::string, std::u16string >& texts, const char* pLanguage) {
@@ -423,9 +424,16 @@ std::vector< const Galaxy* > all() {
     return out;
 }
 
+void setLanguageProvider(const char* (*pProvider)()) {
+    gLanguageProvider = pProvider;
+}
+
 const char16_t* message(const char* pId, const char* pLanguage) {
     if (pId == nullptr) {
         return nullptr;
+    }
+    if (pLanguage == nullptr) {
+        pLanguage = gLanguageProvider != nullptr ? gLanguageProvider() : "en";
     }
     std::lock_guard< std::mutex > lock(gMutex);
     if (gGalaxies.empty()) {

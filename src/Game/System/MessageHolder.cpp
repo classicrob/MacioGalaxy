@@ -6,8 +6,6 @@
 #include "Game/Util/SystemUtil.hpp"
 #include <JSystem/JKernel/JKRArchive.hpp>
 #ifdef PETARI_NATIVE
-#include "Game/System/Language.hpp"
-#include <cstring>
 #include <petari/endian.hpp>
 #include <petari/platform/mod_galaxy.hpp>
 #endif
@@ -17,19 +15,6 @@
 
 namespace {
 #ifdef PETARI_NATIVE
-    // The registry's language code for the game's language ("UsEnglish" -> "en").
-    const char* nativeLanguageCode() {
-        const char* pPrefix = MR::getCurrentLanguagePrefix();
-        static const char* const sCodes[][2] = {{"English", "en"}, {"French", "fr"}, {"Spanish", "es"}, {"German", "de"},
-                                                {"Italian", "it"}, {"Dutch", "nl"},  {"Japanese", "ja"}, {"Korean", "ko"},
-                                                {"Chinese", "zh"}};
-        for (const auto& rCode : sCodes) {
-            if (pPrefix != nullptr && std::strstr(pPrefix, rCode[0]) != nullptr) {
-                return rCode[1];
-            }
-        }
-        return "en";
-    }
 
     u8* getBlock(u32 magic, u8* pData) {
         u32 numBlocks = PetariNative::readU32BE(pData + 0xc);
@@ -92,7 +77,7 @@ bool MessageData::getMessageDirect(TalkMessageInfo* pMessageInfo, const char* pM
 #ifdef PETARI_NATIVE
     // Mod galaxies' names and mission names (galaxy.json; Message.arc has none): host UTF-16 text,
     // as mText holds it. TECH.md 5.7.
-    if (const char16_t* pText = PetariNative::Platform::ModGalaxy::message(pMessage, nativeLanguageCode())) {
+    if (const char16_t* pText = PetariNative::Platform::ModGalaxy::message(pMessage)) {
         pMessageInfo->_0 = const_cast< u8* >(reinterpret_cast< const u8* >(pText));
         return true;
     }

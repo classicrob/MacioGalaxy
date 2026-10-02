@@ -45,9 +45,14 @@ const Galaxy* find(const char* pName);
 std::vector< const Galaxy* > all();
 
 /// The text of a message id the registry answers: "GalaxyName_<G>", "GalaxyNameShort_<G>",
-/// "ScenarioName_<G><n>" (n from 1), in `language` ("en", "fr", "es"...; English fallback).
-/// Null for any other id. The pointer stays valid for the process.
-const char16_t* message(const char* pId, const char* pLanguage);
+/// "ScenarioName_<G><n>" (n from 1), in `language` ("en", "fr", "es"...; English fallback; null:
+/// the game's language from the provider). Null for any other id. The pointer stays valid for the
+/// process.
+const char16_t* message(const char* pId, const char* pLanguage = nullptr);
+
+/// The game's current language as a code ("en"), for message(); set by the game
+/// (src/Game/System/Language.cpp). Without one, English.
+void setLanguageProvider(const char* (*pProvider)());
 
 /// The disc galaxy whose music `pGalaxy` borrows, or null.
 const char* musicFrom(const char* pGalaxy);
