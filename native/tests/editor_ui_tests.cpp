@@ -2,11 +2,16 @@
 // headless (no window, no renderer). The presenter's calls are recorded instead.
 #include <petari/editor/ui.hpp>
 
+#include "panels.hpp"
+
 #include "imgui.h"
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <map>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -50,6 +55,116 @@ extern "C" void petari_present_set_content_area(float x, float y, float width, f
 }
 extern "C" void petari_present_set_free_aspect(int enabled) {
     gArea.freeAspect = enabled;
+}
+
+
+// A two-zone model for the panels' logic: a changed Coin, an added Goomba, an untouched Rabbit.
+using namespace PetariEditor;
+struct FakeModel : ModelView {
+    std::vector< Column > cols{{columnHash("name"), "name", CellType::String}, {columnHash("pos_x"), "pos_x", CellType::Float},
+                                {columnHash("pos_y"), "pos_y", CellType::Float}, {columnHash("Obj_arg0"), "Obj_arg0", CellType::Int},
+                                {0x12345678u, nullptr, CellType::Int}};
+    struct R {
+        RowId id;
+        int zone;
+        RowState state;
+        std::map< std::uint32_t, Cell > now, disc;
+    };
+    std::vector< R > rows;
+    FakeModel() {
+        auto cellS = [](const char* s) { Cell c; c.type = CellType::String; c.s = s; return c; };
+        auto cellF = [](float f) { Cell c; c.type = CellType::Float; c.f = f; return c; };
+        auto cellI = [](int i) { Cell c; c.type = CellType::Int; c.i = i; return c; };
+        R coin{{1}, 0, RowState::Changed, {}, {}};
+        coin.disc = {{cols[0].hash, cellS("Coin")}, {cols[1].hash, cellF(10)}, {cols[2].hash, cellF(5)}, {cols[3].hash, cellI(-1)}, {cols[4].hash, cellI(7)}};
+        coin.now = coin.disc;
+        coin.now[cols[1].hash] = cellF(15);
+        coin.now[cols[2].hash] = cellF(9);
+        coin.now[cols[4].hash] = cellI(8);
+        R goomba{{2}, 1, RowState::Added, {{cols[0].hash, cellS("Kuribo")}, {cols[1].hash, cellF(0)}, {cols[2].hash, cellF(0)}, {cols[3].hash, cellI(-1)}}, {}};
+        R rabbit{{3}, 1, RowState::Original, {}, {}};
+        rabbit.disc = {{cols[0].hash, cellS("Rabbit")}, {cols[1].hash, cellF(1)}, {cols[2].hash, cellF(2)}, {cols[3].hash, cellI(1)}};
+        rabbit.now = rabbit.disc;
+        rows = {coin, goomba, rabbit};
+    }
+    const R* find(RowId id) const {
+        for (const R& r : rows) if (r.id == id) return &r;
+        return nullptr;
+    }
+    std::uint64_t revision() const override { return 1; }
+    const char* galaxy() const override { return "TestGalaxy"; }
+    int scenario() const override { return 1; }
+    int zoneCount() const override { return 2; }
+    const char* zoneName(int zone) const override { return zone == 0 ? "TestGalaxy" : "PuffballZone"; }
+    bool zonePlaced(int) const override { return true; }
+    Mtx34 zoneWorldMatrix(int) const override { return Mtx34{{{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}}}; }
+    std::uint32_t activeLayers(int, int) const override { return 1; }
+    int tableCount(int) const override { return 1; }
+    const char* tablePath(int, int) const override { return "jmp/placement/common/objinfo"; }
+    const std::vector< Column >& columns(int, int) const override { return cols; }
+    void forEachRow(int zone, int, const std::function< void(RowId) >& fn) const override {
+        for (const R& r : rows) if (r.zone == zone) fn(r.id);
+    }
+    bool locate(RowId id, int* zone, int* table) const override {
+        const R* r = find(id);
+        if (r == nullptr) return false;
+        *zone = r->zone;
+        *table = 0;
+        return true;
+    }
+    RowState state(RowId id) const override { return find(id)->state; }
+    const Cell* cell(RowId id, std::uint32_t c) const override {
+        const R* r = find(id);
+        auto it = r->now.find(c);
+        return it == r->now.end() ? nullptr : &it->second;
+    }
+    const Cell* originalCell(RowId id, std::uint32_t c) const override {
+        const R* r = find(id);
+        auto it = r->disc.find(c);
+        return it == r->disc.end() ? nullptr : &it->second;
+    }
+    const char* objectName(RowId id) const override { return cell(id, cols[0].hash)->s.c_str(); }
+    bool hasTransform(RowId) const override { return true; }
+    RowTransform transform(RowId) const override { return {}; }
+    int historySize() const override { return 0; }
+    int historyCursor() const override { return 0; }
+    const char* historyLabel(int) const override { return ""; }
+};
+
+void testPanelsLogic() {
+    namespace Ui = PetariEditor::Ui;
+    const FakeModel model;
+    const std::vector< Ui::Change > changes = Ui::collectChanges(model);
+    CHECK(changes.size() == 2);
+    CHECK(changes[0].name == "Coin" && changes[0].state == RowState::Changed && changes[0].zone == 0);
+    // pos_x and pos_y read as one "Position"; an unnamed field by its hash.
+    CHECK(changes[0].columns.size() == 2 && changes[0].columns[0] == "Position" && changes[0].columns[1] == "0x12345678");
+    CHECK(changes[1].name == "Kuribo" && changes[1].state == RowState::Added && changes[1].columns.empty());
+
+    Cell three;
+    three.type = CellType::Int;
+    three.i = 3;
+    const Op set = Ui::setCellOp(model, {RowId{1}, RowId{3}}, columnHash("Obj_arg0"), three);
+    CHECK(set.sets.size() == 2 && set.sets[1].row == RowId{3} && set.sets[1].after.i == 3);
+    CHECK(set.label == "Set Obj_arg0 on 2 objects");
+    // A column a row lacks is not written there.
+    const Op unnamed = Ui::setCellOp(model, {RowId{1}, RowId{2}}, 0x12345678u, three);
+    CHECK(unnamed.sets.size() == 1 && unnamed.label == "Set 0x12345678 of Coin");
+
+    const Op revert = Ui::revertCellOp(model, {RowId{1}, RowId{2}}, columnHash("pos_x"));
+    CHECK(revert.sets.size() == 1 && revert.sets[0].after.f == 10.0f);  // the added Goomba has no disc value
+    const Op rows = Ui::revertRowsOp(model, {RowId{1}});
+    CHECK(rows.revertRows.size() == 1 && rows.label == "Reverted Coin" && rows.sets.empty());
+
+    Cell a, b;
+    a.type = b.type = CellType::Float;
+    a.f = b.f = 2.5f;
+    CHECK(Ui::sameCell(a, b) && Ui::cellText(a) == "2.5");
+    b.type = CellType::Int;
+    CHECK(!Ui::sameCell(a, b));
+    Column unnamedColumn;
+    unnamedColumn.hash = 0xABCDEF01u;
+    CHECK(Ui::columnLabel(unnamedColumn) == "0xabcdef01");
 }
 
 int main() {
@@ -116,6 +231,7 @@ int main() {
     CHECK(!Ui::viewportRect(&x, &y, &w, &h));
 
     ImGui::DestroyContext();
+    testPanelsLogic();
     if (gFailures != 0) {
         std::fprintf(stderr, "editor_ui_tests: %d failure(s)\n", gFailures);
         return 1;

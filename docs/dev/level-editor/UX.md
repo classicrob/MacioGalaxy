@@ -161,7 +161,7 @@ is always one hover (or the Advanced fold) away.
   It's offered only when nothing that needs a reset was changed (a pure camera
   fly-around, or edits the game applied to live objects).
 - **Play from the mission start**: hold **Tab** for half a second (Mario Maker's
-  hold-to-play-from-the-start), `Cmd+Shift+Tab`, or the Play button's menu.
+  hold-to-play-from-the-start), `Option+Tab`, or the Play button's menu.
 - **Returning** (Tab during a play-test) freezes that frame again. The camera
   goes to where you were editing (not where Mario is), the selection and panels
   are as you left them, and Mario's **trail** from the run is drawn as a dotted
@@ -232,7 +232,7 @@ A translucent Mario standing in the scene, with a small arrow for facing.
 - Drag it like any object (it sticks to the ground and stands up with gravity).
   **M** drops it on the ground under the cursor, facing away from the camera.
 - **Tab** plays from it. The Play button's menu: *Play from marker* (Tab),
-  *Resume* (Shift+Tab), *Play from mission start* (Cmd+Shift+Tab), *Play from
+  *Resume* (Shift+Tab), *Play from mission start* (Option+Tab), *Play from
   start point...* (lists this mission's starts and warps).
 - Play-test options in the same menu: *Invincible* (no damage), *Infinite
   life*, *Show trail*, *Test as Luigi*. They apply to play-tests only.
@@ -1142,7 +1142,7 @@ view, play-test and do light editing from the couch.
 | --- | --- |
 | Tab | Edit ⇄ Play from marker |
 | Shift+Tab | Resume (continue the frozen moment) |
-| Hold Tab, Cmd+Shift+Tab | Play from the mission start |
+| Hold Tab, Option+Tab | Play from the mission start |
 | K | Keep: copy selected live objects' current places into the layout |
 | Cmd+R | Reload: rebuild the world from the layout, applying pending changes |
 | M | Play marker here |
@@ -1174,6 +1174,10 @@ view, play-test and do light editing from the couch.
 | Cmd+[ / Cmd+] | Previous / next view |
 | Option+1–9 | Saved views |
 | Cmd+1–5 | Snapping toggles |
+
+None of these take macOS's own shortcuts: Cmd+Tab and Cmd+Shift+Tab (app switcher), Cmd+H (hide),
+Cmd+M (minimize), Cmd+Q (quit), Cmd+Space (Spotlight) and Cmd+` (window cycle) reach the system, never
+the game; Cmd+Ctrl+F is the system's own fullscreen.
 
 Every binding is remappable on the Home menu's Controls page (a new "Editor"
 section), and **Cmd+K** finds any command by name with its key shown, so nobody
