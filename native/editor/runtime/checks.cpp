@@ -51,6 +51,33 @@ namespace {
         return sProviders;
     }
 
+    constexpr float kDegToRad = 3.14159265f / 180.0f;
+
+    // The direction a zone's path (l_id) starts in: its first point to its second (pnt0), in zone space.
+    bool railStartDirection(const ModelView& m, int zone, int lid, float* pOut) {
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (endOf(m.tablePath(zone, t)) != "commonpathinfo") continue;
+            RowId rail;
+            m.forEachRow(zone, t, [&](RowId row) {
+                if (!rail.valid() && m.state(row) != RowState::Deleted && intCell(m, row, "l_id") == lid) rail = row;
+            });
+            if (!rail.valid()) return false;
+            const std::vector< RowId > points = m.railPoints(rail);
+            if (points.size() < 2) return false;
+            auto at = [&](RowId p, const char* pAxis) {
+                const Cell* pCell = m.cell(p, columnHash(pAxis));
+                return pCell != nullptr ? pCell->f : 0.0f;
+            };
+            const float d[3] = {at(points[1], "pnt0_x") - at(points[0], "pnt0_x"), at(points[1], "pnt0_y") - at(points[0], "pnt0_y"),
+                                at(points[1], "pnt0_z") - at(points[0], "pnt0_z")};
+            const float length = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+            if (length < 0.001f) return false;
+            for (int k = 0; k < 3; k++) pOut[k] = d[k] / length;
+            return true;
+        }
+        return false;
+    }
+
     struct SwitchUse {
         std::vector< RowId > readers, writers;
     };
@@ -155,6 +182,32 @@ std::vector< Check > computeChecks(const ModelView& m) {
                     out.push_back(std::move(check));
                 }
 
+                // A Launch or Sling Star flies along its path from where it's placed, but draws facing
+                // its own rotation: placed facing elsewhere, it looks wrong (the star points away).
+                if ((name.rfind("SuperSpinDriver", 0) == 0 || name == "SpinDriver") && rail >= 0) {
+                    float tangent[3] = {0, 0, 0};
+                    if (railStartDirection(m, zone, rail, tangent)) {
+                        const RowTransform tr = m.transform(row);
+                        const float a = tr.dirDeg.x * kDegToRad, b = tr.dirDeg.y * kDegToRad, c = tr.dirDeg.z * kDegToRad;
+                        const float front[3] = {std::cos(a) * std::sin(b) * std::cos(c) + std::sin(a) * std::sin(c),
+                                                std::cos(a) * std::sin(b) * std::sin(c) - std::sin(a) * std::cos(c), std::cos(a) * std::cos(b)};
+                        const float dot = front[0] * tangent[0] + front[1] * tangent[1] + front[2] * tangent[2];
+                        if (dot < 0.7071f) {  // more than 45 degrees off
+                            Op fix;
+                            fix.label = "Face along the path";
+                            const float pitch = -std::asin(std::max(-1.0f, std::min(1.0f, tangent[1]))) / kDegToRad;
+                            const float yaw = std::atan2(tangent[0], tangent[2]) / kDegToRad;
+                            fix.sets.push_back(SetCell{row, columnHash("dir_x"), Cell{CellType::Float, 0, pitch, {}}});
+                            fix.sets.push_back(SetCell{row, columnHash("dir_y"), Cell{CellType::Float, 0, yaw, {}}});
+                            fix.sets.push_back(SetCell{row, columnHash("dir_z"), Cell{CellType::Float, 0, 0.0f, {}}});
+                            out.push_back(Check{"launch-star-facing:" + key, Severity::Warning,
+                                                who + " faces away from where its path starts (" +
+                                                    std::to_string(static_cast< int >(std::acos(std::max(-1.0f, dot)) / kDegToRad)) + " degrees)",
+                                                {row}, fix.label, fix, ""});
+                        }
+                    }
+                }
+
                 // Switches: ranges, and who reads and writes each.
                 for (const char* pField : kSwitchFields) {
                     const int id = intCell(m, row, pField);
@@ -237,6 +290,29 @@ std::vector< Check > computeChecks(const ModelView& m) {
                                 "Mission " + std::to_string(mission) + " has " + std::to_string(launchers.size()) +
                                     " Launch Stars; the game keeps paths for 16",
                                 launchers, "", Op{}, ""});
+        }
+    }
+    // Power Stars sharing a Star ID (Obj_arg0) in one mission: collecting one counts as the other.
+    for (int mission = 1; mission <= missions && mission <= 32; mission++) {
+        std::map< int, std::vector< RowId > > stars;
+        for (int zone = 0; zone < m.zoneCount(); zone++) {
+            for (int t = 0; t < m.tableCount(zone); t++) {
+                if (!isPlacementTable(m.tablePath(zone, t))) continue;
+                m.forEachRow(zone, t, [&](RowId row) {
+                    const char* pName = m.objectName(row);
+                    if (pName != nullptr && std::string(pName) == "PowerStar" && m.state(row) != RowState::Deleted &&
+                        (m.rowMissions(row) & (1u << (mission - 1)))) {
+                        stars[intCell(m, row, "Obj_arg0")].push_back(row);
+                    }
+                });
+            }
+        }
+        for (const auto& [id, rows] : stars) {
+            if (rows.size() < 2) continue;
+            out.push_back(Check{"duplicate-star:" + std::to_string(mission) + ":" + std::to_string(id), Severity::Warning,
+                                std::to_string(rows.size()) + " Power Stars in mission " + std::to_string(mission) + " share Star ID " +
+                                    std::to_string(id) + "; collecting one counts as the others",
+                                rows, "", Op{}, ""});
         }
     }
     for (CheckProvider provider : providers()) {

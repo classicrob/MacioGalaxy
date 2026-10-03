@@ -415,6 +415,8 @@ void testModOverDisc() {
     check(g->state(block) == E::RowState::Added && g->state(kuriboG) == E::RowState::Changed && g->state(coinG) == E::RowState::Original,
           "the mod's row is Added, its edit Changed, the rest Original");
     check(g->originalCell(kuriboG, E::columnHash("pos_y"))->f == 20.0f, "originals from the matched disc rows");
+    check(g->discRowIndex(kuriboG) == 0 && g->discRowIndex(coinG) == 1 && g->discRowIndex(block) == -1,
+          "disc row indices (the mod's row has none; Coin moved from 2 back to the disc's 1)");
     const std::string grownPatch = g->patch().json;
     check(grownPatch.find("\"op\": \"add\"") != std::string::npos && grownPatch.find("StrongBlock") != std::string::npos, "and the patch adds it");
 }
@@ -584,6 +586,45 @@ void testPatch() {
     fs::remove_all(root);
 }
 
+// The galaxy-wide checks the agent tools asked for: a Launch Star facing away from its path, and
+// Power Stars sharing a Star ID in a mission.
+void testStarChecks() {
+    std::map< std::string, F::Bytes > disc = syntheticDisc();
+    F::Bytes rails = table({{"name", F::ColumnType::StringOffset}, {"l_id", F::ColumnType::Long}}, {{str("Path"), i32(0)}});
+    const std::vector< Col > point = {{"pnt0_x", F::ColumnType::Float}, {"pnt0_y", F::ColumnType::Float}, {"pnt0_z", F::ColumnType::Float}};
+    F::Bytes points = table(point, {{f32(0), f32(0), f32(0)}, {f32(1000), f32(0), f32(0)}});
+    disc["/StageData/TestZone.arc"] = F::Archive::create(
+        "stage", {{"jmp/Placement/LayerA/ObjInfo", table(kObj, {{str("SuperSpinDriver"), i32(5), f32(0), f32(0), f32(0), i32(-1)},
+                                                                 {str("PowerStar"), i32(6), f32(0), f32(0), f32(0), i32(3)},
+                                                                 {str("PowerStar"), i32(7), f32(9), f32(0), f32(0), i32(3)}})},
+                  {"jmp/Placement/LayerB/ObjInfo", table(kObj, {{str("Takobo"), i32(8), f32(0), f32(0), f32(0), i32(-1)}})},
+                  {"jmp/Path/CommonPathInfo", rails},
+                  {"jmp/Path/CommonPathPointInfo.0", points}})
+                                         .build();
+    E::FileSource source = [&](const std::string& path) -> std::optional< F::Bytes > {
+        auto it = disc.find(path);
+        return it == disc.end() ? std::nullopt : std::optional< F::Bytes >(it->second);
+    };
+    std::string error;
+    std::unique_ptr< E::EditModel > m = E::EditModel::load("TestGalaxy", 1, source, &error);
+    check(m != nullptr, "loads with a path: " + error);
+    auto find = [](const std::vector< E::Check >& checks, const std::string& prefix) -> const E::Check* {
+        for (const E::Check& c : checks)
+            if (c.key.rfind(prefix, 0) == 0) return &c;
+        return nullptr;
+    };
+    const std::vector< E::Check > checks = E::computeChecks(*m);
+    const E::Check* stars = find(checks, "duplicate-star:1:3");
+    check(stars != nullptr && stars->rows.size() == 2, "two Power Stars sharing Star ID 3 in mission 1");
+    const E::RowId launcher = findRow(*m, 1, "jmp/placement/layera/objinfo", "SuperSpinDriver");
+    check(m->apply(E::Op{"On the path", {E::SetCell{launcher, E::columnHash("CommonPath_ID"), E::Cell{E::CellType::Int, 0, 0, {}}}}, {}}, &error),
+          error);
+    const std::vector< E::Check > facing = E::computeChecks(*m);
+    const E::Check* away = find(facing, "launch-star-facing:");
+    check(away != nullptr && away->fix.sets.size() == 3, "a Launch Star facing +Z on a path going +X is flagged, with a fix");
+    check(m->apply(away->fix, &error) && find(E::computeChecks(*m), "launch-star-facing:") == nullptr, "the fix faces it along the path");
+}
+
 void testDisc() {
     const fs::path files = PETARI_TEST_DISC_FILES;
     if (!fs::is_directory(files / "StageData")) {
@@ -653,6 +694,7 @@ int main() {
     testStructure();
     testChecks();
     testPatch();
+    testStarChecks();
     testDisc();
     std::printf("editor model: %d checks passed\n", checks);
     return 0;

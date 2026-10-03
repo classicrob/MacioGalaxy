@@ -1087,3 +1087,9 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - A fresh Play in a scene already played rebuilds it, so collected and defeated objects come back; only Resume keeps them.
   - Catalog presets carry a size (`Preset::scale`).
   - Scratch saves (progress isolation) follow in their own branch.
+- **Shared core for the agent tools** (`editor/shared-core-2`):
+  - `EditModel::discRowIndex(RowId)`: the row's index in the disc's table, or -1 for a row the disc doesn't have.
+  - `ModelIO::load` reads the missions' English names from the disc's message archive (`Formats::messageText`: messageid.tbl plus message.bmg), so headless tools see "Dino Piranha" rather than ScenarioData's Japanese names.
+  - Checks:
+    - `launch-star-facing:<row>`: a Launch or Sling Star more than 45 degrees off its path's first segment, with a "Face along the path" fix.
+    - `duplicate-star:<mission>:<id>`: Power Stars sharing a Star ID in a mission.
