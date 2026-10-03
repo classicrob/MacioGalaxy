@@ -24,7 +24,7 @@ The Inspector changes shape, range, distant, priority and inverse through normal
 undoable model operations. Move/rotate/scale uses the existing gizmo and updates
 the actual field in previews, including cancellation. Wire shapes belong to their
 linked path and are edited with the path handles. A wire shape needs an existing
-path; shape conversion resets shape-specific arguments.
+path with at least two points; shape conversion resets shape-specific arguments.
 
 An in-place updater preserves manager slots for parameters and transforms.
 Changing the gravity class recreates the actor and retires the old field, whose
@@ -34,8 +34,12 @@ Runtime checks available capacity before retiring a field that needs recreation.
 
 Tests: `native_editor_gravity` covers meshes, model operations, undo, range
 normalisation and Checks. `PETARI_EDITOR_GRAVITY_TEST=1` drives the live editor
-through preview/cancel, priority/range changes, undo/redo, repeated updates and a
-shape replacement; `PETARI_EDITOR_GRAVITY_SHOT` requests a screenshot.
+through preview/cancel, priority/range changes, undo/redo, 100 in-place updates,
+all eight shapes, a linked wire point edit, uncovered-ground Checks and a blocked
+replacement at the 128-slot cap. `native/tools/editor_gravity_smoke.py` runs it
+in an isolated fixture and captures the Edit-mode window and game screenshots.
+The test server option `--warm-current-stage` warms only the requested stage; its
+default still warms the standard five stages.
 
 Headless game-thread callers use `EditorGravity::query` and `queryGround`.
 For a ground hit, `Probe.groundPosition` and `groundNormal` are the exact collision
