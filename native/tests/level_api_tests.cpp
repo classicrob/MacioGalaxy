@@ -422,7 +422,7 @@ int main() {
     const int historyBefore = call(lv, "history")["entries"].items().size();
     t0 = std::chrono::steady_clock::now();
     Value applied = call(lv, "apply", R"({"key":"star-1","ops":[
-        {"op":"add","class":"Power Star","pos":[100,2000,-300],"args":{"Star ID":1,"Rise along gravity":true},"as":"star"},
+        {"op":"add","class":"Power Star","pos":[100,2000,-300],"missions":[2],"args":{"Star ID":1,"Rise along gravity":true},"as":"star"},
         {"op":"add","class":"Coin","pos":[0,1800,0],"as":"c1"},
         {"op":"duplicate","ref":"@c1","by":[200,0,0],"as":"c2"}]})");
     std::printf("apply 3 ops: %.0f ms\n", ms(t0));
@@ -461,6 +461,15 @@ int main() {
     check(ok(broken, "switch 300") && broken["checks_introduced"].items().size() == 1, "the batch reports the check it introduced");
     const std::string key = broken["checks_introduced"].items()[0]["key"].asString();
     check(call(lv, "checks")["errors"].asInt() == 1, "checks: one new error");
+    // A placed Power Star reusing its mission's Star ID is an error (after a restart only one exists), with a fix to a free ID.
+    // (The star above is in mission 2 only, where Star ID 1 is free; mission 2's own star is ID 2.)
+    Value dupe = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"add","class":"PowerStar","pos":[300,2000,-300],"missions":[2],"args":{"Star ID":2}}]})");
+    bool dupeError = false;
+    for (const Value& c : dupe["checks_introduced"].items()) {
+        dupeError = dupeError || (c["key"].asString() == "duplicate-star:2:2" && c["severity"].asString() == "error" &&
+                                  c["fix"].asString().rfind("Use Star ID ", 0) == 0);
+    }
+    check(ok(dupe, "duplicate star") && dupeError, "a placed duplicate Star ID is an error with a 'Use Star ID n' fix");
     Value fixed = lv.call("apply", parse(("{\"ops\":[{\"op\":\"fix\",\"check\":\"" + key + "\"}]}").c_str()));
     check(ok(fixed, "fix") && fixed["checks_resolved"].items().size() == 1 && call(lv, "checks")["errors"].asInt() == 0, "the fix resolves it");
     Value fresh = call(lv, "apply", R"({"ops":[{"op":"set","ref":"@star","switches":{"SW_APPEAR":"new"}}]})");
