@@ -665,7 +665,8 @@ namespace {
             if (p.pattern == A::Pattern::Line) {
                 float distance;
                 if (G::closestOnAxis(cam.eye, ray, gArray.origin, gArray.frame.z, &distance)) {
-                    p.count = std::clamp(static_cast< int >(std::round(std::max(0.f, distance) / p.spacing)), 1, A::kMaxCopies);
+                    p.count =
+                        static_cast< int >(std::clamp(std::round(std::max(0.f, distance) / p.spacing), 1.f, static_cast< float >(A::kMaxCopies)));
                     A::configure(p);
                 }
             } else if (p.pattern == A::Pattern::Arc || p.pattern == A::Pattern::Ring) {

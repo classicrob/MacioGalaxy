@@ -156,6 +156,11 @@ int main() {
     points = A::layout(p, {}, {}, &path);
     check(points.size() == static_cast< size_t >(1 + std::floor((path.length() - 100) / 200)), "spacing mode derives count from remaining distance");
     check(G::length(points.front().position - A::atDistance(path, 100).position) < 0.01f, "path start distance");
+    p.startDistance = path.length();
+    p.pathSpacing = false;
+    points = A::layout(p, {}, {}, &path);
+    check(points.size() == 1 && G::length(points.front().position - path.points.back()) < .01f,
+          "starting at the rail end makes one copy, not coincident duplicates");
     rail.closed = true;
     path = A::railPolyline(rail, identity);
     p.pathSpacing = false;

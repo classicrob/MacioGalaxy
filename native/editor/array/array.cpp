@@ -84,6 +84,8 @@ namespace PetariEditor::Arrays {
             if (!rail || rail->length() < 1e-4f || p.startDistance > rail->length())
                 return result;
             const float remaining = rail->length() - p.startDistance;
+            if (remaining < 1e-4f)
+                return {atDistance(*rail, rail->length())};
             const bool fullLoop = rail->closed && p.startDistance == 0;
             const int count =
                 p.pathSpacing ? std::min(kMaxCopies, 1 + static_cast< int >(std::min(255.f, std::floor(remaining / p.spacing)))) : p.count;
