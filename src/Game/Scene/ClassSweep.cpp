@@ -179,17 +179,19 @@ namespace {
         PetariEditor::Hooks::registerRows(b.data(), b.size(), zone);  // the game decides a row's zone by its address
         pRow->info = new JMapInfo();
         pRow->info->attach(b.data());
-        pRow->info->setName("ObjInfo");
+        pRow->info->setName(rSource.getName());  // a cloned MapPartsInfo/AreaObjInfo row keeps its table's name
         gRows.push_back(pRow);
         return pRow;
     }
 
     bool findTemplate(const StageDataHolder* pHolder, const char* pName, const JMapInfo** ppInfo, s32* pIndex, const JMapInfo** ppAnyObjInfo) {
         for (const JMapInfo* pInfo = pHolder->mPlacementObjs.begin(); pInfo != pHolder->mPlacementObjs.end(); pInfo++) {
-            if (strcasecmp(pInfo->getName(), "ObjInfo") != 0 || !pInfo->dataExists()) {
+            // Any placement table with a name column can be a template (ObjInfo, MapPartsInfo, AreaObjInfo, ...): the
+            // objects the editor will recreate are placed from all of them. Only an ObjInfo table is the schema to synthesize from.
+            if (!pInfo->dataExists() || pInfo->searchItemInfo("name") < 0) {
                 continue;
             }
-            if (*ppAnyObjInfo == nullptr && pInfo->getNumEntries() > 0) {
+            if (*ppAnyObjInfo == nullptr && pInfo->getNumEntries() > 0 && strcasecmp(pInfo->getName(), "ObjInfo") == 0) {
                 *ppAnyObjInfo = pInfo;
             }
             for (s32 i = 0; i < pInfo->getNumEntries(); i++) {
