@@ -179,6 +179,47 @@ applies what is new; refs resolve in the game because they are stable), `live.re
 `live.play(pos, up)`, `live.warp(pos)`, `live.trace(frames)`, `live.ground(pos)`,
 `live.screenshot(path)`. `examples/live_verify.py` runs example 1 that way.
 
+### Replay and frame-held controls
+
+`petari-level help --live verify-route` and `help --live inputs-start` describe the
+request shapes without opening a disc. The live server adds `verify-route FILE`,
+`verify-route-status`, `verify-route-cancel`, `inputs-start FILE`, `inputs-status`
+and `inputs-cancel`. FILE is a JSON request; the Python wrapper writes it atomically.
+
+```python
+from petari_level import Live
+live = Live("build/test-server/course")  # attach to an enabled private server
+verdict = live.run_route("build/course.csv", require_star=True, timeout=600)
+assert verdict["passed"], verdict["reason"]
+delivery = live.run_inputs([
+    {"frames": 30, "stick": [0, 1]},
+    {"frames": 6, "buttons": ["jump", "forward"]},
+    {"frames": 60},
+])
+assert delivery["completed"] and delivery["frame"] == delivery["total"]
+```
+
+Waypoint CSV is world `x,y,z,action` (Walk, Hop, Jump, Spin, Kick, Launch, Warp),
+as produced by `recording_segments.py` from a play recording. The game's replay
+driver steers through these points. A pass with `require_star=True` needs actual
+Star.Get followed by a playable observatory return. With False, it needs the
+endpoint and 30 grounded, controllable frames. Failure reports its reason;
+timeout cancels controls. This verifies the recorded traversal. The native
+test-server `route` command instead replays the full recording's per-frame inputs.
+
+Held steps use the shared frame-exact input engine. Buttons are forward/back/left/right,
+jump, action, spin, crouch, cappy, camera_left/right, plus and minus. Analog `stick`
+is `[right, forward]` in -1..1 and cannot accompany direction names. Cappy needs its
+enabled mod and binding. Completion reports input delivery plus Mario's position,
+velocity, ground and death state; it does not establish beatability. Death, lost
+control or a scene change releases the controls and reports an early end.
+`start_route`/`route_status`/`cancel_route` and `start_inputs`/`inputs_status`/`cancel_inputs`
+allow asynchronous use. Cancel playback before editing or starting another plan.
+
+For a visible existing private save, launch this binary with `PETARI_TEST_SERVER`
+set, `--stage good-egg --scenario 1`, and load its file normally. Leave
+`PETARI_SMOKE` unset and omit `--test-fixture`; no fixture marker is needed.
+
 ## Errors
 
 Every reply is `{"ok": true, ...}` or `{"ok": false, "error": {"code", "message", "hint",
@@ -242,7 +283,5 @@ each class's collision once per process.
   rows for now. Gravity rows take `args`/`fields` (no shape op); terrain brushes are unknown to the
   headless catalog until Terrain's `registerBrushClass` lands (add them with `"force": true`).
 - Mission names come from ScenarioData (Japanese, internal); the pause-menu names need the game's messages.
-- Route playback (a recorded input route) is not wired to the test server yet: verification uses
-  warp + trace (positions over frames) instead.
 - The workspace's base is the disc (plus the user's enabled mods with `--user-mods`): saving into a
   mod that is also enabled in the base mixes the two, as in the game.
