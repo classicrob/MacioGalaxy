@@ -5,12 +5,17 @@
 #include "Game/System/GameDataFunction.hpp"
 #include "Game/System/GameDataGalaxyStorage.hpp"
 #include "Game/System/GameDataHolder.hpp"
+#include "Game/System/GameDataPlayerStatus.hpp"
+#include "Game/System/GameDataTemporaryInGalaxy.hpp"
 #include "Game/System/SaveDataHandler.hpp"
 #include "Game/System/UserFile.hpp"
 #include <petari/host_allocation.hpp>
 #include <petari/platform/mod_galaxy.hpp>
 
 #include <cstdio>
+#include <cstring>
+#include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -26,6 +31,13 @@ namespace {
         std::string name;
         std::vector< u8 > gameData;
         std::vector< ModGalaxyRecord > modGalaxies;
+        // GameDataPlayerStatus entire: its deserialize sets 4 lives and reads the saved count into the
+        // (unsaved) 1-Up supply, so the save data alone can't bring it back.
+        std::unique_ptr< GameDataPlayerStatus > status;
+        const UserFile* pFile = nullptr;  // restored only into the same save file
+        // This galaxy's run so far (committed to the save file when the galaxy is left).
+        bool haveRun = false;
+        int starPieces = 0, last1upStarPieces = 0, coins = 0;
     };
 
     Snapshot& snapshotData() {
@@ -46,6 +58,14 @@ namespace EditorScratch {
         s.name = pFile->getGameDataName();
         s.gameData.assign(SaveDataHandler::getEnoughtTempBufferSize(), 0);
         pFile->makeGameDataBinary(s.gameData.data(), static_cast< u32 >(s.gameData.size()));
+        s.status = std::make_unique< GameDataPlayerStatus >(*pFile->mGameDataHolder->mPlayerStatus);
+        s.pFile = pFile;
+        if (GameDataTemporaryInGalaxy* pRun = GameDataFunction::nativeTemporaryInGalaxy()) {
+            s.haveRun = true;
+            s.starPieces = pRun->mStarPieceNum;
+            s.last1upStarPieces = pRun->mLast1upStarPieceNum;
+            s.coins = pRun->mCoinNum;
+        }
         // Mod galaxies' records aren't in the binary (TECH.md 5.7).
         GameDataAllGalaxyStorage* pAll = pFile->mGameDataHolder->mAllGalaxyStorage;
         for (s32 i = 0; i < pAll->getGalaxyNum(); i++) {
@@ -70,7 +90,18 @@ namespace EditorScratch {
             s = Snapshot();
             return;
         }
+        if (pFile != s.pFile || s.name != pFile->getGameDataName()) {
+            std::fprintf(stderr, "[editor] play-test isolation: WARNING: another save file is in use now; its progress is left as it is\n");
+            s = Snapshot();
+            return;
+        }
+        if (GameDataTemporaryInGalaxy* pRun = GameDataFunction::nativeTemporaryInGalaxy(); pRun != nullptr && s.haveRun) {
+            pRun->mStarPieceNum = s.starPieces;
+            pRun->mLast1upStarPieceNum = s.last1upStarPieces;
+            pRun->mCoinNum = s.coins;
+        }
         pFile->loadFromGameDataBinary(s.name.c_str(), s.gameData.data(), static_cast< u32 >(s.gameData.size()));
+        *pFile->mGameDataHolder->mPlayerStatus = *s.status;
         GameDataAllGalaxyStorage* pAll = pFile->mGameDataHolder->mAllGalaxyStorage;
         for (const ModGalaxyRecord& record : s.modGalaxies) {
             const s32 index = pAll->findIndex(record.name.c_str());
@@ -80,7 +111,23 @@ namespace EditorScratch {
             pGalaxy->mAlreadyVisitedFlags = record.visited;
             for (s32 c = 0; c < 8; c++) pGalaxy->mMaxCoinNum[c] = record.maxCoins[c];
         }
-        std::fprintf(stderr, "[editor] play-test isolation: progress of %s restored\n", s.name.c_str());
+        // What the snapshot holds must come back exactly: anything a deserialize resets would show here.
+        std::vector< u8 > now(s.gameData.size(), 0);
+        pFile->makeGameDataBinary(now.data(), static_cast< u32 >(now.size()));
+        size_t first = now.size(), last = 0, count = 0;
+        for (size_t i = 0; i < now.size(); i++) {
+            if (now[i] != s.gameData[i]) {
+                first = std::min(first, i);
+                last = i;
+                count++;
+            }
+        }
+        if (count == 0) {
+            std::fprintf(stderr, "[editor] play-test isolation: progress of %s restored\n", s.name.c_str());
+        } else {
+            std::fprintf(stderr, "[editor] play-test isolation: progress of %s restored (WARNING: the save data differs from the snapshot: %zu bytes in 0x%zx-0x%zx)\n",
+                         s.name.c_str(), count, first, last);
+        }
         s = Snapshot();
     }
 }  // namespace EditorScratch

@@ -38,6 +38,11 @@ public:
     /* 0x5C */ u32 mFsBlock;
     /* 0x60 */ u32 mInode;
     /* 0x64 */ u8 _64[0x1C];
+#ifdef PETARI_NATIVE
+    // A level-editor play-test was on when the write was prepared: it is dropped, even if the
+    // NAND thread gets to it after the session ended.
+    bool mNativeDropWrite = false;
+#endif
 };
 
 class NANDManager {

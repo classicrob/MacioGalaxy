@@ -7,11 +7,14 @@ class GameDataSomeScenarioAccessor;
 class JMapInfoIter;
 
 class UserFile;
+class GameDataTemporaryInGalaxy;
 
 namespace GameDataFunction {
 #ifdef PETARI_NATIVE
     /// The save file in use (the level editor's play-test isolation snapshots and restores it).
     UserFile* nativeCurrentUserFile();
+    /// This galaxy's run (Star Bits and coins collected, committed to the save file on leaving).
+    GameDataTemporaryInGalaxy* nativeTemporaryInGalaxy();
 #endif
     bool isDataMario();
     bool hasPowerStar(const char*, s32);

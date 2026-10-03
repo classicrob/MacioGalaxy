@@ -40,6 +40,10 @@ namespace GameDataFunction {
         SaveDataHandleSequence* pSequence = ::getSaveDataHandleSequence();
         return pSequence != nullptr ? pSequence->getCurrentUserFile() : nullptr;
     }
+
+    GameDataTemporaryInGalaxy* nativeTemporaryInGalaxy() {
+        return ::getGameDataTemporaryInGalaxy();
+    }
 #endif
 
     bool isDataMario() {

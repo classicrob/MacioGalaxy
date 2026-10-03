@@ -786,6 +786,21 @@ bool progressIsolated() {
     return gIsolated.load();
 }
 
+void sceneEnded() {
+    Session& s = session();
+    if (Hooks::editorReload() || !s.model) {
+        return;  // an editor reload keeps the session
+    }
+    PetariNative::HostAllocationScope host;
+    endSession();
+    Core::clearBindings();
+    Core::setModel(nullptr);
+    s.model.reset();
+    s.keepModel = false;
+    s.actors.clear();
+    s.liveRows.clear();
+}
+
 bool interceptMiss() {
     Session& s = session();
     if (mode() != Mode::Playing || !s.model || !Hooks::enabled()) {

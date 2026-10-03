@@ -68,6 +68,10 @@ bool requestEdit(const char* reason);
 /// in-memory progress is restored at End, and other progress writers (progress.json, the mod
 /// galaxies' sidecars) skip their writes while this is true. Any thread.
 bool progressIsolated();
+/// GameScene's destructor: a scene that ends other than by an editor reload (the title, file
+/// select, another galaxy) ends the edit session there: End told, progress put back while the
+/// save file in use is still the session's, the model dropped.
+void sceneEnded();
 /// GameScene::requestEndMissDemo: during a play-test a miss returns to Edit (an editor reload; no
 /// lives lost) instead of the game's restart. False (the game's own path) outside Play.
 bool interceptMiss();

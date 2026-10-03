@@ -46,9 +46,9 @@ void* NANDManagerThread::run() {
 
 void NANDManagerThread::executeWriteSequence(NANDRequestInfo* pRequestInfo) {
 #ifdef PETARI_NATIVE
-    // A level-editor play-test: nothing reaches the save (its progress is put back when the
-    // session ends). The game sees a write that succeeded.
-    if (PetariEditor::Runtime::progressIsolated()) {
+    // Prepared during a level-editor play-test (NANDRequestInfo::setWriteSeq): nothing reaches
+    // the save (its progress is put back when the session ends). The game sees a write that succeeded.
+    if (pRequestInfo->mNativeDropWrite) {
         static bool sTold = false;
         if (!sTold) {
             std::fprintf(stderr, "[editor] play-test isolation: %s not written\n", pRequestInfo->mPath);
