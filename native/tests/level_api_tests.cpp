@@ -71,8 +71,8 @@ double ms(std::chrono::steady_clock::time_point since) {
         auto level = L::Level::open(options, &error);
         check(level != nullptr, "ground array test open: " + error.message);
         auto& lv = *level;
-        check(ok(call(lv, "apply", R"({"ops":[{"op":"add","class":"EditorBrush","pos":[0,50000,0],"scale":[0.6,0.1,0.6],"args":{"Shape":"Box","Gravity":"Stage"},"as":"ground"}]})"), "ground brush"), "controlled ground for array test");
-        Value placed = call(lv, "apply", R"({"ops":[{"op":"ground_array","class":"EditorBrush","shape":"ring","center":[0,50500,0],"radius":50,"count":3,"height":50,"down":[0,-1,0],"front":[1,0,1],"scale":[0.15,0.1,0.15],"args":{"Shape":"Box","Gravity":"Stage"},"as":"copies"}]})");
+        check(ok(call(lv, "apply", R"({"ops":[{"op":"add","class":"EditorBrush","pos":[0,50000,0],"scale":[0.6,0.1,0.6],"args":{"Shape":"Box","Gravity":0},"as":"ground"}]})"), "ground brush"), "controlled ground for array test");
+        Value placed = call(lv, "apply", R"({"ops":[{"op":"ground_array","class":"EditorBrush","shape":"ring","center":[0,50500,0],"radius":50,"count":3,"height":50,"down":[0,-1,0],"front":[1,0,1],"scale":[0.15,0.1,0.15],"args":{"Shape":"Box","Gravity":0},"as":"copies"}]})");
         check(ok(placed, "ground array") && placed["placements"].items().size() == 3, "ground array reports each preflight hit");
         for (int i = 0; i < 3; ++i) {
             Value args = Value::object(); args.set("ref", "@copies." + std::to_string(i));
@@ -252,6 +252,15 @@ int main() {
     options.user = user;
     options.galaxy = "EggStarGalaxy";
     options.mission = 1;
+
+    if (const char* part = std::getenv("PETARI_LEVEL_API_TEST_PART")) {
+        if (std::string(part) == "ground") {
+            testGroundArrays(options);
+            fs::remove_all(user);
+            std::printf("petari_level ground arrays: %d checks passed\n", sChecks);
+            return 0;
+        }
+    }
 
     // Open errors an agent can act on.
     {
