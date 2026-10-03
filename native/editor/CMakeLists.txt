@@ -56,7 +56,7 @@ add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC gravity/gravity.cpp paths/paths.cpp paths/paths_view.cpp runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
+add_library(petari_editor_core STATIC playtest/playtest.cpp gravity/gravity.cpp paths/paths.cpp paths/paths_view.cpp runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
     ${_petari_catalog_cpp})
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_core PUBLIC petari_editor_formats petari_editor_share petari_native_config petari_host_runtime)
@@ -85,6 +85,10 @@ if(TARGET petari_platform_dvd)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(petari_editor_playtest_tests ${PETARI_REPO_ROOT}/native/tests/editor_playtest_tests.cpp)
+    target_link_libraries(petari_editor_playtest_tests PRIVATE petari_editor_core petari_editor_model)
+    target_include_directories(petari_editor_playtest_tests PRIVATE runtime)
+    add_test(NAME native_editor_playtest COMMAND petari_editor_playtest_tests)
     add_executable(petari_editor_gravity_tests ${PETARI_REPO_ROOT}/native/tests/editor_gravity_tests.cpp)
     target_link_libraries(petari_editor_gravity_tests PRIVATE petari_editor_core petari_editor_model)
     target_include_directories(petari_editor_gravity_tests PRIVATE runtime)
