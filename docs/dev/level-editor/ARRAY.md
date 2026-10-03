@@ -11,7 +11,7 @@ new copies; previews never create actors or edit the model.
 - **Grid:** rows and columns, using the gravity frame's right and forward directions.
 - **Along a path:** select an existing rail, then use a count or a spacing and a starting
   distance. Open paths include both ends in count mode; closed paths omit the duplicate
-  seam. Spacing follows accumulated curve length, including transformed child-zone rails.
+  seam. Starting exactly at the end creates one copy. Spacing follows accumulated curve length, including transformed child-zone rails.
   Align to path uses the full 3D tangent, including vertical segments.
 
 **Snap each copy to ground** probes along gravity independently for each copy and keeps
@@ -20,8 +20,9 @@ position and the panel reports it. Groups preserve their offsets from the primar
 Arrays are limited to 256 new objects, including every object in a selected group.
 
 The preview draws translucent copies of the source model, without moving or creating any
-actors. At most 24 copies draw models; further copies and missing, clipped or over-budget models use wire bounds. All draws share the editor
-frame budget. Apply commits one compound operation, selects the copies, and preserves their
+actors. At most 24 copies draw models; further copies and missing, clipped or over-budget models
+use wire bounds. All draws share the editor frame budget. Temporary draws embed their
+matrices in the GX stream before restoring the source, so queued copies keep their positions. Apply commits one compound operation, selects the copies, and preserves their
 settings and mission layers. One undo removes the whole array. Selecting another object
 applies the current preview; Esc or Cancel discards it. Leaving Edit discards the preview.
 
