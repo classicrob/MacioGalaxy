@@ -849,7 +849,7 @@ Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefo
 - Cost: a box rebuilds in about 4 ms, a 1,500-triangle sphere in about 11 ms.
 - The part has no model of its own, so the Browser's thumbnail finds the brush's model through `EditorTerrain::partModel`.
 
-**Bake on save** (`petari/editor/terrain/bake.hpp`, called by `save_mod.cpp`, `petari_terrain_bake`, and the patch-mod builder later).
+**Bake on save** (`petari/editor/terrain/bake.hpp`, called by `save_mod.cpp` for a Full archives save and by `petari_terrain_bake`). A patch save holds no game data, so its brush rows travel as ordinary row ops. The loader will bake them from the player's disc through Runtime's asset-builder hook (`Patch::registerAssetBuilder`, proposed). Until then, a patch mod's brushes show only with the editor on.
 - Each brush row becomes a generated planet: `ObjectData/EditorBrush<hash>.arc` (bmd, kcl, pa).
 - The row is renamed, its scale becomes 1 and its args are cleared.
 - A `GlobalCubeGravity` / `GlobalPointGravity` / `GlobalSegmentGravity` row is written in the same layer's PlanetObjInfo.
