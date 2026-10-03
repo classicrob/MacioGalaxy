@@ -76,6 +76,7 @@ namespace {
         if (e.has("keepable")) info.keepable = e["keepable"].asBool(false);
         if (e.has("appearSound")) info.appearSound = e["appearSound"].asString();
         if (e.has("table")) info.table = e["table"].asString();
+        if (e.has("hasCollision")) info.hasCollision = e["hasCollision"].asBool(false);
         if (e.has("thumbnailArchive")) info.thumbnailArchive = e["thumbnailArchive"].asString();
         if (e.has("thumbnailJoint")) info.thumbnailJoint = e["thumbnailJoint"].asString();
         if (e.has("curated")) info.curated = e["curated"].asBool(false);

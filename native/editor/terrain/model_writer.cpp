@@ -125,7 +125,8 @@ namespace {
     }
 
     // MaterialClone::vertexTint: the CLR0 colours of the shapes under `material` in INF1's
-    // hierarchy, read from their display lists (VTX1 for the colours, SHP1 for the indices).
+    // hierarchy, read from their display lists (VTX1 for the colours, SHP1 for the indices); the
+    // 90th percentile per channel.
     Vec3 donorVertexTint(const Bytes& donor, std::size_t material) {
         const Vec3 none{1.0f, 1.0f, 1.0f};
         std::size_t infStart, infSize, vtxStart, vtxSize, shpStart, shpSize;
@@ -172,7 +173,7 @@ namespace {
         const std::uint32_t initOffset = get32(donor, shpStart + 0x0C), indexOffset = get32(donor, shpStart + 0x10),
                             descOffset = get32(donor, shpStart + 0x18), listOffset = get32(donor, shpStart + 0x20),
                             drawOffset = get32(donor, shpStart + 0x28);
-        double sum[3] = {0.0, 0.0, 0.0};
+        std::vector< std::size_t > histogram(3 * 256, 0);  // per channel
         std::size_t count = 0;
         for (std::uint16_t s = 0; s < shapes && s < ofMaterial.size(); s++) {
             if (!ofMaterial[s] || !inside(shpStart, shpSize, shpStart + indexOffset + s * 2u, 2)) {
@@ -225,9 +226,9 @@ namespace {
                             at += size;
                             const std::size_t color = vtxStart + colorData + index * stride;
                             if (attribute == 0x0B && kind != 1 && inside(vtxStart, vtxSize, color, 3)) {
-                                sum[0] += donor[color];
-                                sum[1] += donor[color + 1];
-                                sum[2] += donor[color + 2];
+                                for (int c = 0; c < 3; c++) {
+                                    histogram[c * 256 + donor[color + c]]++;
+                                }
                                 count++;
                             }
                         }
@@ -238,7 +239,18 @@ namespace {
         if (count == 0) {
             return none;
         }
-        return {static_cast< float >(sum[0] / count / 255.0), static_cast< float >(sum[1] / count / 255.0), static_cast< float >(sum[2] / count / 255.0)};
+        // The 90th percentile: the donor's lit faces (its colours are its baked lighting), which
+        // the bake's sun-facing faces stand for; the bake's ambient darkens the rest.
+        float level[3];
+        for (int c = 0; c < 3; c++) {
+            std::size_t below = 0;
+            int value = 0;
+            while (value < 255 && (below += histogram[c * 256 + value]) < count * 9 / 10) {
+                value++;
+            }
+            level[c] = value / 255.0f;
+        }
+        return {level[0], level[1], level[2]};
     }
 
     // The offset of a clone's colour channel entry in its MAT3 (channel 0 COLOR0, 1 ALPHA0), or 0.

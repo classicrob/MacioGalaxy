@@ -11,6 +11,7 @@
 // usage: petari_terrain_bake --disc <disc files/> --out <mod>/files [--stage EggStarGalaxy]
 //        petari_terrain_bake --disc <disc files/> --out <mod>/files --galaxy ModTestGalaxy
 //        petari_terrain_bake --disc <disc files/> --out <mod>/files --patch 1
+//        ... [--material <palette index>]: both spike brushes in that material (look checks)
 // --galaxy (spike S8, TECH.md 5.7) writes a new galaxy instead of editing a stage: its stage and
 // Scenario archives (the tables of a small disc galaxy, TransformationExGalaxy, emptied: schemas
 // only) holding a checker box brush at the origin, a start above it and Power Star 1 where Mario
@@ -279,6 +280,7 @@ int main(int argc, char** argv) {
     std::string stage = "EggStarGalaxy";
     std::string galaxy;
     bool patch = false;
+    int material = -1;  // --material <palette index>: both spike brushes in it (look checks)
     for (int i = 1; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--disc") == 0) {
             disc = argv[i + 1];
@@ -288,6 +290,8 @@ int main(int argc, char** argv) {
             stage = argv[i + 1];
         } else if (std::strcmp(argv[i], "--galaxy") == 0) {
             galaxy = argv[i + 1];
+        } else if (std::strcmp(argv[i], "--material") == 0) {
+            material = std::atoi(argv[i + 1]);
         } else if (std::strcmp(argv[i], "--patch") == 0) {
             patch = std::strcmp(argv[i + 1], "1") == 0;
         }
@@ -313,8 +317,8 @@ int main(int argc, char** argv) {
     }
     std::int32_t id = nextId(*objects);
     const int discRows = objects->rowCount();
-    addBrushRow(*objects, id++, {-20000, -150, 30000}, {3, 0.3f, 3}, T::BrushShape::Box, 0);   // checker (Stone)
-    addBrushRow(*objects, id++, {-20000, -1000, 40000}, {2, 2, 2}, T::BrushShape::Sphere, 1);  // grass (Lawn)
+    addBrushRow(*objects, id++, {-20000, -150, 30000}, {3, 0.3f, 3}, T::BrushShape::Box, material >= 0 ? material : 0);   // checker (Stone)
+    addBrushRow(*objects, id++, {-20000, -1000, 40000}, {2, 2, 2}, T::BrushShape::Sphere, material >= 0 ? material : 1);  // grass (Lawn)
     if (patch) {
         writePatch(out.parent_path(), stage, *objects, discRows);
         return 0;
