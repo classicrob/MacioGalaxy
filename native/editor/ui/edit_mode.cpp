@@ -353,6 +353,8 @@ void updateEditMode(float windowWidth, float windowHeight) {
     // Cmd+S: save the mod (the sheet the first time); Cmd+Shift+S: the sheet again (another name or format).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) requestSave(false);
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
+    // Cmd+Shift+E: Share (UX section 17).
+    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_E)) openShareSheet();
     // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
     updatePlaytestInput();  // M3 play-test: K keeps the selected live transform.

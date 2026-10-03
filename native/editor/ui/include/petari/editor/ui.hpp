@@ -41,6 +41,10 @@ void switchMission(int mission);
 // defaults): <user folder>/editor/ui-settings.txt. Unset: nothing is remembered between sessions.
 void setSettingsFile(const char* path);
 
+// A mod zip dropped on the window (UX section 17, Installing): the Install sheet, in or out of Edit.
+void openInstallSheet(const char* zipPath);
+void submitInstallSheet();  // test drivers: press Install
+
 // Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
 // false if it wasn't drawn.
 bool testTargetRect(const char* name, float* x, float* y, float* width, float* height);
@@ -49,6 +53,8 @@ void placeClassForTest(const char* className, int arg0);
 // Test drivers: open the Save sheet (as Cmd+Shift+S) and press its Save button.
 void openSaveSheet();
 void submitSaveSheet();
+void openShareSheetForTest();
+void submitShareSheet();
 
 // The central node (the game's viewport) in window points, from the last drawFrame;
 // false while hidden or in Focus mode.

@@ -1,4 +1,7 @@
 #include "Game/Map/FileSelector.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/player_launch.hpp>
+#endif
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/Map/FileSelectCameraController.hpp"
 #include "Game/Map/FileSelectEffect.hpp"
@@ -950,10 +953,18 @@ void FileSelector::exeTitle() {
         MR::resetCameraMan();
     }
 
-    mTitle->updateNerve();
+#ifdef PETARI_NATIVE
+    // A restart into a new galaxy (PlayerLaunch::openFile, the level editor): no title screen.
+    if (PetariNative::PlayerLaunch::openFile > 0) {
+        mTitle->kill();
+    } else
+#endif
+    {
+        mTitle->updateNerve();
 
-    if (mTitle->isActive()) {
-        return;
+        if (mTitle->isActive()) {
+            return;
+        }
     }
 
     if (::getMiiFacePartsHolder()->isInitEnd()) {
@@ -1037,6 +1048,21 @@ void FileSelector::exeFileSelectStart() {
 
 void FileSelector::exeFileSelect() {
     if (MR::isFirstStep(this)) {
+#ifdef PETARI_NATIVE
+        // A restart into a new galaxy (PlayerLaunch::openFile, the level editor): the file it was
+        // made from is loaded without asking, as onSelect and the confirm screen would. A file that
+        // is gone or broken leaves the choice to the player.
+        const s32 openFile = PetariNative::PlayerLaunch::openFile;
+        PetariNative::PlayerLaunch::openFile = 0;
+        const int openIndex = openFile > 0 ? ::getItemArrayIndex(openFile) : -1;
+        FileSelectItem* pOpen = openIndex >= 0 ? static_cast< FileSelectItem* >(mItems->getActor(openIndex)) : nullptr;
+        if (pOpen != nullptr && !pOpen->isNew() && !isUserFileCorrupted(openFile)) {
+            FILE_SELECTOR_MILESTONE("FileSelector.OpenFile");
+            _B4 = pOpen;
+            setNerve(GET_NERVE(FileSelector, FileSelectorNrvDemoStartWait));
+            return;
+        }
+#endif
         validateSelectAll();
         FILE_SELECTOR_MILESTONE("FileSelector.FileSelect");
         appearAllIndex();

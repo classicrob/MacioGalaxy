@@ -48,6 +48,13 @@ add_library(petari_editor_terrain STATIC terrain/mesh.cpp terrain/brush.cpp terr
 target_include_directories(petari_editor_terrain PUBLIC include)
 target_link_libraries(petari_editor_terrain PUBLIC petari_editor_formats petari_editor_patch)
 target_compile_features(petari_editor_terrain PUBLIC cxx_std_17)
+# New galaxies from templates (petari/editor/galaxy/new_galaxy.hpp): pure C++ over the formats
+# library; the editor's New Galaxy command and the headless tools use it.
+add_library(petari_editor_galaxy STATIC galaxy/new_galaxy.cpp)
+target_include_directories(petari_editor_galaxy PUBLIC include)
+target_link_libraries(petari_editor_galaxy PUBLIC petari_editor_formats petari_editor_terrain)
+target_compile_features(petari_editor_galaxy PUBLIC cxx_std_17)
+
 # The brush class and its Checks from rows (no runtime, no game): the in-game editor and headless tools.
 add_library(petari_editor_terrain_catalog STATIC terrain/brush_catalog.cpp)
 target_link_libraries(petari_editor_terrain_catalog PUBLIC petari_editor_terrain petari_editor_core petari_editor_model)
@@ -77,10 +84,10 @@ if(TARGET petari_platform_dvd)
         petari_native_config)
 endif()
 
-add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
+add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/new_galaxy_session.cpp runtime/new_galaxy_test.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
     runtime/redraw_test.cpp runtime/ensure_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp runtime/areas_test.cpp runtime/array_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
-target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_editor_terrain_catalog petari_native_config)
+target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_editor_terrain_catalog petari_editor_galaxy petari_native_config)
 if(TARGET petari_platform_dvd)
     target_link_libraries(petari_editor_runtime PRIVATE petari_platform_dvd PUBLIC petari_editor_save)
 endif()
@@ -173,6 +180,15 @@ if(BUILD_TESTING)
         target_link_libraries(petari_editor_terrain_model_tests PRIVATE petari_j3d petari_editor_terrain)
         target_link_options(petari_editor_terrain_model_tests PRIVATE -Wl,-dead_strip)
         add_test(NAME native_editor_terrain_model COMMAND petari_editor_terrain_model_tests)
+
+        # New galaxies from each template, read back and loaded by the mod galaxy registry.
+        if(TARGET petari_platform)
+            add_executable(petari_editor_new_galaxy_tests ${PETARI_REPO_ROOT}/native/tests/editor_new_galaxy_tests.cpp)
+            target_compile_definitions(petari_editor_new_galaxy_tests PRIVATE
+                PETARI_TEST_DISC_FILES="${PETARI_REPO_ROOT}/build/game-data/RMGE01/files")
+            target_link_libraries(petari_editor_new_galaxy_tests PRIVATE petari_editor_galaxy petari_platform)
+            add_test(NAME native_editor_new_galaxy COMMAND petari_editor_new_galaxy_tests)
+        endif()
     endif()
 endif()
 

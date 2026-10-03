@@ -1,5 +1,6 @@
 #include "Game/Scene/LogoScene.hpp"
 #ifdef PETARI_NATIVE
+#include <petari/player_launch.hpp>
 #include <cstdlib>
 #endif
 #include "Game/LiveActor/Nerve.hpp"
@@ -176,6 +177,12 @@ void LogoScene::exeStrapDisplay() {
         const char* pFast = std::getenv("PETARI_FAST_BOOT");
         return pFast != nullptr && pFast[0] == '1' ? 30 : STRAP_DISPLAY_MIN_FRAME;
     }();
+    // A restart into a new galaxy (PlayerLaunch::openFile, the level editor): the strap was read at
+    // the first start; it goes on by itself after 30 frames.
+    if (MR::isGreaterStep(this, 30) && PetariNative::PlayerLaunch::openFile > 0) {
+        setNerve(GET_NERVE_ANON(LogoSceneStrapFadeout));
+        return;
+    }
     if (MR::isGreaterStep(this, strapMinFrame) &&
 #else
     if (MR::isGreaterStep(this, STRAP_DISPLAY_MIN_FRAME) &&

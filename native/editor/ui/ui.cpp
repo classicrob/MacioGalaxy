@@ -267,6 +267,14 @@ void drawToolbar(float width) {
     std::snprintf(reload, sizeof(reload), state.pendingCount > 0 ? "Reload  %d pending" : "Reload", state.pendingCount);
     const float right = width - 12.0f;
     float leftEdge = right - 96.0f - 8.0f - 230.0f;  // the Reload button's left; Save and the badge go left of it
+    // Share (UX section 17): the saved mod as a zip; Cmd+Shift+E.
+    {
+        const float w = ImGui::CalcTextSize("Share").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (ImGui::Button("Share")) openShareSheet();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pack the saved mod as a .zip to give someone (Cmd+Shift+E)");
+    }
     // Save (UX section 17): highlighted while there are unsaved edits; Cmd+S.
     {
         const char* label = state.unsaved ? "Save*###save" : "Save###save";
@@ -522,6 +530,10 @@ bool drawStyledOverlay(const std::function< bool() >& draw) {
 
 void drawFrame(float windowWidth, float windowHeight) {
     updateEditMode(windowWidth, windowHeight);  // uses last frame's viewport
+    {
+        StyleScope style;
+        drawInstallSheet();  // a dropped mod zip, in or out of Edit
+    }
     gViewportValid = false;
     if (!gVisible || gFocus || !(windowWidth > 0.0f) || !(windowHeight > kToolbarHeight + kFooterHeight + 50.0f)) {
         if (gAreaSet) setArea(0, 0, 0, 0);  // the game takes the whole window again
@@ -554,6 +566,7 @@ void drawFrame(float windowWidth, float windowHeight) {
     drawGalaxyWindow(kOutliner);
     drawInspectorWindow(kInspector);
     drawSaveSheet();
+    drawShareSheet();
 
     if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
                                                                         central->Size.y > 8.0f) {
