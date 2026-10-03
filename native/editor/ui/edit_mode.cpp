@@ -2,6 +2,7 @@
 // nerve, and mouse, trackpad and keys over the viewport drive the editor camera.
 #include "edit_mode.hpp"
 #include "panels.hpp"
+#include "paths.hpp"
 
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
@@ -62,7 +63,7 @@ Area cameraArea(float windowWidth, float windowHeight) {
     return area;
 }
 
-void cameraInput(const Area& area) {
+void cameraInput(const Area& area, bool toolConsumed) {
     ImGuiIO& io = ImGui::GetIO();
     const ImVec2 mouse = io.MousePos;
     const bool inside = area.contains(mouse) && !io.WantCaptureMouse;
@@ -74,7 +75,7 @@ void cameraInput(const Area& area) {
     if (gDrag == Drag::None && inside) {
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
             gDrag = Drag::Look;
-        } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyAlt)) {
+        } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle) || (!toolConsumed && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && io.KeyAlt)) {
             gDrag = io.KeyShift ? Drag::Pan : Drag::Orbit;
             if (gDrag == Drag::Orbit) Settings::repivot();
         }
@@ -144,17 +145,19 @@ void cameraInput(const Area& area) {
         sHover = hover;
         Pick::setHoverWanted(hover);
     }
-    if (!placed && armedPlacement() == 0 && inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !io.KeyAlt &&
+    if (!toolConsumed && !placed && armedPlacement() == 0 && inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left) && !io.KeyAlt &&
         ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x * ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).x +
                 ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y * ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y <
             16.0f) {
         Pick::click(io.KeyShift ? Pick::Click::Add : (io.KeyCtrl || io.KeySuper) ? Pick::Click::Toggle : Pick::Click::Replace);
     }
-    if (!escapeDisarms && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Pick::clearSelection();
+    if (!toolConsumed && !escapeDisarms && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        Pick::clearSelection();
 
     // The gizmo (UX section 6): the left button over the viewport presses and releases it (an
     // Option-drag orbits instead); Cmd suspends snapping for the drag.
-    if (inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
+    if (!toolConsumed && inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt)
+        Gizmo::press();
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) Gizmo::release();
     Gizmo::setSnapSuspended(io.KeyCtrl || io.KeySuper);
     // What a Tab tap plays: Shift resumes the frozen moment, Option plays from the mission start
@@ -170,7 +173,10 @@ void cameraInput(const Area& area) {
             Gizmo::setFrame(static_cast<Gizmo::Frame>((static_cast<int>(Gizmo::frame()) + 1) % 3));
         }
         // Delete / Backspace: delete the selection (one op, undoable). Cmd+D: duplicate it.
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) deleteSelection();
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
+            if (!pathsDelete())
+                deleteSelection();
+        }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D)) Pick::duplicate();
         // M: the play marker onto the ground under the cursor.
         if (ImGui::IsKeyPressed(ImGuiKey_M, false) && inside) Pick::placeMarker();
@@ -333,7 +339,8 @@ void updateEditMode(float windowWidth, float windowHeight) {
     // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
     const Area area = cameraArea(windowWidth, windowHeight);
-    cameraInput(area);
+    const bool toolConsumed = drawPathsViewport(area.x, area.y, area.w, area.h);  // M3 paths: handles precede picking.
+    cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);
 }

@@ -1,4 +1,5 @@
 #pragma once
+#include <petari/editor/check_providers.hpp>
 // The Checks engine (checks.cpp): the problems in a model, errors first.
 #include <petari/editor/edit_api.hpp>
 
@@ -12,9 +13,6 @@ namespace PetariEditor {
 /// duplicate link ids. Errors first, then by key.
 std::vector< Check > computeChecks(const ModelView& model);
 
-/// More checks from other parts of the editor (terrain: brush triangle counts): called by
-/// computeChecks, after its own, before sorting. Register once at start-up.
-using CheckProvider = void (*)(const ModelView& model, std::vector< Check >& out);
-void registerCheckProvider(CheckProvider provider);
+// Providers: petari/editor/check_providers.hpp.
 
 }  // namespace PetariEditor

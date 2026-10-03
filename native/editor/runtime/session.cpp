@@ -2,13 +2,14 @@
 // the row <-> actor binding, the command drain and SceneSync (TECH.md 2.1-2.6).
 #include "petari/editor/runtime.hpp"
 
+#include "checks.hpp"
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
-#include "checks.hpp"
 #include "load_model.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
 #include <petari/editor/catalog.hpp>
+#include <petari/editor/paths.hpp>
 
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -18,6 +19,7 @@
 #include <petari/platform/mod_folder.hpp>
 #include <revolution/dvd.h>
 
+#include <cassert>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -35,6 +37,27 @@ namespace {
         JMapInfo info;
     };
 
+    constexpr s32 kGravityLimit = 128;  // PlanetGravityManager's array
+    std::vector< PreviewHandler > gPreviewHandlers;
+    std::vector< LiveUpdater > gLiveUpdaters;
+    bool gChecksInvalid = false;
+
+    // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
+    // are spent by every creation, retired fields included, until the next scene build.
+    bool isGravityTable(const std::string& path) {
+        return path.size() >= 14 && path.compare(path.size() - 14, 14, "/planetobjinfo") == 0;
+    }
+
+    void pokeTransform(LiveActor* pActor, int zoneId, const RowTransform& t) {
+        for (PreviewHandler handler : gPreviewHandlers) {
+            if (handler(pActor, zoneId, t)) {
+                return;
+            }
+        }
+        const f32 pos[3] = {t.pos.x, t.pos.y, t.pos.z}, dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z}, scale[3] = {t.scale.x, t.scale.y, t.scale.z};
+        EditorScene::applyTransform(pActor, zoneId, pos, dir, scale);
+    }
+
     struct Session {
         std::unique_ptr< EditModel > model;
         std::uint32_t boundScene = 0;
@@ -42,6 +65,9 @@ namespace {
         std::set< RowId > pending;                             // edits that need a reload
         std::vector< std::unique_ptr< LiveRow > > liveRows;
         std::set< RowId > previewing;
+        std::vector< std::unique_ptr< LiveRow > > railStorage;
+        std::map< RowId, std::pair< int, int > > railOwners;
+        std::set< std::string > suspectNotices;
         Vec3 playMarker;
         bool hasMarker = false;
         // A reload in flight: what to do once its scene is playable.
@@ -71,6 +97,14 @@ namespace {
     void loadModel(const char* pStage, int scenario) {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
+        static bool pathChecks = false;
+        if (!pathChecks) {
+            registerCheckProvider(+[](const ModelView& model, std::vector< Check >& out) {
+                auto checks = Paths::computeChecks(model);
+                out.insert(out.end(), checks.begin(), checks.end());
+            });
+            pathChecks = true;
+        }
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
         std::string catalogError;
@@ -80,6 +114,7 @@ namespace {
         }
         TerrainSync::registerWithEditor();
         s.checkedRevision = 0;
+        s.suspectNotices.clear();
         s.actors.clear();
         s.pending.clear();
         s.boundScene = 0;
@@ -102,12 +137,136 @@ namespace {
         }
     }
 
+    const JMapInfo* railTable(const Formats::Table* table, int zone) {
+        Session& s = session();
+        auto row = std::make_unique< LiveRow >();
+        if (table) {
+            row->bytes = table->build();
+        } else {
+            row->bytes.assign(16, 0);
+            row->bytes[11] = 16;
+        }
+        row->info.attach(row->bytes.data());
+        Hooks::registerRows(row->bytes.data(), row->bytes.size(), s.model->zoneId(zone));
+        const JMapInfo* info = &row->info;
+        s.railStorage.push_back(std::move(row));
+        return info;
+    }
+
+    void rebuildRails(int zone) {
+        Session& s = session();
+        EditModel& m = *s.model;
+        for (auto it = s.railOwners.begin(); it != s.railOwners.end();) {
+            if (it->second.first == zone) {
+                it = s.railOwners.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        Hooks::RailTables tables;
+        const Formats::Table* info = nullptr;
+        for (int table = 0; table < m.tableCount(zone); ++table) {
+            if (std::string(m.tablePath(zone, table)) != "jmp/path/commonpathinfo") {
+                continue;
+            }
+            m.forEachRow(zone, table, [&](RowId rail) {
+                if (m.state(rail) == RowState::Deleted) {
+                    return;
+                }
+                int index = 0;
+                info = m.rowTable(rail, &index);
+                const auto points = m.railPoints(rail);
+                const Formats::Table* pointTable = points.empty() ? nullptr : m.rowTable(points.front(), &index);
+                // Even an empty rail occupies a slot: StageDataHolder indexes by the info row ordinal.
+                tables.points.push_back(railTable(pointTable, zone));
+                const Cell* id = m.cell(rail, columnHash("l_id"));
+                s.railOwners[rail] = {zone, id ? id->i : -1};
+                for (RowId point : points) {
+                    s.railOwners[point] = s.railOwners[rail];
+                }
+            });
+        }
+        assert(!info || tables.points.size() == static_cast< std::size_t >(info->rowCount()));
+        tables.info = railTable(info, zone);
+        Hooks::setRailTables(m.zoneId(zone), std::move(tables));
+    }
+
+    // Rail rows are data, not actors. Refresh lookup first, then re-create every affected rider.
+    void expandRailChanges(std::set< RowId >& changed) {
+        Session& s = session();
+        EditModel& m = *s.model;
+        std::set< std::pair< int, int > > affected;
+        std::set< int > zones;
+        const auto rails = Paths::collect(m);
+        for (auto it = changed.begin(); it != changed.end();) {
+            bool railRow = false;
+            auto old = s.railOwners.find(*it);
+            if (old != s.railOwners.end()) {
+                affected.insert(old->second);
+                zones.insert(old->second.first);
+                railRow = true;
+            }
+            int z = -1, t = -1;
+            if (m.locate(*it, &z, &t) && std::string(m.tablePath(z, t)).rfind("jmp/path/", 0) == 0) {
+                railRow = true;
+                zones.insert(z);
+                for (const auto& rail : rails) {
+                    if (rail.zone == z) {
+                        bool match = rail.row == *it;
+                        for (const auto& p : rail.points) {
+                            match = match || p.row == *it;
+                        }
+                        if (match) {
+                            affected.insert({z, rail.id});
+                        }
+                    }
+                }
+            }
+            if (railRow) {
+                s.pending.erase(*it);
+                it = changed.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        for (int z : zones) {
+            rebuildRails(z);
+        }
+        for (int z : zones) {
+            for (int t = 0; t < m.tableCount(z); ++t) {
+                const std::string path = m.tablePath(z, t);
+                if (path.rfind("jmp/placement/", 0) != 0 && path.rfind("jmp/mapparts/", 0) != 0 && path.rfind("jmp/childobj/", 0) != 0) {
+                    continue;
+                }
+                m.forEachRow(z, t, [&](RowId row) {
+                    if (m.state(row) == RowState::Deleted) {
+                        return;
+                    }
+                    const Cell* id = m.cell(row, columnHash("CommonPath_ID"));
+                    if (id && affected.count({z, id->i})) {
+                        changed.insert(row);
+                    }
+                });
+            }
+        }
+    }
+
     // After every scene build: the actors placement made, by row (Hooks::placed records them).
     void bindPlacements() {
         PetariNative::HostAllocationScope host;
         Session& s = session();
         s.actors.clear();
         s.liveRows.clear();
+        Hooks::clearRailTables();
+        s.railStorage.clear();
+        s.railOwners.clear();
+        // Remember original identities for deletes; publish overrides only after a zone's first rail edit.
+        for (const auto& rail : Paths::collect(*s.model)) {
+            s.railOwners[rail.row] = {rail.zone, rail.id};
+            for (const auto& point : rail.points) {
+                s.railOwners[point.row] = {rail.zone, rail.id};
+            }
+        }
         s.previewing.clear();
         Core::clearBindings();
         std::map< const void*, std::pair< int, int > > tableOf;
@@ -154,6 +313,32 @@ namespace {
         Core::unbindRow(id);
     }
 
+    // Points of the zone's path with this l_id (CommonPathInfo row n -> CommonPathPointInfo.n); -1: no such path.
+    int railPointCount(const EditModel& m, int zone, int lid) {
+        int railTable = -1;
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (endsWith(m.tablePath(zone, t), "/commonpathinfo")) railTable = t;
+        }
+        if (railTable < 0 || lid < 0) return -1;
+        int index = 0, found = -1;
+        m.forEachRow(zone, railTable, [&](RowId row) {
+            if (m.state(row) == RowState::Deleted) return;
+            const Cell* pLid = m.cell(row, columnHash("l_id"));
+            if (found < 0 && pLid != nullptr && pLid->i == lid) found = index;
+            index++;
+        });
+        if (found < 0) return -1;
+        const std::string points = "/commonpathpointinfo." + std::to_string(found);
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (endsWith(m.tablePath(zone, t), points.c_str())) {
+                int count = 0;
+                m.forEachRow(zone, t, [&](RowId row) { count += m.state(row) != RowState::Deleted; });
+                return count;
+            }
+        }
+        return 0;
+    }
+
     // Re-create a changed row's actors live (objects and map parts), or leave it for a reload.
     void syncRow(RowId id) {
         Session& s = session();
@@ -176,8 +361,13 @@ namespace {
             s.pending.erase(id);
             return;
         }
-        const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo");
+        const bool gravity = isGravityTable(path);
+        const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
+
         if (!live) {
+            if (endsWith(path, "/childobjinfo")) {
+                Core::reportNotice("Child objects must be rebuilt with their parent; Reload to apply this change");
+            }
             s.pending.insert(id);
             return;
         }
@@ -189,9 +379,37 @@ namespace {
         if (!m.zonePlaced(zone) || layer < 0 || !(m.activeLayers(zone, m.scenario()) & (1u << layer))) {
             return;  // not in this mission's scene; nothing to show
         }
-        retireRow(id);
         const char* pName = m.objectName(id);
+        const auto* info = pName ? Catalog::find(pName) : nullptr;
+        const Cell* railId = m.cell(id, columnHash("CommonPath_ID"));
+        if (info && info->liveRecreate == "unsafe" && railId && railId->i >= 0) {
+            s.pending.insert(id);
+            Core::reportNotice(std::string(pName) + " follows this path but cannot be re-created live; Reload to apply it");
+            return;
+        }
+        if (info && info->liveRecreate == "suspect" && railId && railId->i >= 0 && s.suspectNotices.insert(pName).second) {
+            Core::reportNotice(std::string(pName) + " was re-created; its sweep reported a visual or state issue");
+        }
+        bool required = false;
+        if (info) {
+            for (const auto& link : info->links) {
+                required = required || (link.kind == Catalog::LinkKind::Rail && link.required);
+            }
+        }
+        bool validPath = false;
+        if (railId && railId->i >= 0) {
+            for (const auto& rail : Paths::collect(m)) {
+                validPath = validPath || (rail.zone == zone && rail.id == railId->i && rail.points.size() >= 2);
+            }
+        }
+        if ((required || (railId && railId->i >= 0)) && !validPath) {
+            retireRow(id);
+            s.pending.insert(id);
+            Core::reportNotice(std::string(pName ? pName : "Object") + " needs a valid path before it can be re-created");
+            return;
+        }
         if (pName == nullptr || pName[0] == '\0') {
+            retireRow(id);
             return;
         }
         int rowIndex = 0;
@@ -205,6 +423,36 @@ namespace {
             row->info.setName("ObjInfo");
             Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
         }
+        // Wire gravity divides by its point count (Obj_arg0 + 2) and walks its path: a bad row would
+        // crash or hang the constructor (or an in-place rebuild).
+        if (std::string(pName) == "GlobalWireGravity") {
+            const Cell* pPoints = m.cell(id, columnHash("Obj_arg0"));
+            const Cell* pPath = m.cell(id, columnHash("CommonPath_ID"));
+            if (pPoints == nullptr || pPoints->i < 0 || pPoints->i > 4096 || pPath == nullptr || railPointCount(m, zone, pPath->i) < 2) {
+                Hooks::unregisterRows(row->bytes.data());
+                s.pending.insert(id);
+                Core::reportError("Wire gravity needs a path of 2 or more points and 0-4096 sample points (Obj_arg0)");
+                return;
+            }
+        }
+        // In place when a registered updater can (no new actor; for gravity, no new slot).
+        if (LiveActor* pCurrent = actorForRow(id)) {
+            for (LiveUpdater updater : gLiveUpdaters) {
+                if (updater(id, pCurrent, JMapInfoIter(&row->info, 0))) {
+                    s.pending.erase(id);
+                    s.liveRows.push_back(std::move(row));
+                    return;
+                }
+            }
+        }
+        // A new gravity field needs a free slot; at the cap the current one stays until a Reload.
+        if (gravity && EditorScene::gravityCount() >= kGravityLimit) {
+            Hooks::unregisterRows(row->bytes.data());
+            s.pending.insert(id);
+            Core::reportNotice("All 128 gravity fields are in use (retired ones count until a Reload): Reload to apply this change");
+            return;
+        }
+        retireRow(id);
         EditorScene::Created created;
         const char* pError = "";
         if (!EditorScene::createFromRow(JMapInfoIter(&row->info, 0), &created, &pError)) {
@@ -232,10 +480,7 @@ namespace {
             if (pActor == nullptr || !s.model->locate(command.rows[i], &zone, &table)) {
                 continue;
             }
-            const RowTransform& t = command.previews[i];
-            const f32 pos[3] = {t.pos.x, t.pos.y, t.pos.z}, dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z},
-                      scale[3] = {t.scale.x, t.scale.y, t.scale.z};
-            EditorScene::applyTransform(pActor, s.model->zoneId(zone), pos, dir, scale);
+            pokeTransform(pActor, s.model->zoneId(zone), command.previews[i]);
             s.previewing.insert(command.rows[i]);
         }
     }
@@ -246,10 +491,7 @@ namespace {
             LiveActor* pActor = actorForRow(id);
             int zone = 0, table = 0;
             if (pActor != nullptr && s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
-                const RowTransform t = s.model->transform(id);
-                const f32 pos[3] = {t.pos.x, t.pos.y, t.pos.z}, dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z},
-                          scale[3] = {t.scale.x, t.scale.y, t.scale.z};
-                EditorScene::applyTransform(pActor, s.model->zoneId(zone), pos, dir, scale);
+                pokeTransform(pActor, s.model->zoneId(zone), s.model->transform(id));
             }
             s.previewing.erase(id);
         }
@@ -419,7 +661,7 @@ namespace {
         st.heapFree = heapFree;
         st.heapTotal = heapTotal;
         st.capacities = {{"Objects", EditorScene::liveActorCount(), EditorScene::liveActorLimit()},
-                         {"Gravity fields", EditorScene::gravityCount(), 128},
+                         {"Gravity fields", EditorScene::gravityCount(), kGravityLimit},
                          {"Archives", EditorScene::mountedArchiveCount(), EditorScene::mountedArchiveLimit()}};
     }
 }  // namespace
@@ -429,6 +671,7 @@ void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETA
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
+void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
 bool reloadScene(bool fromStart) {
     Session& s = session();
@@ -446,6 +689,18 @@ bool reloadScene(bool fromStart) {
     s.reloadStartMs = nowMs();
     EditorReload::requestReload(fromStart);
     return true;
+}
+
+void registerPreviewHandler(PreviewHandler handler) {
+    if (std::find(gPreviewHandlers.begin(), gPreviewHandlers.end(), handler) == gPreviewHandlers.end()) gPreviewHandlers.push_back(handler);
+}
+
+void registerLiveUpdater(LiveUpdater updater) {
+    if (std::find(gLiveUpdaters.begin(), gLiveUpdaters.end(), updater) == gLiveUpdaters.end()) gLiveUpdaters.push_back(updater);
+}
+
+void invalidateChecks() {
+    gChecksInvalid = true;
 }
 
 bool reloading() {
@@ -470,6 +725,7 @@ void tick(bool playable) {
     saveTestTick();
     brushTestTick();
     redrawTestTick();
+    pathsTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
@@ -505,6 +761,7 @@ void tick(bool playable) {
     {
         PetariNative::HostAllocationScope host;
         changed = s.model->takeChangedRows();
+        expandRailChanges(changed);
     }
     for (RowId id : changed) {
         syncRow(id);
@@ -512,7 +769,8 @@ void tick(bool playable) {
     if (!changed.empty()) {
         EditorScene::flushConnectionRequests();  // Edit mode is frozen: no movement step to do it
     }
-    if (s.model->revision() != s.checkedRevision) {
+    if (s.model->revision() != s.checkedRevision || (gChecksInvalid && s.checkedRevision != 0)) {
+        gChecksInvalid = false;
         PetariNative::HostAllocationScope host;
         std::vector< Check > all = computeChecks(*s.model);
         if (s.checkedRevision == 0) {

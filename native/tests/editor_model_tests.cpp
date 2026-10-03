@@ -213,6 +213,26 @@ void testStructure() {
     check(m->transform(copy).pos.x == 77.0f && m->originalCell(copy, E::columnHash("pos_x")) == nullptr, "override and no original");
     check(m->rowMissions(copy) == 0b01 && m->takeChangedRows().count(copy) == 1, "missions and SceneSync see it");
 
+    // At a position (a path's points): first in the table; undo takes it out, redo puts it back there.
+    E::AddRow first;
+    first.id = E::newRowId();
+    first.zone = 1;
+    first.table = "jmp/placement/layera/objinfo";
+    first.copyOf = coin;
+    first.at = 0;
+    check(m->apply(E::Op{"Insert first", {}, {}, {first}, {}}, &error), "insert at 0: " + error);
+    auto firstRow = [&]() {
+        E::RowId found;
+        for (int t = 0; t < m->tableCount(1); t++)
+            if (std::string(m->tablePath(1, t)) == "jmp/placement/layera/objinfo") m->forEachRow(1, t, [&](E::RowId id) { if (!found.valid()) found = id; });
+        return found;
+    };
+    check(firstRow() == first.id, "the inserted row is first");
+    m->undo();
+    check(firstRow() == kuribo, "undo takes it out");
+    m->redo();
+    check(firstRow() == first.id, "redo puts it back at its index");
+    m->undo();
     // A new row in a layer table the zone lacks (layer C): the table is made from layer A's columns.
     E::AddRow fresh;
     fresh.zone = 1;
@@ -284,7 +304,6 @@ void testChecks() {
     const E::Check* path = find(checks, "dangling-path:");
     check(path && path->severity == E::Severity::Error && path->rows.front() == kuribo && !path->fix.sets.empty(),
           "a path that doesn't exist, with an unlink fix");
-    check(find(checks, "switch-alone:") != nullptr, "a switch only one row uses");
     check(find(checks, "duplicate-lid:") != nullptr, "duplicate link ids");
     check(checks.front().severity == E::Severity::Error, "errors first");
     check(m->apply(path->fix, &error) && !find(E::computeChecks(*m), "dangling-path:"), "the fix clears it");

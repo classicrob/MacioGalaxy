@@ -55,7 +55,7 @@ namespace {
 }  // namespace
 
 void registerCheckProvider(CheckProvider provider) {
-    providers().push_back(provider);
+    if (std::find(providers().begin(), providers().end(), provider) == providers().end()) providers().push_back(provider);
 }
 
 std::vector< Check > computeChecks(const ModelView& m) {
@@ -177,18 +177,6 @@ std::vector< Check > computeChecks(const ModelView& m) {
         }
     }
 
-    // A zone switch used by exactly one row: something waits for (or sets) a number nothing else
-    // uses, most likely a typo. Shared switches (1000+) and multi-row uses are left alone: the game
-    // and classes the catalog can't see (talks, cutscenes, progress) also turn switches on.
-    for (const auto& [where, use] : switches) {
-        if (where.first < 0 || use.readers.size() + use.writers.size() != 1) continue;
-        const std::string id = std::to_string(where.second);
-        const RowId row = use.readers.empty() ? use.writers.front() : use.readers.front();
-        out.push_back(Check{"switch-alone:" + std::to_string(where.first) + ":" + id, Severity::Warning,
-                            "Switch " + id + ": only " + label(m, row) + " uses it" +
-                                (use.readers.empty() ? "; nothing waits for it" : "; nothing turns it on"),
-                            {row}, "", Op{}, "pick-switch"});
-    }
     // The galaxy as a whole (the save and the game's screens have fixed room).
     const int missions = m.missionCount();
     if (missions > 8) {
