@@ -265,8 +265,8 @@ void testPathInputCapture() {
     PetariEditor::PathsView::View snapshot;
     snapshot.marks.push_back({RowId{9}, RowId{1}, 0, 0, 0});
     PetariEditor::PathsView::publish(snapshot);
-    auto draw = [&](bool down) {
-        io.AddMousePosEvent(400, 300);
+    auto draw = [&](bool down, float x = 400, float y = 300) {
+        io.AddMousePosEvent(x, y);
         io.AddMouseButtonEvent(ImGuiMouseButton_Left, down);
         ImGui::NewFrame();
         io.WantCaptureMouse = false;
@@ -282,6 +282,21 @@ void testPathInputCapture() {
     CHECK(input.end && input.move);
     CHECK(!draw(false));
     PetariNative::EditorPick::takeSelectRows();
+    snapshot.marks.clear();
+    snapshot.sockets.push_back({RowId{1}, "CommonPath_ID", 0, 0});
+    PetariEditor::PathsView::publish(snapshot);
+    // A collapsed socket list cannot catch clicks intended for the scene.
+    CHECK(!draw(true, 432, 324));
+    CHECK(!PetariEditor::PathsView::linkingPath());
+    draw(false, 432, 324);
+    draw(false, 430, 300);  // Hover the compact handle, then move into its menu.
+    CHECK(draw(true, 432, 324));
+    CHECK(PetariEditor::PathsView::linkingPath());
+    CHECK(draw(false, 432, 324));
+    CHECK(!PetariEditor::PathsView::linkingPath());
+    draw(false, 600, 450);  // Leaving the menu collapses it again.
+    CHECK(!draw(true, 432, 324));
+    draw(false, 432, 324);
     PetariEditor::PathsView::publish({});
     PetariEditor::Core::setModel(nullptr);
 }
