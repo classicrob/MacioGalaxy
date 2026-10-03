@@ -726,12 +726,31 @@ def build_catalog(args, stages):
             "classes": entries}
 
 
+ABS_PATH = re.compile(r"(?:/Users|/home|/private/var|/var/folders)/[^\s\"',;)\\]*")
+SOURCE_ROOT = re.compile(r"(?:/Users|/home)/[^\s\"']*?/((?:src|include|native|docs)/)")
+THREAD_ID = re.compile(r"\bthr_[a-z0-9]{6,}\b")
+
+
+def scrub(value):
+    """The report is committed to a public repo: absolute local paths become repo-relative (the game's __FILE__ in a panic
+    message), any other absolute path becomes <path>, and BB thread ids go. Recurses through dicts and lists."""
+    if isinstance(value, str):
+        value = SOURCE_ROOT.sub(r"\1", value)
+        value = ABS_PATH.sub("<path>", value)
+        return THREAD_ID.sub("<thread>", value)
+    if isinstance(value, list):
+        return [scrub(v) for v in value]
+    if isinstance(value, dict):
+        return {scrub(k): scrub(v) for k, v in value.items()}
+    return value
+
+
 def cmd_report(args):
     stages = parse_stages(args.stages)
-    data = build_catalog(args, stages)
+    data = scrub(build_catalog(args, stages))
     CATALOG.mkdir(parents=True, exist_ok=True)
     (CATALOG / "sweep.json").write_text(json.dumps(data, indent=1) + "\n")
-    (CATALOG / "SWEEP.md").write_text(render_markdown(data))
+    (CATALOG / "SWEEP.md").write_text(scrub(render_markdown(data)))
     print(f"wrote {CATALOG / 'sweep.json'} and SWEEP.md: {len(data['classes'])} classes")
 
 
