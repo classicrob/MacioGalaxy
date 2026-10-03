@@ -575,6 +575,8 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     if (t == 160) PetariEditor::Ui::openSaveSheet();
                     if (t == 175) click("button:Cancel", true);
                     if (t == 177) click("button:Cancel", false);
+                    if (t == 185) click("button:View", true);
+                    if (t == 187) click("button:View", false);
                 }
 #endif
 #ifdef PETARI_EDITOR_UI

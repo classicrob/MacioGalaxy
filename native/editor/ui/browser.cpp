@@ -61,6 +61,7 @@ std::uint64_t gArmed = 0;       // stamp mode: what each click places (armedPlac
 struct PlaceSpec {
     std::string className;
     std::vector< std::pair< int, std::int32_t > > args;
+    std::array< float, 3 > scale{1.0f, 1.0f, 1.0f};
 };
 std::vector< PlaceSpec > gSpecs;
 
@@ -68,9 +69,11 @@ std::vector< PlaceSpec > gSpecs;
 std::uint64_t tokenFor(const BrowserEntry& entry) {
     if (entry.presetArgs.empty() && !entry.examples.empty()) return entry.examples.front().v;
     for (size_t i = 0; i < gSpecs.size(); i++) {
-        if (gSpecs[i].className == entry.className && gSpecs[i].args == entry.presetArgs) return kClassTokenBit | i;
+        if (gSpecs[i].className == entry.className && gSpecs[i].args == entry.presetArgs && gSpecs[i].scale == entry.presetScale) {
+            return kClassTokenBit | i;
+        }
     }
-    gSpecs.push_back({entry.className, entry.presetArgs});
+    gSpecs.push_back({entry.className, entry.presetArgs, entry.presetScale});
     return kClassTokenBit | (gSpecs.size() - 1);
 }
 
@@ -274,6 +277,7 @@ std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model) {
             entry.category = Catalog::categoryName(info.category);
             entry.aliases = info.aliases;
             entry.presetArgs = preset.args;
+            entry.presetScale = preset.scale;
             entries.push_back(std::move(entry));
         }
     }
@@ -472,6 +476,7 @@ void placeToken(std::uint64_t token) {
         request.argValue[request.argCount] = value;
         request.argCount++;
     }
+    for (int axis = 0; axis < 3; axis++) request.scale[axis] = gSpecs[index].scale[axis];
     Pick::placeClass(request);
 }
 
@@ -479,6 +484,12 @@ void placeClassForTest(const char* className, int arg0) {
     BrowserEntry entry;
     entry.className = className;
     entry.presetArgs = {{0, arg0}};
+    // The catalog preset with these args, if any (its size comes along, as from its card).
+    if (const Catalog::ClassInfo* info = Catalog::find(className)) {
+        for (const Catalog::Preset& preset : info->presets) {
+            if (preset.args == entry.presetArgs) entry.presetScale = preset.scale;
+        }
+    }
     placeToken(tokenFor(entry));
 }
 
