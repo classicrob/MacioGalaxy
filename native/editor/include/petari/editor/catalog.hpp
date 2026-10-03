@@ -67,7 +67,7 @@ struct Link {
 struct Preset {
     std::string label;
     std::vector< std::pair< int, std::int32_t > > args;  // Obj_arg index -> value
-    std::array< float, 3 > scale{1.0f, 1.0f, 1.0f};      // the new row's scale (a brush: x 1000 units)
+    std::array< float, 3 > scale{1.0f, 1.0f, 1.0f};      // the row's scale_x/y/z (a brush: 1 = 1000 units)
 };
 
 struct ClassInfo {

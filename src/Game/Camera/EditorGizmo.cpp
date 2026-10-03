@@ -492,7 +492,7 @@ namespace {
         item.zone = zone;
         item.pos = v(point);
         item.basis = G::gravityFrame(gravityUp(item.pos, {0, 1, 0}), cam.forward * -1.0f);  // facing the camera
-        item.scale = {1, 1, 1};
+        item.scale = {request.scale[0], request.scale[1], request.scale[2]};
         const PetariEditor::RowTransform t = toRow(item);
 
         PetariEditor::AddRow add;

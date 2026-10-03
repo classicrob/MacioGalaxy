@@ -88,10 +88,8 @@ namespace {
                 for (const auto& [index, value] : p["args"].members()) {
                     preset.args.emplace_back(std::atoi(index.c_str()), value.asInt());
                 }
-                if (p.has("scale") && p["scale"].items().size() == 3) {
-                    for (int axis = 0; axis < 3; axis++) {
-                        preset.scale[axis] = static_cast< float >(p["scale"].items()[axis].asNumber(1));
-                    }
+                for (size_t k = 0; k < 3 && k < p["scale"].items().size(); k++) {
+                    preset.scale[k] = static_cast< float >(p["scale"].items()[k].asNumber(1.0));
                 }
                 info.presets.push_back(std::move(preset));
             }
