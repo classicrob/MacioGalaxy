@@ -47,7 +47,7 @@ The numbered toolbar buttons switch missions and rebuild the scene. Hover them f
 
 Point at the ground and press **M** to set the play marker. **Tab / Play** rebuilds and starts there; **Shift+Tab / Resume** continues the frozen moment; **Option+Tab / From start** begins at the mission start. Return with Tab to adjust the layout.
 
-Enable **View → Show trail** to see the last 60 seconds: green on ground, blue in air, orange diving, purple cap bounce, gold jump peaks, red at a miss. A death or fall returns to Edit with **Missed at…**, preserving the trail; retry rebuilds the scene. Collecting a Power Star returns to Edit with a clear time. Select a supported object that moved during play and press **K / Keep played transform** to copy its current transform into the layout as one undo step. The Inspector explains when Keep is unavailable. Returning to Edit alone does not keep those transforms.
+Enable **View → Show trail** to see the last 60 seconds: green on ground, blue in air, orange diving, purple cap bounce, gold jump peaks, red at a miss. A death or fall returns to Edit with **Missed at…**, preserving the trail; retry rebuilds the scene. Collecting a Power Star returns to Edit with a clear time. Select a supported object that moved during play and press **K / Keep played transform** to copy its current transform into the layout as one undo step. The Inspector explains when Keep is unavailable. Returning to Edit alone does not keep those transforms. Editor play-tests do not save earned progress: stars, coins, lives and unlocks are restored when the editor session ends. To play for real, save the mod and play it with the editor disabled.
 
 ## Save, share, and start a galaxy
 
