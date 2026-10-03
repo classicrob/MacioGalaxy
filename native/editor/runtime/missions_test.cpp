@@ -23,8 +23,9 @@ namespace PetariEditor::Runtime {
         static bool done = false;
         static int frame = -1, wait = 0, cursor = 0;
         static RowId donor, common, moved;
+        static std::vector< RowId > split;
         static LiveActor* oldActor = nullptr;
-        static std::uint32_t serial = 0, allMissions = 0;
+        static std::uint32_t serial = 0, allMissions = 0, repairMask = 0, splitMask = 0;
         static std::map< std::uint32_t, Cell > saved;
         if (!enabled || done)
             return;
@@ -76,6 +77,10 @@ namespace PetariEditor::Runtime {
             }
             if (!donor.valid() || capacityError())
                 return finish("FAIL: baseline Launch Star fixture unavailable");
+            repairMask = ModelOps::layerMissions(m, 0, 1);
+            splitMask = repairMask | ModelOps::layerMissions(m, 0, 2);
+            if (!(repairMask & 1) || (repairMask & 2) || !(splitMask & 2))
+                return finish("FAIL: expected Good Egg mission masks unavailable");
             serial = Hooks::sceneSerial();
             Settings::cursor(0, 0);
             Pick::place(donor.v);
@@ -102,9 +107,13 @@ namespace PetariEditor::Runtime {
         if (f == 30)
             PetariNative::EfbDump::mark("missions-common");
         if (f == 45) {
-            auto result = ModelOps::changeMissions(m, {common}, 1u);
+            const auto impossible = ModelOps::changeMissions(m, {common}, 1u);
+            if (impossible.error.empty() || !impossible.op.adds.empty() || !impossible.op.deletes.empty())
+                return finish("FAIL: Good Egg mission1-only should explain unavailable layers");
+            std::fprintf(stderr, "[editor-missions] unavailable exact membership explained: %s\n", impossible.error.c_str());
+            auto result = ModelOps::changeMissions(m, {common}, repairMask);
             if (!result.error.empty() || result.rows.size() != 1 || result.op.adds.size() != 1 || result.op.deletes.size() != 1)
-                return finish("FAIL: mission-only op: " + result.error);
+                return finish("FAIL: mission repair op: " + result.error);
             moved = result.rows.front();
             Command command{Command::Kind::Apply};
             command.op = std::move(result.op);
@@ -113,15 +122,15 @@ namespace PetariEditor::Runtime {
         }
         if (f == 60) {
             auto* actor = actorForRow(moved);
-            if (m.historyCursor() != cursor + 1 || m.rowMissions(moved) != 1 || m.locate(common, nullptr, nullptr) || !sameCells(moved) ||
+            if (m.historyCursor() != cursor + 1 || m.rowMissions(moved) != repairMask || m.locate(common, nullptr, nullptr) || !sameCells(moved) ||
                 capacityError() || !actor || MR::isDead(actor) || !MR::isDead(oldActor) || EditorScene::isConnectedToDraw(oldActor))
-                return finish("FAIL: mission-only move did not preserve cells/identity, retire old actor, or clear capacity");
+                return finish("FAIL: mission repair move did not preserve cells/identity, retire old actor, or clear capacity");
             if (Hooks::sceneSerial() != serial)
                 return finish("FAIL: mission edit reloaded the scene");
             std::fprintf(stderr, "[editor-missions] one-step move preserves all cells and l_id; old actor retired; mission 2 error cleared PASS\n");
         }
         if (f == 70)
-            PetariNative::EfbDump::mark("missions-only");
+            PetariNative::EfbDump::mark("missions-repaired");
         if (f == 90)
             enqueue(Command{Command::Kind::Undo});
         if (f == 105) {
@@ -131,16 +140,70 @@ namespace PetariEditor::Runtime {
             enqueue(Command{Command::Kind::Redo});
         }
         if (f == 120) {
-            if (m.historyCursor() != cursor + 1 || m.rowMissions(moved) != 1 || !sameCells(moved) || capacityError() ||
+            if (m.historyCursor() != cursor + 1 || m.rowMissions(moved) != repairMask || !sameCells(moved) || capacityError() ||
                 Hooks::sceneSerial() != serial)
-                return finish("FAIL: redo did not restore mission-only membership");
+                return finish("FAIL: redo did not restore mission repair membership");
             const auto empty = ModelOps::changeMissions(m, {moved}, 0);
             if (empty.error.empty() || !empty.op.deletes.empty() || !empty.op.adds.empty())
                 return finish("FAIL: an empty mission choice would remove the object");
             std::fprintf(stderr, "[editor-missions] undo restores capacity warning; redo repairs it; empty membership rejected PASS\n");
             Pick::selectRow(moved.v, Pick::Click::Replace);
         }
-        if (f == 135)
+        if (f == 125) {
+            auto result = ModelOps::changeMissions(m, {moved}, splitMask);
+            if (!result.error.empty() || result.rows.size() != 2)
+                return finish("FAIL: disjoint split: " + result.error);
+            split = result.rows;
+            Command command{Command::Kind::Apply};
+            command.op = std::move(result.op);
+            enqueue(std::move(command));
+            for (size_t i = 0; i < split.size(); ++i)
+                Pick::selectRow(split[i].v, i ? Pick::Click::Add : Pick::Click::Replace);
+        }
+        if (f == 140) {
+            std::uint32_t mask = 0;
+            int live = 0;
+            for (const auto row : split) {
+                const auto rowMask = m.rowMissions(row);
+                if (!sameCells(row) || (mask & rowMask))
+                    return finish("FAIL: split changes settings or overlaps missions");
+                mask |= rowMask;
+                if (const auto* actor = actorForRow(row); actor && !MR::isDead(actor))
+                    ++live;
+            }
+            if (mask != splitMask || live != 1 || !capacityError() || m.historyCursor() != cursor + 2 || Pick::selection().size() != 2)
+                return finish("FAIL: split does not preserve membership, actor count, selection or capacity");
+            std::fprintf(stderr, "[editor-missions] disjoint split retains cells/l_id; one current-mission actor; both rows selected PASS\n");
+            PetariNative::EfbDump::mark("missions-split");
+        }
+        if (f == 160) {
+            auto result = ModelOps::changeMissions(m, {split.front()}, repairMask);
+            if (!result.error.empty() || result.rows.size() != 1)
+                return finish("FAIL: coalesce matching unselected sibling: " + result.error);
+            moved = result.rows.front();
+            Command command{Command::Kind::Apply};
+            command.op = std::move(result.op);
+            enqueue(std::move(command));
+            Pick::selectRow(moved.v, Pick::Click::Replace);
+        }
+        if (f == 175) {
+            int remaining = 0;
+            for (const auto row : split)
+                remaining += m.locate(row, nullptr, nullptr);
+            if (remaining != 1 || m.historyCursor() != cursor + 3 || !sameCells(moved) || m.rowMissions(moved) != repairMask || capacityError())
+                return finish("FAIL: selecting one split row did not coalesce its matching sibling");
+            enqueue(Command{Command::Kind::Undo});
+        }
+        if (f == 190) {
+            if (!capacityError() || !m.locate(split[0], nullptr, nullptr) || !m.locate(split[1], nullptr, nullptr))
+                return finish("FAIL: undo did not restore the split");
+            enqueue(Command{Command::Kind::Redo});
+        }
+        if (f == 205) {
+            if (capacityError() || m.historyCursor() != cursor + 3 || Hooks::sceneSerial() != serial)
+                return finish("FAIL: coalesce redo changed capacity or scene");
+            std::fprintf(stderr, "[editor-missions] single-row selection coalesces matching split; undo/redo restores it PASS\n");
             finish("PASS");
+        }
     }
 }  // namespace PetariEditor::Runtime

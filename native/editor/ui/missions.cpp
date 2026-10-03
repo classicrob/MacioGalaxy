@@ -89,7 +89,6 @@ namespace PetariEditor::Ui {
         }
         if (gDraft.mixed)
             ImGui::TextWrapped("Mixed membership. Apply gives all selected objects these missions.");
-        ImGui::TextWrapped("Matching copies in other missions change together.");
         if (!gDraft.mask)
             ImGui::TextDisabled("In no mission");
         auto commit = [&](std::uint32_t mask) {

@@ -27,7 +27,7 @@ def main():
     server = [sys.executable, str(root / 'native/tools/test_server.py')]
     directory = out / 'server'
     env = dict(os.environ, PETARI_EDITOR='1', PETARI_MODS='LevelEditor', PETARI_EDITOR_MISSIONS_TEST='1',
-               PETARI_SURFACE_DUMP=str(out / 'surfaces'), PETARI_SURFACE_DUMP_LABELS='missions-common,missions-only',
+               PETARI_SURFACE_DUMP=str(out / 'surfaces'), PETARI_SURFACE_DUMP_LABELS='missions-common,missions-repaired,missions-split',
                PETARI_SURFACE_DUMP_EVERY='5', PETARI_SURFACE_DUMP_SPAN='10')
     starter = None
     try:
