@@ -1,5 +1,7 @@
 #include "playtest.hpp"
 #include "areas.hpp"
+#include "array.hpp"
+#include <petari/editor/array.hpp>
 // Edit mode, UI side (docs/dev/level-editor/UX.md sections 3 and 5): the panels follow the game's Edit
 // nerve, and mouse, trackpad and keys over the viewport drive the editor camera.
 #include "edit_mode.hpp"
@@ -166,7 +168,7 @@ void cameraInput(const Area& area, bool toolConsumed) {
 
     // The gizmo (UX section 6): the left button over the viewport presses and releases it (an
     // Option-drag orbits instead); Cmd suspends snapping for the drag.
-    if (!toolConsumed && inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt)
+    if (!Arrays::view().active && !toolConsumed && inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt)
         Gizmo::press();
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) Gizmo::release();
     Gizmo::setSnapSuspended(io.KeyCtrl || io.KeySuper);
@@ -187,7 +189,12 @@ void cameraInput(const Area& area, bool toolConsumed) {
             if (!pathsDelete())
                 deleteSelection();
         }
-        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D)) Pick::duplicate();
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_D)) {
+            Arrays::Input input;
+            input.begin = true;
+            Arrays::send(input);
+        } else if (!Arrays::view().active && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D))
+            Pick::duplicate();
         // M: the play marker onto the ground under the cursor.
         if (ImGui::IsKeyPressed(ImGuiKey_M, false) && inside) Pick::placeMarker();
         // End: drop to the ground along gravity; Shift+End: stand up; Cmd+End: both.
@@ -346,13 +353,17 @@ void updateEditMode(float windowWidth, float windowHeight) {
     // Cmd+S: save the mod (the sheet the first time); Cmd+Shift+S: the sheet again (another name or format).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) requestSave(false);
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
+    // Cmd+Shift+E: Share (UX section 17).
+    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_E)) openShareSheet();
     // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
     updatePlaytestInput();  // M3 play-test: K keeps the selected live transform.
     const Area area = cameraArea(windowWidth, windowHeight);
     const bool areasConsumed = drawStyledOverlay([&] { return drawAreasOverlay(area.x, area.y, area.w, area.h); });  // M3 areas: camera preview.
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
-    const bool toolConsumed = drawPathsViewport(area.x, area.y, area.w, area.h) || areasConsumed;  // M3 paths: handles precede picking.
+    const bool arrayConsumed = drawArrayOverlay(area.x, area.y, area.w, area.h);  // Array: handles precede picking.
+    const bool toolConsumed =
+        drawPathsViewport(area.x, area.y, area.w, area.h) || areasConsumed || arrayConsumed;  // M3 paths: handles precede picking.
     cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);

@@ -16,5 +16,11 @@ namespace J3D {
     typedef void (*ShapePacketTexMtxLoader)(const J3DShapePacket* pPacket, int slot, u16 index);
 
     void setShapePacketTexMtxLoader(ShapePacketTexMtxLoader loader);
+
+    // Temporary views reuse the model's double buffers before the FIFO consumes them.
+    // Embed their matrices in the command stream instead of keeping mutable array references.
+    // Returns the previous setting; callers restore it after submitting the temporary draw.
+    bool setImmediateMatrixLoads(bool enabled);
+    bool immediateMatrixLoads();
 }  // namespace J3D
 }  // namespace PetariNative

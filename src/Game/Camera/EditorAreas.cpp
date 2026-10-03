@@ -149,7 +149,22 @@ namespace EditorAreas {
             A::clearPreview(row);
             const auto* m = model();
             int z = 0, t = 0;
-            if (!m || !m->locate(row, &z, &t) || !A::isAreaTable(m->tablePath(z, t)))
+            if (!m)
+                return false;
+            if (!m->locate(row, &z, &t)) {
+                // An undone insertion has no table row, but its live area still needs deactivation.
+                const auto found = bindings.find(row);
+                if (found == bindings.end())
+                    return false;
+                auto& bound = found->second;
+                if (!bound.removed)
+                    bound.valid = bound.area->mIsValid;
+                bound.area->invalidate();
+                bound.area->_15 = false;
+                bound.removed = true;
+                return true;
+            }
+            if (!A::isAreaTable(m->tablePath(z, t)))
                 return false;
             const auto* spec = A::definition(m->objectName(row));
             if (!spec || !liveBounds(*spec))

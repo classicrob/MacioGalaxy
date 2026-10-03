@@ -5,6 +5,7 @@
 #include <revolution/os/OSFastCast.h>
 #ifdef PETARI_NATIVE
 #include "JSystem/J3DGraphAnimator/J3DModel.hpp"
+#include <petari/j3d_overrides.hpp>
 
 void J3DSys::setModelDrawMtx(Mtx* matrices) {
     mModelDrawMtx = matrices;
@@ -80,10 +81,22 @@ J3DSys::J3DSys() {
 }
 
 void J3DSys::loadPosMtxIndx(int addr, u16 indx) const {
+#ifdef PETARI_NATIVE
+    if (PetariNative::J3D::immediateMatrixLoads()) {
+        J3DFifoLoadPosMtxImm(mModelDrawMtx[indx], addr * 3);
+        return;
+    }
+#endif
     J3DFifoLoadIndx(0x20, indx, 0xB000 | ((u16)(addr * 0x0C)));
 }
 
 void J3DSys::loadNrmMtxIndx(int addr, u16 indx) const {
+#ifdef PETARI_NATIVE
+    if (PetariNative::J3D::immediateMatrixLoads()) {
+        J3DFifoLoadNrmMtxImm3x3(mModelNrmMtx[indx], addr * 3);
+        return;
+    }
+#endif
     J3DFifoLoadNrmMtxIndx3x3(indx, addr * 3);
 }
 
