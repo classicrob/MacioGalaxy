@@ -212,6 +212,7 @@ void drawToolbar(float width) {
     if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
     if (ImGui::BeginPopup("editor-menu")) {
         if (ImGui::MenuItem("New galaxy...", "Cmd+N")) openNewGalaxySheet();
+        if (ImGui::MenuItem("Import model...")) openImportSheet();  // M6 import
         if (ImGui::MenuItem("Save", "Cmd+S")) requestSave(false);
         if (ImGui::MenuItem("Save as...", "Cmd+Shift+S")) requestSave(true);
         if (ImGui::MenuItem("Share...", "Cmd+Shift+E")) openShareSheet();
@@ -599,6 +600,7 @@ void drawFrame(float windowWidth, float windowHeight) {
     drawSaveSheet();
     drawShareSheet();
     drawNewGalaxySheet();
+    drawImportSheet();  // M6 import
 
     if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
                                                                         central->Size.y > 8.0f) {

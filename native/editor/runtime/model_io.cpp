@@ -2,14 +2,14 @@
 #include "model_io.hpp"
 
 #include <petari/editor/areas.hpp>
+#include <petari/editor/asset_providers.hpp>
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/check_providers.hpp>
-#include <petari/editor/paths.hpp>
-#include <petari/editor/terrain/bake.hpp>
-#include <petari/editor/terrain/brush_catalog.hpp>
 #include <petari/editor/patch.hpp>
-#include <petari/platform/mod_folder.hpp>
+#include <petari/editor/paths.hpp>
+#include <petari/editor/terrain/brush_catalog.hpp>
 #include <petari/platform/dvd.hpp>
+#include <petari/platform/mod_folder.hpp>
 #include <revolution/dvd.h>
 
 #include <algorithm>
@@ -122,8 +122,7 @@ std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const
     if (!Catalog::loadWithUser(userDirectory, pCatalogError)) {
         // Reported by the caller; the galaxy still loads (checks then know fewer classes).
     }
-    Terrain::registerBrushClass();   // the terrain brush is a class headless tools know too
-    Terrain::registerBrushChecks();
+    Assets::load(userDirectory, PetariNative::Platform::ModFolder::enabledRoots(userDirectory));
     if (registerClasses) {
         registerClasses();
     }
@@ -207,6 +206,10 @@ bool saveToDirectory(const EditModel& model, const fs::path& root, bool fullArch
         return false;
     }
 
+    if (!Assets::save(model, root, pError)) {
+        return false;
+    }
+
     const fs::path patchFile = root / "edits" / (std::string(model.galaxy()) + ".json");
     int written = 0;
     std::set< std::string > changed;
@@ -248,9 +251,9 @@ bool saveToDirectory(const EditModel& model, const fs::path& root, bool fullArch
         }
     }
     bake.readDisc = mounted;
-    const Terrain::BakeOutput baked = Terrain::bakeBrushes(bake);
+    const Terrain::BakeOutput baked = Assets::bake(bake);
     if (!baked.error.empty()) {
-        *pError = "terrain: " + baked.error;
+        *pError = baked.error;
         return false;
     }
     for (auto& [discPath, plain] : bake.stageArchives) {
@@ -274,7 +277,7 @@ bool saveToDirectory(const EditModel& model, const fs::path& root, bool fullArch
     std::vector< fs::path > stale;
     for (const auto& entry : fs::directory_iterator(root / "files" / "ObjectData", ec)) {
         const std::string name = entry.path().filename().string();
-        if ((name.rfind("EditorBrush", 0) == 0 || (name == "PlanetMapDataTable.arc" && baked.brushes == 0)) && !planets.count(entry.path())) {
+        if ((Assets::ownsFile(name) || (name == "PlanetMapDataTable.arc" && baked.brushes == 0)) && !planets.count(entry.path())) {
             stale.push_back(entry.path());
         }
     }
@@ -291,7 +294,7 @@ bool saveToDirectory(const EditModel& model, const fs::path& root, bool fullArch
         fs::remove(patchFile, ec);  // the loader would build it over these
         summary = std::to_string(written) + (written == 1 ? " archive" : " archives");
         if (baked.brushes > 0) {
-            summary += " and " + std::to_string(baked.brushes) + (baked.brushes == 1 ? " terrain brush" : " terrain brushes");
+            summary += " and " + std::to_string(baked.brushes) + (baked.brushes == 1 ? " generated part" : " generated parts");
         }
     }
     if (!fs::exists(root / "mod.txt", ec)) {
