@@ -1,3 +1,4 @@
+#include "host.hpp"
 // The level editor's Browser (UX section 7), first version: every class placed in this galaxy (and the
 // catalog's classes once it is filled), searchable, by category, with examples and Place.
 #include "panels.hpp"
@@ -60,6 +61,7 @@ std::uint64_t gArmed = 0;       // stamp mode: what each click places (armedPlac
 struct PlaceSpec {
     std::string className;
     std::vector< std::pair< int, std::int32_t > > args;
+    std::array< float, 3 > scale{1.0f, 1.0f, 1.0f};
 };
 std::vector< PlaceSpec > gSpecs;
 
@@ -67,9 +69,11 @@ std::vector< PlaceSpec > gSpecs;
 std::uint64_t tokenFor(const BrowserEntry& entry) {
     if (entry.presetArgs.empty() && !entry.examples.empty()) return entry.examples.front().v;
     for (size_t i = 0; i < gSpecs.size(); i++) {
-        if (gSpecs[i].className == entry.className && gSpecs[i].args == entry.presetArgs) return kClassTokenBit | i;
+        if (gSpecs[i].className == entry.className && gSpecs[i].args == entry.presetArgs && gSpecs[i].scale == entry.presetScale) {
+            return kClassTokenBit | i;
+        }
     }
-    gSpecs.push_back({entry.className, entry.presetArgs});
+    gSpecs.push_back({entry.className, entry.presetArgs, entry.presetScale});
     return kClassTokenBit | (gSpecs.size() - 1);
 }
 
@@ -86,8 +90,7 @@ struct Thumbnail {
     int retryAt = 0;             // gFrame: an empty drawing is tried again (pipelines compile on first use)
 };
 std::map< std::string, Thumbnail > gThumbnails;
-ThumbnailReadback gReadback = nullptr;
-ThumbnailTexture gMakeTexture = nullptr;
+
 std::vector< unsigned char > gRgba;
 constexpr int kThumbnailsInFlight = 3;
 constexpr int kThumbnailTimeout = 90;  // frames
@@ -95,7 +98,8 @@ constexpr int kThumbnailAttempts = 3;
 int gFrame = 0;
 
 void serviceThumbnails() {
-    if (gReadback == nullptr) return;
+    if (Host::readback() == nullptr)
+        return;
     gFrame++;
     char name[64];
     const void* copy = nullptr;
@@ -108,10 +112,10 @@ void serviceThumbnails() {
         if (thumb.texture != 0 || thumb.failed) continue;
         if (thumb.copy != nullptr) {
             unsigned width = 0, height = 0;
-            int result = gReadback(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
+            int result = Host::readback()(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
             if (result < 0) {
                 gRgba.resize(static_cast< size_t >(width) * height * 4);
-                result = gReadback(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
+                result = Host::readback()(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
             }
             if (result == 1) {
                 thumb.copy = nullptr;
@@ -125,7 +129,7 @@ void serviceThumbnails() {
                 }
                 thumb.uv0 = ImVec2(uv[0], uv[1]);
                 thumb.uv1 = ImVec2(uv[2], uv[3]);
-                thumb.texture = static_cast< ImTextureID >(gMakeTexture(width, height, gRgba.data()));
+                thumb.texture = static_cast< ImTextureID >(Host::makeTexture()(width, height, gRgba.data()));
                 continue;
             }
         }
@@ -135,7 +139,8 @@ void serviceThumbnails() {
 
 // Asks for a card's thumbnail when it is on screen and few are in flight.
 void wantThumbnail(const BrowserEntry& entry) {
-    if (gReadback == nullptr || entry.examples.empty()) return;
+    if (Host::readback() == nullptr || entry.examples.empty())
+        return;
     auto existing = gThumbnails.find(entry.className);
     const bool retry = existing != gThumbnails.end() && existing->second.failed && existing->second.retryAt != 0 && gFrame >= existing->second.retryAt;
     if (existing != gThumbnails.end() && !retry) return;
@@ -272,6 +277,7 @@ std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model) {
             entry.category = Catalog::categoryName(info.category);
             entry.aliases = info.aliases;
             entry.presetArgs = preset.args;
+            entry.presetScale = preset.scale;
             entries.push_back(std::move(entry));
         }
     }
@@ -455,6 +461,7 @@ bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, f
 }
 
 void placeToken(std::uint64_t token) {
+    frameNextSelection();  // the new object comes into view (the lead: a fresh brush must be seen whole)
     if (!isClassToken(token)) {
         Pick::place(token);
         return;
@@ -469,12 +476,21 @@ void placeToken(std::uint64_t token) {
         request.argValue[request.argCount] = value;
         request.argCount++;
     }
+    for (int axis = 0; axis < 3; axis++) request.scale[axis] = gSpecs[index].scale[axis];
     Pick::placeClass(request);
 }
 
-void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture) {
-    gReadback = readback;
-    gMakeTexture = texture;
+void placeClassForTest(const char* className, int arg0) {
+    BrowserEntry entry;
+    entry.className = className;
+    entry.presetArgs = {{0, arg0}};
+    // The catalog preset with these args, if any (its size comes along, as from its card).
+    if (const Catalog::ClassInfo* info = Catalog::find(className)) {
+        for (const Catalog::Preset& preset : info->presets) {
+            if (preset.args == entry.presetArgs) entry.presetScale = preset.scale;
+        }
+    }
+    placeToken(tokenFor(entry));
 }
 
 }  // namespace PetariEditor::Ui

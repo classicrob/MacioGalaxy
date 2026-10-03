@@ -1,3 +1,5 @@
+#include "playtest.hpp"
+#include "areas.hpp"
 // Edit mode, UI side (docs/dev/level-editor/UX.md sections 3 and 5): the panels follow the game's Edit
 // nerve, and mouse, trackpad and keys over the viewport drive the editor camera.
 #include "edit_mode.hpp"
@@ -346,9 +348,11 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
     // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
+    updatePlaytestInput();  // M3 play-test: K keeps the selected live transform.
     const Area area = cameraArea(windowWidth, windowHeight);
+    const bool areasConsumed = drawStyledOverlay([&] { return drawAreasOverlay(area.x, area.y, area.w, area.h); });  // M3 areas: camera preview.
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
-    const bool toolConsumed = drawPathsViewport(area.x, area.y, area.w, area.h);  // M3 paths: handles precede picking.
+    const bool toolConsumed = drawPathsViewport(area.x, area.y, area.w, area.h) || areasConsumed;  // M3 paths: handles precede picking.
     cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);

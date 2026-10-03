@@ -41,6 +41,9 @@ struct Placed {
 };
 /// The placements noted since the scene began (cleared when it ends).
 const std::vector< Placed >& placed();
+// AreaObj is a NameObj, never a LiveActor. Keep its bindings separate.
+void noteArea(const void* table, int row, void* area);
+const std::vector< Placed >& areas();
 
 // Rail tables copied from the model. Owned by Runtime until this scene ends.
 struct RailTables {
@@ -77,5 +80,10 @@ std::uint32_t sceneSerial();
 
 /// The scene is being destroyed: forget its rows and placements (their memory goes with the scene).
 void sceneDestroyed();
+
+/// Placement met a terrain brush row (class EditorBrush, which the game has no class for: the
+/// editor shows it, TerrainSync), so the editor loads its model for this scene outside Edit too.
+void noteBrushRow();
+bool sceneHasBrushRows();
 
 }  // namespace PetariEditor::Hooks

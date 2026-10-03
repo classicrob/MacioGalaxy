@@ -123,10 +123,11 @@ namespace {
         if (model == nullptr) return items;
         for (int i = 0; i < EditorPicking::selectedCount(); i++) {
             LiveActor* actor = EditorPicking::selectedAt(i);
-            if (actor == nullptr) continue;
-            Item item;
+            Item item;  // M3 areas: row-only selection uses the same transform operations.
             item.actor = actor;
-            item.row = PetariEditor::rowForActor(actor);
+            item.row = {EditorPicking::selectedRowAt(i)};
+            if (!actor && !model->cell(item.row, PetariEditor::columnHash("pos_x")))
+                continue;
             int table = 0;
             if (!item.row.valid() || !model->hasTransform(item.row) || !model->locate(item.row, &item.zone, &table)) continue;
             const PetariEditor::RowTransform t = model->transform(item.row);
@@ -492,7 +493,7 @@ namespace {
         item.zone = zone;
         item.pos = v(point);
         item.basis = G::gravityFrame(gravityUp(item.pos, {0, 1, 0}), cam.forward * -1.0f);  // facing the camera
-        item.scale = {1, 1, 1};
+        item.scale = {request.scale[0], request.scale[1], request.scale[2]};
         const PetariEditor::RowTransform t = toRow(item);
 
         PetariEditor::AddRow add;
@@ -686,7 +687,8 @@ namespace EditorGizmo {
             // Pressing on a selected object (no handle) slides it over the ground.
             if (handle == None && EditorPicking::hoverActor() != nullptr) {
                 for (const Item& item : items) {
-                    if (item.actor == EditorPicking::hoverActor()) handle = Body;
+                    if (item.actor && item.actor == EditorPicking::hoverActor())
+                        handle = Body;
                 }
             }
             if (handle != None) {

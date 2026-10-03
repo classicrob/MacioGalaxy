@@ -1,3 +1,4 @@
+extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsigned, const void*);
 // Native entry point: window, platform start-up, then the game's main loop
 // on this (the macOS main) thread. See docs/dev/INTEGRATION_PLAN.md.
 
@@ -32,6 +33,7 @@ extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgb
 #include <petari/unlocked_save.hpp>
 #include <petari/pipeline_startup.hpp>
 #include <petari/mods.hpp>
+#include <petari/editor/terrain/bake.hpp>
 #include <petari/platform/mod_folder.hpp>
 #include <petari/platform/mod_galaxy.hpp>
 #include <petari/progress.hpp>
@@ -443,12 +445,9 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 // Place does for a catalog-only card; Obj_arg0 = 0 (a brush's box preset).
                 if (t == 147 && std::getenv("PETARI_EDITOR_TEST_PLACE_CLASS") != nullptr) {
                     Editor::cursor(0.0f, -0.3f);
-                    Pick::PlaceClass request;
-                    std::snprintf(request.name, sizeof(request.name), "%s", std::getenv("PETARI_EDITOR_TEST_PLACE_CLASS"));
-                    request.argCount = 1;
-                    request.argIndex[0] = 0;
-                    request.argValue[0] = 0;
-                    Pick::placeClass(request);
+#ifdef PETARI_EDITOR_UI
+                    PetariEditor::Ui::placeClassForTest(std::getenv("PETARI_EDITOR_TEST_PLACE_CLASS"), 0);  // the Browser's path
+#endif
                 }
                 // PETARI_EDITOR_TEST_PLACE=1: place a copy of the selection on the ground at the view's centre (the
                 // Browser's Place path).
@@ -576,6 +575,8 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     if (t == 160) PetariEditor::Ui::openSaveSheet();
                     if (t == 175) click("button:Cancel", true);
                     if (t == 177) click("button:Cancel", false);
+                    if (t == 185) click("button:View", true);
+                    if (t == 187) click("button:View", false);
                 }
 #endif
 #ifdef PETARI_EDITOR_UI
@@ -726,6 +727,20 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "petari: background storage: %s\n", error.c_str());
         return 1;
     }
+    // mods.txt before the disc is mounted: the level editor's switch decides how patch mods are built.
+    if (!PetariNative::Mods::load(paths.user / "mods.txt", &error)) {
+        std::fprintf(stderr, "petari: mods: %s\n", error.c_str());
+        return 1;
+    }
+    // Terrain brushes in patch mods (docs/dev/level-editor/TECH.md 6.5): the mod loader bakes them into
+    // planets, unless the level editor is on, which keeps them as rows to edit (shown live; the save
+    // bakes or patches them).
+    {
+        const char* editorEnv = std::getenv("PETARI_EDITOR");
+        if (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::LevelEditor) && !(editorEnv != nullptr && editorEnv[0] == '1')) {
+            PetariEditor::Terrain::registerPatchBuilder();
+        }
+    }
     if (!App::Host::preparePlatform(paths, &error)) {
         std::fprintf(stderr, "petari: %s\n", error.c_str());
         return 1;
@@ -739,10 +754,6 @@ int main(int argc, char** argv) {
     // file is reported and left alone; progress is then not recorded this run.
     if (!PetariNative::Progress::load(paths.user / "progress.json", &error)) {
         std::fprintf(stderr, "petari: progress: %s (not recording progress this run)\n", error.c_str());
-    }
-    if (!PetariNative::Mods::load(paths.user / "mods.txt", &error)) {
-        std::fprintf(stderr, "petari: mods: %s\n", error.c_str());
-        return 1;
     }
     if (!PetariNative::CameraSettings::load(paths.user / "camera.txt", &error)) {
         std::fprintf(stderr, "petari: camera: %s\n", error.c_str());
@@ -871,13 +882,12 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "petari: editor panels use the built-in font (no system UI font)\n");
     }
     PetariEditor::Ui::setSettingsFile((paths.user / "editor" / "ui-settings.txt").string().c_str());
-    PetariEditor::Ui::setThumbnailHost(
-        [](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height) {
-            return petari_present_take_readback(copy, rgba, capacity, width, height);
-        },
-        [](unsigned width, unsigned height, const void* rgba) {
-            return static_cast<unsigned long long>(aurora_imgui_add_texture(width, height, rgba));
-        });
+    PetariEditor::Ui::setThumbnailHost([](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width,
+                                          unsigned* height) { return petari_present_take_readback(copy, rgba, capacity, width, height); },
+                                       [](unsigned width, unsigned height, const void* rgba) {
+                                           return static_cast< unsigned long long >(aurora_imgui_add_texture(width, height, rgba));
+                                       },
+                                       &aurora_imgui_update_texture);
     // Development: the editor's docked layout from the start (the Edit mode shows it normally).
     if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
         PetariEditor::Ui::setVisible(true);

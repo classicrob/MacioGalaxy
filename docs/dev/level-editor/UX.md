@@ -241,8 +241,8 @@ A translucent Mario standing in the scene, with a small arrow for facing.
 
 A play-test runs on a scratch copy of the current save file: stars, coins and
 unlocks from a test are thrown away. Collecting a Power Star in a play-test
-plays the get-star sequence, then returns to Edit instead of leaving the galaxy
-(with a toast: "Star collected in 0:42"). Dying returns to Edit with the
+returns immediately to Edit with a "Cleared in 0:42" toast, skipping the star
+cutscene and save prompt. Dying returns to Edit with the
 frame frozen at the moment of death and the trail drawn.
 
 ### Feedback while playing

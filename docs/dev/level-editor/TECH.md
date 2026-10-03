@@ -342,13 +342,13 @@ These follow UX section 3, agreed between UX and tech.
   - Clipping is suspended for actors near the selection, so culled actors don't stay hidden (a known photo-mode limit).
   - Planets, map parts and collision objects compute their matrix inside movement (`src/Game/Scene/SceneExecutor.cpp:48-51`). Moving one while frozen calls `MR::calcAnimDirect` (`src/Game/Util/LiveActorUtil.cpp:619-628`) and resets its collision matrix.
 - **Play.**
-  - If anything is pending or dirty, reload from the model (2.6) and then teleport Mario.
-  - If not, unfreeze and teleport.
+  - If anything is pending, or a fresh Play follows an already-played scene, reload from the model (2.6) and then teleport Mario.
+  - Otherwise unfreeze and teleport; Resume retains the played scene and run.
   - Teleport: the play marker dropped along gravity; the smoke's `PETARI_STAGE_WARP` shows the warp path.
 - **Return to Edit** freezes only; the played state stays visible. Edits made there still go to rows and re-create their actors; the spike re-created actors in a scene that had been playing for 1,000 frames. Played-state caveats are shown, not prevented: switches on, collected items dead, Mario's state.
-- **Trail.** A ring buffer of Mario's position per frame (60 s x 60 frames), written at the seam the way route recording does, and drawn as a line strip.
+- **Trail.** `EditorPlaytest` records Mario at the game-frame seam into a 3,600-sample ring. Returning to Edit draws dotted, depth-tested segments coloured by ground, air, dive or cap-bounce state. Gold diamonds mark peaks along local gravity. Begin resets the run; Resume retains it and breaks the line across time spent in Edit; End clears it. The elapsed timer continues after the ring wraps.
 - **Keep.** Copies a live actor's transform into its row, for classes the catalog marks as placement-owned (not rail riders, children, or actors that re-derive their position; the spike saw one snap back).
-- **Save isolation.** During an edit session NAND writes go to `<user>/editor/scratch-NAND` (the native NAND is a host folder). On Power Star get, a hook at the end of `GameScenePowerStarGet` returns to Edit instead of `requestChangeStageAfterStageClear`.
+- **Save isolation.** During an edit session NAND writes go to `<user>/editor/scratch-NAND` (the native NAND is a host folder). On Power Star contact, `EditorPlaytest::collectStar` intercepts the first step of `PowerStar::exeStageClearDemo`, before progress writes or the star-get sequence. It releases Mario, retires the star and requests Edit with a `Cleared in m:ss` notice. Normal play follows the original path.
 - **Mission switch.** `requestGalaxyMove` to the same stage and another scenario (Level Select's path, `src/Game/Scene/GameScene.cpp:191-202`), skipping the intro. 2-4 s.
 
 ### 2.8 Undo
@@ -849,7 +849,7 @@ Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefo
 - Cost: a box rebuilds in about 4 ms, a 1,500-triangle sphere in about 11 ms.
 - The part has no model of its own, so the Browser's thumbnail finds the brush's model through `EditorTerrain::partModel`.
 
-**Bake on save** (`petari/editor/terrain/bake.hpp`, called by `save_mod.cpp` for a Full archives save and by `petari_terrain_bake`). A patch save holds no game data, so its brush rows travel as ordinary row ops. The loader will bake them from the player's disc through Runtime's asset-builder hook (`Patch::registerAssetBuilder`, proposed). Until then, a patch mod's brushes show only with the editor on.
+**Bake on save** (`petari/editor/terrain/bake.hpp`, called by `save_mod.cpp` for a Full archives save and by `petari_terrain_bake`). A patch save holds no game data, so its brush rows travel as ordinary row ops. The mod loader bakes them from the player's disc (`Terrain::bakePatchAssets`, a `Patch` asset builder), **unless the level editor is on** (decided at start-up, before the disc mounts). Then they stay rows, so the session edits them: placement notes the skipped rows (`Hooks::noteBrushRow`), and the session loads its model for that scene even outside Edit, so TerrainSync shows them while playing.
 - Each brush row becomes a generated planet: `ObjectData/EditorBrush<hash>.arc` (bmd, kcl, pa).
 - The row is renamed, its scale becomes 1 and its args are cleared.
 - A `GlobalCubeGravity` / `GlobalPointGravity` / `GlobalSegmentGravity` row is written in the same layer's PlanetObjInfo.
@@ -1075,3 +1075,14 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - The Runtime's `saveMod` and `loadModel` are thin wrappers that add the user folder, turning the mod on, mission names and bindings.
   - Test: `native_editor_save` runs it headless on Good Egg; the patch builds exactly the Full save's archive.
 - **ensureModel** (`editor/ensure-model`): `Runtime::ensureModel()` loads and binds the edit model without entering Edit, and keeps it loaded for the rest of the run. Commands then apply in Play, with SceneSync re-creating actors in the running scene; this is the agent tools' live mode through the test server. Live check: editor_sync_smoke's fourth run moves Good Egg's Octoomba from Play.
+- **The play-test loop** (`editor/play-lifecycle`; UX 3, TECH 2.7): `registerPlayListener` hears every run.
+  - **Events:**
+    - `Begin` fires on a fresh Play, or Resume with no earlier run.
+    - `Resume` keeps the run.
+    - `ToEdit` fires on Tab, `requestEdit`, or a miss.
+    - `End` fires on another galaxy or mission (Play drops to normal play), or when the editor is turned off.
+  - `requestEdit(reason)`, for a play-test star caught, returns to Edit with the reason as the notice.
+  - `interceptMiss()` (from `GameScene::requestEndMissDemo`) turns a play-test miss into an editor reload back to Edit, with no lives lost.
+  - A fresh Play in a scene already played rebuilds it, so collected and defeated objects come back; only Resume keeps them.
+  - Catalog presets carry a size (`Preset::scale`).
+  - Scratch saves (progress isolation) follow in their own branch.

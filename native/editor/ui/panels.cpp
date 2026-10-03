@@ -1,3 +1,5 @@
+#include "playtest.hpp"
+#include "areas.hpp"
 // The level editor's M1 panels (panels.hpp).
 #include "panels.hpp"
 #include "gravity.hpp"
@@ -409,7 +411,25 @@ void showRows(const std::vector< RowId >& rows) {
     gFrameWait = 30;
 }
 
+// After a Browser placement: frame the camera on whatever the game selects next (the new object), once.
+std::vector< RowId > gFrameNextFrom;  // the selection when the placement was sent
+int gFrameNextWait = 0;
+
 void serviceFraming() {
+    if (gFrameNextWait > 0) {
+        const std::vector< RowId > now = selectedRows();
+        if (!now.empty() && now != gFrameNextFrom) {
+            // Only when it isn't wholly in view already (stamping click after click keeps the camera still).
+            const std::vector< Pick::Item > picked = Pick::selection();
+            const bool inView = !picked.empty() && picked.front().onScreen &&
+                                std::fabs(picked.front().screenX) + picked.front().screenRadius * 2.0f < 0.95f &&
+                                std::fabs(picked.front().screenY) + picked.front().screenRadius * 2.0f < 0.95f;
+            if (!inView) Settings::frame();
+            gFrameNextWait = 0;
+        } else if (--gFrameNextWait == 0) {
+            gFrameNextFrom.clear();
+        }
+    }
     if (gFrameRow == 0) return;
     const std::vector< RowId > rows = selectedRows();
     if (!rows.empty() && rows.front().v == gFrameRow) {
@@ -757,6 +777,11 @@ std::vector< const Check* > orderChecks(const std::vector< Check >& all) {
 
 void openTab(const char* name) { gOpenTab = name; }
 
+void frameNextSelection() {
+    gFrameNextFrom = selectedRows();
+    gFrameNextWait = 90;  // frames: the row is created and selected at the next seam
+}
+
 bool matchesQuery(const std::string& text, const std::string& query) {
     if (query.empty()) return true;
     auto lower = [](std::string v) {
@@ -1080,6 +1105,8 @@ void drawInspectorWindow(const char* title) {
                 transformRow(*model, rows, "Rotation", "dir_", 0.5f);
                 transformRow(*model, rows, "Scale", "scale_", 0.01f);
             }
+            drawPlaytestInspector(rows);  // M3 play-test: Keep and its disabled reason.
+            drawAreasInspector(*model, rows);    // M3 areas: dimensions and camera preview.
             drawGravityInspector(*model, rows);  // M3 gravity: shape, range and priority.
             drawPathsInspector(*model, rows);  // M3 paths: points and link sockets.
             // Settings (UX section 8): the class's named args from the catalog, then every raw field folded below.

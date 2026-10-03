@@ -52,7 +52,15 @@ namespace {
             return MR::getModelChangableObjCreator(rIdentifier.mName);
         }
 
+#ifdef PETARI_NATIVE
+        CreationFuncPtr creator = NameObjFactory::getCreator(rIdentifier.mName);
+        if (creator == nullptr && std::strcmp(rIdentifier.mName, "EditorBrush") == 0 && PetariEditor::Hooks::enabled()) {
+            PetariEditor::Hooks::noteBrushRow();  // the editor shows terrain brushes (TerrainSync)
+        }
+        return creator;
+#else
         return NameObjFactory::getCreator(rIdentifier.mName);
+#endif
     }
 }  // namespace
 

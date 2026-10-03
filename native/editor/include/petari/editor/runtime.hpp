@@ -3,6 +3,8 @@
 
 #include <petari/editor/edit_api.hpp>
 
+#include <cstdint>
+
 class LiveActor;
 class JMapInfoIter;
 
@@ -24,6 +26,8 @@ void tick(bool playable);
 bool reloadScene(bool fromStart);
 /// True from reloadScene() (or the editor's Reload) until the new scene is playable.
 bool reloading();
+/// Current editor play marker, in world space.
+bool playMarker(Vec3* position);
 
 /// Loads the edit model for the current stage and mission and binds the scene, without entering
 /// Edit, and keeps it loaded (across reloads and stage changes) for the rest of the run: model()
@@ -46,6 +50,38 @@ void registerPreviewHandler(PreviewHandler handler);
 /// bound); false: re-create it.
 using LiveUpdater = bool (*)(RowId row, LiveActor* pCurrent, const JMapInfoIter& newRow);
 void registerLiveUpdater(LiveUpdater updater);
+
+// Non-actor placements (areas). Row handlers run before any LiveActor lookup.
+using RowPreviewHandler = bool (*)(RowId row, int zoneId, const RowTransform& transform);
+// newRow is empty when the row was deleted: deactivate the placement.
+using RowUpdater = bool (*)(RowId row, const JMapInfoIter& newRow);
+void registerRowPreviewHandler(RowPreviewHandler handler);
+void registerRowUpdater(RowUpdater updater);
+// Resolve an engine placement table/ordinal to its stable model row, captured when the scene was bound.
+RowId rowForPlacement(const void* table, int index);
+
+// ---- The play-test loop (UX 3, TECH 2.7). Game thread. -------------------------------------------
+
+enum class PlayEvent : std::uint8_t {
+    Begin,   // a new run: Play from the marker or the mission's start (reset trail, timer, scratch progress)
+    Resume,  // Play continued where Edit left the scene (keep the run's state)
+    ToEdit,  // back in Edit after a run (Tab, a star caught, a miss)
+    End,     // the edit session ends: another galaxy or mission, or the editor turned off
+};
+/// Told after the mode change, with the session's galaxy and mission.
+using PlayListener = void (*)(PlayEvent event, const char* galaxy, int mission);
+void registerPlayListener(PlayListener listener);
+/// Back to Edit now (a play-test star caught): `reason` becomes the notice ("Cleared in 0:42").
+/// False outside Play.
+bool requestEdit(const char* reason);
+/// True while an edit session exists (its model loaded, until End): progress made now is a
+/// play-test's and must not reach the player's real records. The save goes to a scratch copy,
+/// in-memory progress is restored at End, and other progress writers (progress.json, the mod
+/// galaxies' sidecars) skip their writes while this is true. Any thread.
+bool progressIsolated();
+/// GameScene::requestEndMissDemo: during a play-test a miss returns to Edit (an editor reload; no
+/// lives lost) instead of the game's restart. False (the game's own path) outside Play.
+bool interceptMiss();
 
 /// Recomputes the Checks on the next tick without changing their baseline (a check provider's
 /// live inputs changed: gravity samples).

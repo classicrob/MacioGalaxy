@@ -40,7 +40,10 @@ namespace {
     constexpr s32 kGravityLimit = 128;  // PlanetGravityManager's array
     std::vector< PreviewHandler > gPreviewHandlers;
     std::vector< LiveUpdater > gLiveUpdaters;
+    std::vector< RowPreviewHandler > gRowPreviewHandlers;
+    std::vector< RowUpdater > gRowUpdaters;
     bool gChecksInvalid = false;
+    std::vector< PlayListener > gPlayListeners;
 
     // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
     // are spent by every creation, retired fields included, until the next scene build.
@@ -61,6 +64,7 @@ namespace {
     struct Session {
         std::unique_ptr< EditModel > model;
         std::uint32_t boundScene = 0;
+        std::map< const void*, std::map< int, RowId > > placementRows;
         std::map< RowId, std::vector< LiveActor* > > actors;  // every actor a row made, first first
         std::set< RowId > pending;                             // edits that need a reload
         std::vector< std::unique_ptr< LiveRow > > liveRows;
@@ -77,6 +81,9 @@ namespace {
         bool teleportPending = false;
         bool plainReload = false;  // reloadScene() without an edit session
         bool keepModel = false;    // ensureModel(): the model stays loaded outside Edit
+        bool inPlay = false;       // a play-test run is on (Begin/Resume told, ToEdit not yet)
+        bool hadRun = false;       // a run began this session (Resume continues it; with none, Resume is a Begin)
+        bool scenePlayed = false;  // this scene has been played since it was built (a fresh Play rebuilds it)
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -84,6 +91,18 @@ namespace {
     Session& session() {
         static Session sSession;
         return sSession;
+    }
+
+    void firePlay(PlayEvent event) {
+        Session& s = session();
+        const std::string galaxy = s.model ? s.model->galaxy() : "";
+        const int mission = s.model ? s.model->scenario() : 0;
+        for (PlayListener listener : gPlayListeners) {
+            listener(event, galaxy.c_str(), mission);
+        }
+        s.inPlay = event == PlayEvent::Begin || event == PlayEvent::Resume;
+        s.hadRun = event == PlayEvent::End ? false : (s.hadRun || event == PlayEvent::Begin);
+        s.scenePlayed = s.scenePlayed || s.inPlay;
     }
 
     bool endsWith(const std::string& text, const char* pSuffix) {
@@ -98,6 +117,12 @@ namespace {
     void loadModel(const char* pStage, int scenario) {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
+        if (s.model) {
+            firePlay(PlayEvent::End);  // another galaxy or mission: this session ends
+            if (mode() == Mode::Playing) {
+                Core::setMode(Mode::Off);  // ordinary play from here, not a play-test
+            }
+        }
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
         std::string catalogError;
@@ -111,6 +136,7 @@ namespace {
         }
         s.suspectNotices.clear();
         s.actors.clear();
+        s.placementRows.clear();
         s.pending.clear();
         s.boundScene = 0;
         Core::clearBindings();
@@ -257,7 +283,9 @@ namespace {
     void bindPlacements() {
         PetariNative::HostAllocationScope host;
         Session& s = session();
+        s.scenePlayed = false;
         s.actors.clear();
+        s.placementRows.clear();
         s.liveRows.clear();
         Hooks::clearRailTables();
         s.railStorage.clear();
@@ -277,6 +305,16 @@ namespace {
                 if (const void* pData = EditorScene::tableData(s.model->zoneId(zone), s.model->tablePath(zone, table))) {
                     tableOf[pData] = {zone, table};
                 }
+            }
+        }
+        for (const Hooks::Placed& placed : Hooks::areas()) {
+            const auto table = tableOf.find(placed.table);
+            if (table == tableOf.end()) {
+                continue;
+            }
+            const RowId row = s.model->rowAt(table->second.first, table->second.second, placed.row);
+            if (row.valid()) {
+                s.placementRows[placed.table][placed.row] = row;
             }
         }
         int bound = 0;
@@ -367,6 +405,33 @@ namespace {
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
 
         if (!live) {
+            if (!gRowUpdaters.empty()) {
+                std::unique_ptr< LiveRow > row;
+                if (m.state(id) != RowState::Deleted) {
+                    int rowIndex = 0;
+                    const auto* tableData = m.rowTable(id, &rowIndex);
+                    if (tableData) {
+                        PetariNative::HostAllocationScope host;
+                        row = std::make_unique< LiveRow >();
+                        row->bytes = tableData->buildSingleRow(rowIndex);
+                        row->info.attach(row->bytes.data());
+                        Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
+                    }
+                }
+                const auto iter = row ? JMapInfoIter(&row->info, 0) : JMapInfoIter();
+                for (RowUpdater updater : gRowUpdaters) {
+                    if (updater(id, iter)) {
+                        s.pending.erase(id);
+                        if (row) {
+                            s.liveRows.push_back(std::move(row));
+                        }
+                        return;
+                    }
+                }
+                if (row) {
+                    Hooks::unregisterRows(row->bytes.data());
+                }
+            }
             if (endsWith(path, "/childobjinfo")) {
                 Core::reportNotice("Child objects must be rebuilt with their parent; Reload to apply this change");
             }
@@ -474,26 +539,34 @@ namespace {
         s.liveRows.push_back(std::move(row));
     }
 
+    bool previewRow(RowId row, int zone, const RowTransform& transform) {
+        for (RowPreviewHandler handler : gRowPreviewHandlers) {
+            if (handler(row, zone, transform)) {
+                return true;
+            }
+        }
+        if (auto* actor = actorForRow(row)) {
+            pokeTransform(actor, zone, transform);
+            return true;
+        }
+        return false;
+    }
     void preview(const Command& command) {
         Session& s = session();
         for (size_t i = 0; i < command.rows.size() && i < command.previews.size(); i++) {
-            LiveActor* pActor = actorForRow(command.rows[i]);
             int zone = 0, table = 0;
-            if (pActor == nullptr || !s.model->locate(command.rows[i], &zone, &table)) {
-                continue;
+            if (s.model->locate(command.rows[i], &zone, &table) && previewRow(command.rows[i], s.model->zoneId(zone), command.previews[i])) {
+                s.previewing.insert(command.rows[i]);
             }
-            pokeTransform(pActor, s.model->zoneId(zone), command.previews[i]);
-            s.previewing.insert(command.rows[i]);
         }
     }
 
     void endPreview(const std::vector< RowId >& rows) {
         Session& s = session();
         for (RowId id : rows) {
-            LiveActor* pActor = actorForRow(id);
             int zone = 0, table = 0;
-            if (pActor != nullptr && s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
-                pokeTransform(pActor, s.model->zoneId(zone), s.model->transform(id));
+            if (s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
+                previewRow(id, s.model->zoneId(zone), s.model->transform(id));
             }
             s.previewing.erase(id);
         }
@@ -518,7 +591,9 @@ namespace {
         Session& s = session();
         if (from == PlayFrom::MissionStart) {
             startReload(Session::After::PlayStart);
-        } else if (!s.pending.empty()) {
+        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed)) {
+            // Edits to rebuild, or a fresh run in a scene already played (UX 3: collected and
+            // defeated objects, switches and Mario's state reset; only Resume keeps them).
             startReload(from == PlayFrom::Marker ? Session::After::PlayMarker : Session::After::PlayStart);
         } else {
             // Nothing needs a reload: unfreeze where we are (and put Mario on the marker).
@@ -527,6 +602,7 @@ namespace {
             }
             s.teleportPending = from == PlayFrom::Marker && s.hasMarker;
             Core::setMode(Mode::Playing);
+            firePlay(from == PlayFrom::Resume && s.hadRun ? PlayEvent::Resume : PlayEvent::Begin);
         }
     }
 
@@ -551,6 +627,7 @@ namespace {
             }
             s.teleportPending = after == Session::After::PlayMarker && s.hasMarker;
             Core::setMode(Mode::Playing);
+            firePlay(PlayEvent::Begin);  // a rebuilt scene is a new run
         }
     }
 
@@ -673,6 +750,7 @@ void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETA
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
+void areasTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
@@ -715,16 +793,83 @@ bool ensureModel() {
     return s.model != nullptr;
 }
 
+void registerPlayListener(PlayListener listener) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
+    if (std::find(gPlayListeners.begin(), gPlayListeners.end(), listener) == gPlayListeners.end()) gPlayListeners.push_back(listener);
+}
+
+bool requestEdit(const char* reason) {
+    if (mode() != Mode::Playing) {
+        return false;
+    }
+    if (reason != nullptr && reason[0] != '\0') {
+        Core::reportNotice(reason);
+    }
+    if (Core::uiCallbacks().resumeEdit != nullptr) {
+        Core::uiCallbacks().resumeEdit();  // the UI re-enters Edit (its camera, panels) and calls notifyEditEntered
+    } else {
+        notifyEditEntered();
+    }
+    firePlay(PlayEvent::ToEdit);
+    return true;
+}
+
+bool progressIsolated() {
+    return Hooks::enabled() && session().model != nullptr;
+}
+
+bool interceptMiss() {
+    Session& s = session();
+    if (mode() != Mode::Playing || !s.model || !Hooks::enabled()) {
+        return false;
+    }
+    Core::reportNotice("Missed: back in Edit");
+    startReload(Session::After::Edit);  // the scene from the edits, then Edit; no lives lost (editor reloads skip the counter)
+    return true;
+}
+
 void registerPreviewHandler(PreviewHandler handler) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
     if (std::find(gPreviewHandlers.begin(), gPreviewHandlers.end(), handler) == gPreviewHandlers.end()) gPreviewHandlers.push_back(handler);
 }
 
 void registerLiveUpdater(LiveUpdater updater) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
     if (std::find(gLiveUpdaters.begin(), gLiveUpdaters.end(), updater) == gLiveUpdaters.end()) gLiveUpdaters.push_back(updater);
+}
+
+void registerRowPreviewHandler(RowPreviewHandler handler) {
+    if (std::find(gRowPreviewHandlers.begin(), gRowPreviewHandlers.end(), handler) == gRowPreviewHandlers.end()) {
+        gRowPreviewHandlers.push_back(handler);
+    }
+}
+void registerRowUpdater(RowUpdater updater) {
+    if (std::find(gRowUpdaters.begin(), gRowUpdaters.end(), updater) == gRowUpdaters.end()) {
+        gRowUpdaters.push_back(updater);
+    }
+}
+RowId rowForPlacement(const void* data, int index) {
+    const auto& tables = session().placementRows;
+    const auto table = tables.find(data);
+    if (table == tables.end()) {
+        return {};
+    }
+    const auto row = table->second.find(index);
+    return row == table->second.end() ? RowId{} : row->second;
 }
 
 void invalidateChecks() {
     gChecksInvalid = true;
+}
+
+bool playMarker(Vec3* position) {
+    if (!session().hasMarker) {
+        return false;
+    }
+    if (position) {
+        *position = session().playMarker;
+    }
+    return true;
 }
 
 bool reloading() {
@@ -742,7 +887,20 @@ void tick(bool playable) {
         std::fprintf(stderr, "[editor] scene reload done in %.0f ms\n", nowMs() - session().reloadStartMs);
     }
     if (!Hooks::enabled()) {
+        if (session().model) {
+            // The editor was turned off: the session ends once.
+            PetariNative::HostAllocationScope host;
+            firePlay(PlayEvent::End);
+            Core::clearBindings();
+            Core::setModel(nullptr);
+            session().model.reset();
+            session().keepModel = false;
+        }
         return;
+    }
+    // Back in Edit after a run (Tab; the UI's leave/enter, or a reload that returns to Edit).
+    if (session().inPlay && mode() == Mode::Editing) {
+        firePlay(PlayEvent::ToEdit);
     }
     syncTestTick();
     reloadTestTick();
@@ -751,10 +909,13 @@ void tick(bool playable) {
     redrawTestTick();
     ensureTestTick();
     pathsTestTick();
+    areasTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
-    if ((mode() != Mode::Off || s.keepModel) && mode() != Mode::Reloading && pStage != nullptr) {
+    // Terrain brushes are shown by the editor, so a scene with brush rows loads the model outside
+    // Edit too (Hooks::noteBrushRow, from placement).
+    if ((mode() != Mode::Off || s.keepModel || Hooks::sceneHasBrushRows()) && mode() != Mode::Reloading && pStage != nullptr) {
         PetariNative::HostAllocationScope host;
         if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
             loadModel(pStage, EditorScene::scenario());

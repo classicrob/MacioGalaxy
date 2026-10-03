@@ -6,11 +6,15 @@
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 
+#include <array>
 #include <functional>
 #include <string>
 #include <vector>
 
 namespace PetariEditor::Ui {
+
+// Apply the panel style to a viewport overlay drawn before the main dock.
+bool drawStyledOverlay(const std::function< bool() >& draw);
 
 // The left dock's window ("Galaxy": Outliner, Browser, Changes, History, Checks) and the Inspector.
 void drawGalaxyWindow(const char* title);
@@ -31,6 +35,8 @@ std::string defaultModName(const char* galaxy);  // "CosmosGardenGalaxy" -> "Cos
 
 // A case-insensitive "contains" (the Outliner's Find; empty matches all).
 bool matchesQuery(const std::string& text, const std::string& query);
+// Frame the camera on the next selection the game makes (a placed object), within a moment.
+void frameNextSelection();
 // Bring a Galaxy tab forward ("Checks": the toolbar's badge).
 void openTab(const char* name);
 struct CheckCounts {
@@ -100,6 +106,7 @@ struct BrowserEntry {
     std::vector< RowId > examples;  // some of those placements (the first is what Place copies)
     std::string key;                // unique per card: the class, or "<class>#<preset>"
     std::vector< std::pair< int, std::int32_t > > presetArgs;  // a catalog preset's args (Obj_arg index, value)
+    std::array< float, 3 > presetScale{1.0f, 1.0f, 1.0f};      // and its size (the new row's scale)
 };
 // Every class placed in the galaxy, plus the catalog's placeable classes, by display name.
 std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model);

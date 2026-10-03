@@ -25,7 +25,8 @@ bool focusMode();
 // (aurora_imgui_add_texture). Unset: the cards keep their initials tiles.
 using ThumbnailReadback = int (*)(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height);
 using ThumbnailTexture = unsigned long long (*)(unsigned width, unsigned height, const void* rgba);  // an ImTextureID
-void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture);
+using ThumbnailTextureUpdate = bool (*)(unsigned long long texture, unsigned width, unsigned height, const void* rgba);
+void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture, ThumbnailTextureUpdate update = nullptr);
 
 // Draws the editor frame: toolbar, dock (Outliner, Inspector) and footer. Call between
 // aurora_begin_frame and aurora_end_frame, before the Home menu overlay, every frame.
@@ -43,6 +44,8 @@ void setSettingsFile(const char* path);
 // Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
 // false if it wasn't drawn.
 bool testTargetRect(const char* name, float* x, float* y, float* width, float* height);
+// Test drivers: place a class as the Browser's Place does for a card with no example (Obj_arg0 = arg0).
+void placeClassForTest(const char* className, int arg0);
 // Test drivers: open the Save sheet (as Cmd+Shift+S) and press its Save button.
 void openSaveSheet();
 void submitSaveSheet();
