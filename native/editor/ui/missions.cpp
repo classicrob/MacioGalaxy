@@ -83,12 +83,13 @@ namespace PetariEditor::Ui {
                 else
                     ImGui::SetTooltip("%s: %s. Apply commits the whole membership change.", missionLabel(model, mission).c_str(),
                                       included ? "included" : "excluded");
-                helpText() = "Choose the missions, then Apply. This changes only the selected objects and is one undo step.";
+                helpText() = "Choose missions, then Apply. Matching copies in other missions change together, in one undo step.";
             }
             ImGui::PopID();
         }
         if (gDraft.mixed)
             ImGui::TextWrapped("Mixed membership. Apply gives all selected objects these missions.");
+        ImGui::TextWrapped("Matching copies in other missions change together.");
         if (!gDraft.mask)
             ImGui::TextDisabled("In no mission");
         auto commit = [&](std::uint32_t mask) {
@@ -110,7 +111,7 @@ namespace PetariEditor::Ui {
             commit(1u << (current - 1));
         noteTestTarget("button:Only this mission");
         if (ImGui::IsItemHovered())
-            helpText() = "Move these objects to the current mission in one undo step. Other missions keep their existing objects.";
+            helpText() = "Put these objects, including matching mission copies, only in this mission. One undo restores the previous membership.";
         ImGui::EndDisabled();
         ImGui::BeginDisabled(!gDraft.changed && !gDraft.mixed);
         const std::string applyLabel = rows.size() > 1 ? "Apply to " + std::to_string(rows.size()) + " selected objects" : "Apply";

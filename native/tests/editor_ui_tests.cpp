@@ -413,6 +413,11 @@ void testMissionInput() {
     CHECK(Core::drainCommands().empty());
     click("button:Apply missions");
     CHECK(Core::drainCommands().size() == 1);  // A mixed union can be applied without toggling a chip.
+    click("mission-chip:1");
+    click("mission-chip:2");
+    click("button:Apply missions");
+    CHECK(Core::drainCommands().empty());
+    CHECK(Ui::helpText().find("at least one mission") != std::string::npos);
     PetariNative::EditorPick::takeSelectRows();
     Core::setModel(nullptr);
 }

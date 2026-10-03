@@ -864,7 +864,8 @@ A galaxy's missions share one world; each mission turns some groups of objects
 - **Appears in** chips in the Inspector: toggle the numbered missions, then
   **Apply** or **Cancel**. **Only this mission** applies that choice immediately.
   A mixed selection says **Apply to N selected objects**. One Apply is one undo
-  step. The editor moves each object to an existing layer, or splits it across
+  step. Matching copies of the same object in other missions change together.
+  The editor moves each object to an existing layer, or splits it across
   layers with disjoint mission sets, preserving its links. When existing layers
   cannot represent the choice, Apply explains why and lists the possible mission
   combinations. Editing ScenarioData to create new layer combinations is not yet
