@@ -119,9 +119,11 @@ void drawSaveSheet() {
     const ModelView* model = PetariEditor::model();
     if (gOpenSave) {
         gOpenSave = false;
-        // The session's mod, else the last one saved for this galaxy, else one named after it.
+        // The session's mod, else the mod this galaxy was loaded from (friction #11: re-saving a course must
+        // update it, not start a second one), else the last one saved for this galaxy, else one named after it.
         std::string name = gModName;
         bool full = gFullArchives;
+        if (name.empty()) name = status().loadedMod;
         if (name.empty() && model != nullptr) {
             const std::string remembered = readSetting(std::string("mod.") + model->galaxy());
             const size_t bar = remembered.rfind('|');
@@ -269,6 +271,7 @@ void drawShareSheet() {
         gOpenShare = false;
         gShare = ShareFields{};
         gShare.modName = gModName;
+        if (gShare.modName.empty()) gShare.modName = status().loadedMod;
         if (gShare.modName.empty() && model != nullptr) {
             const std::string remembered = readSetting(std::string("mod.") + model->galaxy());
             gShare.modName = remembered.substr(0, remembered.rfind('|'));

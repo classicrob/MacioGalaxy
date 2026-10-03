@@ -147,6 +147,12 @@ void outlinerRow(const ModelView& model, RowId row, const std::vector< RowId >& 
     if (ImGui::Selectable(label.c_str(), isSelected, ImGuiSelectableFlags_AllowOverlap)) {
         Pick::selectRow(row.v, ImGui::GetIO().KeyShift ? Pick::Click::Add : Pick::Click::Replace);
     }
+    if (ImGui::IsItemHovered() && model.hasTransform(row)) {
+        const RowTransform t = model.transform(row);
+        const char* className = model.objectName(row);
+        ImGui::SetTooltip("%s%sposition %.0f, %.0f, %.0f  ·  scale %.2f", className != nullptr ? className : "", className != nullptr ? "  ·  " : "",
+                          t.pos.x, t.pos.y, t.pos.z, t.scale.x);
+    }
     if (layer != nullptr && gRawTables) {
         ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - 18.0f);
         ImGui::TextColored(kDim, "%s", layer);
@@ -299,7 +305,16 @@ void drawOutliner(const ModelView& model, const std::vector< RowId >& selected) 
                             std::stable_sort(byKind[k].begin(), byKind[k].end(), [&](const auto& a, const auto& b) {
                                 return rowName(model, a.first) < rowName(model, b.first);
                             });
-                            for (const auto& [row, layer] : byKind[k]) outlinerRow(model, row, selected, layer);
+                            // Same-named rows get "#n" (friction #9: four "Terrain brush" rows looked identical);
+                            // hovering a row shows where it is.
+                            std::map< std::string, int > named, seen;
+                            for (const auto& [row, layer] : byKind[k]) named[rowName(model, row)]++;
+                            for (const auto& [row, layer] : byKind[k]) {
+                                const std::string name = rowName(model, row);
+                                char suffix[16] = "";
+                                if (named[name] > 1) std::snprintf(suffix, sizeof(suffix), "  #%d", ++seen[name]);
+                                outlinerRow(model, row, selected, layer, suffix[0] != '\0' ? suffix : nullptr);
+                            }
                         }
                         ImGui::TreePop();
                     }
