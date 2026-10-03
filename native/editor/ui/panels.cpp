@@ -1,6 +1,8 @@
 // The level editor's M1 panels (panels.hpp).
 #include "panels.hpp"
 
+#include <petari/editor/ui.hpp>
+
 #include <petari/editor/catalog.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/editor_settings.hpp>
@@ -14,6 +16,7 @@
 #include <cstdlib>
 #include <cctype>
 #include <cstring>
+#include <map>
 
 namespace PetariEditor::Ui {
 namespace {
@@ -344,6 +347,14 @@ std::uint64_t gFrameRow = 0;   // frame the camera on this row once the game has
 int gFrameWait = 0;
 
 // Select a check's rows (the first one primary) and frame them when the selection lands.
+// Logs the Galaxy window's tab when it changes (input tests read it; it also explains a session's log).
+void noteTab(const char* name) {
+    static std::string last;
+    if (last == name) return;
+    last = name;
+    std::fprintf(stderr, "[editor] tab %s\n", name);
+}
+
 void showRows(const std::vector< RowId >& rows) {
     if (rows.empty()) return;
     for (size_t i = 0; i < rows.size(); i++) Pick::selectRow(rows[i].v, i == 0 ? Pick::Click::Replace : Pick::Click::Add);
@@ -553,7 +564,9 @@ void argField(const ModelView& model, const std::vector< RowId >& rows, const Ca
     }
     case Catalog::ArgType::Bool: {
         bool on = (value == -1 ? arg.defaultValue : value) > 0;
-        if (ImGui::Checkbox(mixed ? "Mixed" : value == -1 ? "(default)" : "##v", &on)) edited = on ? 1 : 0, commit = true;
+        // Off is written as -1, never 0: the game's bool getter (MR::getJMapInfoArgNoInit, bool*) reads anything but -1
+        // as on, and classes testing > 0 read -1 as off too.
+        if (ImGui::Checkbox(mixed ? "Mixed" : value == -1 ? "(default)" : "##v", &on)) edited = on ? 1 : -1, commit = true;
         break;
     }
     default: {
@@ -693,6 +706,25 @@ std::vector< const Check* > orderChecks(const std::vector< Check >& all) {
 }
 
 void openTab(const char* name) { gOpenTab = name; }
+
+namespace {
+struct TargetRect {
+    float x, y, w, h;
+};
+std::map< std::string, TargetRect > gTargets;
+}  // namespace
+
+void noteTestTarget(const char* name) {
+    const ImVec2 min = ImGui::GetItemRectMin(), size = ImGui::GetItemRectSize();
+    gTargets[name] = {min.x, min.y, size.x, size.y};
+}
+
+bool testTargetRect(const char* name, float* x, float* y, float* width, float* height) {
+    auto it = gTargets.find(name);
+    if (it == gTargets.end()) return false;
+    *x = it->second.x, *y = it->second.y, *width = it->second.w, *height = it->second.h;
+    return true;
+}
 
 void drawSection(const char* title, const char* right) { section(title, right); }
 void applyOp(Op op) { enqueueOp(std::move(op)); }
@@ -856,12 +888,18 @@ void drawGalaxyWindow(const char* title) {
                 return ImGuiTabItemFlags_SetSelected;
             };
             serviceFraming();
-            if (ImGui::BeginTabItem("Outliner", nullptr, flags("Outliner"))) {
+            const bool openOutliner = ImGui::BeginTabItem("Outliner", nullptr, flags("Outliner"));
+            noteTestTarget("tab:Outliner");
+            if (openOutliner) {
+                noteTab("Outliner");
                 ImGui::TextColored(kDim, "%s  ·  mission %d", model->galaxy(), model->scenario());
                 drawOutliner(*model, selectedRows());
                 ImGui::EndTabItem();
             }
-            if (ImGui::BeginTabItem("Browser", nullptr, flags("Browser"))) {
+            const bool openBrowser = ImGui::BeginTabItem("Browser", nullptr, flags("Browser"));
+            noteTestTarget("tab:Browser");
+            if (openBrowser) {
+                noteTab("Browser");
                 drawBrowser(*model);
                 ImGui::EndTabItem();
             }
@@ -875,7 +913,10 @@ void drawGalaxyWindow(const char* title) {
                 changesFlags = history;
                 sHistory = true;
             }
-            if (ImGui::BeginTabItem(changesLabel, nullptr, changesFlags)) {
+            const bool openChanges = ImGui::BeginTabItem(changesLabel, nullptr, changesFlags);
+            noteTestTarget("tab:Changes");
+            if (openChanges) {
+                noteTab("Changes");
                 if (ImGui::RadioButton("Changes", !sHistory)) sHistory = false;
                 ImGui::SameLine();
                 if (ImGui::RadioButton("History", sHistory)) sHistory = true;
@@ -894,8 +935,10 @@ void drawGalaxyWindow(const char* title) {
                           counts.errors + counts.warnings);
             if (counts.errors > 0) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.45f, 0.38f, 1.0f));
             const bool checksOpen = ImGui::BeginTabItem(checksLabel, nullptr, flags("Checks"));
+            noteTestTarget("tab:Checks");
             if (counts.errors > 0) ImGui::PopStyleColor();
             if (checksOpen) {
+                noteTab("Checks");
                 drawChecks(*model);
                 ImGui::EndTabItem();
             }

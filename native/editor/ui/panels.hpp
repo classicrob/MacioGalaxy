@@ -42,6 +42,9 @@ bool canRedo();
 void undo();
 void redo();
 
+// Records the last drawn item's rectangle under a name, for testTargetRect (input tests).
+void noteTestTarget(const char* name);
+
 // ---- for the tool modules' Inspector sections and viewport tools (M3: paths.cpp, gravity.cpp) ----
 
 // An Inspector section header: title on the left, a dim note on the right ("named", "edits apply to all").

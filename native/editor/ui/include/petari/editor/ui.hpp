@@ -36,6 +36,9 @@ void drawFrame(float windowWidth, float windowHeight);
 // keeps the edits and history.
 void switchMission(int mission);
 
+// Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
+// false if it wasn't drawn.
+bool testTargetRect(const char* name, float* x, float* y, float* width, float* height);
 // Test drivers: open the Save sheet (as Cmd+Shift+S) and press its Save button.
 void openSaveSheet();
 void submitSaveSheet();
