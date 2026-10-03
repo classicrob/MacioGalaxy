@@ -122,10 +122,25 @@ class Live:
 
     def sync(self, level: Level) -> dict:
         """Bring the game to the workspace's journal: undo what diverged, apply what is new."""
+        info = level.info()
+        self.begin()
+        state = self.state().get("editor", {})
+        expected = info.get("base_fingerprint")
+        actual = state.get("base_fingerprint")
+        if (not expected or expected != actual or info.get("galaxy") != state.get("galaxy")
+                or info.get("mission") != state.get("mission")):
+            raise LevelError({"code": "base-mismatch", "message": "The game and workspace have different loaded bases.",
+                              "hint": "Enable the same input mods in the test server's user directory, restart the game, and use a server with base_fingerprint support.",
+                              "where": "Live.sync", "candidates": []})
         history = level.history()
         ops = level.export(0, history["cursor"])
         want = [hashlib.sha1(json.dumps(op, sort_keys=True).encode()).hexdigest() for op in ops]
         sent = json.loads(self.sync_file.read_text()) if self.sync_file.exists() else []
+        if state.get("cursor") == 0 and state.get("history") == 0:
+            sent = []  # a fresh game process has not received the persisted sync journal
+        elif state.get("cursor") != len(sent):
+            raise LevelError({"code": "base-mismatch", "message": "The running game's journal has untracked edits.",
+                              "hint": "Save any UI edits and restart from the matching base before syncing.", "where": "Live.sync"})
         common = 0
         while common < min(len(sent), len(want)) and sent[common] == want[common]:
             common += 1

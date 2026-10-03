@@ -67,6 +67,44 @@ class LiveTests(unittest.TestCase):
             self.assertEqual(caught.exception.code, "timeout")
             self.assertEqual(commands[-1], "inputs-cancel")
 
+    def test_sync_refuses_different_base_before_mutating(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Live(directory)
+            observed = []
+            live.begin = lambda: observed.append("begin")
+            live.state = lambda: {"editor":{"galaxy":"EggStarGalaxy","mission":1,"base_fingerprint":"other","cursor":0,"history":0}}
+            level = SimpleNamespace(info=lambda: {"galaxy":"EggStarGalaxy","mission":1,"base_fingerprint":"frozen"},
+                                    history=lambda: self.fail("mismatch must stop before export"))
+            with self.assertRaises(LevelError) as caught:
+                live.sync(level)
+            self.assertEqual(caught.exception.code, "base-mismatch")
+            self.assertFalse(live.sync_file.exists())
+
+    def test_sync_fresh_server_discards_previous_process_delivery(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Live(directory)
+            live.sync_file.write_text('["old-op"]')
+            live.begin = lambda: None
+            live.state = lambda: {"editor":{"galaxy":"EggStarGalaxy","mission":1,"base_fingerprint":"frozen","cursor":0,"history":0}}
+            sent = []
+            live.apply_ops = lambda ops: sent.extend(ops) or {}
+            live.undo = lambda *args: self.fail("fresh game must not undo old process ops")
+            level = SimpleNamespace(info=lambda: {"galaxy":"EggStarGalaxy","mission":1,"base_fingerprint":"frozen"},
+                                    history=lambda: {"cursor":1}, export=lambda *args: [{"label":"new"}])
+            self.assertEqual(live.sync(level)["applied"], 1)
+            self.assertEqual(sent, [{"label":"new"}])
+
+    def test_sync_refuses_untracked_ui_history(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Live(directory)
+            live.begin = lambda: None
+            live.state = lambda: {"editor":{"galaxy":"EggStarGalaxy","mission":1,"base_fingerprint":"frozen","cursor":1,"history":1}}
+            level = SimpleNamespace(info=lambda: {"galaxy":"EggStarGalaxy","mission":1,"base_fingerprint":"frozen"},
+                                    history=lambda: {"cursor":0}, export=lambda *args: [])
+            with self.assertRaises(LevelError) as caught:
+                live.sync(level)
+            self.assertEqual(caught.exception.code, "base-mismatch")
+
     def test_nan_is_rejected_before_request_publication(self):
         with tempfile.TemporaryDirectory() as directory:
             live = Live(directory)

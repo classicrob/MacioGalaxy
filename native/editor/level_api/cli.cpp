@@ -120,6 +120,10 @@ namespace {
         options.mod = ws.config["mod"].asString();
         options.baseDirectory = ws.dir / "base";
         options.base = ws.config["base"];
+        if ((options.userMods || !options.mod.empty()) && !options.base.isObject() && !ws.config["journal"]["entries"].items().empty()) {
+            *pExit = emitError("bad-workspace", "this mod workspace predates frozen-base metadata", "save/export it with the old CLI, then initialize a new workspace from that saved patch");
+            return nullptr;
+        }
         options.galaxy = ws.config["galaxy"].asString();
         options.mission = ws.config["mission"].asInt(1);
         LevelApi::Error e;
