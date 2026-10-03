@@ -21,11 +21,18 @@ void pass(const Mesh& mesh, GXCompare depth, float alpha) {
         }
         GXEnd();
     }
-    for (const Line& line : mesh.lines) {
-        GXSetLineWidth(static_cast<u8>(std::clamp(line.width * 6.0f, 6.0f, 255.0f)), GX_TO_ZERO);
-        GXBegin(GX_LINES, GX_VTXFMT0, 2);
-        vertex(line.a,line.color,alpha); vertex(line.b,line.color,alpha);
-        GXEnd();
+    for (std::size_t base=0;base<mesh.lines.size();) {
+        const u8 width=static_cast<u8>(std::clamp(mesh.lines[base].width*6.0f,6.0f,255.0f));
+        std::size_t end=base+1;
+        while(end<mesh.lines.size() && end-base<32766 &&
+              static_cast<u8>(std::clamp(mesh.lines[end].width*6.0f,6.0f,255.0f))==width)++end;
+        GXSetLineWidth(width,GX_TO_ZERO);
+        GXBegin(GX_LINES,GX_VTXFMT0,static_cast<u16>((end-base)*2));
+        for(std::size_t i=base;i<end;++i) {
+            vertex(mesh.lines[i].a,mesh.lines[i].color,alpha);
+            vertex(mesh.lines[i].b,mesh.lines[i].color,alpha);
+        }
+        GXEnd();base=end;
     }
 }
 }
