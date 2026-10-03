@@ -849,6 +849,7 @@ void arrayTestTick();
 void importTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void scratchTestTick(); // scratch_test.cpp: play-test progress isolation (PETARI_EDITOR_SCRATCH_TEST)
+void newPathTestTick();
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
 bool reloadScene(bool fromStart) {
@@ -1062,6 +1063,7 @@ void tick(bool playable) {
     redrawTestTick();
     ensureTestTick();
     pathsTestTick();
+    newPathTestTick();
     areasTestTick();
     arrayTestTick();
     importTestTick();
