@@ -508,13 +508,14 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 }
             } else {
                 const long t = ++editorStep;
-                Editor::cursor(0.0f, 0.0f);
+                // The view's centre, except while the SDL pick test lets the UI's mouse drive the cursor.
+                if (t < 196 || std::getenv("PETARI_EDITOR_TEST_SDL_PICK") == nullptr) Editor::cursor(0.0f, 0.0f);
                 if (t == 2) Editor::repivot();
                 if (t >= 2 && t < 62) Editor::orbit(1.5f, 0.0f);    // 90 degrees about the pivot
                 if (t >= 62 && t < 92) Editor::orbit(0.0f, -0.5f);  // and 15 degrees higher (drag down: the camera rises)
                 if (t >= 100 && t < 120) Editor::dolly(0.15f);      // closer
                 // Hover the centre (the ground the zoom went toward), click it, frame the selection.
-                if (t >= 120 && t < 250) PetariNative::EditorPick::setHoverWanted(true);
+                if (t >= 120 && t < (std::getenv("PETARI_EDITOR_TEST_SDL_PICK") != nullptr ? 196 : 250)) PetariNative::EditorPick::setHoverWanted(true);
                 if (t == 125) PetariNative::EditorPick::click(PetariNative::EditorPick::Click::Replace);
                 if (t == 140) Editor::frame();
                 if (t >= 170 && t < 190) Editor::pan(0.01f, 0.0f);  // a fifth of the view sideways
@@ -566,6 +567,85 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     if (t == 177) click("button:Cancel", false);
                 }
 #endif
+#ifdef PETARI_EDITOR_UI
+                // PETARI_EDITOR_TEST_SDL_PICK=1 (EP-001 follow-up): find a small object the game draws off the view's centre
+                // (trying the galaxy's objinfo rows in turn), note where, clear, then click that spot with a real SDL click;
+                // the same object must come back.
+                static const bool sSdlPick = std::getenv("PETARI_EDITOR_TEST_SDL_PICK") != nullptr;
+                if (sSdlPick && t >= 196 && t < 600) {
+                    namespace Pick = PetariNative::EditorPick;
+                    static std::vector<std::uint64_t> sCandidates;
+                    static size_t sNext = 0;
+                    static Pick::Item sTarget;
+                    static long sClickAt = 0;
+                    static long sVerify = 0;
+                    const PetariEditor::ModelView* model = PetariEditor::model();
+                    if (t == 196 && model != nullptr) {
+                        for (int zone = 0; zone < model->zoneCount(); zone++) {
+                            for (int table = 0; table < model->tableCount(zone); table++) {
+                                if (std::strstr(model->tablePath(zone, table), "/objinfo") == nullptr) continue;
+                                model->forEachRow(zone, table, [](PetariEditor::RowId row) { sCandidates.push_back(row.v); });
+                            }
+                        }
+                        std::fprintf(stderr, "[editor-test] sdl pick: %zu candidates\n", sCandidates.size());
+                    }
+                    // A candidate is used only if the game's cursor placed on it hovers it (not hidden behind terrain).
+                    if (sVerify != 0 && t >= sVerify) {
+                        if (t < sVerify + 4) {
+                            Editor::cursor(sTarget.screenX, sTarget.screenY);
+                            Pick::setHoverWanted(true);
+                        } else {
+                            Pick::Item hover;
+                            const bool hit = Pick::hover(&hover) && hover.row == sTarget.row;
+                            Pick::setHoverWanted(false);
+                            if (hit) sClickAt = t + 2;
+                            sVerify = 0;
+                        }
+                    }
+                    if (sClickAt == 0 && sVerify == 0 && t > 196 && sNext < sCandidates.size()) {
+                        if (t % 2 == 1) {
+                            Pick::selectRow(sCandidates[sNext], Pick::Click::Replace);
+                        } else {
+                            const std::vector<Pick::Item> selected = Pick::selection();
+                            if (!selected.empty() && selected.front().row == sCandidates[sNext] && selected.front().onScreen &&
+                                std::fabs(selected.front().screenX) > 0.2f && std::fabs(selected.front().screenX) < 0.85f &&
+                                std::fabs(selected.front().screenY) < 0.85f && selected.front().screenRadius < 0.08f) {
+                                sTarget = selected.front();
+                                sVerify = t + 20;  // then: does the game's own cursor there hover it (visible, pickable), once settled?
+                                Pick::clearSelection();
+                            }
+                            sNext++;
+                        }
+                    }
+                    SDL_Window* window = SDL_GetWindows(nullptr) != nullptr ? SDL_GetWindows(nullptr)[0] : nullptr;
+                    if (sClickAt != 0 && window != nullptr && (t == sClickAt || t == sClickAt + 2)) {
+                        float vx = 0.0f, vy = 0.0f, vw = 0.0f, vh = 0.0f;
+                        PetariEditor::Ui::viewportRect(&vx, &vy, &vw, &vh);
+                        SDL_Event event{};
+                        event.type = t == sClickAt ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+                        event.button.windowID = SDL_GetWindowID(window);
+                        event.button.which = App::SmokeBackground::kTestMouseId;
+                        event.button.button = SDL_BUTTON_LEFT;
+                        event.button.down = t == sClickAt;
+                        event.button.clicks = 1;
+                        event.button.x = vx + (sTarget.screenX + 1.0f) * 0.5f * vw;
+                        event.button.y = vy + (1.0f - sTarget.screenY) * 0.5f * vh;
+                        SDL_PushEvent(&event);
+                        if (t == sClickAt) {
+                            std::fprintf(stderr, "[editor-test] sdl pick: %s drawn at viewport (%.2f, %.2f) r %.3f -> window (%.0f, %.0f) of viewport %.0fx%.0f\n",
+                                         sTarget.name, sTarget.screenX, sTarget.screenY, sTarget.screenRadius, event.button.x, event.button.y, vw, vh);
+                        }
+                    }
+                    if (sClickAt != 0 && t == sClickAt + 14) {
+                        const std::vector<Pick::Item> selected = Pick::selection();
+                        const bool same = !selected.empty() && selected.front().row == sTarget.row;
+                        std::fprintf(stderr, "[editor-test] sdl pick: clicked %s, selected %s: %s\n", sTarget.name,
+                                     !selected.empty() ? selected.front().name : "(nothing)", same ? "PASS" : "FAIL");
+                        sClickAt = -1;  // done
+                    }
+                    if (t == 599 && sClickAt == 0) std::fputs("[editor-test] sdl pick: no off-centre object on screen\n", stderr);
+                }
+#endif
                 // PETARI_EDITOR_TEST_MISSION=<n>: switch to mission n as the toolbar's chip does, then leave later.
                 static const int sMission = std::getenv("PETARI_EDITOR_TEST_MISSION") != nullptr ? std::atoi(std::getenv("PETARI_EDITOR_TEST_MISSION")) : 0;
 #ifdef PETARI_EDITOR_UI
@@ -574,7 +654,7 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     PetariEditor::Ui::switchMission(sMission);
                 }
 #endif
-                if (t == (sMission > 0 ? 420 : 250)) {
+                if (t == (sMission > 0 ? 420 : std::getenv("PETARI_EDITOR_TEST_SDL_PICK") != nullptr ? 610 : 250)) {
                     PetariNative::EditorPick::setHoverWanted(false);
                     std::fputs("[editor-test] LevelEditor tap (leave)\n", stderr);
                     Editor::toggle();
