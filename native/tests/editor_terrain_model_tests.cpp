@@ -299,6 +299,21 @@ static void testBake(const char* pDisc) {
         return path == "/ObjectData/PlanetMapDataTable.arc" ? std::optional< Bytes >(firstTable) : read(path);
     };
     check(tableRows(T::bakeBrushes(again).files.at("/ObjectData/PlanetMapDataTable.arc")) == discPlanets + 5, "a re-bake does not pile up planets");
+
+    // The patch-mod loader's builder: over the archives the row edits built, once per mod.
+    std::vector< PetariEditor::Patch::Built > built = {{"StageData/EggStarGalaxy.arc", input.stageArchives.at("/StageData/EggStarGalaxy.arc"), {"Low"}}};
+    const PetariEditor::Patch::DiscReader discReader = [&](const std::string& path) { return read("/" + path); };
+    std::vector< std::string > log;
+    std::string error;
+    check(T::bakePatchAssets("mods/Low", discReader, &built, &log, &error) && error.empty(), "the patch builder bakes");
+    const std::size_t builtFiles = built.size();
+    check(builtFiles == 1 + 5 + 1 && built[0].bytes == out.files.at("/StageData/EggStarGalaxy.arc"),
+          "the patch builder replaces the stage archive and adds five planets and the table, as a save would");
+    check(T::bakePatchAssets("mods/High", discReader, &built, &log, &error) && built.size() == builtFiles,
+          "a later mod's call over baked rows adds nothing");
+    auto tableIt = std::find_if(built.begin(), built.end(), [](const PetariEditor::Patch::Built& b) { return b.path == "ObjectData/PlanetMapDataTable.arc"; });
+    check(tableIt != built.end() && tableRows(tableIt->bytes) == discPlanets + 5 && tableIt->mods == std::vector< std::string >{"Low"},
+          "the built table holds the five planets once");
     std::printf("bake: 5 brushes -> %d planets, %zu files\n", planets, out.files.size());
 }
 

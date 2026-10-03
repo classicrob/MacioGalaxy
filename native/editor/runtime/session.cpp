@@ -5,6 +5,7 @@
 #include "checks.hpp"
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
+#include "model_io.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
 #include <petari/editor/catalog.hpp>
@@ -75,6 +76,7 @@ namespace {
         double reloadStartMs = 0;
         bool teleportPending = false;
         bool plainReload = false;  // reloadScene() without an edit session
+        bool keepModel = false;    // ensureModel(): the model stays loaded outside Edit
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -82,29 +84,6 @@ namespace {
     Session& session() {
         static Session sSession;
         return sSession;
-    }
-
-    std::optional< Formats::Bytes > readDisc(const std::string& path) {
-        // Through the mounted disc, so enabled mod-folder files win as they do for the game.
-        const s32 entry = DVDConvertPathToEntrynum(path.c_str());
-        if (entry < 0) {
-            return std::nullopt;
-        }
-        std::ifstream in(PetariNative::Platform::DVD::hostPathForEntry(entry), std::ios::binary);
-        if (!in) {
-            return std::nullopt;
-        }
-        return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
-    }
-
-    // The disc itself, without the mod overlay: the EditModel's originals.
-    std::optional< Formats::Bytes > readUnmoddedDisc(const std::string& path) {
-        const std::filesystem::path files = PetariNative::Platform::DVD::mountInfo().filesDirectory;
-        std::ifstream in(files / path.substr(1), std::ios::binary);
-        if (files.empty() || !in) {
-            return std::nullopt;
-        }
-        return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
     }
 
     bool endsWith(const std::string& text, const char* pSuffix) {
@@ -119,38 +98,18 @@ namespace {
     void loadModel(const char* pStage, int scenario) {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
-        static bool pathChecks = false;
-        if (!pathChecks) {
-            registerCheckProvider(+[](const ModelView& model, std::vector< Check >& out) {
-                auto checks = Paths::computeChecks(model);
-                out.insert(out.end(), checks.begin(), checks.end());
-            });
-            pathChecks = true;
-        }
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
         std::string catalogError;
-        if (!Catalog::loadWithUser(PetariNative::Platform::ModFolder::userDirectory().string(), &catalogError)) {
+        s.checkedRevision = 0;
+        // Shared with the headless tools (model_io.hpp): the catalog, terrain's brush class, the
+        // disc's planets, then the model.
+        s.model = ModelIO::load(pStage, scenario, PetariNative::Platform::ModFolder::userDirectory().string(), TerrainSync::registerWithEditor,
+                                &error, &catalogError);
+        if (!catalogError.empty()) {
             Core::reportError("Catalog: " + catalogError);
         }
-        TerrainSync::registerWithEditor();
-        s.checkedRevision = 0;
         s.suspectNotices.clear();
-        // Planet classes: the names PlanetMapDataTable lists on this disc.
-        if (std::optional< Formats::Bytes > raw = readDisc("/ObjectData/PlanetMapDataTable.arc")) {
-            if (std::optional< Formats::Archive > archive = Formats::Archive::parse(*raw)) {
-                for (const std::string& file : archive->files()) {
-                    std::optional< Formats::Table > table = Formats::Table::parse(*archive->file(file));
-                    const int column = table ? table->column(Formats::jmapHash("PlanetName")) : -1;
-                    std::vector< std::string > names;
-                    for (int r = 0; column >= 0 && r < table->rowCount(); r++) {
-                        names.push_back(table->get(r, column).s);
-                    }
-                    Catalog::addPlanets(names);
-                }
-            }
-        }
-        s.model = EditModel::load(pStage, scenario, readDisc, &error, readUnmoddedDisc);
         s.actors.clear();
         s.pending.clear();
         s.boundScene = 0;
@@ -707,6 +666,7 @@ void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETA
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
+void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
 bool reloadScene(bool fromStart) {
@@ -725,6 +685,27 @@ bool reloadScene(bool fromStart) {
     s.reloadStartMs = nowMs();
     EditorReload::requestReload(fromStart);
     return true;
+}
+
+bool ensureModel() {
+    Session& s = session();
+    const char* pStage = EditorScene::stageName();
+    if (!Hooks::enabled()) {
+        Core::reportError("The level editor is off (Home menu, Mods page; or PETARI_EDITOR=1)");
+        return false;
+    }
+    if (pStage == nullptr || mode() == Mode::Reloading) {
+        return false;
+    }
+    s.keepModel = true;
+    if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
+        PetariNative::HostAllocationScope host;
+        loadModel(pStage, EditorScene::scenario());
+    }
+    if (s.model && s.boundScene != Hooks::sceneSerial()) {
+        bindPlacements();
+    }
+    return s.model != nullptr;
 }
 
 void registerPreviewHandler(PreviewHandler handler) {
@@ -761,11 +742,12 @@ void tick(bool playable) {
     saveTestTick();
     brushTestTick();
     redrawTestTick();
+    ensureTestTick();
     pathsTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
-    if (mode() != Mode::Off && mode() != Mode::Reloading && pStage != nullptr) {
+    if ((mode() != Mode::Off || s.keepModel) && mode() != Mode::Reloading && pStage != nullptr) {
         PetariNative::HostAllocationScope host;
         if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
             loadModel(pStage, EditorScene::scenario());

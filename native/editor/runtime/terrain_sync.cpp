@@ -369,4 +369,13 @@ J3DModel* modelForRow(RowId id) {
     return MR::getJ3DModel(it->second.part->mModel);
 }
 
+RowId rowForGravity(const PlanetGravity* pGravity) {
+    for (const auto& [id, brush] : live()) {
+        if (pGravity != nullptr && brush.part != nullptr && brush.part->mGravity == pGravity) {
+            return id;
+        }
+    }
+    return RowId{};
+}
+
 }  // namespace PetariEditor::TerrainSync

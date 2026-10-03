@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's picking (Game/Camera/EditorPicking.hpp).
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/Camera/EditorGravity.hpp"
 #include "Game/LiveActor/ClippingActorHolder.hpp"
 #include "Game/LiveActor/ClippingActorInfo.hpp"
 #include "Game/LiveActor/ClippingDirector.hpp"
@@ -83,6 +84,7 @@ namespace {
         LiveActor* actor = nullptr;
         V center{0, 0, 0};
         float radius = 0.0f;
+        PetariEditor::RowId row;
     };
 
     ClippingActorInfoList* allActors() {
@@ -96,6 +98,7 @@ namespace {
     }
 
     Hit describe(LiveActor* actor);
+    Hit describeRow(PetariEditor::RowId row);
 
     // What the ray meets: the smallest object whose sphere it crosses in front of the ground (or around the
     // point where it meets the ground); else what owns the ground there (a planet, through its collision).
@@ -109,6 +112,12 @@ namespace {
                                                           TVec3f(ray.x * kRayLength, ray.y * kRayLength, ray.z * kRayLength));
         const V groundPoint{ground.x, ground.y, ground.z};
         const float groundT = hitGround ? dot(sub(groundPoint, eye), ray) : 1e30f;
+        float gravityT = 0;
+        const auto gravityRow = EditorGravity::pick({eye.x, eye.y, eye.z}, {ray.x, ray.y, ray.z}, &gravityT);  // M3 gravity: clickable outlines.
+        if (gravityRow.valid() && gravityT <= groundT + 50.0f) {
+            if (auto* actor = PetariEditor::actorForRow(gravityRow)) return describe(actor);
+            return describeRow(gravityRow);
+        }
         Hit around;  // the smallest sphere around the ground point
         for (int i = 0; i < list->_4; i++) {
             const ClippingActorInfo* info = list->mClippingActorList[i];
@@ -196,6 +205,9 @@ namespace {
     // collision knows its farthest vertex), else a small sphere at its position.
     Hit describe(LiveActor* actor) {
         Hit hit{actor, {actor->mPosition.x, actor->mPosition.y, actor->mPosition.z}, 100.0f};
+        float gravityCenter[3], gravityRadius;
+        if (EditorGravity::bounds(actor, gravityCenter, &gravityRadius))  // M3 gravity: model-less bounds.
+            return {actor, {gravityCenter[0], gravityCenter[1], gravityCenter[2]}, gravityRadius};
         if (ClippingActorInfoList* list = allActors()) {
             if (const ClippingActorInfo* info = list->findOrNone(actor)) {
                 if (info->_4 != nullptr) hit.center = {info->_4->x, info->_4->y, info->_4->z};
@@ -218,7 +230,11 @@ namespace {
         namespace D = PetariEditor::DebugDraw;
         const auto* m = PetariEditor::model();
         Hit hit;
+        hit.row = row;
         hit.radius = 35;
+        float gravityCenter[3], gravityRadius;
+        if (EditorGravity::bounds(row, gravityCenter, &gravityRadius))
+            return {nullptr, {gravityCenter[0], gravityCenter[1], gravityCenter[2]}, gravityRadius, row};
         int zone = 0;
         if (!m || !m->locate(row, &zone, nullptr))
             return hit;
@@ -363,26 +379,29 @@ namespace EditorPicking {
             std::fprintf(stderr, "[editor] game click: cursor (%.3f, %.3f) aspect %.3f fovy %.1f\n", view.cursorX, view.cursorY, view.aspect, view.fovy);
         }
         if (click != Pick::Click::None) {
-            auto at = std::find(selection.begin(), selection.end(), under.actor);
-            const bool already = at != selection.end();
+            const auto hitRow = under.row.valid() ? under.row : PetariEditor::rowForActor(under.actor);
+            std::size_t index = hitRow.valid() ? std::find(rows.begin(), rows.end(), hitRow) - rows.begin()
+                                              : std::find(selection.begin(), selection.end(), under.actor) - selection.begin();
+            const bool hit = under.actor != nullptr || selectableRow(hitRow);
+            const bool already = index < selection.size();
             if (click == Pick::Click::Replace) {
                 selection.clear();
                 rows.clear();
-                if (under.actor != nullptr) {
+                if (hit) {
                     selection.push_back(under.actor);
-                    rows.push_back(PetariEditor::rowForActor(under.actor));
+                    rows.push_back(hitRow);
                 }
-            } else if (under.actor != nullptr) {
+            } else if (hit) {
                 if (click == Pick::Click::Toggle && already) {
-                    rows.erase(rows.begin() + (at - selection.begin()));
-                    selection.erase(at);
+                    rows.erase(rows.begin() + index);
+                    selection.erase(selection.begin() + index);
                 } else if (!already) {
                     selection.push_back(under.actor);
-                    rows.push_back(PetariEditor::rowForActor(under.actor));
+                    rows.push_back(hitRow);
                 }
             }
             std::fprintf(stderr, "[editor] select: %d object(s)%s\n", static_cast< int >(selection.size()),
-                         under.actor != nullptr ? "" : " (nothing under the cursor)");
+                         hit ? "" : " (nothing under the cursor)");
         }
 
         std::vector< Pick::Item > published;
@@ -391,8 +410,8 @@ namespace EditorPicking {
             const Hit h = actor ? describe(actor) : describeRow(rows[i]);
             published.push_back(item(actor, h.center, h.radius, view, rows[i]));
         }
-        if (wantHover && under.actor != nullptr) {
-            const Pick::Item hover = item(under.actor, under.center, under.radius, view);
+        if (wantHover && (under.actor != nullptr || selectableRow(under.row))) {
+            const Pick::Item hover = item(under.actor, under.center, under.radius, view, under.row);
             Pick::publish(&hover, published);
         } else {
             Pick::publish(nullptr, published);
