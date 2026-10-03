@@ -41,6 +41,7 @@ namespace {
     std::vector< PreviewHandler > gPreviewHandlers;
     std::vector< LiveUpdater > gLiveUpdaters;
     bool gChecksInvalid = false;
+    std::vector< PlayListener > gPlayListeners;
 
     // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
     // are spent by every creation, retired fields included, until the next scene build.
@@ -77,6 +78,9 @@ namespace {
         bool teleportPending = false;
         bool plainReload = false;  // reloadScene() without an edit session
         bool keepModel = false;    // ensureModel(): the model stays loaded outside Edit
+        bool inPlay = false;       // a play-test run is on (Begin/Resume told, ToEdit not yet)
+        bool hadRun = false;       // a run began this session (Resume continues it; with none, Resume is a Begin)
+        bool scenePlayed = false;  // this scene has been played since it was built (a fresh Play rebuilds it)
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -84,6 +88,18 @@ namespace {
     Session& session() {
         static Session sSession;
         return sSession;
+    }
+
+    void firePlay(PlayEvent event) {
+        Session& s = session();
+        const std::string galaxy = s.model ? s.model->galaxy() : "";
+        const int mission = s.model ? s.model->scenario() : 0;
+        for (PlayListener listener : gPlayListeners) {
+            listener(event, galaxy.c_str(), mission);
+        }
+        s.inPlay = event == PlayEvent::Begin || event == PlayEvent::Resume;
+        s.hadRun = event == PlayEvent::End ? false : (s.hadRun || event == PlayEvent::Begin);
+        s.scenePlayed = s.scenePlayed || s.inPlay;
     }
 
     bool endsWith(const std::string& text, const char* pSuffix) {
@@ -98,6 +114,12 @@ namespace {
     void loadModel(const char* pStage, int scenario) {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
+        if (s.model) {
+            firePlay(PlayEvent::End);  // another galaxy or mission: this session ends
+            if (mode() == Mode::Playing) {
+                Core::setMode(Mode::Off);  // ordinary play from here, not a play-test
+            }
+        }
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
         std::string catalogError;
@@ -257,6 +279,7 @@ namespace {
     void bindPlacements() {
         PetariNative::HostAllocationScope host;
         Session& s = session();
+        s.scenePlayed = false;
         s.actors.clear();
         s.liveRows.clear();
         Hooks::clearRailTables();
@@ -518,7 +541,9 @@ namespace {
         Session& s = session();
         if (from == PlayFrom::MissionStart) {
             startReload(Session::After::PlayStart);
-        } else if (!s.pending.empty()) {
+        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed)) {
+            // Edits to rebuild, or a fresh run in a scene already played (UX 3: collected and
+            // defeated objects, switches and Mario's state reset; only Resume keeps them).
             startReload(from == PlayFrom::Marker ? Session::After::PlayMarker : Session::After::PlayStart);
         } else {
             // Nothing needs a reload: unfreeze where we are (and put Mario on the marker).
@@ -527,6 +552,7 @@ namespace {
             }
             s.teleportPending = from == PlayFrom::Marker && s.hasMarker;
             Core::setMode(Mode::Playing);
+            firePlay(from == PlayFrom::Resume && s.hadRun ? PlayEvent::Resume : PlayEvent::Begin);
         }
     }
 
@@ -551,6 +577,7 @@ namespace {
             }
             s.teleportPending = after == Session::After::PlayMarker && s.hasMarker;
             Core::setMode(Mode::Playing);
+            firePlay(PlayEvent::Begin);  // a rebuilt scene is a new run
         }
     }
 
@@ -715,11 +742,44 @@ bool ensureModel() {
     return s.model != nullptr;
 }
 
+void registerPlayListener(PlayListener listener) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
+    if (std::find(gPlayListeners.begin(), gPlayListeners.end(), listener) == gPlayListeners.end()) gPlayListeners.push_back(listener);
+}
+
+bool requestEdit(const char* reason) {
+    if (mode() != Mode::Playing) {
+        return false;
+    }
+    if (reason != nullptr && reason[0] != '\0') {
+        Core::reportNotice(reason);
+    }
+    if (Core::uiCallbacks().resumeEdit != nullptr) {
+        Core::uiCallbacks().resumeEdit();  // the UI re-enters Edit (its camera, panels) and calls notifyEditEntered
+    } else {
+        notifyEditEntered();
+    }
+    firePlay(PlayEvent::ToEdit);
+    return true;
+}
+
+bool interceptMiss() {
+    Session& s = session();
+    if (mode() != Mode::Playing || !s.model || !Hooks::enabled()) {
+        return false;
+    }
+    Core::reportNotice("Missed: back in Edit");
+    startReload(Session::After::Edit);  // the scene from the edits, then Edit; no lives lost (editor reloads skip the counter)
+    return true;
+}
+
 void registerPreviewHandler(PreviewHandler handler) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
     if (std::find(gPreviewHandlers.begin(), gPreviewHandlers.end(), handler) == gPreviewHandlers.end()) gPreviewHandlers.push_back(handler);
 }
 
 void registerLiveUpdater(LiveUpdater updater) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
     if (std::find(gLiveUpdaters.begin(), gLiveUpdaters.end(), updater) == gLiveUpdaters.end()) gLiveUpdaters.push_back(updater);
 }
 
@@ -742,7 +802,20 @@ void tick(bool playable) {
         std::fprintf(stderr, "[editor] scene reload done in %.0f ms\n", nowMs() - session().reloadStartMs);
     }
     if (!Hooks::enabled()) {
+        if (session().model) {
+            // The editor was turned off: the session ends once.
+            PetariNative::HostAllocationScope host;
+            firePlay(PlayEvent::End);
+            Core::clearBindings();
+            Core::setModel(nullptr);
+            session().model.reset();
+            session().keepModel = false;
+        }
         return;
+    }
+    // Back in Edit after a run (Tab; the UI's leave/enter, or a reload that returns to Edit).
+    if (session().inPlay && mode() == Mode::Editing) {
+        firePlay(PlayEvent::ToEdit);
     }
     syncTestTick();
     reloadTestTick();

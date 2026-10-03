@@ -46,7 +46,7 @@ void testCatalog() {
                            {"name": "NoSuchClassAnywhere", "displayName": "nope"}]})";
     std::ofstream(user / "editor" / "catalog" / "broken.json") << "{ not json";
     std::ofstream(user / "editor" / "catalog" / "presets.json")
-        << R"({"classes": [{"name": "Coin", "presets": [{"label": "Spinning", "args": {"0": 1}}, {"label": "Still", "args": {"0": -1}}]}]})";
+        << R"({"classes": [{"name": "Coin", "presets": [{"label": "Spinning", "args": {"0": 1}}, {"label": "Still", "args": {"0": -1}, "scale": [2, 0.5, 2]}]}]})";
     std::string error;
     check(C::loadWithUser(user.string(), &error), "loads: " + error);
     check(C::classes().size() > 1100, "every factory class (" + std::to_string(C::classes().size()) + ")");
@@ -65,6 +65,7 @@ void testCatalog() {
     const C::ClassInfo* coin = C::find("Coin");
     check(coin && coin->presets.size() == 2 && coin->presets[0].label == "Spinning" && coin->presets[0].args[0] == std::make_pair(0, 1),
           "presets from a file");
+    check(coin->presets[0].scale[1] == 1.0f && coin->presets[1].scale[0] == 2.0f && coin->presets[1].scale[1] == 0.5f, "a preset's size");
     C::ClassInfo brush;
     brush.name = "EditorBrush";
     brush.displayName = "Terrain brush";
