@@ -10,10 +10,14 @@
 //
 // usage: petari_terrain_bake --disc <disc files/> --out <mod>/files [--stage EggStarGalaxy]
 //        petari_terrain_bake --disc <disc files/> --out <mod>/files --galaxy ModTestGalaxy
+//        petari_terrain_bake --disc <disc files/> --out <mod>/files --patch 1
 // --galaxy (spike S8, TECH.md 5.7) writes a new galaxy instead of editing a stage: its stage and
 // Scenario archives (the tables of a small disc galaxy, TransformationExGalaxy, emptied: schemas
 // only) holding a checker box brush at the origin, a start above it and Power Star 1 where Mario
 // lands; and <mod>/galaxy.json for the mod galaxy registry.
+// --patch writes the spike scene's two brushes as a patch mod instead (petari/editor/patch.hpp):
+// <out>/../edits/<Stage>.json, add ops on the stage's Common ObjInfo and no game data; the mod
+// loader bakes them at start-up (Terrain::bakePatchAssets).
 // The disc is only read. Writes plain (uncompressed) RARCs, which the game and mod loader accept.
 #include <petari/editor/formats/formats.hpp>
 #include <petari/editor/terrain/bake.hpp>
@@ -241,12 +245,40 @@ namespace {
         writeFile(out.parent_path() / "galaxy.json", F::Bytes(json.begin(), json.end()));
         std::printf("galaxy %s: %zu stage files, 1 mission, galaxy.json\n", name.c_str(), files.size());
     }
+    // Rows [first, end) of the stage's Common ObjInfo as patch add ops, every cell by its hash.
+    void writePatch(const fs::path& modRoot, const std::string& stage, const F::Table& objects, int first) {
+        std::string ops;
+        char buffer[64];
+        for (int row = first; row < objects.rowCount(); row++) {
+            std::string cells;
+            for (const F::TableColumn& column : objects.columns()) {
+                const F::CellValue value = objects.get(row, objects.column(column.hash));
+                std::snprintf(buffer, sizeof(buffer), "\"#%08x\": ", column.hash);
+                cells += (cells.empty() ? "" : ", ") + std::string(buffer);
+                if (value.kind == F::CellValue::Kind::String) {
+                    cells += "\"" + value.s + "\"";  // plain ASCII names here
+                } else if (value.kind == F::CellValue::Kind::Float) {
+                    std::snprintf(buffer, sizeof(buffer), "%.9g", value.f);
+                    cells += buffer;
+                } else {
+                    cells += std::to_string(value.i);
+                }
+            }
+            ops += std::string(ops.empty() ? "" : ",\n") + "    { \"op\": \"add\", \"table\": \"jmp/placement/common/objinfo\", \"at\": " +
+                   std::to_string(row) + ", \"cells\": { " + cells + " } }";
+        }
+        const std::string json = "{ \"format\": 1, \"galaxy\": \"" + stage + "\",\n  \"archives\": { \"StageData/" + stage + ".arc\": [\n" + ops +
+                                 "\n  ] } }\n";
+        writeFile(modRoot / "edits" / (stage + ".json"), F::Bytes(json.begin(), json.end()));
+        std::printf("patch: %d brush rows -> %s\n", objects.rowCount() - first, (modRoot / "edits" / (stage + ".json")).string().c_str());
+    }
 }  // namespace
 
 int main(int argc, char** argv) {
     fs::path disc, out;
     std::string stage = "EggStarGalaxy";
     std::string galaxy;
+    bool patch = false;
     for (int i = 1; i + 1 < argc; i += 2) {
         if (std::strcmp(argv[i], "--disc") == 0) {
             disc = argv[i + 1];
@@ -256,6 +288,8 @@ int main(int argc, char** argv) {
             stage = argv[i + 1];
         } else if (std::strcmp(argv[i], "--galaxy") == 0) {
             galaxy = argv[i + 1];
+        } else if (std::strcmp(argv[i], "--patch") == 0) {
+            patch = std::strcmp(argv[i + 1], "1") == 0;
         }
     }
     if (disc.empty() || out.empty()) {
@@ -278,8 +312,13 @@ int main(int argc, char** argv) {
         die("the stage has no Common ObjInfo");
     }
     std::int32_t id = nextId(*objects);
+    const int discRows = objects->rowCount();
     addBrushRow(*objects, id++, {-20000, -150, 30000}, {3, 0.3f, 3}, T::BrushShape::Box, 0);   // checker (Stone)
     addBrushRow(*objects, id++, {-20000, -1000, 40000}, {2, 2, 2}, T::BrushShape::Sphere, 1);  // grass (Lawn)
+    if (patch) {
+        writePatch(out.parent_path(), stage, *objects, discRows);
+        return 0;
+    }
     stageArchive->replace("jmp/placement/common/objinfo", objects->build());
     bakeAndWrite(disc, out, {{"/StageData/" + stage + ".arc", stageArchive->build()}});
     return 0;

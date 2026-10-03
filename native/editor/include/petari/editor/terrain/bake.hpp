@@ -11,9 +11,12 @@
 // Planet names are "EditorBrush" + 8 hex digits of a hash of the brush's archive, table and
 // values, so they are stable across saves and unique per brush.
 //
-// Pure C++: the editor's save (native/editor/runtime/save_mod.cpp) and the patch-mod builder both
-// call it with the stage archives that hold the brush rows.
+// Pure C++: the editor's Full archives save (native/editor/runtime/save_mod.cpp) calls it with the
+// stage archives that hold the brush rows; a patch mod's brushes are baked by the mod loader
+// (bakePatchAssets, a Patch asset builder) from the archives its row edits built.
 #include <petari/editor/formats/formats.hpp>
+#include <petari/editor/patch.hpp>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <optional>
@@ -42,5 +45,15 @@ struct BakeOutput {
 };
 
 BakeOutput bakeBrushes(const BakeInput& input);
+
+/// The patch-mod loader's asset builder (Patch::AssetBuilder): bakes the brush rows of the built
+/// StageData archives in `pInOut`, replacing them and adding the planets and PlanetMapDataTable
+/// (an earlier call's table is extended). Brush rows already baked are planet rows, so calling it
+/// once per mod over the merged archives is idempotent.
+bool bakePatchAssets(const std::filesystem::path& modRoot, const Patch::DiscReader& readDisc, std::vector< Patch::Built >* pInOut,
+                     std::vector< std::string >* pLog, std::string* pError);
+/// Registers bakePatchAssets with Patch::registerAssetBuilder (once; at start-up, before the mods
+/// are resolved).
+void registerPatchBuilder();
 
 }  // namespace PetariEditor::Terrain
