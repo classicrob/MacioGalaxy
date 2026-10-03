@@ -785,4 +785,75 @@ std::string utf8ToSjis(const std::string& utf8) {
     return convert(utf8, "UTF-8", "CP932");
 }
 
+// ---- messages ------------------------------------------------------------------------------------
+
+std::optional< std::string > messageText(const Bytes& messageArchive, const std::string& messageId) {
+    std::optional< Archive > archive = Archive::parse(messageArchive);
+    const Bytes* pIds = archive ? archive->file("messageid.tbl") : nullptr;
+    const Bytes* pBmg = archive ? archive->file("message.bmg") : nullptr;
+    std::optional< Table > ids = pIds ? Table::parse(*pIds) : std::nullopt;
+    if (!ids || pBmg == nullptr || pBmg->size() < 32 || std::memcmp(pBmg->data(), "MESGbmg1", 8) != 0) {
+        return std::nullopt;
+    }
+    const int name = ids->column(jmapHash("MessageId")), index = ids->column(jmapHash("Index"));
+    int entry = -1;
+    for (int r = 0; name >= 0 && index >= 0 && r < ids->rowCount() && entry < 0; r++) {
+        if (ids->get(r, name).s == messageId) entry = ids->get(r, index).i;
+    }
+    if (entry < 0) {
+        return std::nullopt;
+    }
+    const Bytes& b = *pBmg;
+    auto u16at = [&](size_t at) { return at + 2 <= b.size() ? static_cast< std::uint32_t >(b[at] << 8 | b[at + 1]) : 0u; };
+    auto u32at = [&](size_t at) { return u16at(at) << 16 | u16at(at + 2); };
+    size_t inf = 0, dat = 0;
+    for (size_t at = 32; at + 8 <= b.size();) {
+        const std::uint32_t size = u32at(at + 4);
+        if (std::memcmp(&b[at], "INF1", 4) == 0) inf = at;
+        if (std::memcmp(&b[at], "DAT1", 4) == 0) dat = at;
+        if (size < 8) break;
+        at += size;
+    }
+    if (inf == 0 || dat == 0 || static_cast< std::uint32_t >(entry) >= u16at(inf + 8)) {
+        return std::nullopt;
+    }
+    size_t at = dat + 8 + u32at(inf + 16 + static_cast< size_t >(entry) * u16at(inf + 10));
+    std::string out;
+    auto put = [&](std::uint32_t c) {
+        if (c < 0x80) {
+            out += static_cast< char >(c);
+        } else if (c < 0x800) {
+            out += static_cast< char >(0xC0 | (c >> 6));
+            out += static_cast< char >(0x80 | (c & 0x3F));
+        } else if (c < 0x10000) {
+            out += static_cast< char >(0xE0 | (c >> 12));
+            out += static_cast< char >(0x80 | ((c >> 6) & 0x3F));
+            out += static_cast< char >(0x80 | (c & 0x3F));
+        } else {
+            out += static_cast< char >(0xF0 | (c >> 18));
+            out += static_cast< char >(0x80 | ((c >> 12) & 0x3F));
+            out += static_cast< char >(0x80 | ((c >> 6) & 0x3F));
+            out += static_cast< char >(0x80 | (c & 0x3F));
+        }
+    };
+    // UTF-16BE to the terminating 0; a 0x1A unit starts a tag whose byte after it is its whole length.
+    while (at + 2 <= b.size()) {
+        const std::uint32_t unit = u16at(at);
+        if (unit == 0) break;
+        if (unit == 0x1A) {
+            const std::uint32_t length = at + 2 < b.size() ? b[at + 2] : 0;
+            at += length >= 2 ? length : 2;
+            continue;
+        }
+        at += 2;
+        if (unit >= 0xD800 && unit < 0xDC00 && u16at(at) >= 0xDC00 && u16at(at) < 0xE000) {
+            put(0x10000 + ((unit - 0xD800) << 10) + (u16at(at) - 0xDC00));
+            at += 2;
+        } else {
+            put(unit == '\n' ? ' ' : unit);
+        }
+    }
+    return out;
+}
+
 }  // namespace PetariEditor::Formats
