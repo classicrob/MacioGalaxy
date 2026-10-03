@@ -346,9 +346,9 @@ These follow UX section 3, agreed between UX and tech.
   - If not, unfreeze and teleport.
   - Teleport: the play marker dropped along gravity; the smoke's `PETARI_STAGE_WARP` shows the warp path.
 - **Return to Edit** freezes only; the played state stays visible. Edits made there still go to rows and re-create their actors; the spike re-created actors in a scene that had been playing for 1,000 frames. Played-state caveats are shown, not prevented: switches on, collected items dead, Mario's state.
-- **Trail.** A ring buffer of Mario's position per frame (60 s x 60 frames), written at the seam the way route recording does, and drawn as a line strip.
+- **Trail.** `EditorPlaytest` records Mario at the game-frame seam into a 3,600-sample ring. Returning to Edit draws dotted, depth-tested segments coloured by ground, air, dive or cap-bounce state. Gold diamonds mark peaks along local gravity. Begin resets the run; Resume retains it and breaks the line across time spent in Edit; End clears it. The elapsed timer continues after the ring wraps.
 - **Keep.** Copies a live actor's transform into its row, for classes the catalog marks as placement-owned (not rail riders, children, or actors that re-derive their position; the spike saw one snap back).
-- **Save isolation.** During an edit session NAND writes go to `<user>/editor/scratch-NAND` (the native NAND is a host folder). On Power Star get, a hook at the end of `GameScenePowerStarGet` returns to Edit instead of `requestChangeStageAfterStageClear`.
+- **Save isolation.** During an edit session NAND writes go to `<user>/editor/scratch-NAND` (the native NAND is a host folder). On Power Star contact, `EditorPlaytest::collectStar` intercepts the first step of `PowerStar::exeStageClearDemo`, before progress writes or the star-get sequence. It releases Mario, retires the star and requests Edit with a `Cleared in m:ss` notice. Normal play follows the original path.
 - **Mission switch.** `requestGalaxyMove` to the same stage and another scenario (Level Select's path, `src/Game/Scene/GameScene.cpp:191-202`), skipping the intro. 2-4 s.
 
 ### 2.8 Undo
