@@ -1066,3 +1066,8 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
     - At 128 registered fields (retired ones count until a Reload) a change stays pending with a notice, and the current field stays.
     - A `GlobalWireGravity` row without a path, or with `Obj_arg0` outside 0-4096, is refused before its constructor (it divides by the point count).
   - **Ordered insert:** `AddRow::at` inserts at an index (a path's points); undo and redo keep it.
+- **Shared load and save** (`editor/shared-io`; `native/editor/runtime/model_io.hpp`, library `petari_editor_save`): what the Runtime and headless tools (the petari-level CLIs) share, so both load and save the same way.
+  - `ModelIO::load` loads the catalog with the user's files, runs a `registerClasses` hook (terrain's brush class), adds the disc's planets, then loads the model. It reads the mounted disc (mods applied) plus the unmodded disc.
+  - `ModelIO::saveToDirectory(model, mods/<Name>, fullArchives)` writes the patch or the Full archives, removes the other form's files, writes mod.txt for a new folder, and refuses a folder the editor didn't make. It returns a summary for the caller's notice.
+  - The Runtime's `saveMod` and `loadModel` are thin wrappers that add the user folder, turning the mod on, mission names and bindings.
+  - Test: `native_editor_save` runs it headless on Good Egg; the patch builds exactly the Full save's archive.
