@@ -177,7 +177,8 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
     if (const char* open = std::getenv("PETARI_OPEN_STAGE"); open != nullptr && open[0] != '\0' && launchStage.empty()) {
         const char* edit = std::getenv("PETARI_OPEN_EDIT");
         const char* title = std::getenv("PETARI_OPEN_TITLE");
-        PetariNative::PlayerLaunch::openEdit = edit != nullptr && edit[0] == '1';
+        // A test fixture's stage checks need play, so it only logs the Edit request.
+        PetariNative::PlayerLaunch::openEdit = edit != nullptr && edit[0] == '1' && !fixture;
         PetariNative::PlayerLaunch::openTitle = title != nullptr && title[0] != '\0' ? title : open;
         if (!fixture) {
             const char* file = std::getenv("PETARI_OPEN_FILE");
@@ -186,7 +187,7 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
             launchScenario = 1;
         }
         std::fprintf(stderr, "PETARI OPEN: %s (file %d, edit %d)\n", open, PetariNative::PlayerLaunch::openFile,
-                     PetariNative::PlayerLaunch::openEdit ? 1 : 0);
+                     edit != nullptr && edit[0] == '1' ? 1 : 0);
     }
     for (const char* name : {"PETARI_OPEN_STAGE", "PETARI_OPEN_FILE", "PETARI_OPEN_EDIT", "PETARI_OPEN_TITLE"}) {
         unsetenv(name);

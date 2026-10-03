@@ -337,7 +337,13 @@ void drawShareSheet() {
                            gShare.preview.archives.size() == 1 ? "" : "s");
         ImGui::PopTextWrapPos();
     }
-    if (gShare.preview.fullArchives) {
+    if (!gShare.preview.newGalaxies.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(kWarn, "New galaxy: it plays only in Petari. The original game has no way to add galaxies without code patches; "
+                                  "edits to existing galaxies play anywhere the mod is installed.");
+        ImGui::PopTextWrapPos();
+    }
+    if (gShare.preview.fullArchives && !gShare.preview.newGalaxyFilesOnly) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(kWarn, "This mod holds full archives (the game's own data). Don't share it publicly: save it as a patch (Cmd+Shift+S) and share that.");
         ImGui::PopTextWrapPos();
