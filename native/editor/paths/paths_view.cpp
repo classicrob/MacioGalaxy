@@ -4,11 +4,41 @@ namespace PetariEditor::PathsView {
     namespace {
         View snapshot;
         Input pending;
+        CreateInput pendingCreate;
+        bool createActive = false;
         Visibility shown = Visibility::Selection;
         bool pathLink = false, switchLink = false;
         RowId hoveredWire, selectedWire, menuRow;
         std::string hoveredField, selectedField;
     }  // namespace
+    void beginCreate(RowId rider) {
+        pendingCreate = {};
+        pendingCreate.begin = true;
+        pendingCreate.rider = rider;
+        createActive = true;
+        shown = Visibility::Selection;
+    }
+    bool creating() {
+        return createActive;
+    }
+    void sendCreate(CreateInput input) {
+        pendingCreate.add |= input.add;
+        pendingCreate.finish |= input.finish;
+        pendingCreate.cancel |= input.cancel;
+        pendingCreate.remove |= input.remove;
+        pendingCreate.hover = input.hover;
+        pendingCreate.x = input.x;
+        pendingCreate.y = input.y;
+    }
+    CreateInput takeCreate() {
+        auto out = pendingCreate;
+        pendingCreate = {};
+        return out;
+    }
+    void endCreate() {
+        pendingCreate = {};
+        createActive = false;
+    }
     void publish(View value) {
         snapshot = std::move(value);
     }

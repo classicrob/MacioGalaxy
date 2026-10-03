@@ -7,4 +7,5 @@ namespace PetariEditor::Ui {
     void drawPathsWireOverlay(float x, float y, float width, float height);
     bool pathsDelete();
     void beginPathPick(RowId row);
+    void beginNewPath(RowId rider = {});
 }  // namespace PetariEditor::Ui
