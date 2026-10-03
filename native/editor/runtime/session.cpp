@@ -211,6 +211,32 @@ namespace {
         Core::unbindRow(id);
     }
 
+    // Points of the zone's path with this l_id (CommonPathInfo row n -> CommonPathPointInfo.n); -1: no such path.
+    int railPointCount(const EditModel& m, int zone, int lid) {
+        int railTable = -1;
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (endsWith(m.tablePath(zone, t), "/commonpathinfo")) railTable = t;
+        }
+        if (railTable < 0 || lid < 0) return -1;
+        int index = 0, found = -1;
+        m.forEachRow(zone, railTable, [&](RowId row) {
+            if (m.state(row) == RowState::Deleted) return;
+            const Cell* pLid = m.cell(row, columnHash("l_id"));
+            if (found < 0 && pLid != nullptr && pLid->i == lid) found = index;
+            index++;
+        });
+        if (found < 0) return -1;
+        const std::string points = "/commonpathpointinfo." + std::to_string(found);
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (endsWith(m.tablePath(zone, t), points.c_str())) {
+                int count = 0;
+                m.forEachRow(zone, t, [&](RowId row) { count += m.state(row) != RowState::Deleted; });
+                return count;
+            }
+        }
+        return 0;
+    }
+
     // Re-create a changed row's actors live (objects and map parts), or leave it for a reload.
     void syncRow(RowId id) {
         Session& s = session();
@@ -263,6 +289,18 @@ namespace {
             row->info.setName("ObjInfo");
             Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
         }
+        // Wire gravity divides by its point count (Obj_arg0 + 2) and walks its path: a bad row would
+        // crash or hang the constructor (or an in-place rebuild).
+        if (std::string(pName) == "GlobalWireGravity") {
+            const Cell* pPoints = m.cell(id, columnHash("Obj_arg0"));
+            const Cell* pPath = m.cell(id, columnHash("CommonPath_ID"));
+            if (pPoints == nullptr || pPoints->i < 0 || pPoints->i > 4096 || pPath == nullptr || railPointCount(m, zone, pPath->i) < 2) {
+                Hooks::unregisterRows(row->bytes.data());
+                s.pending.insert(id);
+                Core::reportError("Wire gravity needs a path of 2 or more points and 0-4096 sample points (Obj_arg0)");
+                return;
+            }
+        }
         // In place when a registered updater can (no new actor; for gravity, no new slot).
         if (LiveActor* pCurrent = actorForRow(id)) {
             for (LiveUpdater updater : gLiveUpdaters) {
@@ -271,18 +309,6 @@ namespace {
                     s.liveRows.push_back(std::move(row));
                     return;
                 }
-            }
-        }
-        // Wire gravity divides by its point count (Obj_arg0 + 2) and walks its path: a bad row would
-        // crash or hang the constructor.
-        if (std::string(pName) == "GlobalWireGravity") {
-            const Cell* pPoints = m.cell(id, columnHash("Obj_arg0"));
-            const Cell* pPath = m.cell(id, columnHash("CommonPath_ID"));
-            if (pPoints == nullptr || pPoints->i < 0 || pPoints->i > 4096 || pPath == nullptr || pPath->i < 0) {
-                Hooks::unregisterRows(row->bytes.data());
-                s.pending.insert(id);
-                Core::reportError("Wire gravity needs a path and 0-4096 sample points (Obj_arg0)");
-                return;
             }
         }
         // A new gravity field needs a free slot; at the cap the current one stays until a Reload.
