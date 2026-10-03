@@ -20,17 +20,16 @@ from petari_level import Level  # noqa: E402
 ROOT = Path(__file__).resolve().parents[4]
 
 
-# This course is another way to mission 1's star (Star ID 1), so the duplicate-star warning for mission 1 is
-# expected (collecting either star counts as star 1). Any other problem is a real one.
-EXPECTED = ("duplicate-star:1:1",)
+# The course's Power Star uses Star ID 2: mission 1 already has star 1 (the boss's), and a placed star reusing
+# its mission's Star ID is removed after a save and restart (the scripted one wins; duplicate-star check). ID 2
+# is a valid star of this galaxy that mission 1 doesn't use; the result screen then names mission 2.
+STAR_ID = 2
 
 
 def report_checks(lv):
     checks = lv.checks()["checks"]
-    expected = [c for c in checks if c["key"].startswith(EXPECTED)]
-    unexpected = [c for c in checks if not c["key"].startswith(EXPECTED)]
-    print(json.dumps({"expected_warnings": [c["message"] for c in expected], "problems": unexpected}, indent=1))
-    return not unexpected
+    print(json.dumps({"problems": checks}, indent=1))
+    return not checks
 
 
 def add(a, b, k=1.0):
@@ -80,7 +79,7 @@ def main():
              "zone": zone, "as": "launch", **layer_ops},
             {"op": "array", "class": "Coin", "shape": "arc", "start": add(launch, up, 500), "end": add(landing, up, 650),
              "peak": 2200, "count": 9, "down": [-v for v in up], "as": "arc"},
-            {"op": "add", "class": "PowerStar", "pos": add(landing, up, 300), "on_ground": True, "height": 180, "args": {"Star ID": 1},
+            {"op": "add", "class": "PowerStar", "pos": add(landing, up, 300), "on_ground": True, "height": 180, "args": {"Star ID": STAR_ID},
              "missions": [1], "as": "star"},
         ]
 

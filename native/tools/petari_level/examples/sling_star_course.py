@@ -18,17 +18,16 @@ from petari_level import Level  # noqa: E402
 ROOT = Path(__file__).resolve().parents[4]
 
 
-# This course is another way to mission 1's star (Star ID 1), so the duplicate-star warning for mission 1 is
-# expected (collecting either star counts as star 1). Any other problem is a real one.
-EXPECTED = ("duplicate-star:1:1",)
+# The course's Power Star uses Star ID 2: mission 1 already has star 1 (the boss's), and a placed star reusing
+# its mission's Star ID is removed after a save and restart (the scripted one wins; duplicate-star check). ID 2
+# is a valid star of this galaxy that mission 1 doesn't use; the result screen then names mission 2.
+STAR_ID = 2
 
 
 def report_checks(lv):
     checks = lv.checks()["checks"]
-    expected = [c for c in checks if c["key"].startswith(EXPECTED)]
-    unexpected = [c for c in checks if not c["key"].startswith(EXPECTED)]
-    print(json.dumps({"expected_warnings": [c["message"] for c in expected], "problems": unexpected}, indent=1))
-    return not unexpected
+    print(json.dumps({"problems": checks}, indent=1))
+    return not checks
 
 
 def add(a, b, k=1.0):
@@ -63,7 +62,7 @@ def main():
         b.add("SpinDriver", sling, args={"Speed / flight time": 40}, label="sling")
         b.array("Coin", "line", start=add(sling, up, 350), end=add(sling, up, 950), count=5, label="column")
         # No layer of the galaxy zone is active in mission 1 alone (the API lists them): layer A is missions 1, 4, 6.
-        b.add("PowerStar", add(sling, up, 1150), missions=[1, 4, 6], args={"Star ID": 1}, up=up, label="star")
+        b.add("PowerStar", add(sling, up, 1150), missions=[1, 4, 6], args={"Star ID": STAR_ID}, up=up, label="star")
     result = b.result
     print(json.dumps({"created": len(result["created"]), "placements": result.get("placements", []),
                       "checks_introduced": result["checks_introduced"]}, indent=1))

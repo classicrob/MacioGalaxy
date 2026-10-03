@@ -126,7 +126,7 @@ namespace {
              "doesn't know\n" +
                  edits,
              S(R"({"type":"object","required":["op"],"properties":{"op":{"const":"add"},"class":{"type":"string"},"zone":{"type":["string","integer"]},"layer":{"type":"string"},"missions":{"type":"array","items":{"type":"integer"}},"like":{},"preset":{"type":"string"},"as":{"type":"string"},"force":{"type":"boolean"},"pos":{"type":"array"},"zone_pos":{"type":"array"},"rot":{"type":"array"},"up":{"type":"array"},"front":{"type":"array"},"turn":{"type":"number"},"scale":{},"args":{"type":"object"},"switches":{"type":"object"},"links":{"type":"object"},"fields":{"type":"object"}}})"),
-             R"({"op": "add", "class": "PowerStar", "pos": [0, 1500, 0], "args": {"Star ID": 1}, "as": "star"})", true},
+             R"({"op": "add", "class": "PowerStar", "pos": [0, 1500, 0], "args": {"Star ID": 2}, "as": "star"})", true},
             {"array", "Many copies of one add along a shape: line, arc (a coin arc), ring, grid, path (a polyline); each may snap to the ground",
              "shape    string  line | arc | ring | grid | path\nline/arc: start [x,y,z], end [x,y,z] (or from/to), count | spacing; arc: peak "
              "(height at the middle, along -gravity)\n"
