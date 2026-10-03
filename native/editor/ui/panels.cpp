@@ -1096,9 +1096,7 @@ void drawInspectorWindow(const char* title) {
         const std::vector< Pick::Item > picked = Pick::selection();
         const std::vector< RowId > rows = selectedRows();
         if (picked.empty()) {
-            if (modGalaxyInfo())
-                drawGalaxyInfoPanel();  // M4: an empty selection shows the mod galaxy's properties.
-            else
+            if (!drawGalaxyInfoPanel())  // M4: an empty selection shows the mod galaxy's properties.
                 ImGui::TextDisabled("Select something to see its settings.");
         } else if (model == nullptr || rows.empty()) {
             ImGui::Text("%s", picked.front().name);

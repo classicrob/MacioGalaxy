@@ -27,11 +27,11 @@ namespace PetariEditor::Ui {
         }
     }  // namespace
 
-    void drawGalaxyInfoPanel() {
+    bool drawGalaxyInfoPanel() {
         const auto current = modGalaxyInfo();
         if (!current) {
             gGalaxy = {};
-            return;
+            return false;
         }
         if (!gGalaxy.initialized || gGalaxy.value.internalName != current->internalName || gGalaxy.value.mod != current->mod) {
             gGalaxy = {};
@@ -146,5 +146,6 @@ namespace PetariEditor::Ui {
         if (gGalaxy.pending)
             ImGui::TextWrapped("%s", gGalaxy.restarting ? "Updating galaxy... Petari will restart into Edit." : "Saving settings...");
         ImGui::PopID();
+        return true;
     }
 }  // namespace PetariEditor::Ui
