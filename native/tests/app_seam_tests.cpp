@@ -348,7 +348,7 @@ void testSmoke() {
     setenv("PETARI_SMOKE_FRAMES", "100000", 1);
     reset();
     App::Seam::openFirstFrame();
-    auto& observation = PetariNative::App::PetariNative::App::Smoke::smokeObservation;
+    auto& observation = PetariNative::App::Smoke::smokeObservation;
     observation.scene = "Logo";
     observation.strap = true;
     observation.videoConfigured = true;
