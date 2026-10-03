@@ -828,6 +828,7 @@ void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITO
 void areasTestTick();
 void arrayTestTick();
 void importTestTick();
+void placementTestTick();  // EP-008: clean donor placement live regression.
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
@@ -1029,6 +1030,7 @@ void tick(bool playable) {
     areasTestTick();
     arrayTestTick();
     importTestTick();
+    placementTestTick();  // EP-008 placement.
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)

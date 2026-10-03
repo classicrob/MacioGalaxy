@@ -30,6 +30,9 @@ namespace {
 int main() {
     std::string error;
     check(C::load(&error), "catalog loads");
+    for (const char* name : {"SuperSpinDriver", "SuperSpinDriverGreen", "SuperSpinDriverPink"})
+        check(C::placementLink(C::find(name), E::columnHash("CommonPath_ID")) == C::PlacementLink::Required,
+              "every Launch Star colour keeps its required path");
     C::ClassInfo custom;
     custom.name = "PlacementFixture";
     custom.links = {{C::LinkKind::Rail, "CommonPath_ID", true}, {C::LinkKind::Camera, "Obj_arg7", false}, {C::LinkKind::Demo, "CustomDemo", false}};
