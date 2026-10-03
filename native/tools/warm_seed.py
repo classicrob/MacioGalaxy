@@ -166,13 +166,16 @@ def warm_up(args):
     return final
 
 
-def prune(args, keep=3):
-    """Keep the newest `keep` seeds (a seed is ~1.9 GB and each rebuild makes a new one)."""
+def prune(args, keep=3, idle_hours=2.0):
+    """Keep the `keep` most recently used seeds, and any seed used in the last `idle_hours` (a seed is ~1.9 GB and each rebuild makes a
+    new one, but with several workers' binaries in play, pruning strictly to the newest 3 deleted seeds that were still in use, and every
+    run then waited ~10 min for a re-publish). Using a seed (ensure) touches its seed.json."""
     root = Path(args.seed_root)
     seeds = sorted((p for p in root.iterdir() if p.is_dir() and (p / "seed.json").is_file() and ".warming-" not in p.name),
                    key=lambda p: (p / "seed.json").stat().st_mtime, reverse=True)
     for old in seeds[keep:]:
-        if old.name != args.sha[:16]:
+        recent = time.time() - (old / "seed.json").stat().st_mtime < idle_hours * 3600
+        if old.name != args.sha[:16] and not recent:
             shutil.rmtree(old, ignore_errors=True)
             (root / f"{old.name}.lock").unlink(missing_ok=True)
             print(f"[warm-seed] pruned old seed {old.name}", file=sys.stderr, flush=True)
@@ -184,6 +187,7 @@ def ensure(args):
     root = Path(args.seed_root)
     root.mkdir(parents=True, exist_ok=True)
     if seed_ok(args) and not args.force:
+        os.utime(seed_dir(args) / "seed.json")  # used now: prune keeps recently used seeds
         return seed_dir(args)
     with open(root / f"{args.sha[:16]}.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
