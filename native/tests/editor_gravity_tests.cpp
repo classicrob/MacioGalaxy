@@ -5,6 +5,7 @@
 #include <limits>
 #include <map>
 #include <petari/editor/gravity.hpp>
+#include <petari/editor/paths.hpp>
 using namespace PetariEditor;
 namespace G = Gravity;
 static int checkCount = 0;
@@ -67,6 +68,19 @@ void modelChecks() {
     require(std::string(m->objectName(row)) == "GlobalCubeGravity", "shape placement persisted");
     require(m->cell(row, columnHash("Obj_arg0"))->i == -1, "new shape enables all default cube faces");
     require(m->undo() && std::string(m->objectName(row)) == "GlobalPointGravity", "shape undo is atomic");
+    require(G::shapeOp(*m, row, G::Shape::Wire).sets.empty(), "wire rejects a missing path");
+    RowId railId = newRowId();
+    std::vector<Paths::Point> points = {{newRowId(), {0,0,0}, {0,0,0}, {0,0,0}},
+                                      {newRowId(), {100,0,0}, {100,0,0}, {100,0,0}}};
+    require(m->apply(Paths::addRail(*m, 0, points, false, railId, nullptr), nullptr), "wire fixture path added");
+    auto rails = Paths::collect(*m);
+    require(rails.size() == 1, "wire fixture path collected");
+    require(m->apply(Paths::linkPath(*m, row, rails.front(), nullptr), nullptr), "wire fixture linked");
+    require(!G::shapeOp(*m, row, G::Shape::Wire).sets.empty(), "wire accepts two-point path");
+    Op remove;
+    remove.deletes.push_back(points.front().row);
+    require(m->apply(remove, nullptr), "wire fixture point removed");
+    require(G::shapeOp(*m, row, G::Shape::Wire).sets.empty(), "wire rejects one-point path");
 }
 int main() {
     modelChecks();

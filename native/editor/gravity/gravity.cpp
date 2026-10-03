@@ -224,7 +224,7 @@ namespace PetariEditor::Gravity {
                     const Cell* id = model.cell(r, columnHash("l_id"));
                     if (!id)
                         id = model.cell(r, columnHash("id"));
-                    if (id && id->i == path->i && model.state(r) != RowState::Deleted)
+                    if (id && id->i == path->i && model.state(r) != RowState::Deleted && model.railPoints(r).size() >= 2)
                         found = true;
                 });
             }
