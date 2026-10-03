@@ -12,6 +12,7 @@
 #include <map>
 #include <petari/editor/playtest.hpp>
 #include <petari/editor/runtime.hpp>
+#include <petari/editor/runtime_hooks.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/editor_settings.hpp>
 #include <petari/efb_dump_mark.hpp>
@@ -27,6 +28,7 @@ namespace EditorPlaytest {
         static RowTransform original, expected;
         static int history;
         static std::uint64_t pausedFrames;
+        static std::uint32_t runScene;
         static PowerStar* star = nullptr;
         static bool hadStar = false;
         if (!trigger || step == 999)
@@ -72,6 +74,7 @@ namespace EditorPlaytest {
             play(PlayFrom::Marker);
             advance(1);
         } else if (step == 1 && mode() == Mode::Playing && playable && frame > 15) {
+            runScene = Hooks::sceneSerial();
             forEachBoundRow([&](RowId row, LiveActor* actor) {
                 if (actor && !MR::isDead(actor) && Playtest::keepReason(*m, row).empty())
                     initialPositions[row] = {actor->mPosition.x, actor->mPosition.y, actor->mPosition.z};
@@ -142,8 +145,8 @@ namespace EditorPlaytest {
             play(PlayFrom::Resume);
             advance(7);
         } else if (step == 7 && mode() == Mode::Playing && playable && frame > 45) {
-            if (view.frames <= pausedFrames)
-                return fail("Resume reset or stopped timer");
+            if (view.frames <= pausedFrames || Hooks::sceneSerial() != runScene)
+                return fail("Resume reset the scene or stopped timer");
             const auto* info = EventFunction::getPowerStarHolder()->findPowerStarRequestInfo(m->scenario());
             star = info ? info->mStar : nullptr;
             if (!star)
@@ -169,10 +172,11 @@ namespace EditorPlaytest {
             play(PlayFrom::Marker);
             advance(10);
         } else if (step == 10 && mode() == Mode::Playing && playable && frame > 15) {
-            if (view.frames >= pausedFrames || view.cleared)
-                return fail("new Play did not reset run");
+            if (view.frames >= pausedFrames || view.cleared || Hooks::sceneSerial() == runScene)
+                return fail("new Play did not reset scene and run");
             Runtime::requestEdit("Play-test checks passed");
-            std::fprintf(stderr, "[editor-playtest] PASS: trail, gravity-relative peak, pause/resume, Keep/undo, star interception, new-run reset\n");
+            std::fprintf(stderr,
+                         "[editor-playtest] PASS: trail, gravity-relative peak, pause/resume, Keep/undo, star interception, fresh-world reset\n");
             step = 999;
         }
     }

@@ -68,8 +68,8 @@ namespace PetariEditor::Ui {
         else if (!view.keepRows.empty() && !view.keepReason.empty())
             ImGui::Text("K unavailable: %s", view.keepReason.c_str());
         else
-            ImGui::Text("%s%s  |  Trail: %zu samples, %zu peaks  |  K keep   Tab play   Cmd+Z undo", view.cleared ? "Cleared in " : "Play-test ",
-                        Playtest::elapsed(view.frames).c_str(), view.samples, view.peaks);
+            ImGui::Text("%s%s  |  Trail: %zu samples, %zu %s  |  K keep   Tab play   Cmd+Z undo", view.cleared ? "Cleared in " : "Play-test ",
+                        Playtest::elapsed(view.frames).c_str(), view.samples, view.peaks, view.peaks == 1 ? "peak" : "peaks");
         return true;
     }
 }  // namespace PetariEditor::Ui
