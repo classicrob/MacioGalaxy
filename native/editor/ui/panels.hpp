@@ -42,6 +42,17 @@ bool canRedo();
 void undo();
 void redo();
 
+// ---- for the tool modules' Inspector sections and viewport tools (M3: paths.cpp, gravity.cpp) ----
+
+// An Inspector section header: title on the left, a dim note on the right ("named", "edits apply to all").
+void drawSection(const char* title, const char* right = nullptr);
+// Records one undo step (op.label names it in History: "Moved 3 path points").
+void applyOp(Op op);
+// The Inspector's help strip for this frame: assign or append while an item is hovered.
+std::string& helpText();
+// A row's name for people: the catalog's display name, else the placement name, else the table's.
+std::string displayName(const ModelView& model, RowId row);
+
 // ---- the logic behind the panels, unit-tested without ImGui (native/tests/editor_ui_tests.cpp) ----
 
 bool sameCell(const Cell& a, const Cell& b);
