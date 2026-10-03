@@ -4,6 +4,7 @@
 
 #include "../editor/runtime/runtime_core.hpp"
 #include "panels.hpp"
+#include "missions.hpp"
 #include "help.hpp"
 #include "imgui_internal.h"
 #include "paths.hpp"
@@ -227,6 +228,25 @@ void testPanelsLogic() {
         CHECK(Ui::countChecks({}).errors == 0 && Ui::orderChecks({}).empty());
     }
 
+    // Friction #8: collision size and anchor in words, at scale_x (the game's one collision scale).
+    {
+        PetariEditor::Catalog::ClassInfo block;
+        CHECK(Ui::collisionSize(block, {1, 1, 1}).empty() && Ui::collisionAnchor(block, 1).empty());
+        block.hasCollisionBox = true;
+        block.collisionBox = {-74.5f, 0.5f, -74.5f, 74.5f, 149.5f, 74.5f};  // StrongBlock: a 150 cube on its point
+        CHECK(Ui::collisionSize(block, {1, 1, 1}) == "Collision 149 x 149 x 149");
+        CHECK(Ui::collisionSize(block, {3, 1, 3}) == "Collision ~447 x 447 x 447");  // uneven: collides at X
+        CHECK(Ui::collisionAnchor(block, 1) == "stands on its point" && Ui::collisionAnchor(block, 3) == "stands on its point");
+        CHECK(Ui::collisionTop(block, 3) == "top 448 above its point");
+        PetariEditor::Catalog::ClassInfo ball = block;
+        ball.collisionBox = {-50, -50, -50, 50, 50, 50};
+        CHECK(Ui::collisionAnchor(ball, 1) == "centred on its point");
+        ball.collisionBox = {-50, -80, -50, 50, 20, 50};
+        CHECK(Ui::collisionAnchor(ball, 1) == "reaches 80 below its point");
+        ball.collisionBox = {-5, 20, -5, 5, 30, 5};
+        CHECK(Ui::collisionAnchor(ball, 1) == "floats 20 above its point" && Ui::collisionSize(ball, {1, 1, 1}) == "Collision 10 x 10 x 10");
+    }
+
     // Named settings in words: enum labels (including a named -1), on/off, numbers with units, "default".
     {
         PetariEditor::Catalog::Arg walk;
@@ -319,6 +339,125 @@ void testPathInputCapture() {
     draw(false, 432, 324);
     PetariEditor::PathsView::publish({});
     PetariEditor::Core::setModel(nullptr);
+}
+
+void testMissionInput() {
+    namespace Ui = PetariEditor::Ui;
+    struct MissionModel : FakeModel {
+        bool splitLayers = true, mixedRows = false, matchingRows = false;
+        std::uint64_t version = 1;
+        MissionModel() {
+            cols.push_back({columnHash("l_id"), "l_id", CellType::Int});
+            for (auto& row : rows) {
+                row.zone = 0;
+                row.now[columnHash("l_id")] = {CellType::Int, static_cast<int>(row.id.v), 0, {}};
+            }
+        }
+        std::uint64_t revision() const override { return version; }
+        int zoneCount() const override { return 1; }
+        int missionCount() const override { return 2; }
+        std::uint32_t activeLayers(int, int mission) const override {
+            return splitLayers ? (mission == 1 ? 3u : 5u) : 7u;
+        }
+        std::uint32_t rowMissions(RowId row) const override {
+            if (matchingRows) return row == RowId{3} ? 2u : 1u;
+            return mixedRows && row == RowId{3} ? 1u : 3u;
+        }
+        bool locate(RowId row, int* zone, int* table) const override {
+            if (!FakeModel::locate(row, zone, table)) return false;
+            if (table && matchingRows) *table = row == RowId{3} ? 2 : 1;
+            else if (table && mixedRows && row == RowId{3}) *table = 1;
+            return true;
+        }
+        int tableCount(int) const override { return 3; }
+        const char* tablePath(int, int table) const override {
+            return table == 0 ? "jmp/placement/common/objinfo" : table == 1 ? "jmp/placement/layera/objinfo" : "jmp/placement/layerb/objinfo";
+        }
+        void forEachRow(int zone, int table, const std::function<void(RowId)>& fn) const override {
+            FakeModel::forEachRow(zone, table, [&](RowId row) {
+                const int rowTable = matchingRows ? (row == RowId{3} ? 2 : 1) : mixedRows && row == RowId{3} ? 1 : 0;
+                if (table == rowTable) fn(row);
+            });
+        }
+    } model;
+    Core::setModel(&model);
+    Core::drainCommands();
+    auto& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(800, 600);
+    std::vector<RowId> selection{RowId{1}};
+    auto draw = [&]() {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(20, 20));
+        ImGui::SetNextWindowSize(ImVec2(360, 420));
+        ImGui::Begin("Mission test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+        Ui::drawMissionsInspector(model, selection);
+        ImGui::End();
+        ImGui::Render();
+    };
+    auto click = [&](const char* target) {
+        float x = 0, y = 0, w = 0, h = 0;
+        CHECK(Ui::testTargetRect(target, &x, &y, &w, &h));
+        io.AddMousePosEvent(x + w * .5f, y + h * .5f);
+        draw();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+        draw();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+        draw();
+    };
+    draw();
+    draw();
+    click("mission-chip:2");
+    CHECK(Core::drainCommands().empty());  // Drafting does not create history.
+    click("button:Cancel missions");
+    CHECK(Core::drainCommands().empty());
+    click("mission-chip:2");
+    click("button:Apply missions");
+    auto commands = Core::drainCommands();
+    CHECK(commands.size() == 1);
+    if (commands.size() == 1) {
+        CHECK(commands[0].kind == Command::Kind::Apply);
+        CHECK(commands[0].op.adds.size() == 1 && commands[0].op.deletes.size() == 1);
+        if (commands[0].op.adds.size() == 1)
+            CHECK(commands[0].op.adds[0].table == "jmp/placement/layera/objinfo");
+    }
+    ++model.version;
+    draw();
+    click("button:Only this mission");
+    CHECK(Core::drainCommands().size() == 1);  // The repair commits immediately.
+    model.splitLayers = false;
+    ++model.version;
+    draw();
+    click("button:Only this mission");
+    CHECK(Core::drainCommands().empty());  // An impossible mask is explained without changing rows.
+    CHECK(Ui::helpText().find("TestGalaxy") != std::string::npos);
+    model.splitLayers = model.mixedRows = true;
+    ++model.version;
+    selection = {RowId{1}, RowId{3}};
+    draw();
+    click("button:Cancel missions");
+    CHECK(Core::drainCommands().empty());
+    click("button:Apply missions");
+    CHECK(Core::drainCommands().size() == 1);  // A mixed union can be applied without toggling a chip.
+    click("mission-chip:1");
+    click("mission-chip:2");
+    click("button:Apply missions");
+    CHECK(Core::drainCommands().empty());
+    CHECK(Ui::helpText().find("at least one mission") != std::string::npos);
+    model.matchingRows = true;
+    model.rows[2].now = model.rows[0].now;  // Same object split between layer A and layer B.
+    ++model.version;
+    selection = {RowId{1}};
+    draw();
+    click("mission-chip:2");  // Logical membership includes the unselected sibling; turn mission 2 off.
+    click("button:Apply missions");
+    commands = Core::drainCommands();
+    CHECK(commands.size() == 1);
+    if (commands.size() == 1) {
+        CHECK(commands[0].op.adds.empty());
+        CHECK(commands[0].op.deletes == std::vector<RowId>{RowId{3}});
+    }
+    PetariNative::EditorPick::takeSelectRows();
+    Core::setModel(nullptr);
 }
 
 void testHelpInput() {
@@ -442,6 +581,7 @@ int main() {
     CHECK(!Ui::viewportRect(&x, &y, &w, &h));
 
     testPathInputCapture();
+    testMissionInput();
     testHelpInput();
     ImGui::DestroyContext();
     testPanelsLogic();

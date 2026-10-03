@@ -1,3 +1,4 @@
+#include "missions.hpp"
 #include "playtest.hpp"
 #include "areas.hpp"
 #include "array.hpp"
@@ -92,7 +93,7 @@ std::string rowName(const ModelView& model, RowId row) {
 }
 
 void enqueueOp(Op op) {
-    if (op.sets.empty() && op.revertRows.empty()) return;
+    if (op.sets.empty() && op.revertRows.empty() && op.adds.empty() && op.deletes.empty()) return;
     Command command{Command::Kind::Apply};
     command.op = std::move(op);
     enqueue(std::move(command));
@@ -836,6 +837,41 @@ std::string missionLabel(const ModelView& model, int mission) {
     return name != nullptr && name[0] != '\0' ? std::string(name) : "Mission " + std::to_string(mission);
 }
 
+namespace {
+// A length for people: whole units, or one decimal under 10.
+std::string lengthText(float value) {
+    char text[32];
+    std::snprintf(text, sizeof(text), std::fabs(value) < 9.95f ? "%.1f" : "%.0f", value);
+    return text;
+}
+}  // namespace
+
+std::string collisionSize(const Catalog::ClassInfo& info, const std::array< float, 3 >& scale) {
+    if (!info.hasCollisionBox) return {};
+    const auto& box = info.collisionBox;
+    const bool uneven = std::fabs(scale[0] - scale[1]) > 1e-3f || std::fabs(scale[0] - scale[2]) > 1e-3f;
+    const float s = std::fabs(scale[0]);
+    return std::string("Collision ") + (uneven ? "~" : "") + lengthText((box[3] - box[0]) * s) + " x " + lengthText((box[4] - box[1]) * s) +
+           " x " + lengthText((box[5] - box[2]) * s);
+}
+
+std::string collisionAnchor(const Catalog::ClassInfo& info, float scaleX) {
+    if (!info.hasCollisionBox) return {};
+    const float s = std::fabs(scaleX);
+    const float bottom = info.collisionBox[1] * s, top = info.collisionBox[4] * s;
+    const float tolerance = std::max(2.0f * s, (top - bottom) * 0.02f);
+    if (std::fabs(bottom) <= tolerance) return "stands on its point";
+    if (bottom > 0) return "floats " + lengthText(bottom) + " above its point";
+    if (std::fabs(bottom + top) <= (top - bottom) * 0.1f) return "centred on its point";
+    return "reaches " + lengthText(-bottom) + " below its point";
+}
+
+std::string collisionTop(const Catalog::ClassInfo& info, float scaleX) {
+    if (!info.hasCollisionBox) return {};
+    const float top = info.collisionBox[4] * std::fabs(scaleX);
+    return top >= 0 ? "top " + lengthText(top) + " above its point" : "top " + lengthText(-top) + " below its point";
+}
+
 std::string argValueText(const Catalog::Arg& arg, std::int32_t value) {
     for (const Catalog::EnumChoice& choice : arg.choices) {
         if (choice.value == value) return choice.label;
@@ -1092,34 +1128,26 @@ void drawInspectorWindow(const char* title) {
                 ImGui::SameLine();
                 ImGui::TextColored(stateColor(state), state == RowState::Added ? "added" : state == RowState::Deleted ? "deleted" : "changed");
             }
-            // Appears in (UX section 12): the missions this object is part of.
-            if (const int missions = model->missionCount(); missions > 0) {
-                section("Appears in", "missions");
-                const std::uint32_t bits = model->rowMissions(primary);
-                for (int mission = 1; mission <= missions; mission++) {
-                    if (mission > 1) ImGui::SameLine(0.0f, 4.0f);
-                    const bool in = (bits & (1u << (mission - 1))) != 0;
-                    ImGui::PushStyleColor(ImGuiCol_Button, in ? ImVec4(0.98f, 0.80f, 0.22f, 0.80f) : ImVec4(1.0f, 1.0f, 1.0f, 0.06f));
-                    ImGui::PushStyleColor(ImGuiCol_Text, in ? ImVec4(0.30f, 0.17f, 0.02f, 1.0f) : kDim);
-                    char label[16];
-                    std::snprintf(label, sizeof(label), "%d##m%d", mission, mission);
-                    ImGui::SmallButton(label);
-                    ImGui::PopStyleColor(2);
-                    if (ImGui::IsItemHovered()) {
-                        ImGui::SetTooltip("%s: %s", missionLabel(*model, mission).c_str(), in ? "appears" : "does not appear");
-                        gHelp = "Which missions this object appears in (its layer). Changing it comes with mission editing.";
-                    }
-                }
-                if (bits == 0) {
-                    ImGui::SameLine();
-                    ImGui::TextColored(kDim, "in no mission");
-                }
-            }
+            drawMissionsInspector(*model, rows);  // Mission membership: draft, then one compound op.
             if (model->hasTransform(primary)) {
                 section("Transform", "row space");
                 transformRow(*model, rows, "Position", "pos_", 1.0f);
                 transformRow(*model, rows, "Rotation", "dir_", 0.5f);
                 transformRow(*model, rows, "Scale", "scale_", 0.01f);
+                // Friction #8: the collision's size and where it sits on the point (the viewport draws its box).
+                const char* className = rows.size() == 1 ? model->objectName(primary) : nullptr;
+                if (const auto* info = className ? Catalog::find(className) : nullptr; info && info->hasCollisionBox) {
+                    const RowTransform t = model->transform(primary);
+                    const std::array< float, 3 > scale{t.scale.x, t.scale.y, t.scale.z};
+                    ImGui::TextColored(kDim, "%s", collisionSize(*info, scale).c_str());
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", collisionSize(*info, scale).find('~') != std::string::npos ?
+                                                    "The scales differ, but the game collides at the X scale on every axis." :
+                                                    "The box the object's collision fills (drawn in the viewport).");
+                    }
+                    ImGui::TextColored(kDim, "%s · %s", collisionAnchor(*info, t.scale.x).c_str(), collisionTop(*info, t.scale.x).c_str());
+                    noteTestTarget("text:collision");
+                }
             }
             drawArrayInspector(*model, rows);    // Array: one preview and one compound commit.
             drawPlaytestInspector(rows);  // M3 play-test: Keep and its disabled reason.
