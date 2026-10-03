@@ -65,7 +65,7 @@ namespace PetariNative::App {
             }
             return false;
         }
-        bool key(SDL_Scancode scan, SDL_Keycode code) {
+        bool key(SDL_Scancode scan, SDL_Keycode code, SDL_Keymod mods = SDL_KMOD_NONE) {
             auto* w = window();
             if (!w)
                 return false;
@@ -75,11 +75,13 @@ namespace PetariNative::App {
             e.key.scancode = scan;
             e.key.key = code;
             e.key.down = true;
+            e.key.mod = mods;
             if (!SDL_PushEvent(&e))
                 return false;
             release = e;
             release.type = SDL_EVENT_KEY_UP;
             release.key.down = false;
+            release.key.mod = SDL_KMOD_NONE;
             releaseIn = 2;
             return true;
         }
@@ -132,12 +134,12 @@ namespace PetariNative::App {
                 finish("PASS journal SDL choice and recovery result");
             return;
         }
-        if (which == "home-verify") {
+        if (which == "home-verify" || which == "settings-verify" || which == "settings-final") {
             if (!EditorSettings::active() || !model())
                 return;
             const auto info = modGalaxyInfo();
-            if (!info || info->name != "My Galaxy")
-                return finish("FAIL: created galaxy settings");
+            if (!info)
+                return finish("FAIL: created galaxy settings unavailable");
             const char* sky = std::getenv("PETARI_EDITOR_M4_EXPECT_SKY");
             bool found = !sky || !*sky;
             for (int z = 0; z < model()->zoneCount(); ++z)
@@ -147,11 +149,63 @@ namespace PetariNative::App {
                             found = true;
                     });
             if (!found)
-                return finish("FAIL: chosen sky missing from created layout");
-            if (step++ == 0)
+                return finish("FAIL: chosen sky missing from layout");
+            if (which == "settings-final") {
+                if (info->missions.size() != 1 || info->name != "M4 Edited Galaxy")
+                    return finish("FAIL: removed mission settings");
+                if (step++ == 0)
+                    EfbDump::mark("m4-settings-final");
+                else
+                    finish("PASS Observatory Home, sky, live galaxy name, add/remove mission SDL flow and restart into Edit");
+                return;
+            }
+            if (which == "settings-verify") {
+                if (info->missions.size() != 2 || info->name != "M4 Edited Galaxy")
+                    return finish("FAIL: added mission settings");
+                if (step == 0 && click("tab:Missions"))
+                    ++step;
+                else if (step == 1) {
+                    EfbDump::mark("m4-settings-added");
+                    ++step;
+                } else if (step == 2 && click("button:Remove mission"))
+                    ++step;
+                else if (step == 3) {
+                    setenv("PETARI_EDITOR_M4_UI_TEST", "settings-final", 1);
+                    if (click("button:Apply galaxy settings"))
+                        ++step;
+                }
+                return;
+            }
+            if (step == 0) {
+                if (info->name != "My Galaxy")
+                    return finish("FAIL: created galaxy name");
                 EfbDump::mark("m4-created");
-            else
-                finish("PASS Observatory Home to New Galaxy SDL flow, chosen sky and restart into Edit");
+                ++step;
+            } else if (step == 1 && click("tab:Missions"))
+                ++step;
+            else if (step == 2 && click("field:Galaxy name"))
+                ++step;
+            else if (step == 3 && key(SDL_SCANCODE_A, SDLK_A, SDL_KMOD_GUI))
+                ++step;
+            else if (step == 4) {
+                SDL_Event text{};
+                text.type = SDL_EVENT_TEXT_INPUT;
+                text.text.windowID = SDL_GetWindowID(window());
+                text.text.text = "M4 Edited Galaxy";
+                if (SDL_PushEvent(&text))
+                    ++step;
+            } else if (step == 5 && click("button:Apply galaxy settings"))
+                ++step;
+            else if (step == 6 && info->name == "M4 Edited Galaxy") {
+                EfbDump::mark("m4-settings-live");
+                ++step;
+            } else if (step == 7 && click("button:Add mission"))
+                ++step;
+            else if (step == 8) {
+                setenv("PETARI_EDITOR_M4_UI_TEST", "settings-verify", 1);
+                if (click("button:Apply galaxy settings"))
+                    ++step;
+            }
             return;
         }
         if (which != "home")

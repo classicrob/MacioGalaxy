@@ -59,8 +59,8 @@ namespace PetariEditor::Ui {
         noteTestTarget("field:Galaxy name");
         drawSection("Music");
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::BeginCombo("##galaxy-music", draft.musicFrom.empty() ? "None" : draft.musicFrom.c_str())) {
-            if (ImGui::Selectable("None", draft.musicFrom.empty()))
+        if (ImGui::BeginCombo("##galaxy-music", draft.musicFrom.empty() ? "Default (Good Egg)" : draft.musicFrom.c_str())) {
+            if (ImGui::Selectable("Default (Good Egg)", draft.musicFrom.empty()))
                 draft.musicFrom.clear();
             for (const auto& name : newGalaxyChoices().galaxies)
                 if (ImGui::Selectable(name.c_str(), draft.musicFrom == name))
@@ -105,7 +105,8 @@ namespace PetariEditor::Ui {
         if (restart) {
             ImGui::TextWrapped("Changing the mission count restarts Petari into this galaxy in Edit.");
             if (draft.missions.size() < current->missions.size())
-                ImGui::TextWrapped("The trailing missions will be removed.");
+                ImGui::TextWrapped("The trailing missions will be removed. Objects used only by those missions stay in the layout but no longer "
+                                   "appear. Adding the missions back shows them again.");
         }
         const bool unsaved = restart && st.unsaved;
         if (unsaved) {

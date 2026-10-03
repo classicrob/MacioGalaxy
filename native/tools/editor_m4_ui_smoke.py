@@ -57,7 +57,7 @@ def main():
         env.update(PETARI_LOCK_CLASS='functional', PETARI_FAST_BOOT='1', PETARI_STAGE_GATE_MS='0',
                    PETARI_SHADER_SEED_DIR=str(seed), PETARI_EDITOR='1', PETARI_MODS='LevelEditor',
                    PETARI_SURFACE_DUMP=str(args.output / name / 'surfaces'),
-                   PETARI_SURFACE_DUMP_LABELS='m4-home,m4-new-sheet,m4-created,m4-journal,m4-journal-result',
+                   PETARI_SURFACE_DUMP_LABELS='m4-home,m4-new-sheet,m4-created,m4-journal,m4-journal-result,m4-settings-live,m4-settings-added,m4-settings-final',
                    PETARI_SURFACE_DUMP_EVERY='5', PETARI_SURFACE_DUMP_SPAN='10')
         env.update(extra)
         log = args.output / (name + '.log')
