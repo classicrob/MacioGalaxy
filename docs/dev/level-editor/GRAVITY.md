@@ -33,3 +33,9 @@ Tests: `native_editor_gravity` covers meshes, model operations, undo, range
 normalisation and Checks. `PETARI_EDITOR_GRAVITY_TEST=1` drives the live editor
 through preview/cancel, priority/range changes, undo/redo, repeated updates and a
 shape replacement; `PETARI_EDITOR_GRAVITY_SHOT` requests a screenshot.
+
+Headless game-thread callers use `EditorGravity::query` and `queryGround`.
+For a ground hit, `Probe.groundPosition` and `groundNormal` are the exact collision
+hit and face normal; `position` is lifted four units along the normal for the
+gravity sample. Clearance is measured from `groundPosition`. Orientation uses
+`Gizmo::gravityFrame` or `alignUp` with the negative gravity direction.

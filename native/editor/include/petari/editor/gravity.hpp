@@ -26,6 +26,8 @@ namespace PetariEditor::Gravity {
     struct Probe {
         bool valid = false, covered = false, onGround = false;
         Vec3 position, direction;
+        // Valid when onGround: exact collision hit and face normal; position is the lifted gravity sample.
+        Vec3 groundPosition, groundNormal;
         RowId winner;
         std::uintptr_t winnerIdentity = 0;
         std::string name;

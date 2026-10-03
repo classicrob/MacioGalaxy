@@ -230,11 +230,13 @@ namespace {
         }
         return p;
     }
-    bool groundAt(Vec3 eye, Vec3 ray, Vec3* pos, Vec3* normal, RowId* row) {
+    bool groundAt(Vec3 eye, Vec3 ray, Vec3* pos, Vec3* normal, RowId* row, Vec3* raw = nullptr) {
         TVec3f hit;
         ::Triangle triangle;
         if (!MR::getFirstPolyOnLineToMap(&hit, &triangle, tv(eye), tv(mul(ray, 400000))))
             return false;
+        if (raw)
+            *raw = vec(hit);
         *normal = vec(*triangle.getFaceNormal());
         *pos = add(vec(hit), mul(*normal, 4));
         *row = triangle.mSensor ? rowForActor(triangle.mSensor->mHost) : RowId{};
@@ -369,12 +371,14 @@ namespace EditorGravity {
         if (!std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
             !std::isfinite(length(direction)) || length(direction) < 1e-5f)
             return {};
-        Vec3 point, normal;
+        Vec3 point, normal, raw;
         RowId row;
-        if (!groundAt(origin, unit(direction), &point, &normal, &row))
+        if (!groundAt(origin, unit(direction), &point, &normal, &row, &raw))
             return {};
         auto result = query(point);
         result.onGround = true;
+        result.groundPosition = raw;
+        result.groundNormal = normal;
         return result;
     }
     void update(const EditorPicking::View& camera) {
@@ -426,9 +430,9 @@ namespace EditorGravity {
                     {camera.up[0], camera.up[1], camera.up[2]},
                     camera.fovy,
                     camera.aspect};
-        Vec3 ray = c.ray(camera.cursorX, camera.cursorY), point, normal;
+        Vec3 ray = c.ray(camera.cursorX, camera.cursorY), point, normal, raw;
         RowId groundRow;
-        bool hit = groundAt(c.eye, ray, &point, &normal, &groundRow);
+        bool hit = groundAt(c.eye, ray, &point, &normal, &groundRow, &raw);
         if (G::airProbe() || !hit) {
             float depth = 2000;
             const auto selection = PetariNative::EditorPick::selection();
@@ -441,6 +445,10 @@ namespace EditorGravity {
             hit = false;
         }
         s.view.probe = probe(point, hit);
+        if (hit) {
+            s.view.probe.groundPosition = raw;
+            s.view.probe.groundNormal = normal;
+        }
         s.view.probe.valid = PetariNative::EditorPick::hoverWanted();
         s.view.probeX = camera.cursorX;
         s.view.probeY = camera.cursorY;
