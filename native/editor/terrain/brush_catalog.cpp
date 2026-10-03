@@ -19,6 +19,7 @@ Catalog::ClassInfo brushClassInfo() {
     info.curated = true;
     info.keepable = true;
     info.hasCollision = true;
+    info.bakesScale = true;
     auto enumArg = [](int index, const char* pName, const std::vector< std::string >& labels, const char* pHelp) {
         Catalog::Arg arg;
         arg.index = index;
