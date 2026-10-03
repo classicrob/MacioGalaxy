@@ -351,13 +351,28 @@ namespace {
 namespace EditorGravity {
     G::Probe query(Vec3 position) {
         PetariNative::HostAllocationScope host;
-        return probe(position, false);
+        if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z))
+            return {};
+        auto result = probe(position, false);
+        if (result.covered && !result.winner.valid())
+            forEachBoundRow([&](RowId row, LiveActor* actor) {
+                if (isGlobal(actor) &&
+                    reinterpret_cast< std::uintptr_t >(static_cast< GlobalGravityObj* >(actor)->getGravity()) == result.winnerIdentity)
+                    result.winner = row;
+            });
+        return result;
     }
     G::Probe queryGround(Vec3 origin, Vec3 direction) {
         PetariNative::HostAllocationScope host;
+        if (!std::isfinite(length(direction)) || length(direction) < 1e-5f)
+            return {};
         Vec3 point, normal;
         RowId row;
-        return groundAt(origin, unit(direction), &point, &normal, &row) ? probe(point, true) : G::Probe{};
+        if (!groundAt(origin, unit(direction), &point, &normal, &row))
+            return {};
+        auto result = query(point);
+        result.onGround = true;
+        return result;
     }
     void update(const EditorPicking::View& camera) {
         PetariNative::HostAllocationScope host;

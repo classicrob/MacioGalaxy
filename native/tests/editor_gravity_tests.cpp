@@ -27,7 +27,9 @@ void modelChecks() {
         for (auto& v : values)
             t.addColumn(F::jmapHash(v.first), v.second.kind == F::CellValue::Kind::String ? F::ColumnType::StringOffset : F::ColumnType::Long,
                         v.second);
-        t.addRow();
+        const int row = t.addRow();
+        for (std::size_t column = 0; column < values.size(); ++column)
+            t.set(row, static_cast< int >(column), values[column].second);
         return t.build();
     };
     auto i = [](int value) { return F::CellValue{F::CellValue::Kind::Int, value, 0, {}}; };
