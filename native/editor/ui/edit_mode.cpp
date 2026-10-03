@@ -1,4 +1,5 @@
 #include "playtest.hpp"
+#include "help.hpp"
 #include "areas.hpp"
 #include "play_view.hpp"
 #include "array.hpp"
@@ -226,7 +227,7 @@ const char* shownName(const char* name) {
 }
 
 void drawPickMarks(const Area& area) {
-    ImDrawList* list = ImGui::GetForegroundDrawList();
+    ImDrawList* list = viewportDrawList();
     list->PushClipRect(ImVec2(area.x, area.y), ImVec2(area.x + area.w, area.y + area.h), true);
     auto toScreen = [&](const Pick::Item& item, ImVec2* center, float* radius) {
         center->x = area.x + (item.screenX * 0.5f + 0.5f) * area.w;
@@ -270,7 +271,7 @@ void drawPickMarks(const Area& area) {
 // The gizmo's handles, as the game projected them (lines in viewport coordinates), and the play marker.
 void drawGizmo(const Area& area) {
     const Gizmo::View view = Gizmo::view();
-    ImDrawList* list = ImGui::GetForegroundDrawList();
+    ImDrawList* list = viewportDrawList();
     list->PushClipRect(ImVec2(area.x, area.y), ImVec2(area.x + area.w, area.y + area.h), true);
     auto at = [&](float x, float y) { return ImVec2(area.x + (x * 0.5f + 0.5f) * area.w, area.y + (0.5f - y * 0.5f) * area.h); };
     // Other missions' objects: faint dashed rings with their names (UX section 12).
@@ -349,6 +350,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
         Settings::takeDeferredToggle();  // dropped: Tab doesn't play from under a sheet
         return;
     }
+    updateHelpInput();  // Editor guide: claim Escape without skipping viewport drawing.
     // Cmd+. : Focus mode (the game fills the window; panels away).
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Period)) {

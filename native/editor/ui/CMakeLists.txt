@@ -6,7 +6,7 @@ if(NOT TARGET imgui OR NOT TARGET petari_home_menu_imgui)
     return()
 endif()
 
-add_library(petari_editor_ui STATIC ui.cpp edit_mode.cpp panels.cpp browser.cpp sheets.cpp gravity.cpp paths.cpp array.cpp playtest.cpp areas.cpp play_view.cpp host.cpp import.cpp)
+add_library(petari_editor_ui STATIC ui.cpp edit_mode.cpp panels.cpp browser.cpp sheets.cpp gravity.cpp paths.cpp array.cpp playtest.cpp areas.cpp play_view.cpp host.cpp import.cpp help.cpp)
 target_include_directories(petari_editor_ui PUBLIC include)
 # Deliberately not petari_native_config: nothing here sees the SDK headers.
 # petari_editor_core: edit_api.hpp (Runtime); petari_input: the Edit mode gate and camera feed.
