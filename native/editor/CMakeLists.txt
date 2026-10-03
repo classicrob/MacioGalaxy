@@ -56,7 +56,7 @@ add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
+add_library(petari_editor_core STATIC paths/paths.cpp paths/paths_view.cpp runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
     ${_petari_catalog_cpp})
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_core PUBLIC petari_editor_formats petari_editor_share petari_native_config petari_host_runtime)
@@ -68,7 +68,7 @@ target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
 # game code (src/Game/Editor), so only the app and the link check link it.
 add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
-    runtime/redraw_test.cpp runtime/brush_test.cpp)
+    runtime/redraw_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_editor_terrain_catalog petari_native_config)
 if(TARGET petari_platform_dvd)
@@ -76,6 +76,15 @@ if(TARGET petari_platform_dvd)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(petari_editor_paths_tests ${PETARI_REPO_ROOT}/native/tests/editor_paths_tests.cpp)
+    target_include_directories(petari_editor_paths_tests PRIVATE runtime)
+    target_link_libraries(petari_editor_paths_tests PRIVATE petari_editor_model petari_editor_core)
+    add_test(NAME native_editor_paths COMMAND petari_editor_paths_tests)
+    add_executable(petari_editor_debug_draw_tests ${PETARI_REPO_ROOT}/native/tests/editor_debug_draw_tests.cpp)
+    target_include_directories(petari_editor_debug_draw_tests PRIVATE include)
+    target_compile_features(petari_editor_debug_draw_tests PRIVATE cxx_std_17)
+    target_compile_options(petari_editor_debug_draw_tests PRIVATE -UNDEBUG)
+    add_test(NAME native_editor_debug_draw COMMAND petari_editor_debug_draw_tests)
     add_executable(petari_editor_api_tests ${PETARI_REPO_ROOT}/native/tests/editor_api_tests.cpp)
     target_include_directories(petari_editor_api_tests PRIVATE runtime)
     target_link_libraries(petari_editor_api_tests PRIVATE petari_editor_core)

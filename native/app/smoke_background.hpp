@@ -20,8 +20,21 @@ inline bool physicalEvent(Uint32 type) {
            type == SDL_EVENT_WINDOW_MOUSE_ENTER || type == SDL_EVENT_WINDOW_MOUSE_LEAVE;
 }
 
+// The editor's input test (PETARI_EDITOR_TEST_SDL_CLICK) pushes real SDL mouse events with this mouse id;
+// they go through the whole event path (Aurora, ImGui's SDL backend) and are let through here.
+inline constexpr SDL_MouseID kTestMouseId = 0x7E57;
+
+inline bool testMouseEvent(const SDL_Event* event) {
+    switch (event->type) {
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP: return event->button.which == kTestMouseId;
+    case SDL_EVENT_MOUSE_MOTION: return event->motion.which == kTestMouseId;
+    default: return false;
+    }
+}
+
 inline bool SDLCALL eventFilter(void*, SDL_Event* event) {
-    return !enabled || !physicalEvent(event->type);
+    return !enabled || !physicalEvent(event->type) || testMouseEvent(event);
 }
 
 } // namespace PetariNative::App::SmokeBackground
