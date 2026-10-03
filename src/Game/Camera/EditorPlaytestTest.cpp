@@ -247,8 +247,22 @@ namespace EditorPlaytest {
                 return fail("accepted miss did not open Edit within two frames");
             if (!view.missed || view.running || Hooks::sceneSerial() != runScene || MR::getPlayerLeft() != livesAtMiss)
                 return fail("black-hole miss lost scene, trail or life");
+            std::fprintf(stderr, "[editor-playtest] immediate black-hole interception PASS\n");
+            play(PlayFrom::Resume);
+            advance(18);
+        } else if (step == 18 && mode() == Mode::Playing && playable && frame > 15) {
+            runScene = Hooks::sceneSerial();
+            MarioAccess::getPlayerActor()->setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOverSink));
+            if (!MR::isPlayerDead())
+                return fail("direct death-nerve fixture was not dying");
+            advance(19);
+        } else if (step == 19 && frame >= 2) {
+            if (mode() != Mode::Editing || !view.missed || view.running || Hooks::sceneSerial() != runScene)
+                return fail("first-step death fallback could not freeze dying Mario");
+            if (MR::getPlayerLeft() != livesAtMiss)
+                return fail("direct death nerve consumed a life");
             std::fprintf(stderr,
-                         "[editor-playtest] PASS: trail, peaks, Keep/undo, star, fresh world, immediate fall/death/black-hole, missed-run retry\n");
+                         "[editor-playtest] PASS: trail, peaks, Keep/undo, star, fresh world, fall/death/black-hole, dying-player freeze, retry\n");
             step = 999;
         }
     }
