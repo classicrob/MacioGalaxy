@@ -40,6 +40,9 @@ struct OpenOptions {
     bool userMods = false;       // load on top of the user directory's enabled mods (as the game would)
     std::string galaxy;          // "EggStarGalaxy"
     int mission = 1;
+    std::filesystem::path mod;  // an explicit saved patch, above the enabled mods when userMods
+    std::filesystem::path baseDirectory;  // immutable overlay cache; the CLI uses <workspace>/base
+    Json::Value base;  // persisted source identities and cached file names (null: freeze now)
 };
 
 /// One command's description for help/schemas (every command is self-describing).
@@ -69,6 +72,7 @@ public:
 
     const EditModel& model() const;
     const OpenOptions& options() const { return mOptions; }
+    Json::Value base() const;  // workspace metadata, including hashes written by this workspace
 
     /// Live mode: called with each committed op (apply, undo as an inverse is not sent: see AGENT_API.md).
     void setOnCommit(std::function< void(const Json::Value& opJson) > fn) { mOnCommit = std::move(fn); }
@@ -104,6 +108,9 @@ std::string rowRef(const ModelView& model, RowId row);
 RowId parseRowRef(const ModelView& model, const std::string& ref);
 /// The id the API gives the n-th added row (bit 63 | bit 62 | n: apart from newRowId()'s ids).
 RowId newRowIdFor(std::uint64_t n);
+
+/// Stable content identity of a loaded base (before journal ops), shared with the live server.
+std::string modelFingerprint(const ModelView& model);
 
 Json::Value opToJson(const ModelView& model, const Op& op);
 /// nullopt and *pError when a ref, zone or table can't be resolved.

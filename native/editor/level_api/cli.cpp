@@ -1,7 +1,7 @@
 // petari-level: the agent level-authoring CLI (docs/dev/level-editor/AGENT_API.md).
 //
 //   petari-level help [command|--op NAME]
-//   petari-level [--ws DIR] init --disc DISC --galaxy EggStarGalaxy [--mission 1] [--user DIR] [--user-mods]
+//   petari-level [--ws DIR] init --disc DISC --galaxy EggStarGalaxy [--mission 1] [--user DIR] [--user-mods] [--mod PATCH_DIR]
 //   petari-level [--ws DIR] <command> [{json args}] [--key value ...] [positional]
 //   petari-level [--ws DIR] apply ops.json|-          (a JSON array of ops, or {"ops": [...], "key": ...})
 //   petari-level [--ws DIR] serve                     JSON lines on stdin: {"id": 1, "cmd": "list", "args": {...}}
@@ -117,6 +117,9 @@ namespace {
         options.disc = ws.config["disc"].asString();
         options.user = ws.config["user"].asString();
         options.userMods = ws.config["user_mods"].asBool();
+        options.mod = ws.config["mod"].asString();
+        options.baseDirectory = ws.dir / "base";
+        options.base = ws.config["base"];
         options.galaxy = ws.config["galaxy"].asString();
         options.mission = ws.config["mission"].asInt(1);
         LevelApi::Error e;
@@ -141,6 +144,7 @@ namespace {
     }
 
     bool saveWorkspace(Workspace& ws, const LevelApi::Level& level) {
+        ws.config.set("base", level.base());
         ws.config.set("journal", level.journal());
         return writeText(ws.file(), Json::write(ws.config, true) + "\n");
     }
@@ -156,7 +160,7 @@ namespace {
         std::fputs(
             "petari-level: author Super Mario Galaxy levels with the Petari editor's core, in JSON.\n"
             "  petari-level help [command] [--op NAME] [--all]      self-description (JSON)\n"
-            "  petari-level [--ws DIR] init --disc DISC --galaxy NAME [--mission N] [--user DIR] [--user-mods]\n"
+            "  petari-level [--ws DIR] init --disc DISC --galaxy NAME [--mission N] [--user DIR] [--user-mods] [--mod PATCH_DIR]\n"
             "  petari-level [--ws DIR] <command> [{json}] [--key value ...]\n"
             "  petari-level [--ws DIR] apply FILE|-                 a batch: [op, ...] or {\"ops\": [...], \"key\": ...}\n"
             "  petari-level [--ws DIR] serve                        JSON lines: {\"id\":1,\"cmd\":\"list\",\"args\":{}}\n"
@@ -264,6 +268,7 @@ int main(int argc, char** argv) {
         const std::string user = args.has("user") ? args["user"].asString() : (ws.dir / "user").string();
         config.set("user", fs::absolute(user, ec).string());
         config.set("user_mods", args["user_mods"].asBool());
+        if (args.has("mod")) config.set("mod", fs::absolute(args["mod"].asString(), ec).string());
         ws.config = config;
         if (!writeText(ws.file(), Json::write(config, true) + "\n")) return emitError("io", "cannot write " + ws.file().string());
         int exitCode = 0;

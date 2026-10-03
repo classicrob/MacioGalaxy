@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 #include <unistd.h>
 
@@ -64,6 +65,67 @@ bool hasCandidate(const Value& reply, const std::string& text) {
 double ms(std::chrono::steady_clock::time_point since) {
     return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now() - since).count();
 }
+    void testModContinuation(const L::OpenOptions& originalOptions) {
+        auto options = originalOptions;
+        options.user /= "mod_continuation";
+        options.baseDirectory = options.user / "workspace" / "base";
+        L::Error error;
+        auto stock = L::Level::open(options, &error);
+        check(stock != nullptr, "stock for continuation: " + error.message);
+        const int originalCount = call(*stock, "info")["objects"].asInt();
+        const auto savedOps = call(*stock, "apply", R"({"ops":[{"op":"add","class":"Coin","zone":"DiskGardenZone","pos":[0,70000,0]},{"op":"add","class":"SuperSpinDriver","zone":"DiskGardenZone","pos":[0,71000,0]}]})");
+        check(ok(savedOps, "source patch objects"), "source patch created");
+        check(ok(call(*stock, "save", R"({"mod":"Continue me"})"), "source save"), "source patch saved");
+        stock.reset();
+        options.mod = options.user / "mods" / "Continue me";
+        auto modded = L::Level::open(options, &error);
+        check(modded != nullptr, "open explicit mod: " + error.message);
+        Value info = call(*modded, "info");
+        check(info["objects"].asInt() == originalCount + 2, "explicit mod is the base");
+        check(info["baseline"].asString() == "pristine-disc", "continued mod baseline is pristine disc");
+        check(info["source_warnings"].items().empty(), "unchanged input has no warning");
+        check(!call(*modded, "checks")["checks"].items().empty(), "mod's own missing-path check stays visible");
+        check(modded->base()["sources"].items().size() == 1 && !modded->base()["files"].items().empty(), "source identity and cached overlays recorded");
+        for (const auto& file : modded->base()["files"].items()) check(fs::exists(options.baseDirectory / "files" / file.asString()), "frozen overlay lives inside workspace");
+        check(ok(call(*modded, "apply", R"({"ops":[{"op":"add","class":"Coin","zone":"DiskGardenZone","pos":[0,72000,0],"as":"extra"}]})"), "continue edit"), "continue editing");
+        const Value journal = modded->journal();
+        check(ok(call(*modded, "save", R"({"mod":"Continue me"})"), "save over source"), "save over input mod");
+        check(call(*modded, "info")["source_warnings"].items().empty(), "own save does not stale the source");
+        options.base = modded->base();
+        modded.reset();
+        auto reopened = L::Level::open(options, &error);
+        check(reopened && reopened->replay(journal, &error), "reopen frozen base and journal: " + error.message);
+        check(call(*reopened, "info")["objects"].asInt() == originalCount + 3, "saved journal not double applied");
+        check(call(*reopened, "info")["source_warnings"].items().empty(), "accepted written hash persists across reopen");
+        {
+            std::ofstream manifest(options.mod / "mod.txt", std::ios::app);
+            manifest << "description=changed externally\n";
+        }
+        const Value stale = call(*reopened, "info");
+        check(stale["source_warnings"].items().size() == 1 && stale["objects"].asInt() == originalCount + 3, "stale input warns without rebasing");
+        check(call(*reopened, "refreeze")["error"]["code"].asString() == "journal", "refreeze refuses implicit journal loss");
+        check(ok(call(*reopened, "refreeze", R"({"discard_journal":true})"), "refreeze"), "explicit refreeze adopts current source");
+        check(call(*reopened, "info")["history"].asInt() == 0 && call(*reopened, "info")["objects"].asInt() == originalCount + 3, "refreeze clears journal without duplicating saved edits");
+        check(call(*reopened, "info")["source_warnings"].items().empty(), "refreeze clears stale warning");
+        const Value frozen = reopened->base();
+        const fs::path copied = options.user / "copied-workspace" / "base";
+        fs::copy(options.baseDirectory, copied, fs::copy_options::recursive);
+        options.baseDirectory = copied;
+        options.base = frozen;
+        auto copy = L::Level::open(options, &error);
+        check(copy && call(*copy, "info")["objects"].asInt() == originalCount + 3, "copying workspace carries all frozen files");
+        auto enabled = options;
+        enabled.mod.clear();
+        enabled.userMods = true;
+        enabled.base = Value();
+        enabled.baseDirectory = options.user / "enabled-workspace" / "base";
+        auto userMods = L::Level::open(enabled, &error);
+        check(userMods && !call(*userMods, "checks")["checks"].items().empty(), "user-mods also exposes input mod problems");
+        check(call(*userMods, "info")["baseline"].asString() == "pristine-disc", "user-mods baseline is pristine disc");
+        enabled.mod = options.user / "missing";
+        check(!L::Level::open(enabled, &error) && error.code == "bad-mod", "missing mod is a structured error");
+    }
+
     void testGroundArrays(const L::OpenOptions& originalOptions) {
         auto options = originalOptions;
         options.user /= "ground_arrays";
@@ -254,6 +316,12 @@ int main() {
     options.mission = 1;
 
     if (const char* part = std::getenv("PETARI_LEVEL_API_TEST_PART")) {
+        if (std::string(part) == "mod") {
+            testModContinuation(options);
+            fs::remove_all(user);
+            std::printf("petari_level: %d mod checks passed\n", sChecks);
+            return 0;
+        }
         if (std::string(part) == "ground") {
             testGroundArrays(options);
             fs::remove_all(user);
@@ -523,6 +591,7 @@ int main() {
         check(stars["total"].asInt() == 1, "the saved star is in the modded galaxy");
     }
 
+    testModContinuation(options);
     testPathEdits(options);
     testGravityEdits(options);
     testGroundArrays(options);

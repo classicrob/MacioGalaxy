@@ -220,7 +220,7 @@ namespace {
 std::vector< Check > Level::Impl::newChecks() const {
     std::vector< Check > out;
     for (Check& c : computeChecks(*model)) {
-        if (!baseline.count(c.key))
+        if (!isBaseline(c))
             out.push_back(std::move(c));
     }
     return out;
@@ -230,7 +230,7 @@ Json::Value Level::Impl::checksJson(bool all) const {
     Json::Value list = Json::Value::array();
     int errors = 0, warnings = 0;
     for (const Check& c : computeChecks(*model)) {
-        const bool known = baseline.count(c.key) != 0;
+        const bool known = isBaseline(c);
         if (known && !all)
             continue;
         Json::Value j = Json::Value::object();

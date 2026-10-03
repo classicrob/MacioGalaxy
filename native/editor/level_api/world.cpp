@@ -182,7 +182,7 @@ void World::sync(const EditModel& model) {
             auto it = mCache.find(item.name);
             if (it == mCache.end()) {
                 std::shared_ptr< std::vector< Triangle > > tris;
-                if (std::optional< Formats::Bytes > raw = ModelIO::readMounted("/ObjectData/" + item.name + ".arc")) {
+                if (std::optional< Formats::Bytes > raw = mSource("/ObjectData/" + item.name + ".arc")) {
                     if (std::optional< Formats::Archive > archive = Formats::Archive::parse(*raw)) {
                         const Formats::Bytes* kcl = archive->file(item.name + ".kcl");
                         if (kcl == nullptr) {
@@ -383,10 +383,15 @@ Gravity World::gravityAt(const EditModel& model, G::V3 point) const {
 namespace PetariEditor::LevelApi {
 
 Level::Impl::Impl() = default;
-Level::Impl::~Impl() = default;
+Level::Impl::~Impl() {
+    if (!ownedBaseDirectory.empty()) {
+        std::error_code ec;
+        std::filesystem::remove_all(ownedBaseDirectory, ec);
+    }
+}
 
 World& Level::Impl::world() {
-    if (!worldCache) worldCache = std::make_unique< World >();
+    if (!worldCache) worldCache = std::make_unique< World >(mountedSource);
     worldCache->sync(*model);
     return *worldCache;
 }

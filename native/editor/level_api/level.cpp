@@ -2,6 +2,7 @@
 #include "level_internal.hpp"
 
 #include "checks.hpp"
+#include "base.hpp"
 #include "model_io.hpp"
 #include "world.hpp"
 
@@ -13,6 +14,8 @@
 #include <cmath>
 #include <exception>
 #include <functional>
+#include <chrono>
+#include <unistd.h>
 
 namespace PetariEditor::LevelApi {
 
@@ -74,10 +77,7 @@ std::unique_ptr< Level > Level::open(const OpenOptions& options, Error* pError) 
     DVD::MountOptions mount{options.disc};
     if (!options.user.empty()) {
         fs::create_directories(options.user, ec);
-        ModFolder::setPatchBuilder(&Patch::buildForLoader);
-        // Also remembers the user directory: the catalog's user files and where saveMod writes.
-        ModFolder::Resolved resolved = ModFolder::resolveForUser(options.user, options.userMods ? options.disc : fs::path());
-        if (options.userMods) mount.overlay = std::move(resolved.files);
+        ModFolder::resolveForUser(options.user);  // remember the save/catalog directory, without mounting mutable overlays
     }
     if (DVD::isMounted()) DVD::shutdown();
     std::string error;
@@ -86,8 +86,32 @@ std::unique_ptr< Level > Level::open(const OpenOptions& options, Error* pError) 
     std::unique_ptr< Level > level(new Level());
     level->mOptions = options;
     std::string catalogError;
-    // The editor's own loader (as the in-game session): catalog, the disc's planets, the Paths checks, the model.
-    level->mImpl->model = ModelIO::load(options.galaxy, std::max(1, options.mission), options.user.string(), {}, &error, &catalogError);
+    try {
+        if ((options.userMods || !options.mod.empty()) && options.baseDirectory.empty()) {
+            level->mOptions.baseDirectory = fs::temp_directory_path() / ("petari-level-base-" + std::to_string(getpid()) + "-" +
+                std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+            level->mImpl->ownedBaseDirectory = level->mOptions.baseDirectory;
+        }
+        level->mImpl->baseMetadata = options.base.isObject() ? options.base : freezeBase(level->mOptions);
+        level->mImpl->mountedSource = frozenSource(level->mOptions, level->mImpl->baseMetadata);
+        // Only the pristine disc's problems belong to the baseline, including when continuing a mod.
+        auto pristine = ModelIO::load(options.galaxy, std::max(1, options.mission), options.user.string(), {}, &error, &catalogError,
+                                     ModelIO::readUnmodded, ModelIO::readUnmodded);
+        if (pristine) {
+            for (const Check& check : computeChecks(*pristine))
+                level->mImpl->baseline.insert(normalizedCheckKey(*pristine, check));
+        }
+        if (pristine && level->mImpl->baseMetadata["files"].items().empty()) {
+            level->mImpl->model = std::move(pristine);
+        } else {
+            level->mImpl->model = ModelIO::load(options.galaxy, std::max(1, options.mission), options.user.string(), {}, &error, &catalogError,
+                                              level->mImpl->mountedSource, ModelIO::readUnmodded);
+        }
+    } catch (const Failure& failure) {
+        return failed(failure.error);
+    } catch (const std::exception& exception) {
+        return failed({"io", exception.what(), "check the workspace and input mod paths", {}, "base"});
+    }
     if (!level->mImpl->model) {
         const std::vector< std::string > galaxies = discGalaxies();
         if (std::find(galaxies.begin(), galaxies.end(), options.galaxy) == galaxies.end()) {
@@ -100,10 +124,15 @@ std::unique_ptr< Level > Level::open(const OpenOptions& options, Error* pError) 
     if (options.mission < 1 || options.mission > model.missionCount()) {
         return failed({"bad-value", options.galaxy + " has missions 1-" + std::to_string(model.missionCount()), "", {}, "mission"});
     }
-    // The shipped galaxy's problems are not reported (as in the in-game Checks).
-    for (const Check& c : computeChecks(model)) level->mImpl->baseline.insert(c.key);
+    level->mImpl->baseFingerprint = modelFingerprint(model);
+    const auto& recorded = level->mImpl->baseMetadata["fingerprint"];
+    if (recorded.isString() && recorded.asString() != level->mImpl->baseFingerprint)
+        return failed({"bad-workspace", "the frozen base no longer matches its recorded content", "restore the workspace base or explicitly refreeze", {}, "base"});
+    level->mImpl->baseMetadata.set("fingerprint", level->mImpl->baseFingerprint);
     return level;
 }
+
+Json::Value Level::base() const { return mImpl->baseMetadata; }
 
 // ---- the journal -------------------------------------------------------------------------------------
 
@@ -255,6 +284,10 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
         if (command == "help") {
             merge(helpJson(args));
         } else if (command == "info") {
+            out.set("baseline", "pristine-disc");
+            out.set("base", impl.baseMetadata);
+            out.set("base_fingerprint", impl.baseFingerprint);
+            out.set("source_warnings", sourceWarnings(mOptions, impl.baseMetadata));
             out.set("galaxy", model.galaxy());
             out.set("mission", model.scenario());
             Json::Value missions = Json::Value::array();
@@ -302,6 +335,42 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
             for (const auto& [name, row] : impl.labels) labels.set("@" + name, rowRef(model, row));
             out.set("labels", std::move(labels));
             out.set("coordinates", "pos/rot are world space (degrees, the game's Rz*Ry*Rx); zone_pos/zone_rot are the row's own");
+        } else if (command == "refreeze") {
+            for (const auto& [key, value] : args.members()) {
+                if (key != "discard_journal" && key != "existing_checks") fail("bad-args", "unknown refreeze key: " + key, "", {}, key);
+            }
+            if (args.has("discard_journal") && args["discard_journal"].type() != Json::Value::Type::Bool)
+                fail("bad-value", "discard_journal must be boolean", "", {}, "discard_journal");
+            if (model.historySize() && !args["discard_journal"].asBool())
+                fail("journal", "refreeze would discard the journal", "save first, then use discard_journal:true", {}, "discard_journal");
+            OpenOptions next = mOptions;
+            next.base = Json::Value();
+            const fs::path target = next.baseDirectory;
+            if (!target.empty()) next.baseDirectory = target.string() + ".refreeze-" + std::to_string(getpid());
+            Error error;
+            auto fresh = Level::open(next, &error);
+            if (!fresh) { Json::Value reply = Json::Value::object(); reply.set("ok", false); reply.set("error", error.toJson()); return reply; }
+            if (!target.empty() && fs::exists(next.baseDirectory)) {
+                const fs::path old = target.string() + ".refreeze-old-" + std::to_string(getpid());
+                std::error_code ec;
+                fs::remove_all(old, ec);
+                const bool existed = fs::exists(target);
+                if (existed) fs::rename(target, old);
+                try { fs::rename(next.baseDirectory, target); }
+                catch (...) { if (existed) fs::rename(old, target); throw; }
+                fs::remove_all(old, ec);
+                fresh->mOptions.baseDirectory = target;
+                fresh->mImpl->mountedSource = frozenSource(fresh->mOptions, fresh->mImpl->baseMetadata);
+            }
+            if (!impl.ownedBaseDirectory.empty()) {
+                fresh->mImpl->ownedBaseDirectory = target;
+                impl.ownedBaseDirectory.clear();
+            }
+            mOptions = std::move(fresh->mOptions);
+            mImpl = std::move(fresh->mImpl);
+            Json::Value reply = call("info", args);
+            reply.set("refrozen", true);
+            return reply;
         } else if (command == "galaxies") {
             Json::Value list = Json::Value::array();
             for (const std::string& g : discGalaxies()) list.push(g);
@@ -451,11 +520,12 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
             }
             // The editor's own save (as the in-game Save sheet), then on for the next start like the game's.
             std::string summary, error;
-            if (!ModelIO::saveToDirectory(model, mOptions.user / "mods" / mod, args["full"].asBool(), &summary, &error)) fail("save-failed", error, "", {}, "mod");
+            if (!ModelIO::saveToDirectory(model, mOptions.user / "mods" / mod, args["full"].asBool(), &summary, &error, impl.mountedSource)) fail("save-failed", error, "", {}, "mod");
             std::string enableError;
             ModFolder::resolveForUser(mOptions.user);  // the mod list now includes it
             ModFolder::setEnabled(mod, true, &enableError);
             const std::string notice = "Saved " + summary + " to mods/" + mod + (enableError.empty() ? " (on from the next start)" : " (turn it on: " + enableError + ")");
+            recordSavedSource(impl.baseMetadata, mOptions.user / "mods" / mod);
             impl.model->markSaved();
             out.set("notice", notice);
             out.set("mod_dir", (mOptions.user / "mods" / mod).string());

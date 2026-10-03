@@ -35,6 +35,7 @@ struct Gravity {
 
 class World {
 public:
+    explicit World(FileSource source) : mSource(std::move(source)) {}
     /// Rebuilds the colliders when the model's collision rows changed (archives are cached by class).
     void sync(const EditModel& model);
 
@@ -57,6 +58,7 @@ public:
     const std::vector< std::string >& skipped() const { return mSkipped; }  // classes with an archive but no .kcl read
 
 private:
+    FileSource mSource;
     std::vector< Collider > mColliders;
     std::vector< std::string > mSkipped;
     std::string mSignature;

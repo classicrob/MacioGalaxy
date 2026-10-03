@@ -63,6 +63,11 @@ struct Level::Impl {
     std::unique_ptr< World > worldCache;
     /// The collision world, synced to the model (world.hpp).
     World& world();
+    FileSource mountedSource;
+    Json::Value baseMetadata;
+    std::string baseFingerprint;
+    std::filesystem::path ownedBaseDirectory;
+    bool isBaseline(const Check& check) const;
     std::set< std::string > baseline;           // check keys of the galaxy as loaded (not reported)
     std::vector< JournalEntry > entries;        // parallel to the model's history
     std::map< std::string, RowId > labels;      // "star1" -> row

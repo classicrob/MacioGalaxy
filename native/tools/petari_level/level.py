@@ -195,7 +195,7 @@ class Level:
 
     @classmethod
     def init(cls, workspace: str | os.PathLike, *, disc: str | os.PathLike, galaxy: str, mission: int = 1,
-             user: Optional[str | os.PathLike] = None, user_mods: bool = False, force: bool = False,
+             user: Optional[str | os.PathLike] = None, user_mods: bool = False, mod: Optional[str | os.PathLike] = None, force: bool = False,
              binary: Optional[str | os.PathLike] = None) -> "Level":
         """Create a workspace (fails if one exists, unless force) and open it."""
         level = cls(workspace, binary)
@@ -205,6 +205,8 @@ class Level:
             argv += ["--user", str(user)]
         if user_mods:
             argv += ["--user-mods"]
+        if mod:
+            argv += ["--mod", str(mod)]
         if force:
             argv += ["--force"]
         reply = json.loads(subprocess.run(argv, capture_output=True, text=True).stdout or "{}")
@@ -268,6 +270,10 @@ class Level:
 
     def info(self, *, existing_checks: bool = False) -> dict:
         return self.call("info", existing_checks=existing_checks or None)
+
+    def refreeze(self, *, discard_journal: bool = False) -> dict:
+        """Adopt current input mods explicitly; save first when discarding existing edits."""
+        return self.call("refreeze", discard_journal=discard_journal)
 
     def catalog(self, query: Optional[str] = None, *, category: Optional[str] = None, placed_here: Optional[bool] = None,
                 limit: Optional[int] = None) -> list[dict]:
