@@ -7,7 +7,7 @@
 
 namespace PetariEditor::Ui {
     namespace {
-        bool visible = false;
+        bool gHelpVisible = false;
         struct Shortcut {
             const char* keys;
             const char* action;
@@ -46,11 +46,11 @@ namespace PetariEditor::Ui {
     }  // namespace
 
     void toggleHelp() {
-        visible = !visible;
+        gHelpVisible = !gHelpVisible;
     }
 
     bool helpVisible() {
-        return visible;
+        return gHelpVisible;
     }
 
     bool updateHelpInput() {
@@ -58,8 +58,8 @@ namespace PetariEditor::Ui {
         if (io.WantTextInput || io.KeyCtrl || io.KeySuper || io.KeyAlt) {
             return false;
         }
-        if (visible && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-            visible = false;
+        if (gHelpVisible && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+            gHelpVisible = false;
             return true;
         }
         if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Slash, false)) {
@@ -69,7 +69,7 @@ namespace PetariEditor::Ui {
     }
 
     void drawHelpOverlay() {
-        if (!visible || ImGui::GetTopMostPopupModal() != nullptr) {
+        if (!gHelpVisible || ImGui::GetTopMostPopupModal() != nullptr) {
             return;
         }
         const auto* viewport = ImGui::GetMainViewport();
@@ -81,7 +81,7 @@ namespace PetariEditor::Ui {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {16.f, 14.f});
         const bool open =
-            ImGui::Begin("Keys and tips###editor-help", &visible,
+            ImGui::Begin("Keys and tips###editor-help", &gHelpVisible,
                          ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
         ImGui::PopStyleVar(3);
         ImGui::PopStyleColor(2);
@@ -124,7 +124,7 @@ namespace PetariEditor::Ui {
             }
             ImGui::TextWrapped("Full walkthrough: docs/EDITOR_GUIDE.md");
             if (ImGui::Button("Close help")) {
-                visible = false;
+                gHelpVisible = false;
             }
             noteTestTarget("button:Close help");
         }
