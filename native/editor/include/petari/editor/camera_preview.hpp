@@ -13,7 +13,7 @@ namespace PetariEditor::CameraPreview {
         const void* copy = nullptr;
         std::string message;
         Vec3 eye, target;
-        float fovy = 45;
+        float fovy = 45, roll = 0;
         std::uint64_t serial = 0;
     };
     void request(RowId area, Source source);

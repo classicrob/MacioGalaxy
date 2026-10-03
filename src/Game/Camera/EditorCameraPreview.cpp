@@ -267,6 +267,7 @@ namespace EditorCameraPreview {
             out.eye = point(result->mPos);
             out.target = point(result->mWatchPos);
             out.fovy = result->mFovy;
+            out.roll = result->mRoll;
             return true;
         }
     }  // namespace

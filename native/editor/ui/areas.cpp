@@ -50,7 +50,13 @@ namespace PetariEditor::Ui {
                 auto [it, added] = drafts.emplace(std::make_pair(row, hash), Draft{m.revision(), cell->f});
                 if (it->second.revision != m.revision())
                     it->second = {m.revision(), cell->f};
+                const bool defaultFov = hash == columnHash("fovy") && !m.cell(row, columnHash("flag.nofovy"));
+                ImGui::BeginDisabled(defaultFov);
                 ImGui::InputFloat(field.first, &it->second.value, 1, 10, "%.2f");
+                ImGui::EndDisabled();
+                if (defaultFov && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    ImGui::SetTooltip("This camera uses the galaxy's default field of view.");
+                }
                 if (ImGui::IsItemDeactivatedAfterEdit()) {
                     Op op;
                     op.label = std::string("Edit camera ") + field.first;

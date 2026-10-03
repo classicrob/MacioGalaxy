@@ -94,8 +94,7 @@ void notePlaced(const void* pTableData, int row, void* pActor) {
 
 void noteArea(const void* table, int row, void* area) {
     PetariNative::HostAllocationScope host;
-    if (enabled())
-        areaList().push_back({table, row, area});
+    areaList().push_back({table, row, area});
 }
 const std::vector< Placed >& areas() {
     return areaList();

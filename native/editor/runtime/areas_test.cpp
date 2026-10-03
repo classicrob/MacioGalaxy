@@ -157,13 +157,14 @@ namespace PetariEditor::Runtime {
             const auto volume = Areas::describe(*m, cameraRow);
             const auto param = Areas::cameraRow(*m, *volume);
             Command c{Command::Kind::Apply};
-            c.op.label = "Edit camera field of view";
-            Cell value = *m->cell(param, columnHash("fovy"));
-            value.f = 55;
-            c.op.sets.push_back({param, columnHash("fovy"), value});
-            value = *m->cell(param, columnHash("flag.nofovy"));
-            value.i = 1;
-            c.op.sets.push_back({param, columnHash("flag.nofovy"), value});
+            c.op.label = "Edit camera roll";
+            const auto* roll = m->cell(param, columnHash("roll"));
+            if (!roll) {
+                return finish("FAIL: camera fixture has no roll field");
+            }
+            Cell value = *roll;
+            value.f = 0.25f;
+            c.op.sets.push_back({param, columnHash("roll"), value});
             enqueue(std::move(c));
         }
         if (f == 180) {
@@ -173,8 +174,9 @@ namespace PetariEditor::Runtime {
                 return finish("FAIL: camera preview has no finite pose");
             if (MR::getCameraDirector()->mTargetHolder->mTarget != originalTarget)
                 return finish("FAIL: preview changed active camera target");
-            if (std::fabs(preview.fovy - 55) > 0.01f || status().pendingCount != pending + 2 || preview.message.find("budget") != std::string::npos) {
-                return finish("FAIL: live bcam preview did not apply edited field of view");
+            if (std::fabs(preview.roll - 0.25f) > 0.001f || status().pendingCount != pending + 2 ||
+                preview.message.find("budget") != std::string::npos) {
+                return finish("FAIL: live bcam preview did not apply edited roll");
             }
             PetariNative::EfbDump::mark("areas-camera-preview");
             std::fprintf(stderr, "[editor-areas] camera preview pose finite and active target restored PASS\n");
