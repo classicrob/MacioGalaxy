@@ -1,6 +1,9 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
+#include "Game/LiveActor/HitSensor.hpp"
+#include "Game/Map/HitInfo.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/MapUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "model_io.hpp"
 #include "runtime_core.hpp"
@@ -17,6 +20,7 @@
 namespace PetariEditor::Runtime {
     void importTestTick() {
         static const char* output = std::getenv("PETARI_EDITOR_IMPORT_TEST");
+        static const bool reopen = std::getenv("PETARI_EDITOR_IMPORT_REOPEN") != nullptr;
         static int frame = -1, step = 0, wait = 0, cursor = 0;
         static bool done = false;
         static RowId row;
@@ -69,11 +73,17 @@ namespace PetariEditor::Runtime {
                 }
                 return;
             }
-            if (m->historyCursor() != cursor + 1 || Hooks::sceneSerial() != serial) {
+            if (!reopen && (m->historyCursor() != cursor + 1 || Hooks::sceneSerial() != serial)) {
                 return finish("FAIL: import was not one live undo step");
             }
             if (!EditorTerrain::partModel(actor) || !actor->mCollisionParts) {
                 return finish("FAIL: imported model or collision missing");
+            }
+            TVec3f hit;
+            Triangle triangle;
+            const TVec3f from(actor->mPosition.x, actor->mPosition.y + 500, actor->mPosition.z);
+            if (!MR::getFirstPolyOnLineToMap(&hit, &triangle, from, TVec3f(0, -1000, 0)) || !triangle.mSensor || triangle.mSensor->mHost != actor) {
+                return finish("FAIL: game collision query did not hit imported mesh");
             }
             visual = static_cast< EditorTerrain::Part* >(actor)->mModel;
             PetariNative::EditorSettings::frame();
@@ -83,6 +93,9 @@ namespace PetariEditor::Runtime {
         }
         if (step == 1 && ++wait == 25) {
             PetariNative::EfbDump::mark("import-placed");
+            if (reopen) {
+                return finish("PASS: saved patch reopened as editable textured collision part");
+            }
             step = 2;
             wait = 0;
         }

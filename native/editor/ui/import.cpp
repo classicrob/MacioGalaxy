@@ -113,7 +113,47 @@ namespace PetariEditor::Ui {
                 });
             }
         }
+        std::array< ImTextureID, 16 > gTextures{};
+        std::array< bool, 16 > gTextureValid{};
+        std::shared_ptr< I::Scene > gTextureSource;
+        void previewTextures() {
+            if (gTextureSource == gScene || !Host::makeTexture()) {
+                return;
+            }
+            gTextureSource = gScene;
+            gTextureValid.fill(false);
+            if (!gScene) {
+                return;
+            }
+            for (size_t m = 0; m < std::min< size_t >(16, gScene->materials.size()); ++m) {
+                const int index = gScene->materials[m].image;
+                if (index < 0 || index >= int(gScene->images.size())) {
+                    continue;
+                }
+                const auto& image = gScene->images[index];
+                if (image.rgba.empty()) {
+                    continue;
+                }
+                const int w = std::min(256, image.width), h = std::min(256, image.height);
+                std::vector< unsigned char > rgba(size_t(w) * h * 4);
+                for (int y = 0; y < h; ++y) {
+                    for (int x = 0; x < w; ++x) {
+                        for (int c = 0; c < 4; ++c) {
+                            rgba[(size_t(y) * w + x) * 4 + c] =
+                                image.rgba[(size_t(y * image.height / h) * image.width + x * image.width / w) * 4 + c];
+                        }
+                    }
+                }
+                if (!gTextures[m]) {
+                    gTextures[m] = Host::makeTexture()(w, h, rgba.data());
+                } else if (!Host::updateTexture() || !Host::updateTexture()(gTextures[m], w, h, rgba.data())) {
+                    continue;
+                }
+                gTextureValid[m] = gTextures[m] != 0;
+            }
+        }
         void preview(const I::Asset& asset) {
+            previewTextures();
             const ImVec2 start = ImGui::GetCursorScreenPos(), size{ImGui::GetContentRegionAvail().x, 260};
             ImGui::InvisibleButton("##import-preview", size);
             if (ImGui::IsItemActive()) {
@@ -142,27 +182,48 @@ namespace PetariEditor::Ui {
                 I::Vec3 a, b, c;
                 ImU32 color;
                 float depth;
+                ImTextureID texture = 0;
+                ImVec2 ua, ub, uc;
             };
             std::vector< Triangle > triangles;
             size_t total = 0;
             for (const auto& p : asset.parts) {
                 total += p.mesh.triangleCount();
             }
-            const size_t stride = std::max< size_t >(1, (total + 9999) / 10000);
+            const size_t stride = std::max< size_t >(1, (total + 3999) / 4000);
             for (const auto& part : asset.parts) {
                 const auto& color = asset.materials[part.material].color;
                 const auto& mesh = part.mesh;
                 for (size_t t = 0; t < mesh.triangleCount(); t += stride) {
                     auto a = rotate(mesh.positions[mesh.indices[t * 3]]), b = rotate(mesh.positions[mesh.indices[t * 3 + 1]]),
                          c = rotate(mesh.positions[mesh.indices[t * 3 + 2]]);
-                    const float shade = .6f + .3f * std::abs(std::sin(float(t) * 1.3f));
+                    const I::Vec3 ab{b.x - a.x, b.y - a.y, b.z - a.z}, ac{c.x - a.x, c.y - a.y, c.z - a.z};
+                    const I::Vec3 n{ab.y * ac.z - ab.z * ac.y, ab.z * ac.x - ab.x * ac.z, ab.x * ac.y - ab.y * ac.x};
+                    const float length = std::sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+                    const float shade = .55f + .4f * (length > 0 ? std::abs((n.x * .4f + n.y * .8f + n.z * .45f) / length) : 0);
                     triangles.push_back({a, b, c, ImGui::ColorConvertFloat4ToU32({color[0] * shade, color[1] * shade, color[2] * shade, .95f}),
                                          (a.z + b.z + c.z) / 3});
+                    if (part.material < int(gTextures.size()) && gTextureValid[part.material] && asset.materials[part.material].donor < 0 &&
+                        mesh.uvs.size() == mesh.positions.size() * 2) {
+                        auto& tri = triangles.back();
+                        tri.texture = gTextures[part.material];
+                        auto uv = [&](int corner) {
+                            const auto i = mesh.indices[t * 3 + corner] * 2;
+                            return ImVec2{mesh.uvs[i], mesh.uvs[i + 1]};
+                        };
+                        tri.ua = uv(0);
+                        tri.ub = uv(1);
+                        tri.uc = uv(2);
+                    }
                 }
             }
             std::sort(triangles.begin(), triangles.end(), [](const auto& a, const auto& b) { return a.depth < b.depth; });
             for (const auto& t : triangles) {
-                draw->AddTriangleFilled(screen(t.a), screen(t.b), screen(t.c), t.color);
+                if (t.texture) {
+                    draw->AddImageQuad(t.texture, screen(t.a), screen(t.b), screen(t.c), screen(t.c), t.ua, t.ub, t.uc, t.uc, t.color);
+                } else {
+                    draw->AddTriangleFilled(screen(t.a), screen(t.b), screen(t.c), t.color);
+                }
             }
             const auto zero = screen(rotate({0, 0, 0}));
             draw->AddCircle(zero, 4, IM_COL32(85, 240, 230, 255), 0, 2);
@@ -198,16 +259,15 @@ namespace PetariEditor::Ui {
             gOpen = false;
             ImGui::OpenPopup("Import model");
         }
-        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, {.5f, .5f});
-        ImGui::SetNextWindowSize({700, 0});
-        ImGui::SetNextWindowSizeConstraints({560, 300}, {900, ImGui::GetMainViewport()->Size.y - 48});
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, {.5f, .5f});
+        ImGui::SetNextWindowSize({std::min(920.f, ImGui::GetMainViewport()->Size.x - 48), std::min(640.f, ImGui::GetMainViewport()->Size.y - 48)});
         ImGui::PushStyleColor(ImGuiCol_PopupBg, {.02f, .20f, .31f, 1});
         ImGui::PushStyleColor(ImGuiCol_Border, {.40f, .86f, 1, .85f});
         ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, {0, .06f, .12f, .72f});
         ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.5f);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, {16, 14});
-        const bool open = ImGui::BeginPopupModal("Import model", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
+        const bool open = ImGui::BeginPopupModal("Import model", nullptr, ImGuiWindowFlags_NoResize);
         ImGui::PopStyleVar(3);
         ImGui::PopStyleColor(3);
         if (!open) {
@@ -228,6 +288,12 @@ namespace PetariEditor::Ui {
                 loadPath(path, false);
             }
         }
+        const float bodyHeight = std::max(180.f, ImGui::GetContentRegionAvail().y - 90);
+        ImGui::BeginTable("import-layout", 2, ImGuiTableFlags_SizingStretchProp);
+        ImGui::TableSetupColumn("Preview", ImGuiTableColumnFlags_WidthStretch, .48f);
+        ImGui::TableSetupColumn("Options", ImGuiTableColumnFlags_WidthStretch, .52f);
+        ImGui::TableNextColumn();
+        ImGui::BeginChild("import-visual", {0, bodyHeight});
         if (gAsset) {
             preview(*gAsset);
         }
@@ -241,9 +307,31 @@ namespace PetariEditor::Ui {
                 ImGui::CloseCurrentPopup();
             }
         }
+        if (gAsset) {
+            size_t triangles = 0, collision = 0, texture = 0;
+            for (const auto& p : gAsset->parts) {
+                triangles += p.mesh.triangleCount();
+                collision += p.collision.triangleCount();
+            }
+            for (const auto& m : gAsset->materials) {
+                texture += m.texture.data.size();
+            }
+            ImGui::TextWrapped("%zu parts  |  %zu triangles\n%zu collision triangles  |  %.2f MiB textures", gAsset->parts.size(), triangles,
+                               collision, texture / 1048576.0);
+            for (const auto& warning : gAsset->warnings) {
+                ImGui::TextWrapped("%s", warning.c_str());
+            }
+        }
+        ImGui::EndChild();
+        ImGui::TableNextColumn();
+        ImGui::BeginChild("import-options", {0, bodyHeight});
+        ImGui::PushItemWidth(180);
         if (gScene) {
             drawSection("Transform");
-            bool changed = ImGui::InputFloat("Scale (game units per source unit)", &gOptions.scale, 1, 10, "%.3f");
+            bool changed = ImGui::InputFloat("Scale", &gOptions.scale, 1, 10, "%.3f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Game units per source unit");
+            }
             int up = int(gOptions.up), origin = int(gOptions.origin);
             changed |= ImGui::Combo("Up axis", &up, "Y up\0Z up\0X up\0");
             gOptions.up = I::UpAxis(up);
@@ -266,7 +354,7 @@ namespace PetariEditor::Ui {
                 ImGui::TextUnformatted(std::filesystem::path(gCollisionPath).filename().string().c_str());
             }
             changed |= ImGui::Checkbox("Generate middle and low detail", &gOptions.generateLods);
-            changed |= ImGui::Checkbox("Generate downward gravity over each collision part", &gOptions.gravity);
+            changed |= ImGui::Checkbox("Generate downward gravity", &gOptions.gravity);
             if (ImGui::CollapsingHeader("Materials and collision surfaces", ImGuiTreeNodeFlags_DefaultOpen)) {
                 for (size_t i = 0; i < gOptions.materials.size(); ++i) {
                     ImGui::PushID(int(i));
@@ -318,21 +406,9 @@ namespace PetariEditor::Ui {
                 gDirty = true;
             }
         }
-        if (gAsset) {
-            size_t triangles = 0, collision = 0, texture = 0;
-            for (const auto& p : gAsset->parts) {
-                triangles += p.mesh.triangleCount();
-                collision += p.collision.triangleCount();
-            }
-            for (const auto& m : gAsset->materials) {
-                texture += m.texture.data.size();
-            }
-            ImGui::Text("%zu parts  |  %zu triangles  |  %zu collision  |  %.2f MiB textures", gAsset->parts.size(), triangles, collision,
-                        texture / 1048576.0);
-            for (const auto& warning : gAsset->warnings) {
-                ImGui::TextWrapped("%s", warning.c_str());
-            }
-        }
+        ImGui::PopItemWidth();
+        ImGui::EndChild();
+        ImGui::EndTable();
         if (gJob.valid()) {
             ImGui::TextDisabled("Preparing model...");
         }

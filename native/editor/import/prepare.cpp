@@ -141,6 +141,9 @@ namespace PetariEditor::Imports {
                     if (src.image >= 0 && src.image < int(scene.images.size()) && !scene.images[src.image].rgba.empty()) {
                         const auto& im = scene.images[src.image];
                         pixels = reducedImage(im);
+                        if (im.width > 512 || im.height > 512) {
+                            out.warnings.push_back(src.name + ": texture exceeds the recommended 512-pixel budget.");
+                        }
                         if (im.width > 1024 || im.height > 1024) {
                             out.warnings.push_back(src.name + ": texture resized to fit GX's 1024-pixel limit.");
                         }
@@ -218,8 +221,8 @@ namespace PetariEditor::Imports {
             if (out.parts.size() > 64) {
                 throw std::runtime_error("Import needs more than 64 parts. Reduce the model or collision first.");
             }
-            if (renderTriangles > 50000) {
-                out.warnings.push_back("Over 50,000 render triangles: this part may be expensive to draw.");
+            if (renderTriangles > 64000) {
+                out.warnings.push_back("Over 64,000 render triangles: this exceeds the recommended budget for an entire zone.");
             }
             if (textureBytes > 8 * 1024 * 1024) {
                 out.warnings.push_back("GX textures exceed 8 MiB; reduce image sizes or use CMPR.");

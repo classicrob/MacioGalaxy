@@ -25,6 +25,8 @@ namespace PetariEditor::Imports {
     std::string storeAsset(const Asset& asset, std::string* error);
     bool saveAssets(const ModelView& model, const std::filesystem::path& root, std::string* error);
     void registerClasses();
+    // Placing the first Browser card places every material/collision split in one op.
+    void appendPlacementParts(Op& op, const AddRow& first);
     // UI hands an immutable asset to the game thread. Canceling/undoing placement retains the library part.
     void requestPlacement(std::shared_ptr< const Asset > asset);
     std::shared_ptr< const Asset > takePlacement();

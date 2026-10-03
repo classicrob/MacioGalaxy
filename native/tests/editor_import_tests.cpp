@@ -1,5 +1,6 @@
 // Generated fixtures in this test (the wedge, textured platform and image) are dedicated to CC0.
 // No downloaded model assets or disc data are needed.
+#include "../editor/import/vendor/meshoptimizer/src/meshoptimizer.h"
 #include <JSystem/J3DGraphAnimator/J3DModelData.hpp>
 #include <JSystem/J3DGraphBase/J3DMaterial.hpp>
 #include <JSystem/J3DGraphLoader/J3DModelLoader.hpp>
@@ -97,6 +98,36 @@ int main() {
     if (platform) {
         check(platform->primitives[0].mesh.positions[0].x == 2 && platform->primitives[0].mesh.positions[0].y == 3, "glTF node transform applied");
         check(platform->primitives[0].mesh.normals[0].y > .99f, "mirrored node preserves outward winding");
+    }
+    {
+        std::string transformed = prefix + ",\"uri\":\"platform.bin\"" + rest;
+        const auto offset = transformed.find("\"baseColorTexture\":{\"index\":0}");
+        transformed.replace(offset, std::strlen("\"baseColorTexture\":{\"index\":0}"),
+                            "\"baseColorTexture\":{\"index\":0,\"extensions\":{\"KHR_texture_transform\":{\"offset\":[0.25,0.5]}}}");
+        write(dir / "uv-transform.gltf", transformed);
+        const auto uv = I::load(dir / "uv-transform.gltf", &error);
+        check(uv && std::fabs(uv->primitives[0].mesh.uvs[0] - .25f) < .0001f && std::fabs(uv->primitives[0].mesh.uvs[1] - .5f) < .0001f,
+              "glTF texture transform applied");
+        Bytes encoded(meshopt_encodeVertexBufferBound(4, 12));
+        encoded.resize(meshopt_encodeVertexBuffer(encoded.data(), encoded.size(), buffer.data(), 4, 12));
+        Bytes compressed = buffer;
+        std::fill(compressed.begin(), compressed.begin() + 48, 0);
+        compressed.insert(compressed.end(), encoded.begin(), encoded.end());
+        write(dir / "compressed.bin", compressed);
+        std::string packed = prefix + ",\"uri\":\"compressed.bin\"" + rest;
+        auto at = packed.find("\"byteLength\":92");
+        packed.replace(at, 15, "\"byteLength\":" + std::to_string(compressed.size()));
+        const std::string view = "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":48}";
+        at = packed.find(view);
+        packed.replace(at, view.size(),
+                       "{\"buffer\":0,\"byteOffset\":0,\"byteLength\":48,\"extensions\":{\"EXT_meshopt_compression\":{\"buffer\":0,\"byteOffset\":92,"
+                       "\"byteLength\":" +
+                           std::to_string(encoded.size()) + ",\"byteStride\":12,\"count\":4,\"mode\":\"ATTRIBUTES\"}}}");
+        write(dir / "compressed.gltf", packed);
+        const auto meshopt = I::load(dir / "compressed.gltf", &error);
+        if (!meshopt)
+            std::cerr << error << '\n';
+        check(meshopt && std::fabs(meshopt->primitives[0].mesh.positions[1].x - 1) < .0001f, "meshoptimizer compressed vertex data decoded");
     }
     std::string json = prefix + rest;
     while (json.size() % 4) {

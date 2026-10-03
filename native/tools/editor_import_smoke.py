@@ -54,6 +54,8 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--app', type=Path, required=True)
     p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--reopen-mod', type=Path)
+    p.add_argument('--play-only', action='store_true')
     a=p.parse_args()
     root=Path(__file__).resolve().parents[2]
     main=main_checkout()
@@ -61,15 +63,28 @@ def main():
     source=fixture(out)
     user=out/'user'; app=a.app.resolve()
     subprocess.run([sys.executable,str(root/'native/tools/create_observatory_fixture.py'),'--source',str(main/'build/observatory-user-2'),'--output',str(user),'--kind','stage'],check=True)
+    if a.reopen_mod:
+        shutil.copytree(a.reopen_mod.resolve(), user/'mods'/'ImportedFixture')
     (out/'revision.txt').write_text(subprocess.check_output(['git','rev-parse','HEAD'],cwd=root,text=True)+hashlib.sha256(app.read_bytes()).hexdigest()+'\n')
     env=dict(os.environ,PETARI_SMOKE='stage',PETARI_STAGE='EggStarGalaxy',PETARI_SCENARIO='1',PETARI_SMOKE_FRAMES='14000',PETARI_STAGE_IDLE_FRAMES='1800',PETARI_STAGE_GATE_MS='0',PETARI_FAST_BOOT='1',PETARI_PIPELINE_GLOBAL_PRECOMPILE='0',PETARI_LOCK_CLASS='functional',PETARI_MODS='LevelEditor',PETARI_EDITOR_IMPORT_TEST=str(out),PETARI_EDITOR_IMPORT_SHEET=str(source),PETARI_SURFACE_DUMP=str(out/'surfaces'),PETARI_SURFACE_DUMP_LABELS='import-sheet,import-placed',PETARI_SURFACE_DUMP_EVERY='5',PETARI_SURFACE_DUMP_SPAN='15')
+    if a.reopen_mod:
+        env['PETARI_MOD_FOLDERS']='ImportedFixture'
+        env.pop('PETARI_EDITOR_IMPORT_SHEET',None)
+        env['PETARI_EDITOR_IMPORT_REOPEN']='1'
+        env['PETARI_STAGE_IDLE_FRAMES']='400'
+    if a.play_only:
+        env.pop('PETARI_MODS',None)
+        env.pop('PETARI_EDITOR_IMPORT_TEST',None)
+        env.pop('PETARI_EDITOR_IMPORT_REOPEN',None)
+        env['PETARI_PLACEMENT_TRACE']='all'
     cmd=[str(main/'build/locked-app.sh'),'editor-paths','/usr/bin/perl','-e','alarm shift; exec @ARGV or die','600',str(app),'--disc',str(main/'build/game-data/RMGE01'),'--user',str(user),'--test-fixture','stage']
     try:
         with (out/'run.log').open('w') as log: result=subprocess.run(cmd,env=env,cwd=root,stdout=log,stderr=subprocess.STDOUT)
         text=(out/'run.log').read_text(errors='replace')
         for line in text.splitlines():
             if '[editor-import]' in line or 'PETARI SMOKE RESULT:' in line: print(line)
-        return int(result.returncode!=0 or '[editor-import] PASS' not in text or '[editor-import] FAIL' in text)
+        passed=('PETARI SMOKE RESULT: PASS' in text and '[placement] EditorImport' in text) if a.play_only else ('[editor-import] PASS' in text and '[editor-import] FAIL' not in text)
+        return int(result.returncode!=0 or not passed)
     finally: shutil.rmtree(user/'cache',ignore_errors=True)
 
 

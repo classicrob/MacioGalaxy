@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -38,7 +39,7 @@ namespace PetariEditor::Imports {
                 Catalog::ClassInfo c;
                 c.name = className(id, int(i));
                 c.displayName = asset.name;
-                if (asset.parts.size() > 1) {
+                if (asset.parts.size() > 1 && i > 0) {
                     c.displayName += " / " + std::to_string(i + 1);
                 }
                 c.description = "Imported model, " + std::to_string(asset.parts[i].mesh.triangleCount()) + " triangles";
@@ -52,7 +53,11 @@ namespace PetariEditor::Imports {
             }
         }
         void checks(const ModelView& model, std::vector< Check >& out) {
+            std::set< std::string > distinct;
+            std::vector< RowId > allRows;
             for (int z = 0; z < model.zoneCount(); ++z) {
+                size_t triangles = 0;
+                std::vector< RowId > rows;
                 for (int t = 0; t < model.tableCount(z); ++t) {
                     model.forEachRow(z, t, [&](RowId row) {
                         if (model.state(row) == RowState::Deleted) {
@@ -71,9 +76,30 @@ namespace PetariEditor::Imports {
                             c.rows = {row};
                             c.severity = Severity::Error;
                             out.push_back(std::move(c));
+                        } else {
+                            distinct.insert(className(id, part));
+                            allRows.push_back(row);
+                            if (model.rowMissions(row) & (1u << (model.scenario() - 1))) {
+                                triangles += asset->parts[part].mesh.triangleCount();
+                                rows.push_back(row);
+                            }
                         }
                     });
                 }
+                if (triangles > 64000) {
+                    Check c;
+                    c.key = "import-budget:" + std::string(model.zoneName(z)) + ":" + std::to_string(model.scenario());
+                    c.message = "Imported geometry exceeds 64,000 triangles in this zone";
+                    c.rows = std::move(rows);
+                    out.push_back(std::move(c));
+                }
+            }
+            if (distinct.size() > 64) {
+                Check c;
+                c.key = "import-model-capacity";
+                c.message = "More than 64 distinct imported planet parts in this galaxy";
+                c.rows = std::move(allRows);
+                out.push_back(std::move(c));
             }
         }
     }  // namespace
@@ -160,6 +186,31 @@ namespace PetariEditor::Imports {
             addCatalog(id, *asset);
         }
         registerCheckProvider(checks);
+    }
+    void appendPlacementParts(Op& op, const AddRow& first) {
+        const auto name = std::find_if(first.cells.begin(), first.cells.end(), [](const auto& c) { return c.column == columnHash("name"); });
+        if (name == first.cells.end()) {
+            return;
+        }
+        std::string id;
+        int part = 0;
+        if (!parseClassName(name->value.s.c_str(), &id, &part) || part != 0) {
+            return;
+        }
+        const auto asset = findAsset(id);
+        if (!asset) {
+            return;
+        }
+        for (size_t i = 1; i < asset->parts.size(); ++i) {
+            AddRow add = first;
+            add.id = newRowId();
+            for (auto& cell : add.cells) {
+                if (cell.column == columnHash("name")) {
+                    cell.value.s = className(id, i);
+                }
+            }
+            op.adds.push_back(std::move(add));
+        }
     }
     void requestPlacement(std::shared_ptr< const Asset > asset) {
         std::lock_guard< std::mutex > lock(gRequestMutex);
