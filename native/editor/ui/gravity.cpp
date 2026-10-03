@@ -101,7 +101,7 @@ namespace PetariEditor::Ui {
     }
     bool drawGravityOverlay(float x, float y, float width, float height) {
         auto& io = ImGui::GetIO();
-        if (!io.WantTextInput && !io.KeyCtrl && !io.KeySuper && ImGui::IsKeyPressed(ImGuiKey_1, false))
+        if (!io.WantTextInput && !io.KeyCtrl && !io.KeySuper && !io.KeyAlt && ImGui::IsKeyPressed(ImGuiKey_1, false))
             Gravity::setVisible(!Gravity::visible());
         Gravity::setAirProbe(io.KeyAlt);
         if (!Gravity::visible())

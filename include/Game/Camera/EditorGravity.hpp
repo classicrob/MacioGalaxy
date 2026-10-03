@@ -12,5 +12,6 @@ namespace EditorGravity {
     void testTick(bool playable);
     PetariEditor::RowId pick(PetariEditor::Vec3 origin, PetariEditor::Vec3 direction, float* distance);
     bool bounds(const LiveActor* actor, float center[3], float* radius);
+    bool bounds(PetariEditor::RowId row, float center[3], float* radius);
 }  // namespace EditorGravity
 #endif

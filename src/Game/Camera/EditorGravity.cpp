@@ -420,7 +420,7 @@ namespace EditorGravity {
             s.baselineSealed = false;
             s.baselineGround.clear();
         }
-        s.baselineSealed = s.baselineSealed || status().dirty;
+        s.baselineSealed = s.baselineSealed || (currentModel && currentModel->historySize() != 0);
         s.view.fields.clear();
         s.view.registered = mgr->nativeGravityCount();
         std::map< PlanetGravity*, RowId > rows;
@@ -571,6 +571,17 @@ namespace EditorGravity {
         center[2] = f.center.z;
         *radius = std::max(100.0f, f.radius);
         return true;
+    }
+    bool bounds(RowId row, float center[3], float* radius) {
+        for (const auto& field : state().view.fields)
+            if (row.valid() && field.row == row) {
+                center[0] = field.center.x;
+                center[1] = field.center.y;
+                center[2] = field.center.z;
+                *radius = std::max(100.0f, field.radius);
+                return true;
+            }
+        return false;
     }
     RowId pick(Vec3 eye, Vec3 ray, float* distance) {
         if (!G::visible())
