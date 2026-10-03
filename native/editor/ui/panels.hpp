@@ -34,6 +34,8 @@ std::string defaultModName(const char* galaxy);  // "CosmosGardenGalaxy" -> "Cos
 
 // A case-insensitive "contains" (the Outliner's Find; empty matches all).
 bool matchesQuery(const std::string& text, const std::string& query);
+// Frame the camera on the next selection the game makes (a placed object), within a moment.
+void frameNextSelection();
 // Bring a Galaxy tab forward ("Checks": the toolbar's badge).
 void openTab(const char* name);
 struct CheckCounts {

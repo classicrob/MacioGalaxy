@@ -44,6 +44,8 @@ void setSettingsFile(const char* path);
 // Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
 // false if it wasn't drawn.
 bool testTargetRect(const char* name, float* x, float* y, float* width, float* height);
+// Test drivers: place a class as the Browser's Place does for a card with no example (Obj_arg0 = arg0).
+void placeClassForTest(const char* className, int arg0);
 // Test drivers: open the Save sheet (as Cmd+Shift+S) and press its Save button.
 void openSaveSheet();
 void submitSaveSheet();
