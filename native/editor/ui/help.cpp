@@ -60,9 +60,14 @@ namespace PetariEditor::Ui {
         }
         if (gHelpVisible && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
             gHelpVisible = false;
+            ImGui::SetKeyOwner(ImGuiKey_Escape, ImGui::GetID("editor-help"), ImGuiInputFlags_LockThisFrame);
             return true;
         }
-        if (io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Slash, false)) {
+        bool questionMark = io.KeyShift && ImGui::IsKeyPressed(ImGuiKey_Slash, false);
+        for (ImWchar character : io.InputQueueCharacters) {
+            questionMark = questionMark || character == '?';
+        }
+        if (questionMark) {
             toggleHelp();
         }
         return false;

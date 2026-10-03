@@ -326,6 +326,7 @@ void testHelpInput() {
         ImGui::NewFrame();
         io.WantTextInput = typing;
         const bool consumed = Ui::updateHelpInput();
+        if (consumed) CHECK(!ImGui::IsKeyPressed(ImGuiKey_Escape, false));
         Ui::drawHelpOverlay();
         ImGui::Render();
         return consumed;

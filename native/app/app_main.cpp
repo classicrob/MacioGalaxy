@@ -648,6 +648,7 @@ App::FrameStats::Phase framePhaseForPipelines() {
                         if (t == 240) PetariEditor::Ui::toggleHelp();
                         if (t == 245) {
                             std::fprintf(stderr, "[editor-help] closes overlay: %s\n", !PetariEditor::Ui::helpVisible() ? "PASS" : "FAIL");
+                            PetariNative::EfbDump::mark("editor-help-toolbar");
                         }
                     } else {
                         if (t == 205) click("tab:Browser", true);

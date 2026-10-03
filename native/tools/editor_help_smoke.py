@@ -34,8 +34,8 @@ def main():
                PETARI_FAST_BOOT='1', PETARI_PIPELINE_GLOBAL_PRECOMPILE='0', PETARI_LOCK_CLASS='functional',
                PETARI_MODS='LevelEditor', PETARI_EDITOR_TEST='1700', PETARI_EDITOR_TEST_SDL_CLICK='1', PETARI_EDITOR_TEST_HELP='1',
                PETARI_SURFACE_DUMP=str(output / 'surfaces'),
-               PETARI_SURFACE_DUMP_LABELS='editor-help',
-               PETARI_SURFACE_DUMP_EVERY='5', PETARI_SURFACE_DUMP_SPAN='15')
+               PETARI_SURFACE_DUMP_LABELS='editor-help,editor-help-toolbar',
+               PETARI_SURFACE_DUMP_EVERY='5', PETARI_SURFACE_DUMP_SPAN='5')
     command = [str(main / 'build/locked-app.sh'), args.owner, '/usr/bin/perl', '-e',
                'alarm shift; exec @ARGV or die', '600', str(app), '--disc', str(main / 'build/game-data/RMGE01'),
                '--user', str(user), '--test-fixture', 'stage']
