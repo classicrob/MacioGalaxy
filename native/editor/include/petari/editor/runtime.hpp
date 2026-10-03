@@ -25,6 +25,14 @@ bool reloadScene(bool fromStart);
 /// True from reloadScene() (or the editor's Reload) until the new scene is playable.
 bool reloading();
 
+/// Loads the edit model for the current stage and mission and binds the scene, without entering
+/// Edit, and keeps it loaded (across reloads and stage changes) for the rest of the run: model()
+/// is then non-null in Play, and enqueue()d commands apply on the next tick with SceneSync
+/// re-creating actors in the running scene (headless/agent tools through the test server). Game
+/// thread. False: the editor is off, no stage is loaded, or the model couldn't load
+/// (status().lastError says why).
+bool ensureModel();
+
 // ---- SceneSync extensions (M3: gravity, paths). Register once at start-up; game thread. ----------
 
 /// A drag preview for classes whose look isn't just the actor's transform (a gravity field's

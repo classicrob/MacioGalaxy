@@ -1,6 +1,6 @@
 # Class sweep (spike S2): results
 
-**PARTIAL: the sweep is still running.** Classes are measured in order of how often the disc places them, so the common ones come first; `untested` below are classes not run yet. Coverage: EggStarGalaxy 607/1183; OceanRingGalaxy 428/1183; KoopaBattleVs1Galaxy 0/1183.
+**PARTIAL: the sweep is still running.** Classes are measured in order of how often the disc places them, so the common ones come first; `untested` below are classes not run yet. Coverage: EggStarGalaxy 901/1183; OceanRingGalaxy 428/1183; KoopaBattleVs1Galaxy 0/1183.
 
 Generated 2026-10-02 by `native/tools/class_sweep.py report` from `sweep.json`. Do not edit the tables by hand.
 
@@ -32,15 +32,15 @@ Generated 2026-10-02 by `native/tools/class_sweep.py report` from `sweep.json`. 
 
 | status | EggStarGalaxy | OceanRingGalaxy | KoopaBattleVs1Galaxy | any stage (worst) |
 | --- | --- | --- | --- | --- |
-| crash | 135 | 63 | 0 | 135 |
-| assert | 4 | 1 | 0 | 4 |
-| kills-player | 3 | 1 | 0 | 3 |
+| crash | 195 | 63 | 0 | 195 |
+| assert | 8 | 1 | 0 | 8 |
+| kills-player | 4 | 1 | 0 | 4 |
 | invisible | 10 | 4 | 0 | 10 |
-| dead | 35 | 26 | 0 | 35 |
-| ok-nomodel | 58 | 27 | 0 | 58 |
-| nonactor | 90 | 89 | 0 | 90 |
-| ok | 272 | 217 | 0 | 272 |
-| untested | 0 | 0 | 0 | 576 |
+| dead | 43 | 26 | 0 | 43 |
+| ok-nomodel | 91 | 27 | 0 | 91 |
+| nonactor | 93 | 89 | 0 | 93 |
+| ok | 457 | 217 | 0 | 457 |
+| untested | 0 | 0 | 0 | 282 |
 
 ## Failing classes
 
@@ -169,29 +169,94 @@ Failures with empty links, worst stage first. `links` is the bisect verdict: the
 | TemplateStageGeometry | EggStarGalaxy: assert; OceanRingGalaxy: assert | _ZN12PetariNative24prepareAllocationSymbolsEv.cold.1 | - |
 | IceMerameraKing | EggStarGalaxy: crash; OceanRingGalaxy: crash | _ZN15IceMerameraKing4initERK12JMapInfoIter | - |
 | OceanSmallTurtle | EggStarGalaxy: crash; OceanRingGalaxy: crash | _ZN2MR25initDefaultPosForMercatorEP9LiveActorRK12JMapInfoIterb | - |
+| ItemAppearStoneSpinDriver | EggStarGalaxy: crash | _ZNK18NrvItemAppearStone12HostTypeWait7executeEP5Spine | - |
 | FlipPanelObserver | EggStarGalaxy: crash | _ZN17FlipPanelObserver7exeWaitEv | - |
+| ChooChooTrain | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| AstroDomeBlueStar | EggStarGalaxy: crash | _ZN2MR28tryRegisterDemoActionFunctorEPK9LiveActorRKNS_11FunctorBaseEPK | - |
+| TwisterSan | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| TwisterSanSlim | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 | SunakazeKun | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| SandCapsulePressGround | EggStarGalaxy: crash | _ZNK25NrvSandCapsulePressGround32SandCapsulePressGroundNrvWaitTop7exec | - |
+| RosettaChair | EggStarGalaxy: crash | _ZN12RosettaChair4initERK12JMapInfoIter | - |
+| KoopaRestarterVs3 | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| KoopaPowerUpSwitch | EggStarGalaxy: crash | _ZN13KoopaFunction26registerKoopaPowerUpSwitchEP9LiveActor | - |
+| KoopaSwitchKeeper | EggStarGalaxy: crash | _ZN13KoopaFunction25registerKoopaSwitchKeeperEP9LiveActor | - |
+| KoopaViewSwitchKeeper | EggStarGalaxy: crash | _ZN13KoopaFunction29registerKoopaViewSwitchKeeperEP9LiveActor | - |
 | KoopaBattleMapStair | EggStarGalaxy: crash | _ZN13KoopaFunction22registerBattleMapStairEP19KoopaBattleMapStair | - |
+| KoopaBattleMapStairBig | EggStarGalaxy: crash | _ZN13KoopaFunction22registerBattleMapStairEP19KoopaBattleMapStair | - |
+| KoopaBattleMapStairTurn | EggStarGalaxy: crash | _ZN13KoopaFunction22registerBattleMapStairEP19KoopaBattleMapStair | - |
+| AstroDome | EggStarGalaxy: assert | _ZN12PetariNative24prepareAllocationSymbolsEv.cold.1 | - |
+| AstroDomeEntrance | EggStarGalaxy: crash | _ZN16KCollisionServer4initEPvPKv | - |
+| AstroDomeSky | EggStarGalaxy: assert | _ZN12PetariNative24prepareAllocationSymbolsEv.cold.1 | - |
 | RailCoin | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 | PurpleRailCoin | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| PurpleCoinStarter | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
 | BlueChip | EggStarGalaxy: crash | _ZN8ChipBase18initAfterPlacementEv | - |
 | StarPieceFlow | EggStarGalaxy: crash | _ZNK17NrvStarPieceGroup15HostTypeNrvFlow7executeEP5Spine | - |
 | StarPieceFollowGroup | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| OceanRing | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| OceanRingAndFlag | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 | FishGroupA | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 | FishGroupB | EggStarGalaxy: crash | _ZN2MR13isEqualStringEPKcS1_ | - |
 | FishGroupC | EggStarGalaxy: crash | _ZN2MR13isEqualStringEPKcS1_ | - |
+| FishGroupD | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| FishGroupE | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| FishGroupF | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 | SeaGullGroup | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| HipDropSwitch | EggStarGalaxy: crash | _ZN13HipDropSwitch6exeOffEv | - |
+| HipDropTimerSwitch | EggStarGalaxy: crash | _ZN18HipDropTimerSwitch6exeOffEv | - |
+| KeySwitch | EggStarGalaxy: crash | _ZN9KeySwitch4killEv | - |
 | FallingSmallRock | EggStarGalaxy: crash | _ZNK19NrvFallingSmallRock12HostTypeWait7executeEP5Spine | - |
+| SandUpDownKGBaseEffect | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| SandUpDownTowerTopEffect | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
 | UFOSandObstacleAEffect | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
 | UFOSandObstacleBEffect | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| UFOSandObstacleCEffect | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| Steam | EggStarGalaxy: kills-player |  | - |
 | GlobalWireGravity | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| MiniEggStarGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniHoneyBeeKingdomGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniFlipPanelExGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniSurfingLv1Galaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniTriLegLv1Galaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniStarDustGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniTamakoroExLv1Galaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniBattleShipGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniBreakDownPlanetGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniKoopaBattleVs1Galaxy | EggStarGalaxy: assert | _ZN12PetariNative24prepareAllocationSymbolsEv.cold.1 | - |
+| MiniHeavenlyBeachGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniCubeBubbleExLv1Galaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniPhantomGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniOceanFloaterLandGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniKoopaJrShipLv1Galaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniCosmosGardenGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniIceVolcanoGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniHoneyBeeExGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniSandClockGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniKoopaBattleVs2Galaxy | EggStarGalaxy: assert | _ZN12PetariNative24prepareAllocationSymbolsEv.cold.1 | - |
+| MiniReverseKingdomGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniOceanRingGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniFactoryGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniSkullSharkGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniFloaterOtaKingGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniOceanPhantomCaveGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniCannonFleetGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniDarkRoomGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| MiniHellProminenceGalaxy | EggStarGalaxy: crash | _ZN23MiniatureGalaxyFunction31registerMiniatureGalaxyToHolderEP9LiveAc | - |
+| ClipFieldSwitch | EggStarGalaxy: crash | _ZN2MR12isInClipAreaERKN9JGeometry5TVec3IfEEf | - |
 | GroupSwitchWatcher | EggStarGalaxy: crash | _ZN18GroupSwitchWatcher7controlEv | - |
+| RaceRail | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 | TimerSwitch | EggStarGalaxy: crash | _ZN11TimerSwitch7controlEv | - |
 | SwitchSynchronizerReverse | EggStarGalaxy: crash | _ZN18SwitchSynchronizer8movementEv | - |
 | DemoGroup | EggStarGalaxy: crash | _ZN16DemoCameraKeeperC2EP12DemoExecutorRK12JMapInfoIter | - |
+| AstroDomeDemoStarter | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| AstroDomeGalaxySelector | EggStarGalaxy: crash | _ZN23AstroDomeGalaxySelector4initERK12JMapInfoIter | - |
+| StarReturnDemoStarter | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| GrandStarReturnDemoStarter | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 | ScenarioStarter | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| FileSelector | EggStarGalaxy: crash | _ZN14CameraManEvent5startEiPKcRK15CameraTargetArgi | - |
 
 ## Classes that need archives mounted
 
-285 classes had an archive that was not resident in the stage (listed per class in `sweep.json`: `archives`, per stage `nonresident`).
+470 classes had an archive that was not resident in the stage (listed per class in `sweep.json`: `archives`, per stage `nonresident`).
 
