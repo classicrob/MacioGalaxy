@@ -193,7 +193,9 @@ namespace EditorPlaytest {
                 return fail("new Play did not reset scene and run");
             runScene = Hooks::sceneSerial();
             const auto gravity = *MR::getPlayerGravity();
-            MR::forceJumpPlayer(TVec3f(-gravity.x * 35, -gravity.y * 35, -gravity.z * 35));
+            TVec3f side;
+            MR::getPlayerSideVec(&side);
+            MR::forceJumpPlayer(TVec3f(-gravity.x * 24 + side.x * 8, -gravity.y * 24 + side.y * 8, -gravity.z * 24 + side.z * 8));
             advance(11);
         } else if (step == 11 && frame > 45 && playable) {
             livesAtMiss = MR::getPlayerLeft();
