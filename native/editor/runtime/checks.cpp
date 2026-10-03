@@ -55,7 +55,7 @@ namespace {
 }  // namespace
 
 void registerCheckProvider(CheckProvider provider) {
-    providers().push_back(provider);
+    if (std::find(providers().begin(), providers().end(), provider) == providers().end()) providers().push_back(provider);
 }
 
 std::vector< Check > computeChecks(const ModelView& m) {
