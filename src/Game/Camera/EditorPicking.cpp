@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's picking (Game/Camera/EditorPicking.hpp).
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/Camera/EditorGravity.hpp"
 #include "Game/LiveActor/ClippingActorHolder.hpp"
 #include "Game/LiveActor/ClippingActorInfo.hpp"
 #include "Game/LiveActor/ClippingDirector.hpp"
@@ -107,6 +108,11 @@ namespace {
                                                           TVec3f(ray.x * kRayLength, ray.y * kRayLength, ray.z * kRayLength));
         const V groundPoint{ground.x, ground.y, ground.z};
         const float groundT = hitGround ? dot(sub(groundPoint, eye), ray) : 1e30f;
+        float gravityT = 0;
+        const auto gravityRow = EditorGravity::pick({eye.x, eye.y, eye.z}, {ray.x, ray.y, ray.z}, &gravityT);  // M3 gravity: clickable outlines.
+        if (gravityRow.valid() && gravityT <= groundT + 50.0f) {
+            if (auto* actor = PetariEditor::actorForRow(gravityRow)) return describe(actor);
+        }
         Hit around;  // the smallest sphere around the ground point
         for (int i = 0; i < list->_4; i++) {
             const ClippingActorInfo* info = list->mClippingActorList[i];
@@ -193,6 +199,9 @@ namespace {
     // collision knows its farthest vertex), else a small sphere at its position.
     Hit describe(LiveActor* actor) {
         Hit hit{actor, {actor->mPosition.x, actor->mPosition.y, actor->mPosition.z}, 100.0f};
+        float gravityCenter[3], gravityRadius;
+        if (EditorGravity::bounds(actor, gravityCenter, &gravityRadius))  // M3 gravity: model-less bounds.
+            return {actor, {gravityCenter[0], gravityCenter[1], gravityCenter[2]}, gravityRadius};
         if (ClippingActorInfoList* list = allActors()) {
             if (const ClippingActorInfo* info = list->findOrNone(actor)) {
                 if (info->_4 != nullptr) hit.center = {info->_4->x, info->_4->y, info->_4->z};

@@ -5,6 +5,7 @@
 #include "panels.hpp"
 
 #include <petari/editor/edit_api.hpp>
+#include <petari/editor/gravity.hpp>
 #include <petari/editor_pick.hpp>
 
 #include <petari/home_menu.hpp>
@@ -239,6 +240,10 @@ void drawToolbar(float width) {
         bool ghosts = PetariNative::EditorGizmo::showGhosts();
         if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
+        ImGui::SameLine(0.0f, 10.0f);
+        bool gravity = Gravity::visible();  // M3 gravity: view toggle.
+        if (ImGui::Checkbox("Gravity", &gravity)) Gravity::setVisible(gravity);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show gravity fields, flow arrows and uncovered ground (1)");
         ImGui::SameLine(0.0f, 16.0f);
     }
     const float buttonHeight = 26.0f;

@@ -3,6 +3,7 @@
 #include "Game/Camera/EditorCamera.hpp"
 #include "Game/Camera/EditorGizmo.hpp"
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/Camera/EditorGravity.hpp"
 #include "Game/AudioLib/AudSystem.hpp"
 #include "Game/AudioLib/AudWrap.hpp"
 #include "Game/System/GameSystemFunction.hpp"
@@ -289,6 +290,7 @@ namespace EditorCamera {
         view.cursorX = in.cursorX;
         view.cursorY = in.cursorY;
         EditorPicking::update(view);
+        EditorGravity::update(view);  // M3 gravity: live field snapshots and probe.
         EditorGizmo::update(view);
         return false;
     }
