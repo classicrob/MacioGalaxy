@@ -80,6 +80,47 @@ def job_line(job):
     return "\t".join((job["class"], job["mode"], job["overrides"]))
 
 
+def placement_counts(cache=None):
+    """{lower-case class name: placements} over every placement table of every stage archive on the disc (ObjInfo,
+    AreaObjInfo, GravityInfo, ... : any table with a name column), cached in build/class-sweep/placement-counts.json.
+    The sweep runs the most-placed classes first: those are the ones people will place in the editor."""
+    cache = Path(cache or REPO / "build/class-sweep/placement-counts.json")
+    if cache.is_file():
+        return json.loads(cache.read_text())
+    sys.path.insert(0, str(TOOLS))
+    import stage_sweep as sweep
+    from collect_pipeline_seed_inputs import field_hash, string
+    name_hash = field_hash("name")
+    counts = collections.Counter()
+    files = main_checkout() / "build/game-data/RMGE01/files/StageData"
+    for arc in sorted(files.glob("*.arc")):
+        try:
+            tree = list(sweep.archive_tree(arc.read_bytes()))
+        except Exception:  # an archive the reader does not know: skip it, the count is an ordering heuristic
+            continue
+        for path, data in tree:
+            if "/placement/" not in path or len(data) < 16:
+                continue
+            count, fields, offset, stride = (int.from_bytes(data[i:i + 4], "big") for i in (0, 4, 8, 12))
+            pool = data[offset + count * stride:]
+            for field in range(fields):
+                entry = 16 + field * 12
+                if int.from_bytes(data[entry:entry + 4], "big") == name_hash and data[entry + 11] == 6:
+                    pos = int.from_bytes(data[entry + 8:entry + 10], "big")
+                    for row in range(count):
+                        record = data[offset + row * stride:offset + (row + 1) * stride]
+                        counts[string(pool, int.from_bytes(record[pos:pos + 4], "big")).lower()] += 1
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(json.dumps(counts, sort_keys=True) + "\n")
+    return dict(counts)
+
+
+def order_by_placement(classes):
+    """Most-placed first (ties by name); classes never placed on the disc last."""
+    counts = placement_counts()
+    return sorted(classes, key=lambda c: (-counts.get(c["class"].lower(), 0), c["class"]))
+
+
 def make_jobs(classes, mode="empty"):
     return [{"class": c["class"], "mode": mode, "overrides": AREA_SCALE if c["area_like"] else ""} for c in classes]
 
@@ -331,6 +372,19 @@ def run_stage(args, stage, scenario, jobs):
         results_path.unlink()
     results = load_results(results_path)
     pending = [j for j in jobs if job_key(j["class"], j["mode"], j["overrides"]) not in results]
+    if args.infer_known_bad:
+        # Classes that failed on another stage are not run here: their record is copied from that stage, marked inferred.
+        for other in sorted((Path(args.out_root) / args.name).glob("*/results.jsonl")):
+            if other.parent.name == stage:
+                continue
+            for record in load_results(other).values():
+                key = record["key"]
+                if record["mode"] == "empty" and record["status"] not in PASS and key not in results and any(j["class"] == record["class"] and job_key(j["class"], j["mode"], j["overrides"]) == key for j in pending):
+                    inferred = {k: record[k] for k in ("key", "class", "mode", "overrides", "status", "phase", "crash") if k in record}
+                    inferred.update(batch_size=1, stage=stage, scenario=scenario, inferred_from=other.parent.name)
+                    append_result(results_path, inferred)
+                    results[key] = inferred
+        pending = [j for j in pending if job_key(j["class"], j["mode"], j["overrides"]) not in results]
     print(f"[{stage}] {len(jobs)} jobs, {len(jobs) - len(pending)} already done, {len(pending)} to run", flush=True)
     batch_no = len(list(out.glob("batch*.log")))
     infra_failures = 0
@@ -614,8 +668,10 @@ def build_catalog(args, stages):
                                 and not any(f"{f}=" in r["overrides"] for f in LINK_FIELDS)}
         bisect_path = out / "bisect.json"
         stage_results[stage + "#bisect"] = json.loads(bisect_path.read_text()) if bisect_path.is_file() else {}
+    counts = placement_counts()
     for c in classes:
-        entry = {"class": c["class"], "creator": c["creator"], "area_like": c["area_like"], "archives": [], "results": {}}
+        entry = {"class": c["class"], "creator": c["creator"], "area_like": c["area_like"], "archives": [], "results": {},
+                 "placed_on_disc": counts.get(c["class"].lower(), 0)}
         for stage, scenario, _ in stages:
             r = stage_results[stage].get(c["class"])
             if not r:
@@ -623,16 +679,22 @@ def build_catalog(args, stages):
             metrics = r.get("metrics") or {}
             if metrics.get("archives") not in (None, "-") and not entry["archives"]:
                 entry["archives"] = metrics["archives"].split(",")
+            if r.get("inferred_from"):
+                res_inferred = r["inferred_from"]
+            else:
+                res_inferred = None
             res = {"status": "kills-player" if r["status"] == "crash" and not r.get("crash") and r.get("exit") == 1 else r["status"]}
             for key in ("phase", "note_batch"):
                 if r.get(key):
                     res[key] = r[key]
-            crash = r.get("crash") or (r.get("confirm") or {}).get("crash")
+            crash = r.get("crash") or (r.get("confirm") if isinstance(r.get("confirm"), dict) else {}).get("crash")
             if crash:
                 res["crash"] = {k: crash[k] for k in ("signal", "panic", "top_frames") if crash.get(k)}
             for key in ("actors", "drawn", "alive", "hidden", "clipped", "move"):
                 if key in metrics:
                     res[key] = int(metrics[key])
+            if res_inferred:
+                res["inferred_from"] = res_inferred
             res["row"] = metrics.get("row")
             res["nonresident"] = [] if metrics.get("nonresident") in (None, "-") else metrics["nonresident"].split(",")
             res["mount_ms"] = float(metrics["mount_ms"]) if "mount_ms" in metrics else None
@@ -646,7 +708,11 @@ def build_catalog(args, stages):
         statuses = [r["status"] for r in entry["results"].values()]
         entry["summary"] = next((s for s in SEVERITY if s in statuses), "untested")
         entries.append(entry)
+    coverage = {s: {"recorded": sum(1 for e in entries if s in e["results"]), "total": len(entries),
+                    "inferred": sum(1 for e in entries if e["results"].get(s, {}).get("inferred_from"))} for s, _, _ in stages}
     return {"generated": datetime.date.today().isoformat(), "game": "RMGE01 (US)", "driver": "ClassSweep.cpp",
+            "partial": any(c["recorded"] < c["total"] for c in coverage.values()), "coverage": coverage,
+            "order": "most placed on the disc first (placed_on_disc)",
             "stages": [{"stage": s, "scenario": n, "why": w} for s, n, w in stages], "link_fields": LINK_FIELDS,
             "statuses": {"ok": "created, alive and drawn after the observation window",
                          "ok-nomodel": "created and alive, has no model (logic actor)",
@@ -660,12 +726,31 @@ def build_catalog(args, stages):
             "classes": entries}
 
 
+ABS_PATH = re.compile(r"(?:/Users|/home|/private/var|/var/folders)/[^\s\"',;)\\]*")
+SOURCE_ROOT = re.compile(r"(?:/Users|/home)/[^\s\"']*?/((?:src|include|native|docs)/)")
+THREAD_ID = re.compile(r"\bthr_[a-z0-9]{6,}\b")
+
+
+def scrub(value):
+    """The report is committed to a public repo: absolute local paths become repo-relative (the game's __FILE__ in a panic
+    message), any other absolute path becomes <path>, and BB thread ids go. Recurses through dicts and lists."""
+    if isinstance(value, str):
+        value = SOURCE_ROOT.sub(r"\1", value)
+        value = ABS_PATH.sub("<path>", value)
+        return THREAD_ID.sub("<thread>", value)
+    if isinstance(value, list):
+        return [scrub(v) for v in value]
+    if isinstance(value, dict):
+        return {scrub(k): scrub(v) for k, v in value.items()}
+    return value
+
+
 def cmd_report(args):
     stages = parse_stages(args.stages)
-    data = build_catalog(args, stages)
+    data = scrub(build_catalog(args, stages))
     CATALOG.mkdir(parents=True, exist_ok=True)
     (CATALOG / "sweep.json").write_text(json.dumps(data, indent=1) + "\n")
-    (CATALOG / "SWEEP.md").write_text(render_markdown(data))
+    (CATALOG / "SWEEP.md").write_text(scrub(render_markdown(data)))
     print(f"wrote {CATALOG / 'sweep.json'} and SWEEP.md: {len(data['classes'])} classes")
 
 
@@ -675,6 +760,11 @@ def render_markdown(data):
     lines = ["# Class sweep (spike S2): results", "",
              f"Generated {data['generated']} by `native/tools/class_sweep.py report` from `sweep.json`. Do not edit the tables by hand.", "",
              SWEEP_METHOD, "", "## Results per stage", ""]
+    if data["partial"]:
+        lines[2:2] = ["**PARTIAL: the sweep is still running.** Classes are measured in order of how often the disc places them, so the "
+                      "common ones come first; `untested` below are classes not run yet. Coverage: "
+                      + "; ".join(f"{s} {c['recorded']}/{c['total']}" + (f" ({c['inferred']} inferred)" if c["inferred"] else "")
+                                  for s, c in data["coverage"].items()) + ".", ""]
     order = SEVERITY + ["untested"]
     lines += ["| status | " + " | ".join(stages) + " | any stage (worst) |", "| --- |" + " --- |" * (len(stages) + 1)]
     for status in order:
@@ -710,15 +800,17 @@ def render_markdown(data):
 
 SWEEP_METHOD = """## Method
 
-- **Driver:** `src/Game/Scene/ClassSweep.cpp` (PETARI_NATIVE, off unless `PETARI_CLASS_SWEEP_JOBS` is set), on the S1 spike hooks.
+- **Driver:** `src/Game/Scene/ClassSweep.cpp` (PETARI_NATIVE, off unless `PETARI_CLASS_SWEEP_JOBS` is set), on the editor runtime's hooks (registerRows, nativeLateConnect).
   For each class it mounts the game's archive list for the class (and waits), synthesizes a one-row ObjInfo from a row of the
   stage (the stage's own row of that class if any, else the first ObjInfo row renamed, args -1), sets every link field
   (CameraSetId, SW_*, MessageId, CastId, ViewGroupId, CommonPath_ID, ClippingGroupId, GroupId, DemoGroupId, MapParts_ID) to -1, creates
   the class 400 units in front of and 250 up from Mario, runs 24 frames, classifies, then kills what it made. Area-like creators get a 20-unit scale.
 - **Harness:** `native/tools/class_sweep.py`. Batches of 25 classes per background-smoke process through `build/locked-app.sh`.
   A crash, assert or hang is attributed to the class that was in flight (log markers BEGIN/CREATED/RESULT/KILLED), the sweep
-  resumes after it, and every failure from a multi-class batch is re-run alone in a fresh process (a class that passes alone is
-  recorded ok with a note). The resume point is `results.jsonl`.
+  resumes after it, and one in eight failures from a multi-class batch is re-run alone in a fresh process (a class that passes alone
+  is recorded ok with a note; the rest keep the stack of the class in flight). Classes run in order of how often the disc places them
+  (`placed_on_disc`). The resume point is `results.jsonl`. On the last stage, classes that failed on another stage are not run: their
+  record is copied and marked `inferred_from`.
 - **Bisect:** for failing classes, `keep` (the stage's own row's links) and then real ids harvested from the same fields of the stage's
   rows, reduced one field at a time while the class still passes.
 - **Statuses:** see `statuses` in `sweep.json`. `invisible` and `dead` are heuristics from actor flags, not pixels.
@@ -763,7 +855,7 @@ def cmd_list(args):
 
 
 def cmd_run(args):
-    jobs = make_jobs(select_classes(args))
+    jobs = make_jobs(order_by_placement(select_classes(args)))
     ok = True
     for stage, scenario, _ in parse_stages(args.stages):
         ok = run_stage(args, stage, scenario, jobs) and ok
@@ -798,6 +890,8 @@ def main():
         p.add_argument("--rerun", action="store_true", help="discard recorded results")
         p.add_argument("--keep-logs", action="store_true")
         p.add_argument("--confirm-every", type=int, default=8, help="re-run alone 1 in N failures from multi-class batches (1: all)")
+        p.add_argument("--infer-known-bad", action="store_true",
+                       help="do not run classes that failed on another stage; copy their result, marked inferred_from")
         p.add_argument("--normal-priority", action="store_true", help="do not run the app under taskpolicy -b")
         p.add_argument("--no-warm-seed", action="store_true", help="start every process cold (no shader seed)")
     args = parser.parse_args()
