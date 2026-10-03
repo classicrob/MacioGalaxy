@@ -63,6 +63,10 @@ namespace EditorTerrain {
     /// The model drawn for `pActor` when it is one of this scene's parts (a brush row's actor
     /// has no model of its own: the editor's thumbnails), else null.
     J3DModel* partModel(const LiveActor* pActor);
+    /// The part's fitted gravity field (null: none, or `pActor` is not one of this scene's
+    /// parts). The field is the part's for its life: edits change it in place (Part::setGravity),
+    /// except a change of kind, which turns the old one off (it keeps its manager slot) for a new one.
+    PlanetGravity* partGravity(const LiveActor* pActor);
 
     /// Serves `pBytes` (a plain RARC) as the archive `pPath` ("/ObjectData/EditorTerrainBox.arc"):
     /// it is registered with the editor's archive overrides (PetariEditor::Hooks), so the game's

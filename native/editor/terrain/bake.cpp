@@ -3,6 +3,7 @@
 #include <petari/editor/terrain/brush.hpp>
 #include <petari/editor/terrain/kcl_writer.hpp>
 #include <petari/editor/terrain/model_writer.hpp>
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -332,6 +333,59 @@ BakeOutput bakeBrushes(const BakeInput& input) {
     planetArchive->replace("planetmapdatatable.bcsv", planetTable->build());
     out.files["/ObjectData/PlanetMapDataTable.arc"] = planetArchive->build();
     return out;
+}
+
+bool bakePatchAssets(const std::filesystem::path& modRoot, const Patch::DiscReader& readDisc, std::vector< Patch::Built >* pInOut,
+                     std::vector< std::string >* pLog, std::string* pError) {
+    BakeInput input;
+    for (const Patch::Built& built : *pInOut) {
+        if (built.path.rfind("StageData/", 0) == 0) {
+            input.stageArchives["/" + built.path] = built.bytes;
+        }
+    }
+    // Built files first: a table an earlier call extended (another mod's brushes) is kept.
+    input.readDisc = [&](const std::string& path) -> std::optional< Formats::Bytes > {
+        const std::string relative = path.substr(1);
+        for (const Patch::Built& built : *pInOut) {
+            if (built.path == relative) {
+                return built.bytes;
+            }
+        }
+        return readDisc(relative);
+    };
+    const BakeOutput baked = bakeBrushes(input);
+    if (!baked.error.empty()) {
+        *pError = "terrain: " + baked.error;
+        return false;
+    }
+    const std::string mod = modRoot.filename().string();
+    for (const std::string& line : baked.log) {
+        if (pLog != nullptr) {
+            pLog->push_back("terrain: " + line);
+        }
+    }
+    for (const auto& [path, bytes] : baked.files) {
+        const std::string relative = path.substr(1);
+        auto it = std::find_if(pInOut->begin(), pInOut->end(), [&](const Patch::Built& b) { return b.path == relative; });
+        if (it == pInOut->end()) {
+            pInOut->push_back(Patch::Built{relative, bytes, {mod}});
+            continue;
+        }
+        it->bytes = bytes;
+        if (std::find(it->mods.begin(), it->mods.end(), mod) == it->mods.end()) {
+            it->mods.push_back(mod);
+        }
+    }
+    return true;
+}
+
+void registerPatchBuilder() {
+    static bool sRegistered = false;
+    if (!sRegistered) {
+        sRegistered = true;
+        // Change the version when the baked files change, so cached builds are made again.
+        Patch::registerAssetBuilder("terrain-bake-1", &bakePatchAssets);
+    }
 }
 
 }  // namespace PetariEditor::Terrain

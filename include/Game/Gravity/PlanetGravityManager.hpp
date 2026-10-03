@@ -41,6 +41,8 @@ public:
     void registerGravity(PlanetGravity* pGravity);
 
 #ifdef PETARI_NATIVE
+    PlanetGravity* nativeGravityAt(s32 index) const { return index >= 0 && index < mNumGravities ? mGravities[index] : nullptr; }
+    void nativeResortGravities();
     s32 nativeGravityCount() const { return mNumGravities; }  // the level editor's capacity meter (cap 128)
 #endif
 
