@@ -123,3 +123,13 @@ the arrival (seen on a normal native launch: 120 neutral frames, then the first 
 `status` (`settled=<n>`: consecutive frames Mario has stood still on the ground in normal play, 0 during a demo, a wipe or movement) or
 `send --dir <dir> settle [frames=60] [timeout=1800]`, which replies `ok ...` once Mario has been settled for `frames` game frames (`error not settled`
 after `timeout` frames). The input command does not wait for it by itself.
+
+### Editor help
+
+`native/tools/editor_help_smoke.py --app <Petari> --output build/<your-help-run>`
+uses a private Good Egg fixture and the real SDL toolbar-click path. It opens Keys and tips,
+records the overlay and the six-mission toolbar at the default 1280x720 window size, closes
+help and returns to play. Require both `[editor-help]` PASS lines and the stage PASS, then
+visually inspect the captures. The runner removes its cache. `native_editor_ui` separately
+checks the question-mark/typing/modifier gates, Escape ownership without cancelling tools,
+non-modal bounds and Focus-mode drawing. Screenshots remain in `build/`, not Git.

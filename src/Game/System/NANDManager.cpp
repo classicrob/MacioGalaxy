@@ -4,6 +4,9 @@
 #include "Game/Util/SingletonHolder.hpp"
 #include <JSystem/JKernel/JKRExpHeap.hpp>
 #include <cstdio>
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime.hpp>
+#endif
 
 NANDRequestInfo::NANDRequestInfo() {
     init();
@@ -43,6 +46,9 @@ const char* NANDRequestInfo::setWriteSeq(const char* pName, const void* pBuf, u3
     mPermission = permission;
     mAttribute = attr;
     snprintf(mPath, sizeof(mPath), "%s", pName);
+#ifdef PETARI_NATIVE
+    mNativeDropWrite = PetariEditor::Runtime::progressIsolated();
+#endif
 
     return mPath;
 }
