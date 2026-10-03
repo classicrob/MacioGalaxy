@@ -895,7 +895,7 @@ def cmd_list(args):
 
 
 def cmd_run(args):
-    jobs = make_jobs(order_by_placement(select_classes(args)))
+    jobs = make_jobs(order_by_placement(select_classes(args)), args.mode)
     ok = True
     for stage, scenario, _ in parse_stages(args.stages):
         ok = run_stage(args, stage, scenario, jobs) and ok
@@ -931,6 +931,8 @@ def main():
         p.add_argument("--keep-logs", action="store_true")
         p.add_argument("--confirm-every", type=int, default=8, help="re-run alone 1 in N failures from multi-class batches (1: all)")
         p.add_argument("--with-template-link", help="bisect: only failing classes whose template row has this link field set, e.g. CommonPath_ID")
+        p.add_argument("--mode", choices=("empty", "keep"), default="empty",
+                       help="run: empty links (the sweep) or keep (create from the stage's own row with its links)")
         p.add_argument("--infer-known-bad", action="store_true",
                        help="do not run classes that failed on another stage; copy their result, marked inferred_from")
         p.add_argument("--normal-priority", action="store_true", help="do not run the app under taskpolicy -b")
