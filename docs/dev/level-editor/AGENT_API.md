@@ -205,7 +205,7 @@ The test server (`native/tools/test_server.py`, `PETARI_TEST_SERVER`) takes thes
 | `mario`, `teleport x y z`, `wait N` | Mario's position, gravity, ground, death; move him; let N frames run |
 | `screenshot PNG` | the next presented frame, without the editor's overlay |
 
-Replies are `ok <json>` / `error <text>`. `petari_level.Live` wraps them: `Live.start(app=...)`,
+Replies are `ok <json>` / `error <json>` (the same Error object as the CLI: code, message, hint, where). `petari_level.Live` wraps them: `Live.start(app=...)`,
 `live.begin()`, `live.sync(level)` (brings the game to the workspace's journal: undoes what diverged,
 applies what is new; refs resolve in the game because they are stable), `live.reload()`,
 `live.play(pos, up)`, `live.warp(pos)`, `live.trace(frames)`, `live.ground(pos)`,
