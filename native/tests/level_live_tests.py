@@ -16,7 +16,7 @@ class LiveTests(unittest.TestCase):
             (Path(directory)/"cmd").mkdir(); (Path(directory)/"reply").mkdir()
             output = SimpleNamespace(returncode=0, stdout=f"Created fixture. Source NAND only read.\n{directory}\nready in 30 s\n", stderr="")
             with patch("petari_level.live.subprocess.run", return_value=output):
-                self.assertEqual(Live.start("fake-app").dir, Path(directory))
+                self.assertEqual(Live.start("fake-app").dir, Path(directory).resolve())
 
     def test_structured_live_error_is_raised(self):
         with tempfile.TemporaryDirectory() as directory, patch("petari_level.live._send", return_value='ok {"ok":false,"error":{"code":"busy","message":"running"}}'):

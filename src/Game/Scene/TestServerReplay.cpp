@@ -50,8 +50,9 @@ bool run(const std::string& name, const std::vector<std::string>& w, bool playab
     if (c!="verify-route" && c!="verify-route-status" && c!="verify-route-cancel" &&
         c!="inputs-start" && c!="inputs-status" && c!="inputs-cancel") return false;
     PetariNative::HostAllocationScope host;
-    auto error = [&](const std::string& message, const std::string& where="", const std::string& code="bad-args") {
-        E::LevelApi::Error e{code,message,"See the Live.run_route/run_inputs documentation.",{},where};
+    auto error = [&](const std::string& message, const std::string& where="", const std::string& code="bad-value",
+                     const std::vector<std::string>& candidates=std::vector<std::string>{}) {
+        E::LevelApi::Error e{code,message,"See `help --live verify-route` or `help --live inputs-start`.",candidates,where};
         Value v=Value::object(); v.set("ok",false); v.set("error",e.toJson()); reply(name,"ok "+E::Json::write(v)); return true;
     };
     auto answer = [&](Value v) { v.set("ok",true); reply(name,"ok "+E::Json::write(v)); return true; };
@@ -70,7 +71,7 @@ bool run(const std::string& name, const std::vector<std::string>& w, bool playab
     if(!json) return error(parseError,c,"bad-json");
     if(c=="verify-route") {
         if(!json->isObject()) return error("Route must be {file, frames?, require_star?}.",c);
-        for(const auto& [key,v]:json->members()) if(key!="file" && key!="frames" && key!="require_star") return error("Unknown route key: "+key,key);
+        for(const auto& [key,v]:json->members()) if(key!="file" && key!="frames" && key!="require_star") return error("Unknown route key: "+key,key,"bad-args",{"file","frames","require_star"});
         if((*json)["file"].type()!=Value::Type::String) return error("file must be a route CSV path.","file");
         if(json->has("frames") && !integer((*json)["frames"],60,1080000)) return error("frames must be an integer in 60..1080000.","frames");
         if(json->has("require_star") && (*json)["require_star"].type()!=Value::Type::Bool) return error("require_star must be boolean.","require_star");
@@ -86,7 +87,7 @@ bool run(const std::string& name, const std::vector<std::string>& w, bool playab
     for(const Value& segment:json->items()) {
         const std::string at="inputs["+std::to_string(index++)+"]";
         if(!segment.isObject()) return error("Step must be an object.",at);
-        for(const auto& [key,v]:segment.members()) if(key!="frames" && key!="buttons" && key!="stick") return error("Unknown step key: "+key,at+"."+key);
+        for(const auto& [key,v]:segment.members()) if(key!="frames" && key!="buttons" && key!="stick") return error("Unknown step key: "+key,at+"."+key,"bad-args",{"frames","buttons","stick"});
         if(!integer(segment["frames"],1,1080000)) return error("frames must be an integer in 1..1080000.",at+".frames");
         TestServerInput::Step step; step.frames=segment["frames"].asInt(); total+=step.frames;
         if(total>1080000) return error("Input plan exceeds 1080000 frames.",at);
@@ -110,7 +111,13 @@ bool run(const std::string& name, const std::vector<std::string>& w, bool playab
                     if(key=="forward") step.stickY=1; if(key=="back") step.stickY=-1;
                     if(key=="right") step.stickX=1; if(key=="left") step.stickX=-1;
                 } else {
-                    auto bit=buttons.find(key); if(bit==buttons.end()) return error("Unknown control: "+key,at+".buttons"); step.held|=bit->second;
+                    auto bit=buttons.find(key);
+                    if(bit==buttons.end()) {
+                        std::vector<std::string> names={"forward","back","left","right"};
+                        for(const auto& [button,mask]:buttons) names.push_back(button);
+                        return error("Unknown control: "+key,at+".buttons","bad-value",names);
+                    }
+                    step.held|=bit->second;
                 }
             }
         }
