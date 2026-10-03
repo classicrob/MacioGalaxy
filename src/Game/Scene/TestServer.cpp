@@ -3,6 +3,7 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/AllLiveActorGroup.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
+#include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DemoUtil.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
@@ -18,6 +19,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -121,6 +123,25 @@ namespace {
         }
         if (!playable) {
             reply(name, "error not in normal play (retry)");
+            return true;
+        }
+        if (w[0] == "pos" && (w.size() == 4 || w.size() == 6)) {
+            // Mario at a world position (and facing a direction in x/z), the camera reset behind him:
+            // a route's exact start (camera-relative inputs need the camera too).
+            const TVec3f at(static_cast< f32 >(std::atof(w[1].c_str())), static_cast< f32 >(std::atof(w[2].c_str())),
+                            static_cast< f32 >(std::atof(w[3].c_str())));
+            MR::setPlayerPosAndWait(at);
+            if (w.size() == 6) {
+                TVec3f front(static_cast< f32 >(std::atof(w[4].c_str())), 0.0f, static_cast< f32 >(std::atof(w[5].c_str())));
+                const f32 length = std::sqrt(front.x * front.x + front.z * front.z);
+                if (length > 0.0f) {
+                    front.x /= length;
+                    front.z /= length;
+                    MR::setPlayerFrontVec(front, 0);
+                }
+            }
+            MR::resetCameraMan();
+            reply(name, "ok pos " + w[1] + " " + w[2] + " " + w[3]);
             return true;
         }
         if (w[0] == "warp" && w.size() >= 2) {
