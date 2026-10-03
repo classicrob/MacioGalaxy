@@ -455,6 +455,7 @@ void GameScene::draw3D() const {
     }
 
 #ifdef PETARI_NATIVE
+    EditorDraw::beginFrame();  // the editor's draw budget for this frame (EP-004)
     EditorThumbs::render();  // the level editor's Browser: one model offscreen, copied out
 #endif
     CategoryList::execute(MR::DrawType_AstroDomeSkyClear);
