@@ -1,6 +1,5 @@
 #ifdef PETARI_NATIVE
 #include "Game/Camera/EditorGravity.hpp"
-#include "../../../native/editor/runtime/checks.hpp"
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Gravity.hpp"
 #include "Game/LiveActor/HitSensor.hpp"
@@ -13,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <petari/editor/check_providers.hpp>
 #include <petari/editor/debug_draw.hpp>
 #include <petari/editor/runtime.hpp>
 #include <petari/editor/runtime_hooks.hpp>
@@ -124,8 +124,9 @@ namespace {
             f.y = vec(p->mWorldNormal);
             f.radius = p->mWorldRadius;
             f.degrees = p->mValidDegree;
-            f.x = mul(vec(p->mWorldOppositeSideVecOrtho), -1);
-            f.z = D::point(Gizmo::cross(D::vector(f.x), D::vector(f.y)));
+            f.x = D::point(
+                Gizmo::rotate(Gizmo::normalized(D::vector(vec(p->mWorldOppositeSideVecOrtho))), D::vector(f.y), -f.degrees * 0.5f * Gizmo::kDeg));
+            f.z = D::point(Gizmo::cross(D::vector(f.y), D::vector(f.x)));
             break;
         }
         case G::Shape::Torus: {
@@ -398,7 +399,13 @@ namespace EditorGravity {
         RowId groundRow;
         bool hit = groundAt(c.eye, ray, &point, &normal, &groundRow);
         if (G::airProbe() || !hit) {
-            float depth = hit ? length(sub(point, c.eye)) : 2000;
+            float depth = 2000;
+            const auto selection = PetariNative::EditorPick::selection();
+            if (!selection.empty()) {
+                const auto& anchor = selection.front();
+                const float forwardDepth = dot(sub({anchor.center[0], anchor.center[1], anchor.center[2]}, c.eye), c.forward);
+                depth = std::max(100.0f, forwardDepth / std::max(0.01f, dot(ray, c.forward)));
+            }
             point = add(c.eye, mul(ray, depth));
             hit = false;
         }

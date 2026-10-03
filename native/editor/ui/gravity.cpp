@@ -74,7 +74,13 @@ namespace PetariEditor::Ui {
                     apply(Gravity::shapeOp(m, rows.front(), shape, static_cast< Gravity::Bound >(b)));
             }
         }
+        const std::string className = m.objectName(rows.front());
+        const bool boundedParallel = className == "GlobalPlaneGravityInBox" || className == "GlobalPlaneGravityInCylinder";
+        ImGui::BeginDisabled(boundedParallel);
         numeric(m, rows, "Range (-1 = everywhere)", "Range", -1);
+        ImGui::EndDisabled();
+        if (boundedParallel)
+            ImGui::TextWrapped("This field reaches the box or cylinder boundary. Scale its bounds to change the reach.");
         numeric(m, rows, "Distant", "Distant", shape == Gravity::Shape::Point ? m.transform(rows.front()).scale.x * 500 : 0);
         numeric(m, rows, "Priority (equal priorities blend)", "Priority", 0, true);
         bool inverse = number(m, rows.front(), "Inverse", 0) > 0;
