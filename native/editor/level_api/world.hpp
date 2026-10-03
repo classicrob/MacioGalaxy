@@ -15,6 +15,7 @@ namespace PetariEditor::LevelApi {
 
 struct Triangle {
     G::V3 a, b, c;
+    G::V3 n;  // the face normal (outward: the side Mario stands on)
 };
 
 /// The triangles of a .kcl (big-endian, as in ObjectData archives), in the model's own space. Empty when unreadable.
@@ -37,7 +38,8 @@ public:
     /// Rebuilds the colliders when the model's collision rows changed (archives are cached by class).
     void sync(const EditModel& model);
 
-    std::optional< Hit > ray(G::V3 origin, G::V3 dir, float maxDistance) const;  // dir normalized
+    /// The first surface along the ray (dir normalized); frontOnly: only surfaces facing the ray (ground seen from above).
+    std::optional< Hit > ray(G::V3 origin, G::V3 dir, float maxDistance, bool frontOnly = true) const;
     std::optional< Hit > nearest(G::V3 point, float maxDistance) const;
     Gravity gravityAt(const EditModel& model, G::V3 point) const;
 

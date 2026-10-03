@@ -396,6 +396,26 @@ namespace {
                 std::int32_t v = -1;
                 if (value.type() == Json::Value::Type::String && lower(value.asString()) == "new") {
                     v = freeSwitch(zone);
+                } else if (value.type() == Json::Value::Type::String) {
+                    // "<ref>.<SW_FIELD>": the same switch as another row's (e.g. "@goomba.SW_DEAD").
+                    const std::string text = value.asString();
+                    const std::size_t dot = text.rfind('.');
+                    if (dot == std::string::npos || lower(text.substr(dot + 1)).rfind("sw_", 0) != 0) {
+                        fail("bad-value", at + ": '" + text + "' is not a switch", "a number, null, \"new\" or \"<ref>.SW_FIELD\" (e.g. \"@goomba.SW_DEAD\")", {}, at);
+                    }
+                    const RowId other = impl.resolveRef(Json::Value(text.substr(0, dot)), at);
+                    std::string field = text.substr(dot + 1);
+                    for (char& ch : field) ch = static_cast< char >(std::toupper(static_cast< unsigned char >(ch)));
+                    const Cell* cell = model.cell(other, columnHash(field.c_str()));
+                    if (cell == nullptr || cell->i < 0) {
+                        fail("bad-value", at + ": " + text.substr(0, dot) + " has no " + field + " set", "give that row a switch first (\"new\")", {}, at);
+                    }
+                    int otherZone = 0, otherTable = 0;
+                    model.locate(other, &otherZone, &otherTable);
+                    if (otherZone != zone && cell->i < 1000) {
+                        fail("bad-value", at + ": zone switches (0-127) only connect rows of one zone", "use a shared switch (1000-1127) across zones", {}, at);
+                    }
+                    v = cell->i;
                 } else if (!value.isNull()) {
                     v = wholeNumber(value, at);
                 }

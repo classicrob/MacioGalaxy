@@ -229,7 +229,8 @@ Json::Value Level::help(const Json::Value& args) {
     Json::Value out = Json::Value::object();
     out.set("ok", true);
     try {
-        for (const auto& [k, v] : helpJson(args.isObject() ? args : Json::Value::object()).members()) out.set(k, v);
+        const Json::Value help = helpJson(args.isObject() ? args : Json::Value::object());
+        for (const auto& [k, v] : help.members()) out.set(k, v);
     } catch (const Failure& f) {
         Json::Value err = Json::Value::object();
         err.set("ok", false);

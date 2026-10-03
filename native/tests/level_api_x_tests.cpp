@@ -191,6 +191,49 @@ int main() {
     check(std::fabs(zc["pos"].items()[0].asNumber() - 1000) < 0.5 && std::fabs(zc["pos"].items()[2].asNumber() - 3000) < 0.5 && zc.has("zone_pos"),
           "a zone row's world position round-trips");
 
+    // Placement: the ground below Mario's mission-1 start (Disk Garden), along its disk gravity.
+    Value start = call(lv, "get", R"({"ref":{"class":"Mario","zone":"EggStarGalaxy","table":"start/layera"}})");
+    check(ok(start, "start"), "the mission-1 start");
+    const double sx = start["pos"].items()[0].asNumber(), sy = start["pos"].items()[1].asNumber(), sz = start["pos"].items()[2].asNumber();
+    char buf[512];
+    std::snprintf(buf, sizeof(buf), R"({"pos":[%.1f,%.1f,%.1f]})", sx, sy + 600, sz);
+    Value ground = lv.call("ground", parse(buf));
+    check(ok(ground, "ground") && ground["hit"].asBool() && ground["on_class"].asString() == "DiskGardenPlanet", "ground under the start is Disk Garden");
+    check(ground["gravity"].asString().find("GlobalDiskGravity") == 0, "the disk's gravity there");
+    check(std::fabs(ground["point"].items()[1].asNumber() - sy) < 40, "the ground is where Mario starts (within 40 units)");
+    // A point just inside the planet still lands on its top (back faces are skipped).
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true,"height":100,"as":"gc"}]})", sx, sy - 30, sz);
+    Value grounded = lv.call("apply", parse(buf));
+    check(ok(grounded, "on_ground") && grounded["placements"].items().size() == 1, "on_ground reports its placement");
+    const double gy = call(lv, "get", R"({"ref":"@gc"})")["pos"].items()[1].asNumber();
+    check(std::fabs(gy - (ground["point"].items()[1].asNumber() + 100)) < 40, "on_ground + height 100 sits 100 above the top surface");
+    check(call(lv, "get", R"({"ref":"@gc"})")["up"].items()[1].asNumber() > 0.9, "on_ground stands the object up against gravity");
+    Value noGround = call(lv, "apply", R"({"ops":[{"op":"add","class":"Coin","pos":[0,90000,0],"on_ground":true,"down":[0,1,0]}]})");
+    check(noGround["error"]["code"].asString() == "no-ground", "no ground: an actionable error");
+
+    // Arrays: an arc of 7 coins with labels; a ring; a grid.
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"array","class":"Coin","shape":"arc","from":[%.1f,%.1f,%.1f],"to":[%.1f,%.1f,%.1f],"peak":400,"count":7,"down":[0,-1,0],"as":"arc"}]})",
+                  sx, sy + 100, sz, sx + 1200, sy + 100, sz);
+    Value arc = lv.call("apply", parse(buf));
+    check(ok(arc, "arc") && arc["created"].items().size() == 7, "an arc of 7");
+    const double mid = call(lv, "get", R"({"ref":"@arc.3"})")["pos"].items()[1].asNumber();
+    check(std::fabs(mid - (sy + 500)) < 1, "the arc's middle is peak above the line");
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"array","class":"StarPiece","shape":"grid","origin":[%.1f,%.1f,%.1f],"size":[3,2],"spacing":100,"down":[0,-1,0]},{"op":"array","class":"Coin","shape":"ring","center":[%.1f,%.1f,%.1f],"radius":300,"count":6,"down":[0,-1,0]}]})",
+                  sx, sy + 800, sz, sx, sy + 900, sz);
+    Value shapes = lv.call("apply", parse(buf));
+    check(ok(shapes, "grid+ring") && shapes["created"].items().size() == 12, "a 3x2 grid and a ring of 6 in one batch");
+
+    // Switch references: the mushroom reads the Goomba's fresh switch.
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Kuribo","pos":[%.1f,%.1f,%.1f],"switches":{"SW_DEAD":"new"},"as":"goomba"},{"op":"add","class":"BenefitItemOneUp","pos":[%.1f,%.1f,%.1f],"switches":{"SW_APPEAR":"@goomba.SW_DEAD"},"as":"oneup"}]})",
+                  sx + 300, sy, sz, sx + 600, sy, sz);
+    Value linked = lv.call("apply", parse(buf));
+    check(ok(linked, "linked switches"), "add a Goomba and a mushroom linked by a switch");
+    check(call(lv, "get", R"({"ref":"@goomba"})")["switches"]["SW_DEAD"].asInt() == call(lv, "get", R"({"ref":"@oneup"})")["switches"]["SW_APPEAR"].asInt(),
+          "the mushroom reads the Goomba's switch");
+    check(linked["checks_introduced"].items().size() == 0, "a written-and-read switch is no problem");
+    Value lonely = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"set","ref":"@oneup","switches":{"SW_APPEAR":77}}]})");
+    check(lonely["checks_introduced"].items().size() >= 1, "a switch nothing writes is reported");
+
     // The journal replays into a fresh level with the same rows and labels.
     const Value journal = lv.journal();
     {

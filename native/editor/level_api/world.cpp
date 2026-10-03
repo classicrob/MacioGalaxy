@@ -147,7 +147,7 @@ std::vector< Triangle > readKclTriangles(const Formats::Bytes& kcl) {
         const G::V3 c1 = G::cross(e1, face), c2 = G::cross(face, e0);
         const float d1 = G::dot(c1, e2), d2 = G::dot(c2, e2);
         if (std::fabs(d1) < 1e-9f || std::fabs(d2) < 1e-9f) continue;
-        Triangle t{pos, pos + c1 * (height / d1), pos + c2 * (height / d2)};
+        Triangle t{pos, pos + c1 * (height / d1), pos + c2 * (height / d2), G::normalized(face)};
         if (!std::isfinite(t.b.x) || !std::isfinite(t.c.x)) continue;
         out.push_back(t);
     }
@@ -203,7 +203,8 @@ void World::sync(const EditModel& model) {
                     const auto& v = mesh.positions[mesh.indices[i + k]];
                     return G::V3{v.x, v.y, v.z};
                 };
-                tris->push_back({p(0), p(1), p(2)});
+                const G::V3 a = p(0), b = p(1), c = p(2);
+                tris->push_back({a, b, c, G::normalized(G::cross(b - a, c - a))});  // brush meshes wind outward
             }
             local = tris;
         } else {
@@ -243,7 +244,11 @@ void World::sync(const EditModel& model) {
         c.hi = {-1e30f, -1e30f, -1e30f};
         c.tris.reserve(local->size());
         for (const Triangle& t : *local) {
-            Triangle w{a.apply(t.a), a.apply(t.b), a.apply(t.c)};
+            Triangle w{a.apply(t.a), a.apply(t.b), a.apply(t.c), {}};
+            // The normal through the (possibly non-uniform) scale: the transformed edges' cross, on the local normal's side.
+            const G::V3 local = a.x * t.n.x + a.y * t.n.y + a.z * t.n.z;
+            w.n = G::normalized(G::cross(w.b - w.a, w.c - w.a));
+            if (G::dot(w.n, local) < 0) w.n = w.n * -1.0f;
             for (const G::V3& p : {w.a, w.b, w.c}) {
                 c.lo = {std::min(c.lo.x, p.x), std::min(c.lo.y, p.y), std::min(c.lo.z, p.z)};
                 c.hi = {std::max(c.hi.x, p.x), std::max(c.hi.y, p.y), std::max(c.hi.z, p.z)};
@@ -254,18 +259,17 @@ void World::sync(const EditModel& model) {
     }
 }
 
-std::optional< Hit > World::ray(G::V3 origin, G::V3 dir, float maxDistance) const {
+std::optional< Hit > World::ray(G::V3 origin, G::V3 dir, float maxDistance, bool frontOnly) const {
     std::optional< Hit > best;
     float bestT = maxDistance;
     for (const Collider& c : mColliders) {
         if (!rayBox(origin, dir, c.lo, c.hi, bestT)) continue;
         for (const Triangle& t : c.tris) {
             float hit;
+            if (frontOnly && G::dot(t.n, dir) >= 0) continue;  // a back face: the inside of a planet
             if (rayTriangle(origin, dir, t, &hit) && hit < bestT) {
                 bestT = hit;
-                G::V3 n = G::normalized(G::cross(t.b - t.a, t.c - t.a));
-                if (G::dot(n, dir) > 0) n = n * -1.0f;  // facing the ray
-                best = Hit{hit, origin + dir * hit, n, c.row};
+                best = Hit{hit, origin + dir * hit, t.n, c.row};
             }
         }
     }
@@ -282,7 +286,7 @@ std::optional< Hit > World::nearest(G::V3 point, float maxDistance) const {
             const float d = G::length(q - point);
             if (d < bestD) {
                 bestD = d;
-                best = Hit{d, q, G::normalized(point - q, G::normalized(G::cross(t.b - t.a, t.c - t.a))), c.row};
+                best = Hit{d, q, t.n, c.row};
             }
         }
     }
@@ -290,9 +294,9 @@ std::optional< Hit > World::nearest(G::V3 point, float maxDistance) const {
 }
 
 Gravity World::gravityAt(const EditModel& model, G::V3 point) const {
-    // The gravity rows in this mission whose range covers the point; highest priority, then nearest.
-    // Approximate (AGENT_API_X.md): points, cubes (scale x 500 half-size), planes/parallel, segments and
-    // disks/cones/tori as their centre. Live mode's gravity query is the engine's own.
+    // The gravity rows in this mission that cover the point, with the shapes GravityCreator.cpp builds from
+    // a row (500 units per unit of scale): highest Priority wins, then the nearest (the engine blends equal
+    // priorities). Cones, tori and wires are taken as their centre. Live mode's gravity is the engine's own.
     Gravity best;
     int bestPriority = -1000000;
     float bestDistance = 1e30f;
@@ -306,32 +310,69 @@ Gravity World::gravityAt(const EditModel& model, G::V3 point) const {
                 if (pName == nullptr) return;
                 const std::string name = pName;
                 if (name.find("Gravity") == std::string::npos || name.rfind("Zero", 0) == 0) return;
-                const Affine a = rowAffine(model, row, z);
-                const G::V3 center = a.origin;
-                G::V3 toward;  // from the point toward where gravity pulls
-                float distance = 0;
-                if (name.find("Plane") != std::string::npos || name.find("Parallel") != std::string::npos) {
-                    toward = G::normalized(a.y) * -1.0f;
-                    distance = 0;
-                } else if (name.find("Cube") != std::string::npos) {
-                    const G::V3 local = point - center;
-                    G::V3 nearestPoint = center;
-                    for (const G::V3& axis : {a.x, a.y, a.z}) {
-                        const float len = G::length(axis);
-                        const G::V3 unit = axis * (1.0f / std::max(len, 1e-6f));
-                        const float half = len * 500.0f;
-                        nearestPoint = nearestPoint + unit * std::clamp(G::dot(local, unit), -half, half);
-                    }
-                    toward = nearestPoint - point;
-                    distance = G::length(toward);
-                    if (distance < 1e-3f) toward = center - point;
-                } else {
-                    toward = center - point;
-                    distance = G::length(toward);
-                }
+                const RowTransform tr = model.transform(row);
+                const Frame f = zoneFrame(model, z);
+                const G::Basis axes = basisToWorld(f, G::fromEulerDegrees(v3(tr.dirDeg)));
+                const G::V3 c = toWorld(f, v3(tr.pos));
+                const G::V3 s{tr.scale.x * 500.0f, tr.scale.y * 500.0f, tr.scale.z * 500.0f};
+                const G::V3 up = axes.y;
                 const float range = floatCell(model, row, "Range", -1.0f);
-                const float distant = floatCell(model, row, "Distant", 0.0f);
-                if (range >= 0 && distance - distant > range) return;
+                // Fields below 0 keep the class default (GravityUtil.cpp getJMapInfoArgPlus).
+                const float distantField = floatCell(model, row, "Distant", -1.0f);
+                float distant = std::max(0.0f, distantField);
+                auto inRange = [&](float d) { return range < 0 || d < range + distant; };
+                auto boxNearest = [&](G::V3 center) {
+                    G::V3 q = center;
+                    const G::V3 d = point - center;
+                    q = q + axes.x * std::clamp(G::dot(d, axes.x), -s.x, s.x) + axes.y * std::clamp(G::dot(d, axes.y), -s.y, s.y) +
+                        axes.z * std::clamp(G::dot(d, axes.z), -s.z, s.z);
+                    return q;
+                };
+                G::V3 toward;
+                float distance = 0;
+                if (name == "GlobalPlaneGravity") {
+                    if (range >= 0 && G::length(c - point) >= range) return;
+                    toward = up * -1.0f;
+                } else if (name == "GlobalPlaneGravityInBox") {
+                    const G::V3 center = c + up * s.y;
+                    if (G::length(boxNearest(center) - point) > 1e-3f) return;
+                    toward = up * -1.0f;
+                } else if (name == "GlobalPlaneGravityInCylinder") {
+                    const float height = G::dot(point - c, up);
+                    const G::V3 flat = (point - c) - up * height;
+                    if (height < 0 || height > s.y || G::length(flat) > s.x) return;
+                    toward = up * -1.0f;
+                    distance = G::length(flat);
+                } else if (name == "GlobalCubeGravity") {
+                    const G::V3 q = boxNearest(c + up * s.y);
+                    toward = q - point;
+                    distance = G::length(toward);
+                    if (distance < 1e-3f) toward = (c + up * s.y) - point;
+                    if (!inRange(distance)) return;
+                } else if (name == "GlobalDiskGravity" || name == "GlobalDiskTorusGravity") {
+                    const float radius = 500.0f * std::max({tr.scale.x, tr.scale.y, tr.scale.z});
+                    const float height = G::dot(point - c, up);
+                    const bool bothSides = intCell(model, row, "Obj_arg0", -1) != 0;
+                    if (!bothSides && height < 0) return;
+                    G::V3 flat = (point - c) - up * height;
+                    if (G::length(flat) > radius) flat = G::normalized(flat) * radius;
+                    toward = (c + flat) - point;
+                    distance = G::length(toward);
+                    if (!inRange(distance)) return;
+                } else if (name == "GlobalSegmentGravity") {
+                    const G::V3 a = c, b = c + up * (1000.0f * tr.scale.y);
+                    const G::V3 ab = b - a;
+                    const float k = std::clamp(G::dot(point - a, ab) / std::max(G::dot(ab, ab), 1e-6f), 0.0f, 1.0f);
+                    toward = (a + ab * k) - point;
+                    distance = G::length(toward);
+                    if (!inRange(distance)) return;
+                } else {
+                    // Point (Distant = 500 x scale_x, its sphere), cones, tori, wires: toward the centre.
+                    if (name == "GlobalPointGravity" && distantField < 0) distant = s.x;
+                    toward = c - point;
+                    distance = G::length(toward);
+                    if (!inRange(distance)) return;
+                }
                 const int priority = intCell(model, row, "Priority", 0);
                 if (priority > bestPriority || (priority == bestPriority && distance < bestDistance)) {
                     bestPriority = priority;

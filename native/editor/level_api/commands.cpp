@@ -22,7 +22,7 @@ namespace {
         "turn     number    degrees about its own up\n"
         "scale    n|[x,y,z]\n"
         "args     {name: value}  by the catalog's arg names (`class X`), or Obj_arg0..7; enum labels; true/false; null = the class default\n"
-        "switches {SW_APPEAR: n|null|\"new\"}  \"new\" picks a free zone switch (0-127)\n"
+        "switches {SW_APPEAR: n|null|\"new\"|\"@ref.SW_DEAD\"}  \"new\" picks a free zone switch (0-127); \"<ref>.<field>\" copies another row's\n"
         "links    {CommonPath_ID: n|null, GroupId: n, ...}\n"
         "fields   {raw field: value}  any column by its name\n"
         "on_ground bool     drop onto the ground below the point along gravity (headless collision; see `ground`)\n"

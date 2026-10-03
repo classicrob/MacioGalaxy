@@ -318,7 +318,7 @@ std::vector< RowId > Level::Impl::select(const Json::Value& filter, const std::s
         const char* pName = model->objectName(row);
         const std::string name = pName != nullptr ? pName : "";
         if (!classes.empty() && !classes.count(lower(name))) continue;
-        const Catalog::ClassInfo* info = Catalog::find(name.c_str());
+        const Catalog::ClassInfo* info = name.empty() ? nullptr : Catalog::find(name.c_str());
         if (pCategory != nullptr && (info == nullptr || info->category != *pCategory)) continue;
         if (mission > 0 && !(model->rowMissions(row) & (1u << (mission - 1)))) continue;
         if (!table.empty()) {
@@ -411,7 +411,7 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
     const char* pName = model->objectName(row);
     const std::string name = pName != nullptr ? pName : "";
     o.set("class", name);
-    const Catalog::ClassInfo* info = Catalog::find(name.c_str());
+    const Catalog::ClassInfo* info = name.empty() ? nullptr : Catalog::find(name.c_str());
     if (info != nullptr && info->displayName != name) o.set("name", info->displayName);
     o.set("zone", model->zoneName(zone));
     if (model->hasTransform(row)) {
