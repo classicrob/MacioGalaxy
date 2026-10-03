@@ -55,14 +55,17 @@ namespace PetariEditor::Playtest {
         }
         const auto up = G::normalized(v(gravity) * -1);
         const float vertical = G::dot(v(velocity), up);
-        bool connected = connect_ && size_;
+        bool connected = connect_ && size_, peak = false;
         if (connected) {
             auto& previous = ring_[(next_ + capacity - 1) % capacity];
             connected = G::length(v(p) - v(previous.position)) < 2000;
-            if (connected && previous.motion != Motion::Ground && motion != Motion::Ground && vertical_ > 0 && vertical <= 0)
-                previous.peak = true;
+            if (connected && previous.motion != Motion::Ground && motion != Motion::Ground && vertical_ > 0 && vertical <= 0) {
+                peak = G::dot(v(p) - v(previous.position), up) > 0;
+                if (!peak)
+                    previous.peak = true;
+            }
         }
-        ring_[next_] = {p, vec(up), motion, false, connected, frames_};
+        ring_[next_] = {p, vec(up), motion, peak, connected, frames_};
         next_ = (next_ + 1) % capacity;
         size_ = std::min(size_ + 1, capacity);
         vertical_ = vertical;

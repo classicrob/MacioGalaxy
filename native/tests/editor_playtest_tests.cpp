@@ -28,7 +28,7 @@ void trailTests() {
     t.record({0, 0, 0}, {1, 0, 0}, {-1, 0, 0}, P::Motion::Air);
     t.record({1, 0, 0}, {0, 0, 0}, {-1, 0, 0}, P::Motion::Air);
     auto samples = t.samples();
-    require(samples[0].peak && !samples[1].peak, "peak follows gravity X, not world Y");
+    require(!samples[0].peak && samples[1].peak, "peak uses the highest sampled point along gravity X, not world Y");
     require(!samples[0].connected && samples[1].connected, "first sample disconnected");
     t.pause();
     t.record({}, {}, {}, P::Motion::Ground);
