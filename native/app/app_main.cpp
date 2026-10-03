@@ -440,6 +440,17 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     std::fputs("[editor-test] LevelEditor tap (play)\n", stderr);
                     Editor::toggle();
                 }
+                // PETARI_EDITOR_TEST_PLACE_CLASS=<class>: place a new one of a class with no example (EP-005), as the Browser's
+                // Place does for a catalog-only card; Obj_arg0 = 0 (a brush's box preset).
+                if (t == 147 && std::getenv("PETARI_EDITOR_TEST_PLACE_CLASS") != nullptr) {
+                    Editor::cursor(0.0f, -0.3f);
+                    Pick::PlaceClass request;
+                    std::snprintf(request.name, sizeof(request.name), "%s", std::getenv("PETARI_EDITOR_TEST_PLACE_CLASS"));
+                    request.argCount = 1;
+                    request.argIndex[0] = 0;
+                    request.argValue[0] = 0;
+                    Pick::placeClass(request);
+                }
                 // PETARI_EDITOR_TEST_PLACE=1: place a copy of the selection on the ground at the view's centre (the
                 // Browser's Place path).
                 // ...then duplicate the placed copy (Cmd+D) and delete the duplicate (Delete).

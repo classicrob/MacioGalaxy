@@ -54,7 +54,24 @@ std::uint64_t gRevision = ~0ull;
 std::string gQuery;
 std::string gCategory;          // empty: all
 std::string gSelectedClass;     // the card shown in detail
-std::uint64_t gArmed = 0;       // stamp mode: the example row each click places
+std::uint64_t gArmed = 0;       // stamp mode: what each click places (armedPlacement)
+
+// Class placements (no example): the specs tokens point at, kept for the session.
+struct PlaceSpec {
+    std::string className;
+    std::vector< std::pair< int, std::int32_t > > args;
+};
+std::vector< PlaceSpec > gSpecs;
+
+// What placing a card means: a copy of its first example, else a new row of its class (with its preset).
+std::uint64_t tokenFor(const BrowserEntry& entry) {
+    if (entry.presetArgs.empty() && !entry.examples.empty()) return entry.examples.front().v;
+    for (size_t i = 0; i < gSpecs.size(); i++) {
+        if (gSpecs[i].className == entry.className && gSpecs[i].args == entry.presetArgs) return kClassTokenBit | i;
+    }
+    gSpecs.push_back({entry.className, entry.presetArgs});
+    return kClassTokenBit | (gSpecs.size() - 1);
+}
 
 // Thumbnails: the game draws one requested class a frame (Game/Camera/EditorThumbs) into a copy the
 // presenter reads back; the texture is kept for the session. A few in flight (the game's copies are a
@@ -154,15 +171,15 @@ void drawInitials(ImDrawList* list, const BrowserEntry& entry, ImVec2 min, ImVec
 
 // A card: the class's thumbnail (rendered from its placed example), else its initials tile; the name below.
 bool card(const BrowserEntry& entry, bool selected, float size) {
-    ImGui::PushID(entry.className.c_str());
+    ImGui::PushID(entry.key.c_str());
     const ImVec2 min = ImGui::GetCursorScreenPos();
     const float lineHeight = ImGui::GetTextLineHeight();
     const bool clicked = ImGui::InvisibleButton("card", ImVec2(size, size + lineHeight * 2.0f + 4.0f));
     const bool hovered = ImGui::IsItemHovered();
     // Drag a card onto the viewport to place it (edit_mode.cpp places it where the button comes up).
-    if (!entry.examples.empty() && ImGui::BeginDragDropSource()) {
-        const std::uint64_t row = entry.examples.front().v;
-        ImGui::SetDragDropPayload(kPlacePayload, &row, sizeof(row));
+    if (ImGui::BeginDragDropSource()) {
+        const std::uint64_t token = tokenFor(entry);
+        ImGui::SetDragDropPayload(kPlacePayload, &token, sizeof(token));
         ImGui::Text("Place %s", entry.displayName.c_str());
         ImGui::EndDragDropSource();
     }
@@ -239,7 +256,25 @@ std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model) {
         entry.aliases = info.aliases;
     }
     std::vector< BrowserEntry > entries;
-    for (auto& [name, entry] : byClass) entries.push_back(std::move(entry));
+    for (auto& [name, entry] : byClass) {
+        entry.key = entry.className;
+        entries.push_back(std::move(entry));
+    }
+    // A card per catalog preset (Terrain's brush shapes...): always placed new, with the preset's args.
+    for (const Catalog::ClassInfo& info : Catalog::classes()) {
+        if (!info.placeable) continue;
+        for (const Catalog::Preset& preset : info.presets) {
+            BrowserEntry entry;
+            entry.className = info.name;
+            entry.key = info.name + "#" + preset.label;
+            entry.displayName = (info.displayName.empty() ? info.name : info.displayName) + ": " + preset.label;
+            entry.description = info.description;
+            entry.category = Catalog::categoryName(info.category);
+            entry.aliases = info.aliases;
+            entry.presetArgs = preset.args;
+            entries.push_back(std::move(entry));
+        }
+    }
     std::sort(entries.begin(), entries.end(), [](const BrowserEntry& a, const BrowserEntry& b) { return lower(a.displayName) < lower(b.displayName); });
     return entries;
 }
@@ -313,7 +348,7 @@ void drawBrowser(const ModelView& model) {
     const int perRow = std::max(1, static_cast< int >((ImGui::GetContentRegionAvail().x + gap) / (size + gap)));
     for (size_t i = 0; i < shown.size(); i++) {
         if (i % perRow != 0) ImGui::SameLine(0.0f, gap);
-        if (card(*shown[i], shown[i]->className == gSelectedClass, size)) gSelectedClass = shown[i]->className;
+        if (card(*shown[i], shown[i]->key == gSelectedClass, size)) gSelectedClass = shown[i]->key;
         if (ImGui::IsItemHovered()) {
             const BrowserEntry& entry = *shown[i];
             ImGui::BeginTooltip();
@@ -332,7 +367,7 @@ void drawBrowser(const ModelView& model) {
 
     const BrowserEntry* selected = nullptr;
     for (const BrowserEntry& entry : gEntries) {
-        if (entry.className == gSelectedClass) selected = &entry;
+        if (entry.key == gSelectedClass) selected = &entry;
     }
     if (selected != nullptr) {
         ImGui::Separator();
@@ -343,8 +378,17 @@ void drawBrowser(const ModelView& model) {
         }
         if (!selected->description.empty()) ImGui::TextWrapped("%s", selected->description.c_str());
         ImGui::TextDisabled("%s  ·  %d in this galaxy", selected->category.c_str(), selected->count);
-        if (selected->examples.empty()) {
-            ImGui::TextDisabled("Not used in this galaxy yet (placing classes from elsewhere comes with the catalog).");
+        if (selected->examples.empty() || !selected->presetArgs.empty()) {
+            // A new one from the catalog (EP-005): its table, defaults and preset; nothing to copy.
+            ImGui::TextDisabled(selected->presetArgs.empty() ? "Not in this galaxy yet: Place adds a new one with the catalog's settings."
+                                                             : "Place adds a new one with this preset.");
+            const std::uint64_t token = tokenFor(*selected);
+            const bool armed = gArmed == token;
+            if (armed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.98f, 0.80f, 0.22f, 0.55f));
+            if (ImGui::Button(armed ? "Placing: click the ground (Esc stops)" : "Place")) gArmed = armed ? 0 : token;
+            noteTestTarget("button:Place");
+            if (armed) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each click in the viewport places a new one. Or drag the card onto the viewport.");
         } else {
             // See an example: select one of the game's own placements (and its settings come along when placing).
             ImGui::TextDisabled("Examples (click to select):");
@@ -408,6 +452,24 @@ bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, f
     const float cx = std::clamp((x0 + x1 + 1) * 0.5f, half, width - half), cy = std::clamp((y0 + y1 + 1) * 0.5f, half, height - half);
     uv[0] = (cx - half) / width, uv[1] = (cy - half) / height, uv[2] = (cx + half) / width, uv[3] = (cy + half) / height;
     return true;
+}
+
+void placeToken(std::uint64_t token) {
+    if (!isClassToken(token)) {
+        Pick::place(token);
+        return;
+    }
+    const size_t index = static_cast< size_t >(token & ~kClassTokenBit);
+    if (index >= gSpecs.size()) return;
+    Pick::PlaceClass request;
+    std::snprintf(request.name, sizeof(request.name), "%s", gSpecs[index].className.c_str());
+    for (const auto& [arg, value] : gSpecs[index].args) {
+        if (request.argCount >= 8) break;
+        request.argIndex[request.argCount] = arg;
+        request.argValue[request.argCount] = value;
+        request.argCount++;
+    }
+    Pick::placeClass(request);
 }
 
 void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture) {
