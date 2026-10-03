@@ -246,7 +246,7 @@ namespace PetariEditor::Gravity {
         }
         return op;
     }
-    std::vector< Check > makeChecks(const View& v) {
+    std::vector< Check > makeChecks(const View& v, const std::vector< RowId >& baselineGround) {
         std::vector< Check > out;
         if (v.registered >= 116) {
             Check c;
@@ -258,7 +258,7 @@ namespace PetariEditor::Gravity {
                     c.rows.push_back(f.row);
             out.push_back(std::move(c));
         }
-        std::set< RowId > reported;
+        std::set< RowId > reported(baselineGround.begin(), baselineGround.end());
         for (auto& d : v.deadGround)
             if (reported.insert(d.row).second) {
                 Check c;

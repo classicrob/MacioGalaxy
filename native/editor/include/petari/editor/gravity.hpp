@@ -52,7 +52,7 @@ namespace PetariEditor::Gravity {
     // A single undoable edit. Changing shape also resets shape-specific arguments to safe defaults.
     Op shapeOp(const ModelView& model, RowId row, Shape shape, Bound bound = Bound::Sphere);
     Op numericOp(const ModelView& model, const std::vector< RowId >& rows, const char* column, float value, bool integer = false);
-    std::vector< Check > makeChecks(const View& view);
+    std::vector< Check > makeChecks(const View& view, const std::vector< RowId >& baselineGround = {});
     void setVisible(bool visible);
     bool visible();
     void setAirProbe(bool air);

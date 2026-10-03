@@ -130,6 +130,8 @@ int main() {
     c = G::makeChecks(v);
     require(c.size() == 2, "deduplicate ground warning per row");
     require(c[0].rows.front().v == 7, "ground warning selects owner");
+    c = G::makeChecks(v, {{7}});
+    require(c.size() == 1 && c[0].rows.front().v == 8, "vanilla sampled holes stay baseline while new ground remains visible");
     G::publish(v);
     require(G::view().registered == 5, "snapshot round trip");
     G::reset();

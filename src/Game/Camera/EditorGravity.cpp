@@ -188,6 +188,10 @@ namespace {
         std::uint64_t revision = 0;
         unsigned frame = 0;
         std::string checkSignature;
+        std::string baselineSession;
+        const ModelView* baselineModel = nullptr;
+        bool baselineSealed = false;
+        std::set< RowId > baselineGround;
         std::map< const LiveActor*, std::string > bindingConfig;
     };
     State& state() {
@@ -245,7 +249,8 @@ namespace {
     void checksProvider(const ModelView&, std::vector< Check >& out) {
         if (state().scene != Hooks::sceneSerial())
             return;
-        auto c = G::makeChecks(state().view);
+        auto& s = state();
+        auto c = G::makeChecks(s.view, {s.baselineGround.begin(), s.baselineGround.end()});
         out.insert(out.end(), c.begin(), c.end());
     }
     // Registered once, before the first edit operation. The engine creator applies exactly the same
@@ -405,6 +410,15 @@ namespace EditorGravity {
             s.view.deadGround.clear();
             s.frame = 0;
         }
+        const auto* currentModel = model();
+        const std::string session = currentModel ? std::string(currentModel->galaxy()) + ":" + std::to_string(currentModel->scenario()) : "";
+        if (s.baselineSession != session || s.baselineModel != currentModel) {
+            s.baselineSession = session;
+            s.baselineModel = currentModel;
+            s.baselineSealed = false;
+            s.baselineGround.clear();
+        }
+        s.baselineSealed = s.baselineSealed || status().dirty;
         s.view.fields.clear();
         s.view.registered = mgr->nativeGravityCount();
         std::map< PlanetGravity*, RowId > rows;
@@ -469,6 +483,9 @@ namespace EditorGravity {
         s.view.deadGround.erase(
             std::remove_if(s.view.deadGround.begin(), s.view.deadGround.end(), [](const auto& d) { return probe(d.position, true).covered; }),
             s.view.deadGround.end());
+        if (!s.baselineSealed)
+            for (const auto& sample : s.view.deadGround)
+                s.baselineGround.insert(sample.row);
         s.frame++;
         std::string signature = std::to_string(s.view.registered);
         std::set< RowId > deadRows;

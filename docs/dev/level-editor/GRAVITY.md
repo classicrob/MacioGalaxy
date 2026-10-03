@@ -15,7 +15,10 @@ cursor's depth in air; empty sky uses a fixed inspection depth.
 Red patches mark collision-surface samples that no active normal-gravity field
 covers. The survey samples the visible ground incrementally and retains found
 patches until the model changes. Checks identify affected ground rows. This is a
-sampled survey, not a proof that an entire galaxy has complete coverage.
+sampled survey, not a proof that an entire galaxy has complete coverage. Holes
+sampled before the first edit form a local Checks baseline (their red markers
+remain visible). An unseen vanilla hole discovered after editing may still be
+reported; changing gravity can affect ground far from the edited field.
 
 The Inspector changes shape, range, distant, priority and inverse through normal
 undoable model operations. Move/rotate/scale uses the existing gizmo and updates
