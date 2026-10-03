@@ -345,6 +345,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
     cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);
+    drawPathsWireOverlay(area.x, area.y, area.w, area.h);  // M3 paths: sockets and labels stay above selection marks.
 }
 
 }  // namespace PetariEditor::Ui

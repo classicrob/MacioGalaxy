@@ -3,6 +3,7 @@
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <petari/editor/paths_view.hpp>
 #include <petari/editor_pick.hpp>
@@ -72,31 +73,45 @@ namespace EditorPaths {
             if (camera.project(p, &m.x, &m.y))
                 out.marks.push_back(m);
         }
-        void curveWire(const D::Camera& camera, E::Vec3 a, E::Vec3 b, std::uint32_t color, V::WireMark* out) {
+        std::uint32_t mixColor(std::uint32_t a, std::uint32_t b, float t) {
+            std::uint32_t result = 0xff000000;
+            for (int shift : {0, 8, 16}) {
+                const float from = (a >> shift) & 255, to = (b >> shift) & 255;
+                result |= static_cast< std::uint32_t >(from + (to - from) * t) << shift;
+            }
+            return result;
+        }
+        void curveWire(const D::Camera& camera, E::Vec3 a, E::Vec3 b, V::WireMark* out) {
             const auto delta = D::vector(b) - D::vector(a);
             const float rise = std::min(E::Gizmo::length(delta) * 0.35f, 2500.0f);
             P::Point first{{}, a, {}, D::point(D::vector(a) + delta * (1.0f / 3) + D::vector(upAt(a)) * rise)};
             P::Point last{{}, b, D::point(D::vector(a) + delta * (2.0f / 3) + D::vector(upAt(b)) * rise), {}};
-            E::Vec3 previous = a;
+            const float width = V::wireFocused(out->to) ? 4.5f : 3.0f;
+            const auto fromColor = P::switchColor(out->from.field), toColor = P::switchColor(out->to.field);
+            std::array< E::Vec3, 33 > points;
+            for (int i = 0; i <= 32; ++i)
+                points[i] = P::evaluate(first, last, i / 32.0f);
+            // A dark edge preserves contrast against sun, bright models and busy textures.
+            for (int i = 1; i <= 32; ++i)
+                mesh.lines.push_back({points[i - 1], points[i], 0xee221911, width + 2});
             const double seconds = std::chrono::duration< double >(std::chrono::steady_clock::now().time_since_epoch()).count();
             const int phase = static_cast< int >(std::fmod(seconds * 12, 6));
             for (int i = 1; i <= 32; ++i) {
-                const auto next = P::evaluate(first, last, i / 32.0f);
-                const bool dash = (i + 6 - phase) % 6 < 3;
-                const auto tint = dash ? color : ((color & 0xffffff) | ((color >> 24) / 3 << 24));
-                mesh.lines.push_back({previous, next, tint, dash ? 2.5f : 1.0f});
-                if (out) {
-                    V::Curve c;
-                    if (camera.project(previous, &c.x0, &c.y0) && camera.project(next, &c.x1, &c.y1))
-                        out->segments.push_back(c);
-                }
+                auto color = mixColor(fromColor, toColor, (i - 0.5f) / 32.0f);
+                if ((i + 6 - phase) % 6 < 3)
+                    color = mixColor(color, 0xffffffff, 0.18f);
+                mesh.lines.push_back({points[i - 1], points[i], color, width});
+                V::Curve c;
+                if (camera.project(points[i - 1], &c.x0, &c.y0) && camera.project(points[i], &c.x1, &c.y1))
+                    out->segments.push_back(c);
                 if (i == 16)
-                    D::arrow(mesh, previous, next, upAt(next), color, 2);
-                previous = next;
+                    D::arrow(mesh, points[i - 1], points[i], upAt(points[i]), color, width);
             }
-            if (out)
-                camera.project(P::evaluate(first, last, 0.5f), &out->x, &out->y);
+            out->midpointVisible = camera.project(points[16], &out->x, &out->y);
+            out->fromVisible = camera.project(a, &out->fromX, &out->fromY);
+            out->toVisible = camera.project(b, &out->toX, &out->toY);
         }
+
     }  // namespace
     void update(const EditorPicking::View& input) {
         PetariNative::HostAllocationScope host;
@@ -254,11 +269,20 @@ namespace EditorPaths {
             V::WireMark w;
             w.from = wire.from;
             w.to = wire.to;
-            const std::uint32_t color = (P::switchColor(wire.from.id) & 0xffffff) | (focus ? 0xff000000 : 0x66000000);
-            curveWire(camera, anchor(*model, wire.from.row), anchor(*model, wire.to.row), color, &w);
+            curveWire(camera, anchor(*model, wire.from.row), anchor(*model, wire.to.row), &w);
             out.wires.push_back(std::move(w));
         }
-        for (auto row : rows) {
+        auto socketRows = rows;
+        if (V::linkingSwitch()) {
+            PetariNative::EditorPick::Item hover;
+            if (PetariNative::EditorPick::hover(&hover) && hover.row && !selected(socketRows, {hover.row}))
+                socketRows.push_back({hover.row});
+            // Keep the target's menu available while the pointer leaves its model to choose a socket.
+            const auto menu = V::socketMenu();
+            if (menu.valid() && model->locate(menu, nullptr, nullptr) && !selected(socketRows, menu))
+                socketRows.push_back(menu);
+        }
+        for (auto row : socketRows) {
             if (!model->hasTransform(row))
                 continue;
             float x, y;
@@ -275,7 +299,7 @@ namespace EditorPaths {
                 sockets.push_back({row, 0, -1, "CommonPath_ID"});
             for (std::size_t i = 0; i < sockets.size(); ++i) {
                 const auto& socket = sockets[i];
-                out.sockets.push_back({row, socket.field, x, y, P::switchColor(socket.id), socket.role == E::Catalog::SwitchRole::Write});
+                out.sockets.push_back({row, socket.field, x, y, P::switchColor(socket.field), socket.role == E::Catalog::SwitchRole::Write});
             }
         }
         V::publish(std::move(out));
