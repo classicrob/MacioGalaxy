@@ -342,8 +342,8 @@ These follow UX section 3, agreed between UX and tech.
   - Clipping is suspended for actors near the selection, so culled actors don't stay hidden (a known photo-mode limit).
   - Planets, map parts and collision objects compute their matrix inside movement (`src/Game/Scene/SceneExecutor.cpp:48-51`). Moving one while frozen calls `MR::calcAnimDirect` (`src/Game/Util/LiveActorUtil.cpp:619-628`) and resets its collision matrix.
 - **Play.**
-  - If anything is pending or dirty, reload from the model (2.6) and then teleport Mario.
-  - If not, unfreeze and teleport.
+  - If anything is pending, or a fresh Play follows an already-played scene, reload from the model (2.6) and then teleport Mario.
+  - Otherwise unfreeze and teleport; Resume retains the played scene and run.
   - Teleport: the play marker dropped along gravity; the smoke's `PETARI_STAGE_WARP` shows the warp path.
 - **Return to Edit** freezes only; the played state stays visible. Edits made there still go to rows and re-create their actors; the spike re-created actors in a scene that had been playing for 1,000 frames. Played-state caveats are shown, not prevented: switches on, collected items dead, Mario's state.
 - **Trail.** `EditorPlaytest` records Mario at the game-frame seam into a 3,600-sample ring. Returning to Edit draws dotted, depth-tested segments coloured by ground, air, dive or cap-bounce state. Gold diamonds mark peaks along local gravity. Begin resets the run; Resume retains it and breaks the line across time spent in Edit; End clears it. The elapsed timer continues after the ring wraps.
