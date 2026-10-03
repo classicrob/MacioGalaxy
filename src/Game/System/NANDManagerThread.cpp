@@ -1,5 +1,9 @@
 #include "Game/System/NANDManagerThread.hpp"
 #include "Game/System/NANDManager.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime.hpp>
+#include <cstdio>
+#endif
 
 NANDManagerThread::NANDManagerThread(int priority, int msgCount, JKRHeap* pHeap) : OSThreadWrapper(0x8000, msgCount, priority, pHeap) {
 }
@@ -41,6 +45,19 @@ void* NANDManagerThread::run() {
 }
 
 void NANDManagerThread::executeWriteSequence(NANDRequestInfo* pRequestInfo) {
+#ifdef PETARI_NATIVE
+    // A level-editor play-test: nothing reaches the save (its progress is put back when the
+    // session ends). The game sees a write that succeeded.
+    if (PetariEditor::Runtime::progressIsolated()) {
+        static bool sTold = false;
+        if (!sTold) {
+            std::fprintf(stderr, "[editor] play-test isolation: %s not written\n", pRequestInfo->mPath);
+            sTold = true;
+        }
+        pRequestInfo->mResult = NAND_RESULT_OK;
+        return;
+    }
+#endif
     pRequestInfo->mResult = NANDCreate(pRequestInfo->mPath, pRequestInfo->mPermission, pRequestInfo->mAttribute);
 
     if (pRequestInfo->mResult == NAND_RESULT_OK || pRequestInfo->mResult == NAND_RESULT_EXISTS) {

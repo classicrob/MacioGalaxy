@@ -1086,3 +1086,8 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - A fresh Play in a scene already played rebuilds it, so collected and defeated objects come back; only Resume keeps them.
   - Catalog presets carry a size (`Preset::scale`).
   - Scratch saves (progress isolation) follow in their own branch.
+- **Play-test isolation** (`editor/scratch-saves`; TECH 2.7): progress a play-test earns never reaches the player's records.
+  - When an edit session's model loads, `EditorScratch::snapshot()` keeps the save file's progress: its game data binary and the mod galaxies' records. `Runtime::progressIsolated()`, an atomic flag, then reads true.
+  - While isolated, NAND writes are skipped (`NANDManagerThread::executeWriteSequence`; the game sees a successful write). The Gravity worker's gates stop progress.json and the mod galaxies' sidecars.
+  - At End (another galaxy or mission, or the editor turned off), the progress is restored first, then the flag is released.
+  - Live check: editor_sync_smoke's fifth run earns 100 Star Bits in a session, turns the editor off, and finds the count restored.

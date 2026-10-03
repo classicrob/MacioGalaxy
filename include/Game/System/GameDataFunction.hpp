@@ -6,7 +6,13 @@ class GameDataHolder;
 class GameDataSomeScenarioAccessor;
 class JMapInfoIter;
 
+class UserFile;
+
 namespace GameDataFunction {
+#ifdef PETARI_NATIVE
+    /// The save file in use (the level editor's play-test isolation snapshots and restores it).
+    UserFile* nativeCurrentUserFile();
+#endif
     bool isDataMario();
     bool hasPowerStar(const char*, s32);
     bool hasGrandStar(int);
