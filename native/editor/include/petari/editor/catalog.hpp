@@ -93,6 +93,11 @@ struct ClassInfo {
     std::string table;  // the table it is placed in on the disc, layer left out ("jmp/mapparts/mappartsinfo"); empty: not on the disc
 };
 
+enum class PlacementLink : std::uint8_t { None, Optional, Required };
+/// Donor wiring: common placement links plus class-specific catalog declarations. Required
+/// links stay when placing a standalone copy; identity and ordinary settings aren't links.
+PlacementLink placementLink(const ClassInfo* info, std::uint32_t field, const char* fieldName = nullptr);
+
 /// The table a new row of `info` goes in, in `layer` ("common", "layera"): `table` with the layer
 /// put in; when the disc never places the class, by category (areas, cameras) or objinfo.
 std::string tablePath(const ClassInfo& info, const std::string& layer);
