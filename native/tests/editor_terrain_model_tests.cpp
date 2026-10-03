@@ -182,8 +182,8 @@ static void testDisc(const char* pDisc) {
         std::printf("donor %s: %zu materials cloned onto a box and a sphere\n", donor.archive, names.size());
     }
     check(models > 0, "no donor model on the disc");
-    // The donor's vertex colour level on the material (measured on the disc: FlowerPlanet's grass
-    // is painted at about 115/255; Bathtub's checker at 255).
+    // The donor's lit vertex colour on the material (the 90th percentile, measured on the disc:
+    // FlowerPlanet's grass about 229/255; Bathtub's checker 255).
     auto tintOf = [&](const char* pArchive, const char* pModel, const char* pMaterial) {
         std::ifstream file(std::string(pDisc) + "/ObjectData/" + pArchive + ".arc", std::ios::binary);
         const Bytes raw((std::istreambuf_iterator< char >(file)), std::istreambuf_iterator< char >());
@@ -194,7 +194,7 @@ static void testDisc(const char* pDisc) {
         return clone ? clone->vertexTint : T::Vec3{-1, -1, -1};
     };
     const T::Vec3 grass = tintOf("FlowerPlanet", "flowerplanet.bdl", "gras_v"), checker = tintOf("BathtubPlanet", "bathtubplanet.bdl", "CheckMat_v");
-    check(grass.x > 0.43f && grass.x < 0.47f && grass.z > 0.43f && grass.z < 0.47f, "the grass donor's vertex tint (about 0.45)");
+    check(grass.x > 0.86f && grass.x < 0.94f, "the grass donor's vertex tint (about 0.9)");
     check(checker.x > 0.99f && checker.y > 0.99f, "the checker donor's vertex tint (1)");
     std::printf("vertex tints: grass %.3f %.3f %.3f, checker %.3f\n", grass.x, grass.y, grass.z, checker.x);
     std::printf("%d generated models loaded through J3D (%zu KB on average)\n", models, models ? modelBytes / models / 1024 : 0);
