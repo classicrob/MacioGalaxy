@@ -1,3 +1,4 @@
+extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsigned, const void*);
 // Native entry point: window, platform start-up, then the game's main loop
 // on this (the macOS main) thread. See docs/dev/INTEGRATION_PLAN.md.
 
@@ -22,6 +23,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <filesystem>
 #include <fstream>
 #ifdef PETARI_EDITOR_UI
 #include <aurora/imgui.h>
@@ -168,6 +170,25 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
         } else {
             return false;
         }
+    }
+    // A restart into a new galaxy (the level editor's New Galaxy): read once, then cleared so a later
+    // restart doesn't repeat it. Test fixtures enter through PETARI_STAGE instead (set with it).
+    if (const char* open = std::getenv("PETARI_OPEN_STAGE"); open != nullptr && open[0] != '\0' && launchStage.empty()) {
+        const char* edit = std::getenv("PETARI_OPEN_EDIT");
+        const char* title = std::getenv("PETARI_OPEN_TITLE");
+        PetariNative::PlayerLaunch::openEdit = edit != nullptr && edit[0] == '1';
+        PetariNative::PlayerLaunch::openTitle = title != nullptr && title[0] != '\0' ? title : open;
+        if (!fixture) {
+            const char* file = std::getenv("PETARI_OPEN_FILE");
+            PetariNative::PlayerLaunch::openFile = file != nullptr ? std::atoi(file) : 0;
+            launchStage = open;
+            launchScenario = 1;
+        }
+        std::fprintf(stderr, "PETARI OPEN: %s (file %d, edit %d)\n", open, PetariNative::PlayerLaunch::openFile,
+                     PetariNative::PlayerLaunch::openEdit ? 1 : 0);
+    }
+    for (const char* name : {"PETARI_OPEN_STAGE", "PETARI_OPEN_FILE", "PETARI_OPEN_EDIT", "PETARI_OPEN_TITLE"}) {
+        unsetenv(name);
     }
     if (launchScenarioGiven && launchStage.empty()) {
         std::fputs("petari: --scenario needs --stage\n", stderr);
@@ -574,6 +595,8 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     if (t == 160) PetariEditor::Ui::openSaveSheet();
                     if (t == 175) click("button:Cancel", true);
                     if (t == 177) click("button:Cancel", false);
+                    if (t == 185) click("button:View", true);
+                    if (t == 187) click("button:View", false);
                 }
 #endif
 #ifdef PETARI_EDITOR_UI
@@ -653,6 +676,30 @@ App::FrameStats::Phase framePhaseForPipelines() {
                         sClickAt = -1;  // done
                     }
                     if (t == 599 && sClickAt == 0) std::fputs("[editor-test] sdl pick: no off-centre object on screen\n", stderr);
+                }
+#endif
+#ifdef PETARI_EDITOR_UI
+                // PETARI_EDITOR_TEST_SHARE=1 (UX section 17): save the mod, export it with the Share sheet into
+                // PETARI_EDITOR_SHARE_DIR, then install that zip through the Install sheet (it is installed already,
+                // so the second press replaces it). The log shows each step.
+                if (std::getenv("PETARI_EDITOR_TEST_SHARE") != nullptr) {
+                    if (t == 196) PetariEditor::Ui::openSaveSheet();
+                    if (t == 200) PetariEditor::Ui::submitSaveSheet();
+                    if (t == 206) PetariEditor::Ui::openShareSheetForTest();
+                    if (t == 212) PetariEditor::Ui::submitShareSheet();
+                    if (t == 222) {
+                        std::string zip;
+                        std::error_code ec;
+                        if (const char* dir = std::getenv("PETARI_EDITOR_SHARE_DIR")) {
+                            for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+                                if (entry.path().extension() == ".zip") zip = entry.path().string();
+                            }
+                        }
+                        std::fprintf(stderr, "[editor-test] share: zip %s\n", zip.empty() ? "(none)" : zip.c_str());
+                        if (!zip.empty()) PetariEditor::Ui::openInstallSheet(zip.c_str());
+                    }
+                    if (t == 228) PetariEditor::Ui::submitInstallSheet();
+                    if (t == 234) PetariEditor::Ui::submitInstallSheet();  // "Replace it"
                 }
 #endif
                 // PETARI_EDITOR_TEST_MISSION=<n>: switch to mission n as the toolbar's chip does, then leave later.
@@ -879,13 +926,12 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "petari: editor panels use the built-in font (no system UI font)\n");
     }
     PetariEditor::Ui::setSettingsFile((paths.user / "editor" / "ui-settings.txt").string().c_str());
-    PetariEditor::Ui::setThumbnailHost(
-        [](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height) {
-            return petari_present_take_readback(copy, rgba, capacity, width, height);
-        },
-        [](unsigned width, unsigned height, const void* rgba) {
-            return static_cast<unsigned long long>(aurora_imgui_add_texture(width, height, rgba));
-        });
+    PetariEditor::Ui::setThumbnailHost([](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width,
+                                          unsigned* height) { return petari_present_take_readback(copy, rgba, capacity, width, height); },
+                                       [](unsigned width, unsigned height, const void* rgba) {
+                                           return static_cast< unsigned long long >(aurora_imgui_add_texture(width, height, rgba));
+                                       },
+                                       &aurora_imgui_update_texture);
     // Development: the editor's docked layout from the start (the Edit mode shows it normally).
     if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
         PetariEditor::Ui::setVisible(true);

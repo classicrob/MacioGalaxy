@@ -1,6 +1,7 @@
 // Loading for editing and saving as a mod, shared by the Runtime and headless tools (model_io.hpp).
 #include "model_io.hpp"
 
+#include <petari/editor/areas.hpp>
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/check_providers.hpp>
 #include <petari/editor/paths.hpp>
@@ -126,6 +127,8 @@ std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const
     if (registerClasses) {
         registerClasses();
     }
+    Areas::registerCatalog();
+    registerCheckProvider(&Areas::computeChecks);
     registerCheckProvider(&pathChecks);  // before the first computeChecks: part of the baseline
     // Planet classes: the names PlanetMapDataTable lists on this disc.
     if (std::optional< Formats::Bytes > raw = mounted("/ObjectData/PlanetMapDataTable.arc")) {

@@ -14,6 +14,7 @@
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
 #include <petari/smoke_phase.hpp>
+#include <petari/test_server_gate.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -188,7 +189,7 @@ namespace TestServer {
                 std::fprintf(stderr, "[test-server] listening on %s\n", pDir);
             }
         }
-        if (!gEnabled || !PetariNative::SmokePhase::stageChecksDone.load()) {
+        if (!PetariNative::testServerReady(gEnabled, std::getenv("PETARI_SMOKE"), PetariNative::SmokePhase::stageChecksDone.load())) {
             return;  // not before the stage smoke is idling: it would end the run on a stage change in an earlier phase
         }
         static int sBeat = 0;

@@ -44,21 +44,23 @@
 // native/platform/include/petari/platform/os_host.hpp
 extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorCameraPreview.hpp"
 #include "Game/Camera/EditorDraw.hpp"
 #include "Game/Camera/EditorGravity.hpp"
+#include "Game/Camera/EditorPlaytest.hpp"
 #include "Game/Camera/EditorThumbs.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
-#include "Game/System/GalaxyMoveArgument.hpp"
-#include "Game/System/GameSequenceFunction.hpp"
-#include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorGalaxyTest.hpp"
+#include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
-#include <petari/editor/runtime.hpp>
-#include <petari/editor_settings.hpp>
-#include <petari/editor/runtime_hooks.hpp>
-#include <petari/player_launch.hpp>
 #include "Game/Scene/ClassSweep.hpp"
 #include "Game/Scene/TestServer.hpp"
+#include "Game/System/GalaxyMoveArgument.hpp"
+#include "Game/System/GameSequenceFunction.hpp"
+#include <petari/editor/runtime.hpp>
+#include <petari/editor/runtime_hooks.hpp>
+#include <petari/editor_settings.hpp>
+#include <petari/player_launch.hpp>
 // StorySequenceExecutor.cpp
 bool petariDirectStageMove(GalaxyMoveArgument* pMoveArgument, const char* pStage, s32 selected, const char* pLabel);
 #endif
@@ -215,7 +217,10 @@ void GameScene::update() {
     }
 #endif
 #ifdef PETARI_NATIVE
+    EditorPlaytest::init();  // M3 play-test: subscribe before the command drain.
     PetariEditor::Runtime::tick(isPermitToPauseMenu());  // the level editor's commands and SceneSync; nothing while it is off
+    EditorPlaytest::update(isPermitToPauseMenu());  // M3 play-test: sample once per game frame.
+    EditorPlaytest::testTick(isPermitToPauseMenu());  // M3 play-test: opt-in live checks.
     EditorGravity::testTick(isPermitToPauseMenu());  // M3 gravity: opt-in live smoke.
     EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
     EditorTerrainTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_TERRAIN_TEST
@@ -458,6 +463,7 @@ void GameScene::draw3D() const {
 
 #ifdef PETARI_NATIVE
     EditorDraw::beginFrame();  // the editor's draw budget for this frame (EP-004)
+    EditorCameraPreview::render();  // M3 areas: camera picture-in-picture.
     EditorThumbs::render();  // the level editor's Browser: one model offscreen, copied out
 #endif
     CategoryList::execute(MR::DrawType_AstroDomeSkyClear);

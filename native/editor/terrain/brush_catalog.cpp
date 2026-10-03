@@ -2,6 +2,7 @@
 #include <petari/editor/terrain/brush_catalog.hpp>
 #include <petari/editor/check_providers.hpp>
 #include <petari/editor/terrain/brush.hpp>
+#include <array>
 #include <cstdio>
 #include <cstring>
 
@@ -42,8 +43,15 @@ Catalog::ClassInfo brushClassInfo() {
                  enumArg(2, "Surface", surfaces, "How it feels to walk on"),
                  enumArg(3, "Gravity", gravityModeNames(), "Fitted: a cube, point or cylinder field around it; Down only: straight down over its top")};
     info.args[3].defaultValue = 1;
+    // Human-scale first placements (scale x 1000 units): a 400 x 100 x 400 platform, a planetoid of
+    // radius 600, a 400-wide, 600-tall pillar, a 300 x 150 x 400 ramp.
+    const std::array< float, 3 > sizes[] = {{0.4f, 0.1f, 0.4f}, {1.2f, 1.2f, 1.2f}, {0.4f, 0.6f, 0.4f}, {0.3f, 0.15f, 0.4f}};
     for (std::size_t i = 0; i < brushShapeNames().size(); i++) {
-        info.presets.push_back({brushShapeNames()[i] + " brush", {{0, static_cast< std::int32_t >(i)}}});
+        Catalog::Preset preset;
+        preset.label = brushShapeNames()[i] + " brush";
+        preset.args = {{0, static_cast< std::int32_t >(i)}};
+        preset.scale = sizes[i];
+        info.presets.push_back(preset);
     }
     return info;
 }

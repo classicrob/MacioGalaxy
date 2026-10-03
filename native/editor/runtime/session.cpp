@@ -8,6 +8,7 @@
 #include "model_io.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
+#include "new_galaxy_session.hpp"
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/paths.hpp>
 
@@ -42,6 +43,8 @@ namespace {
     constexpr s32 kGravityLimit = 128;  // PlanetGravityManager's array
     std::vector< PreviewHandler > gPreviewHandlers;
     std::vector< LiveUpdater > gLiveUpdaters;
+    std::vector< RowPreviewHandler > gRowPreviewHandlers;
+    std::vector< RowUpdater > gRowUpdaters;
     bool gChecksInvalid = false;
     std::vector< PlayListener > gPlayListeners;
     std::atomic< bool > gIsolated{false};  // progressIsolated(): read by the NAND thread too
@@ -65,6 +68,7 @@ namespace {
     struct Session {
         std::unique_ptr< EditModel > model;
         std::uint32_t boundScene = 0;
+        std::map< const void*, std::map< int, RowId > > placementRows;
         std::map< RowId, std::vector< LiveActor* > > actors;  // every actor a row made, first first
         std::set< RowId > pending;                             // edits that need a reload
         std::vector< std::unique_ptr< LiveRow > > liveRows;
@@ -146,6 +150,7 @@ namespace {
         }
         s.suspectNotices.clear();
         s.actors.clear();
+        s.placementRows.clear();
         s.pending.clear();
         s.boundScene = 0;
         Core::clearBindings();
@@ -299,6 +304,7 @@ namespace {
         Session& s = session();
         s.scenePlayed = false;
         s.actors.clear();
+        s.placementRows.clear();
         s.liveRows.clear();
         Hooks::clearRailTables();
         s.railStorage.clear();
@@ -318,6 +324,16 @@ namespace {
                 if (const void* pData = EditorScene::tableData(s.model->zoneId(zone), s.model->tablePath(zone, table))) {
                     tableOf[pData] = {zone, table};
                 }
+            }
+        }
+        for (const Hooks::Placed& placed : Hooks::areas()) {
+            const auto table = tableOf.find(placed.table);
+            if (table == tableOf.end()) {
+                continue;
+            }
+            const RowId row = s.model->rowAt(table->second.first, table->second.second, placed.row);
+            if (row.valid()) {
+                s.placementRows[placed.table][placed.row] = row;
             }
         }
         int bound = 0;
@@ -388,6 +404,9 @@ namespace {
         EditModel& m = *s.model;
         int zone = 0, table = 0;
         if (!m.locate(id, &zone, &table)) {
+            // Gone from the model (an Add undone): whatever showed it goes too (EP-007).
+            retireRow(id);
+            s.pending.erase(id);
             return;
         }
         const std::string path = m.tablePath(zone, table);
@@ -408,6 +427,33 @@ namespace {
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
 
         if (!live) {
+            if (!gRowUpdaters.empty()) {
+                std::unique_ptr< LiveRow > row;
+                if (m.state(id) != RowState::Deleted) {
+                    int rowIndex = 0;
+                    const auto* tableData = m.rowTable(id, &rowIndex);
+                    if (tableData) {
+                        PetariNative::HostAllocationScope host;
+                        row = std::make_unique< LiveRow >();
+                        row->bytes = tableData->buildSingleRow(rowIndex);
+                        row->info.attach(row->bytes.data());
+                        Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
+                    }
+                }
+                const auto iter = row ? JMapInfoIter(&row->info, 0) : JMapInfoIter();
+                for (RowUpdater updater : gRowUpdaters) {
+                    if (updater(id, iter)) {
+                        s.pending.erase(id);
+                        if (row) {
+                            s.liveRows.push_back(std::move(row));
+                        }
+                        return;
+                    }
+                }
+                if (row) {
+                    Hooks::unregisterRows(row->bytes.data());
+                }
+            }
             if (endsWith(path, "/childobjinfo")) {
                 Core::reportNotice("Child objects must be rebuilt with their parent; Reload to apply this change");
             }
@@ -515,26 +561,34 @@ namespace {
         s.liveRows.push_back(std::move(row));
     }
 
+    bool previewRow(RowId row, int zone, const RowTransform& transform) {
+        for (RowPreviewHandler handler : gRowPreviewHandlers) {
+            if (handler(row, zone, transform)) {
+                return true;
+            }
+        }
+        if (auto* actor = actorForRow(row)) {
+            pokeTransform(actor, zone, transform);
+            return true;
+        }
+        return false;
+    }
     void preview(const Command& command) {
         Session& s = session();
         for (size_t i = 0; i < command.rows.size() && i < command.previews.size(); i++) {
-            LiveActor* pActor = actorForRow(command.rows[i]);
             int zone = 0, table = 0;
-            if (pActor == nullptr || !s.model->locate(command.rows[i], &zone, &table)) {
-                continue;
+            if (s.model->locate(command.rows[i], &zone, &table) && previewRow(command.rows[i], s.model->zoneId(zone), command.previews[i])) {
+                s.previewing.insert(command.rows[i]);
             }
-            pokeTransform(pActor, s.model->zoneId(zone), command.previews[i]);
-            s.previewing.insert(command.rows[i]);
         }
     }
 
     void endPreview(const std::vector< RowId >& rows) {
         Session& s = session();
         for (RowId id : rows) {
-            LiveActor* pActor = actorForRow(id);
             int zone = 0, table = 0;
-            if (pActor != nullptr && s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
-                pokeTransform(pActor, s.model->zoneId(zone), s.model->transform(id));
+            if (s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
+                previewRow(id, s.model->zoneId(zone), s.model->transform(id));
             }
             s.previewing.erase(id);
         }
@@ -613,11 +667,17 @@ namespace {
                     enqueue(std::move(commands[j]));
                 }
             };
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy) {  // from Edit, or from Level Select with no model
+                if (!createNewGalaxy(command.newGalaxy, s.model && status().unsaved, &error)) {
+                    Core::reportError("New galaxy: " + error);
+                }
+                continue;
+            }
             if (!s.model) {
                 Core::reportError("No galaxy is loaded for editing");
                 continue;
             }
-            std::string error;
             switch (command.kind) {
             case Command::Kind::Apply: {
                 PetariNative::HostAllocationScope host;
@@ -717,7 +777,9 @@ void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITO
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
+void newGalaxyTestTick();  // new_galaxy_test.cpp: New Galaxy across its restart (PETARI_EDITOR_NEWGALAXY_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
+void areasTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void scratchTestTick(); // scratch_test.cpp: play-test progress isolation (PETARI_EDITOR_SCRATCH_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
@@ -821,8 +883,38 @@ void registerLiveUpdater(LiveUpdater updater) {
     if (std::find(gLiveUpdaters.begin(), gLiveUpdaters.end(), updater) == gLiveUpdaters.end()) gLiveUpdaters.push_back(updater);
 }
 
+void registerRowPreviewHandler(RowPreviewHandler handler) {
+    if (std::find(gRowPreviewHandlers.begin(), gRowPreviewHandlers.end(), handler) == gRowPreviewHandlers.end()) {
+        gRowPreviewHandlers.push_back(handler);
+    }
+}
+void registerRowUpdater(RowUpdater updater) {
+    if (std::find(gRowUpdaters.begin(), gRowUpdaters.end(), updater) == gRowUpdaters.end()) {
+        gRowUpdaters.push_back(updater);
+    }
+}
+RowId rowForPlacement(const void* data, int index) {
+    const auto& tables = session().placementRows;
+    const auto table = tables.find(data);
+    if (table == tables.end()) {
+        return {};
+    }
+    const auto row = table->second.find(index);
+    return row == table->second.end() ? RowId{} : row->second;
+}
+
 void invalidateChecks() {
     gChecksInvalid = true;
+}
+
+bool playMarker(Vec3* position) {
+    if (!session().hasMarker) {
+        return false;
+    }
+    if (position) {
+        *position = session().playMarker;
+    }
+    return true;
 }
 
 bool reloading() {
@@ -832,6 +924,10 @@ bool reloading() {
 void plainReloadTestTick(bool playable);  // reload_test.cpp (PETARI_EDITOR_PLAIN_RELOAD_TEST)
 
 void tick(bool playable) {
+    static const bool sNewGalaxyServices = (registerNewGalaxyServices(), true);
+    (void)sNewGalaxyServices;
+    newGalaxyTick();
+    newGalaxyTestTick();
     plainReloadTestTick(playable);
     // A plain reloadScene() completes whether or not the editor is on.
     if (session().plainReload && Hooks::sceneSerial() != session().reloadFromScene && playable) {
@@ -863,6 +959,7 @@ void tick(bool playable) {
     redrawTestTick();
     ensureTestTick();
     pathsTestTick();
+    areasTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
@@ -875,7 +972,18 @@ void tick(bool playable) {
         }
     }
     if (!s.model) {
-        Core::drainCommands();
+        // Only a new galaxy can be made without one (Level Select's New galaxy).
+        std::vector< Command > commands;
+        {
+            PetariNative::HostAllocationScope host;
+            commands = Core::drainCommands();
+        }
+        for (Command& command : commands) {
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy && !createNewGalaxy(command.newGalaxy, false, &error)) {
+                Core::reportError("New galaxy: " + error);
+            }
+        }
         Core::runUiSeamHook();
         return;
     }

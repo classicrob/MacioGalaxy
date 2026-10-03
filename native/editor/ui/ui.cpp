@@ -1,3 +1,5 @@
+#include "playtest.hpp"
+#include "areas.hpp"
 // The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
 #include <petari/editor/ui.hpp>
 
@@ -238,14 +240,24 @@ void drawToolbar(float width) {
             }
         }
         ImGui::SameLine(0.0f, 10.0f);
-        bool ghosts = PetariNative::EditorGizmo::showGhosts();
-        if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
-        drawPathsToggle();  // M3 paths: selection/all/none.
-        ImGui::SameLine(0.0f, 10.0f);
-        bool gravity = Gravity::visible();  // M3 gravity: view toggle.
-        if (ImGui::Checkbox("Gravity", &gravity)) Gravity::setVisible(gravity);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show gravity fields, flow arrows and uncovered ground (1)");
+        // View (one menu, so the toolbar fits a 1280-point window): what the viewport shows besides the scene.
+        if (ImGui::Button("View")) ImGui::OpenPopup("view-menu");
+        noteTestTarget("button:View");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ghosts, links, gravity... (what the viewport shows)");
+        if (ImGui::BeginPopup("view-menu")) {
+            bool ghosts = PetariNative::EditorGizmo::showGhosts();
+            if (ImGui::Checkbox("Other missions' objects (ghosts)", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
+            ImGui::TextUnformatted("Paths and switch wires (5)");
+            drawPathsToggle();  // M3 paths: selection/all/none.
+            bool gravity = Gravity::visible();  // M3 gravity: view toggle.
+            if (ImGui::Checkbox("Gravity fields (1)", &gravity)) Gravity::setVisible(gravity);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gravity fields, flow arrows and uncovered ground");
+            drawAreasToggle();      // M3 areas: bounds visibility.
+            drawAreasToggle(true);  // M3 areas: camera volume visibility.
+            // M3 play-test and later view toggles go here, one per line.
+            drawPlaytestToggle();  // M3 play-test: recorded Mario trail.
+            ImGui::EndPopup();
+        }
         ImGui::SameLine(0.0f, 16.0f);
     }
     const float buttonHeight = 26.0f;
@@ -255,6 +267,14 @@ void drawToolbar(float width) {
     std::snprintf(reload, sizeof(reload), state.pendingCount > 0 ? "Reload  %d pending" : "Reload", state.pendingCount);
     const float right = width - 12.0f;
     float leftEdge = right - 96.0f - 8.0f - 230.0f;  // the Reload button's left; Save and the badge go left of it
+    // Share (UX section 17): the saved mod as a zip; Cmd+Shift+E.
+    {
+        const float w = ImGui::CalcTextSize("Share").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (ImGui::Button("Share")) openShareSheet();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pack the saved mod as a .zip to give someone (Cmd+Shift+E)");
+    }
     // Save (UX section 17): highlighted while there are unsaved edits; Cmd+S.
     {
         const char* label = state.unsaved ? "Save*###save" : "Save###save";
@@ -337,7 +357,7 @@ void drawFooter(float width, float height) {
     const PetariNative::EditorGizmo::View gizmo = PetariNative::EditorGizmo::view();
     if (gizmo.dragging && gizmo.status[0] != '\0') {
         ImGui::TextUnformatted(gizmo.status);
-    } else {
+    } else if (!drawPlaytestFooter()) {  // M3 play-test: Keep status.
         ImGui::TextUnformatted("Tab play    M marker    Click select    W E R move/rotate/scale    End drop    F frame    Cmd+Z undo    Cmd+. focus");
     }
     // Right end: unsaved edits and the stage's memory (UX section 16, the memory meter).
@@ -502,8 +522,18 @@ bool viewportRect(float* x, float* y, float* width, float* height) {
     return true;
 }
 
+// M3 areas: use the editor style for viewport panels.
+bool drawStyledOverlay(const std::function< bool() >& draw) {
+    StyleScope style;
+    return draw();
+}
+
 void drawFrame(float windowWidth, float windowHeight) {
     updateEditMode(windowWidth, windowHeight);  // uses last frame's viewport
+    {
+        StyleScope style;
+        drawInstallSheet();  // a dropped mod zip, in or out of Edit
+    }
     gViewportValid = false;
     if (!gVisible || gFocus || !(windowWidth > 0.0f) || !(windowHeight > kToolbarHeight + kFooterHeight + 50.0f)) {
         if (gAreaSet) setArea(0, 0, 0, 0);  // the game takes the whole window again
@@ -536,6 +566,7 @@ void drawFrame(float windowWidth, float windowHeight) {
     drawGalaxyWindow(kOutliner);
     drawInspectorWindow(kInspector);
     drawSaveSheet();
+    drawShareSheet();
 
     if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
                                                                         central->Size.y > 8.0f) {

@@ -191,6 +191,11 @@ void testPanelsLogic() {
     // Placement tokens: example rows as they are, class placements with the high bit (EP-005).
     CHECK(!Ui::isClassToken(42) && Ui::isClassToken(Ui::kClassTokenBit | 3));
 
+    // Share: the next version and the zip's name.
+    CHECK(Ui::bumpVersion("") == "1.0" && Ui::bumpVersion("1.0") == "1.1" && Ui::bumpVersion("2.9") == "2.10" && Ui::bumpVersion("3") == "4");
+    CHECK(Ui::bumpVersion("1.0-beta") == "1.0-beta.1");
+    CHECK(Ui::zipFileName("Rooftop Relay", "1.2") == "Rooftop-Relay-1.2.zip" && Ui::zipFileName("", "") == "mod-1.0.zip");
+
     // The Outliner's Find: case-insensitive contains.
     CHECK(Ui::matchesQuery("HardBlock", "hard") && Ui::matchesQuery("Ground-pound rock", "POUND") && Ui::matchesQuery("x", ""));
     CHECK(!Ui::matchesQuery("Coin", "hard"));

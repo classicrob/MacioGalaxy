@@ -25,7 +25,8 @@ bool focusMode();
 // (aurora_imgui_add_texture). Unset: the cards keep their initials tiles.
 using ThumbnailReadback = int (*)(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height);
 using ThumbnailTexture = unsigned long long (*)(unsigned width, unsigned height, const void* rgba);  // an ImTextureID
-void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture);
+using ThumbnailTextureUpdate = bool (*)(unsigned long long texture, unsigned width, unsigned height, const void* rgba);
+void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture, ThumbnailTextureUpdate update = nullptr);
 
 // Draws the editor frame: toolbar, dock (Outliner, Inspector) and footer. Call between
 // aurora_begin_frame and aurora_end_frame, before the Home menu overlay, every frame.
@@ -40,6 +41,10 @@ void switchMission(int mission);
 // defaults): <user folder>/editor/ui-settings.txt. Unset: nothing is remembered between sessions.
 void setSettingsFile(const char* path);
 
+// A mod zip dropped on the window (UX section 17, Installing): the Install sheet, in or out of Edit.
+void openInstallSheet(const char* zipPath);
+void submitInstallSheet();  // test drivers: press Install
+
 // Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
 // false if it wasn't drawn.
 bool testTargetRect(const char* name, float* x, float* y, float* width, float* height);
@@ -48,6 +53,8 @@ void placeClassForTest(const char* className, int arg0);
 // Test drivers: open the Save sheet (as Cmd+Shift+S) and press its Save button.
 void openSaveSheet();
 void submitSaveSheet();
+void openShareSheetForTest();
+void submitShareSheet();
 
 // The central node (the game's viewport) in window points, from the last drawFrame;
 // false while hidden or in Focus mode.

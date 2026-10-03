@@ -8,6 +8,7 @@
 #include "Game/Util/ObjUtil.hpp"
 #include <algorithm>
 #ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
 #include <petari/game_compat.hpp>
 #else
 #include <functional.hpp>
@@ -63,6 +64,11 @@ void AreaObj::init(const JMapInfoIter& rIter) {
     MR::getAreaObjManager(getManagerName())->entry(this);
     MR::getAreaObjManager(getManagerName());
     SleepControlFunc::addSleepControl(this, rIter);
+#ifdef PETARI_NATIVE
+    if (rIter.isValid()) {
+        PetariEditor::Hooks::noteArea(rIter.mInfo->mData, rIter.mIndex, this);
+    }
+#endif
 }
 
 bool AreaObj::isInVolume(const TVec3f& rPos) const {

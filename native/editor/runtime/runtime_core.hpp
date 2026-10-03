@@ -24,4 +24,13 @@ void bindActor(RowId row, LiveActor* pActor);
 void unbindRow(RowId row);
 void clearBindings();
 
+/// The new-galaxy queries behind edit_api.hpp, supplied by the runtime (new_galaxy_session.cpp),
+/// which reads the mounted disc; empty answers without it (the UI's tests).
+struct NewGalaxyServices {
+    const NewGalaxyChoices& (*choices)() = nullptr;
+    std::string (*internalName)(const std::string& name) = nullptr;
+    std::string (*check)(const std::string& internalName) = nullptr;
+};
+void setNewGalaxyServices(const NewGalaxyServices& services);
+
 }  // namespace PetariEditor::Core
