@@ -15,6 +15,7 @@ def main():
     p.add_argument("--app", required=True, type=Path)
     p.add_argument("--output", required=True, type=Path)
     p.add_argument("--owner", default="gravity")
+    p.add_argument("--capture-wide", action="store_true", help="Capture unedited starter and non-spherical planets")
     args = p.parse_args()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -27,6 +28,8 @@ def main():
                PETARI_SURFACE_DUMP=str(output / "surfaces"),
                PETARI_SURFACE_DUMP_LABELS="gravity-edited,gravity-dead", PETARI_SURFACE_DUMP_SPAN="15",
                PETARI_SURFACE_DUMP_EVERY="5")
+    if args.capture_wide:
+        env.update(PETARI_EDITOR_GRAVITY_CAPTURE="1", PETARI_SURFACE_DUMP_LABELS="gravity-starter,gravity-nonspherical")
     server = [sys.executable, str(TOOLS / "test_server.py")]
     try:
         subprocess.run(server + ["start", "--app", str(args.app.resolve()), "--dir", str(directory),

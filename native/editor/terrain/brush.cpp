@@ -22,6 +22,11 @@ const std::vector< std::string >& brushShapeNames() {
     return sNames;
 }
 
+const std::vector< std::string >& gravityModeNames() {
+    static const std::vector< std::string > sNames = {"The stage's", "Fitted to the shape", "Down only"};
+    return sNames;
+}
+
 const std::vector< MaterialPreset >& materialPalette() {
     // Planet materials from the disc (cloned on the player's machine, never shipped), and the
     // footstep sound each gets.
@@ -59,7 +64,7 @@ Brush brushFromRow(int arg0, int arg1, int arg2, int arg3, const Vec3& scale) {
     brush.shape = static_cast< BrushShape >(clampIndex(arg0, brushShapeNames().size(), 0));
     brush.material = clampIndex(arg1, materialPalette().size(), 0);
     brush.surface = clampIndex(arg2, surfacePresets().size(), 0);
-    brush.fittedGravity = arg3 != 0;  // -1 (unset) and 1: fitted
+    brush.gravity = arg3 == 0 ? GravityMode::Stage : arg3 == 2 ? GravityMode::DownOnly : GravityMode::Fitted;  // -1 (unset): fitted
     auto size = [](float s) { return std::max(std::fabs(s) * 1000.0f, kMinSize); };
     brush.size = {size(scale.x), size(scale.y), size(scale.z)};
     if (brush.shape == BrushShape::Sphere) {
@@ -178,12 +183,19 @@ Mesh brushMesh(const Brush& brush) {
 
 GravityFit fitGravity(const Brush& brush) {
     GravityFit fit;
-    if (!brush.fittedGravity) {
+    if (brush.gravity == GravityMode::Stage) {
         return fit;
     }
     const Vec3& s = brush.size;
     const float largest = std::max({s.x, s.y, s.z});
     fit.range = std::clamp(largest, 1000.0f, 4000.0f);
+    if (brush.gravity == GravityMode::DownOnly) {
+        fit.kind = GravityFit::Kind::Cube;  // the bounds, whatever the shape
+        fit.center = {0, s.y * 0.5f, 0};
+        fit.half = {s.x * 0.5f, s.y * 0.5f, s.z * 0.5f};
+        fit.activeFaces = 4;  // +y only
+        return fit;
+    }
     switch (brush.shape) {
     case BrushShape::Sphere:
         fit.kind = GravityFit::Kind::Point;

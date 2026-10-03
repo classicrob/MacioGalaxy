@@ -154,6 +154,9 @@ namespace PetariEditor::Ui {
                 helpText() = "Drag a socket to link; x unlinks in one undo step.";
             }
             ImGui::SameLine();
+            // In (the object reacts to it) or Out (the object turns it on), then the field's meaning (UI: the playtester).
+            ImGui::TextColored(output ? ImVec4(1.0f, 0.78f, 0.35f, 1.0f) : ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "%s", output ? "Out" : "In ");
+            ImGui::SameLine();
             ImGui::TextWrapped("%s  %s", socketLabel(m, row, field, output).c_str(), id < 0 ? "Unlinked" : std::to_string(id).c_str());
             if (ImGui::IsItemHovered())
                 ImGui::SetTooltip("%s", field);
@@ -264,12 +267,37 @@ namespace PetariEditor::Ui {
         if (sockets.empty() && !path)
             return;
         drawSection("Links", "drag sockets");
-        if (!sockets.empty())
-            wireLegend();
+        // Linked sockets always; the unlinked ones folded (a StrongBlock has many, which pushed Settings off screen).
+        auto linked = [&](const char* field) {
+            const Cell* c = m.cell(row, columnHash(field));
+            return c != nullptr && c->i >= 0;
+        };
+        int unlinked = 0;
+        bool anyLinked = false;
         for (const auto& s : sockets)
-            socketButton(m, row, s.field.c_str(), s.role == Catalog::SwitchRole::Write);
-        if (path)
+            anyLinked = anyLinked || linked(s.field.c_str());
+        if (anyLinked)
+            wireLegend();  // the colours explain wires only when there are some
+        for (const auto& s : sockets) {
+            if (linked(s.field.c_str()))
+                socketButton(m, row, s.field.c_str(), s.role == Catalog::SwitchRole::Write);
+            else
+                ++unlinked;
+        }
+        if (path && linked("CommonPath_ID"))
             socketButton(m, row, "CommonPath_ID", false);
+        else if (path)
+            ++unlinked;
+        if (unlinked > 0 && ImGui::TreeNodeEx("unlinked", ImGuiTreeNodeFlags_SpanAvailWidth, "%d unlinked", unlinked)) {
+            if (!anyLinked && !sockets.empty())
+                wireLegend();
+            for (const auto& s : sockets)
+                if (!linked(s.field.c_str()))
+                    socketButton(m, row, s.field.c_str(), s.role == Catalog::SwitchRole::Write);
+            if (path && !linked("CommonPath_ID"))
+                socketButton(m, row, "CommonPath_ID", false);
+            ImGui::TreePop();
+        }
         if (!error.empty())
             ImGui::TextWrapped("%s", error.c_str());
     }

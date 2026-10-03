@@ -183,11 +183,10 @@ def main():
             if not found:
                 continue
             entry["sweep"] = found.get("summary", "untested")
-            required = set()
-            for result in found.get("results", {}).values():
-                for field, verdict in (result.get("links") or {}).items():
-                    if verdict is True or (isinstance(verdict, str) and verdict.startswith("required")):
-                        required.add(field)
+            # safe | suspect | unverified | unsafe | unmeasured (class_sweep.py live_recreate_verdict): the editor falls back
+            # to the reload path only for "unsafe".
+            entry["live_recreate"] = found.get("live_recreate", "unmeasured")
+            required = set(found.get("needs_links") or {})
             for field in sorted(required):
                 link = next((l for l in entry["links"] if l["field"] == field), None)
                 if link is None:

@@ -4,7 +4,13 @@
 are drawn through the shared depth-tested debug renderer. Point, cube, cone,
 disk, disk-torus, parallel (sphere, box and cylinder bounds), segment and wire
 fields are read from the engine, including gravity created by other actors.
-Inactive fields are faint. Selecting a field colours its outline gold.
+Each field has a stable hue. Ordinary fields draw outlines only; hover and selection
+add a very faint fill and a stronger outline, while other fields recede. This avoids
+washing out the scene when many volumes overlap. Flow uses at most 32 spaced
+arrows, sized for viewing distance and fading through the last quarter of finite
+range. A field emits arrows only where the engine identifies it as the winner;
+surface samples show the actual combined direction. Hover labels show type,
+priority and range.
 
 The cursor probe queries the game's normal-gravity manager at the collision
 surface under the cursor. It names the strongest field in the winning priority
@@ -38,6 +44,8 @@ through preview/cancel, priority/range changes, undo/redo, 100 in-place updates,
 all eight shapes, a linked wire point edit, uncovered-ground Checks and a blocked
 replacement at the 128-slot cap. `native/tools/editor_gravity_smoke.py` runs it
 in an isolated fixture and captures the Edit-mode window and game screenshots.
+Use `--capture-wide` on that runner for unedited starter-planet and cube/disk
+views at a wider editing distance.
 The test server option `--warm-current-stage` warms only the requested stage; its
 default still warms the standard five stages.
 

@@ -540,17 +540,17 @@ def parse_tpl_links(text):
 class Bisect:
     """Required-links search for one failing class on one stage, as rounds of jobs that all classes run together.
 
-    1. template stage: if the stage has a row of the class, try mode keep (its links as they are); if that passes, drop
-       one kept link per round while the class still passes. What is left is required.
-    2. provision stage: otherwise (or if keep fails) give every link field a real id harvested from the stage, then drop
-       fields one per round while it passes.
-    Verdict: required (fields), none (passes with empty links), unresolved (no combination passed)."""
+    1. keep: create it from the stage's own row of the class with all its links. If the stage has such a row (the log says
+       row=cloned) and it passes, the links in that row are the candidates: drop one per round while the class still passes;
+       what is left is required. Passing with a synthesized row says nothing (those links belong to another object).
+    2. provision: give every link field a real id harvested from the stage, then drop fields one per round while it passes.
+    Verdict: required (fields, source drop-keep or drop-provision) or unresolved (no combination passed)."""
 
     def __init__(self, record, harvest, base_overrides):
         self.cls = record["class"]
         self.base = base_overrides
         self.harvest = harvest
-        self.tpl = parse_tpl_links((record.get("metrics") or {}).get("tpl_links", "-"))
+        self.tpl = {}
         self.phase = "start"
         self.keep = []       # fields currently kept/provisioned
         self.values = {}     # provisioned values
@@ -563,9 +563,7 @@ class Bisect:
         if self.verdict:
             return None
         if self.phase == "start":
-            if self.tpl:
-                return self._job("keep", [])
-            self.phase = "provision-all"
+            return self._job("keep", [])
         if self.phase == "provision-all":
             self.values = {f: v[0] for f, v in self.harvest.items()}
             self.keep = sorted(self.values)
@@ -599,7 +597,9 @@ class Bisect:
         ok = record["status"] in PASS
         self.tested.append({"mode": self.current["mode"], "overrides": self.current["overrides"], "status": record["status"]})
         if self.phase == "start":
-            if ok:
+            metrics = record.get("metrics") or {}
+            if ok and metrics.get("row") == "cloned":
+                self.tpl = parse_tpl_links(metrics.get("tpl_links", "-"))
                 self.phase = "drop-keep"
                 self.keep = sorted(self.tpl)
                 self.next_drop = 0
@@ -624,6 +624,12 @@ def bisect_stage(args, stage, scenario):
     failing = [r for r in results.values()
                if r["mode"] == "empty" and r["status"] not in PASS and "|empty|" in r["key"]
                and not any(f"{f}=" in r["overrides"] for f in LINK_FIELDS)]
+    if args.classes:
+        wanted = {c.lower() for c in args.classes.split(",")}
+        failing = [r for r in failing if r["class"].lower() in wanted]
+    if args.with_template_link:
+        # Only classes whose own row in this stage links something (e.g. CommonPath_ID: the rail users).
+        failing = [r for r in failing if args.with_template_link in parse_tpl_links((r.get("metrics") or {}).get("tpl_links", "-"))]
     harvest = harvest_links(stage, scenario)
     print(f"[{stage}] bisect {len(failing)} failing classes; link ids per field: "
           + ", ".join(f"{f}={v}" for f, v in harvest.items()), flush=True)
@@ -653,6 +659,35 @@ def bisect_stage(args, stage, scenario):
 
 
 # --- report --------------------------------------------------------------------------------------------------
+
+FAIL_STATUSES = ("crash", "assert", "oom", "exception", "hang", "kills-player")
+SUSPECT_STATUSES = ("nan", "invisible", "dead")
+
+
+def live_recreate_verdict(results):
+    """What the editor should do when it recreates this class live, from the per-stage results (sweep runs create with EMPTY
+    links; the editor recreates a placed row WITH its links, so empty-link failures alone prove nothing about that).
+
+    unsafe      creating it crashed/asserted/hung/ran out of heap/killed Mario even from the stage's own row with its links (bisect
+                `keep` failed), or needed other ids too: fall back to the reload path (pending)
+    unverified  fails with empty links, and no keep run has shown whether the row's own links fix it (no bisect yet, or no row of
+                the class in that stage): recreating a placed row is probably fine, adding one from scratch needs its links
+    suspect     created but nan / invisible / dead on some stage: allowed, tell the user it may not show or behave
+    safe        ok / ok-nomodel / nonactor everywhere measured, or fails empty but passes from its own row (needs_links says which)
+    unmeasured  nothing recorded yet (partial sweep)"""
+    statuses = [r["status"] for r in results.values()]
+    if not statuses:
+        return "unmeasured"
+    failed = [r for r in results.values() if r["status"] in FAIL_STATUSES]
+    if failed:
+        verdicts = [r.get("links") for r in failed]
+        if any(v and (v.get("result") == "unresolved" or v.get("source") == "drop-provision") for v in verdicts):
+            return "unsafe"
+        if all(v and v.get("result") == "required" and v.get("source") == "drop-keep" for v in verdicts):
+            return "safe"
+        return "unverified"
+    return "suspect" if any(s in SUSPECT_STATUSES for s in statuses) else "safe"
+
 
 SEVERITY = ["crash", "assert", "oom", "exception", "hang", "kills-player", "nan", "invisible", "dead", "ok-nomodel", "nonactor", "ok"]
 
@@ -707,6 +742,12 @@ def build_catalog(args, stages):
             entry["results"][stage] = res
         statuses = [r["status"] for r in entry["results"].values()]
         entry["summary"] = next((s for s in SEVERITY if s in statuses), "untested")
+        entry["live_recreate"] = live_recreate_verdict(entry["results"])
+        required = {}
+        for r in entry["results"].values():
+            if r.get("links", {}).get("result") == "required":
+                required.update(r["links"]["fields"])
+        entry["needs_links"] = required or None
         entries.append(entry)
     coverage = {s: {"recorded": sum(1 for e in entries if s in e["results"]), "total": len(entries),
                     "inferred": sum(1 for e in entries if e["results"].get(s, {}).get("inferred_from"))} for s, _, _ in stages}
@@ -714,6 +755,11 @@ def build_catalog(args, stages):
             "partial": any(c["recorded"] < c["total"] for c in coverage.values()), "coverage": coverage,
             "order": "most placed on the disc first (placed_on_disc)",
             "stages": [{"stage": s, "scenario": n, "why": w} for s, n, w in stages], "link_fields": LINK_FIELDS,
+            "live_recreate": {"safe": "recreate live", "suspect": "recreate live, tell the user it may not show or behave",
+                              "unverified": "fails with empty links, row-link behaviour not yet verified: recreating a placed row is "
+                                            "probably fine; allow it, with a notice",
+                              "unsafe": "do not recreate live: fall back to the reload path (pending)",
+                              "unmeasured": "not measured yet: treat like unverified"},
             "statuses": {"ok": "created, alive and drawn after the observation window",
                          "ok-nomodel": "created and alive, has no model (logic actor)",
                          "nonactor": "created without any LiveActor (areas, managers, ...)",
@@ -855,7 +901,7 @@ def cmd_list(args):
 
 
 def cmd_run(args):
-    jobs = make_jobs(order_by_placement(select_classes(args)))
+    jobs = make_jobs(order_by_placement(select_classes(args)), args.mode)
     ok = True
     for stage, scenario, _ in parse_stages(args.stages):
         ok = run_stage(args, stage, scenario, jobs) and ok
@@ -890,6 +936,9 @@ def main():
         p.add_argument("--rerun", action="store_true", help="discard recorded results")
         p.add_argument("--keep-logs", action="store_true")
         p.add_argument("--confirm-every", type=int, default=8, help="re-run alone 1 in N failures from multi-class batches (1: all)")
+        p.add_argument("--with-template-link", help="bisect: only failing classes whose template row has this link field set, e.g. CommonPath_ID")
+        p.add_argument("--mode", choices=("empty", "keep"), default="empty",
+                       help="run: empty links (the sweep) or keep (create from the stage's own row with its links)")
         p.add_argument("--infer-known-bad", action="store_true",
                        help="do not run classes that failed on another stage; copy their result, marked inferred_from")
         p.add_argument("--normal-priority", action="store_true", help="do not run the app under taskpolicy -b")
