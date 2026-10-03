@@ -8,6 +8,7 @@
 #include "model_io.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
+#include "new_galaxy_session.hpp"
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/paths.hpp>
 
@@ -385,6 +386,9 @@ namespace {
         EditModel& m = *s.model;
         int zone = 0, table = 0;
         if (!m.locate(id, &zone, &table)) {
+            // Gone from the model (an Add undone): whatever showed it goes too (EP-007).
+            retireRow(id);
+            s.pending.erase(id);
             return;
         }
         const std::string path = m.tablePath(zone, table);
@@ -645,11 +649,17 @@ namespace {
                     enqueue(std::move(commands[j]));
                 }
             };
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy) {  // from Edit, or from Level Select with no model
+                if (!createNewGalaxy(command.newGalaxy, s.model && status().unsaved, &error)) {
+                    Core::reportError("New galaxy: " + error);
+                }
+                continue;
+            }
             if (!s.model) {
                 Core::reportError("No galaxy is loaded for editing");
                 continue;
             }
-            std::string error;
             switch (command.kind) {
             case Command::Kind::Apply: {
                 PetariNative::HostAllocationScope host;
@@ -749,6 +759,7 @@ void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITO
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
+void newGalaxyTestTick();  // new_galaxy_test.cpp: New Galaxy across its restart (PETARI_EDITOR_NEWGALAXY_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void areasTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
@@ -879,6 +890,10 @@ bool reloading() {
 void plainReloadTestTick(bool playable);  // reload_test.cpp (PETARI_EDITOR_PLAIN_RELOAD_TEST)
 
 void tick(bool playable) {
+    static const bool sNewGalaxyServices = (registerNewGalaxyServices(), true);
+    (void)sNewGalaxyServices;
+    newGalaxyTick();
+    newGalaxyTestTick();
     plainReloadTestTick(playable);
     // A plain reloadScene() completes whether or not the editor is on.
     if (session().plainReload && Hooks::sceneSerial() != session().reloadFromScene && playable) {
@@ -922,7 +937,18 @@ void tick(bool playable) {
         }
     }
     if (!s.model) {
-        Core::drainCommands();
+        // Only a new galaxy can be made without one (Level Select's New galaxy).
+        std::vector< Command > commands;
+        {
+            PetariNative::HostAllocationScope host;
+            commands = Core::drainCommands();
+        }
+        for (Command& command : commands) {
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy && !createNewGalaxy(command.newGalaxy, false, &error)) {
+                Core::reportError("New galaxy: " + error);
+            }
+        }
         Core::runUiSeamHook();
         return;
     }

@@ -177,6 +177,32 @@ enum class PlayFrom : std::uint8_t {
     MissionStart,  // the mission's start point (a reload)
 };
 
+/// A new galaxy (docs/dev/level-editor/new-galaxy-flow.md, UX.md 14): the sheet's choices.
+struct NewGalaxyRequest {
+    std::string name;          // "Pipe Dream" (English; the other languages default to it)
+    std::string internalName;  // empty: newGalaxyInternalName(name)
+    enum class From : std::uint8_t { Empty, OnePlanet, Brushes, Copy } from = From::OnePlanet;
+    std::string planet;        // OnePlanet: one of newGalaxyChoices().planets
+    std::string copyOf;        // Copy: one of newGalaxyChoices().galaxies
+    std::string musicFrom;     // one of newGalaxyChoices().galaxies; empty: copyOf, else Good Egg's
+    std::vector< std::string > missions;  // names; their count is the mission count (1..8); empty: one
+    /// The current galaxy's unsaved edits: Create refuses while there are any, unless the sheet
+    /// saved them first or the person chose to discard them.
+    bool discardUnsaved = false;
+};
+
+struct NewGalaxyChoices {
+    std::vector< std::string > planets;   // placeable by name (PlanetMapDataTable), sorted
+    std::vector< std::string > galaxies;  // the disc's, sorted (Copy, music)
+};
+/// From the mounted disc, computed on first use. Empty lists before the runtime is up.
+const NewGalaxyChoices& newGalaxyChoices();
+/// The internal name Create would use for `name` ("Pipe Dream" -> "PipeDreamGalaxy").
+std::string newGalaxyInternalName(const std::string& name);
+/// "" when `internalName` can be created, else why not (characters, a disc galaxy or zone, a mod
+/// galaxy of the same name or save key, the 64-galaxy limit).
+std::string checkNewGalaxyName(const std::string& internalName);
+
 struct Command {
     enum class Kind : std::uint8_t {
         Apply,           // op -> undo stack, journal, SceneSync
@@ -190,6 +216,7 @@ struct Command {
         SetPlayMarker,   // markerPos (+ markerUp, markerFront)
         SaveMod,         // modName, fullArchives: a patch (default; no game data) or Full archives (TECH.md 5.1)
         SwitchScenario,  // index = the mission to edit, 1-based: a reload into it from its start, back in Edit; edits and history kept
+        NewGalaxy,       // newGalaxy: write it as a mod, then restart Petari into it in Edit (status().notice says so first)
     } kind;
     Op op;
     int index = 0;
@@ -199,6 +226,7 @@ struct Command {
     Vec3 markerPos, markerUp, markerFront;
     std::string modName;
     bool fullArchives = false;  // SaveMod: Full archives (Whitehole, Dolphin) instead of a patch
+    NewGalaxyRequest newGalaxy;
 };
 
 void enqueue(Command&& command);
