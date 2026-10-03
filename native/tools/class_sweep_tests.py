@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for class_sweep.py: the creator list, log parsing, failure attribution and the link bisect (no app runs)."""
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -121,6 +122,23 @@ class BisectSearch(unittest.TestCase):
         search = cs.Bisect({"class": "X"}, {"SW_A": [9]}, "")
         verdict = self.run_search(search, lambda j: True)
         self.assertEqual(verdict["fields"], {})
+
+
+class Scrub(unittest.TestCase):
+    def test_absolute_paths_and_thread_ids_do_not_reach_the_report(self):
+        home = "/Users/someone/.bb/plugins/env/host-data/workspaces/thr_abcdef1234/petari-worktrees/editor-class-sweep"
+        data = {"crash": {"panic": f"File isn't exist. in \"{home}/src/Game/System/FileRipper.cpp\" on line 112.",
+                          "top_frames": [f"{home}/native/app/x.cpp", "/var/folders/ab/cd/T/cache/x", "plain_symbol"]},
+                "note": "see /home/runner/work/petari/petari/include/Foo.hpp and /Users/me/Library/Caches/x for thr_xi2xyxi3dz"}
+        text = json.dumps(cs.scrub(data))
+        for leak in ("/Users/", "/home/", "/var/folders", "thr_", "someone", "worktrees"):
+            self.assertNotIn(leak, text)
+        self.assertIn("src/Game/System/FileRipper.cpp", text)
+        self.assertIn("include/Foo.hpp", text)
+        self.assertIn("plain_symbol", text)
+
+    def test_markdown_is_scrubbed_too(self):
+        self.assertNotIn("/Users/", cs.scrub("| X | /Users/a/b/c.cpp |"))
 
 
 class Harvest(unittest.TestCase):
