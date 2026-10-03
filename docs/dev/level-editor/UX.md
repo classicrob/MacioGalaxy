@@ -861,10 +861,15 @@ A galaxy's missions share one world; each mission turns some groups of objects
   - makes Play start that mission (and resets to its layout);
   - makes new objects appear **only in this mission** by default; the toast
     after placing says so with an **All missions** button to change it.
-- **Appears in** chips on every object: `All` or any combination of `1 2 3 4C
-  5C 6H`. Toggle chips to change membership. Behind the scenes the editor moves
-  the object to the layer whose mission set matches, or creates one (TECH.md);
-  layers are never named in the main UI.
+- **Appears in** chips in the Inspector: toggle the numbered missions, then
+  **Apply** or **Cancel**. **Only this mission** applies that choice immediately.
+  A mixed selection says **Apply to N selected objects**. One Apply is one undo
+  step. Matching copies of the same object in other missions change together.
+  The editor moves each object to an existing layer, or splits it across
+  layers with disjoint mission sets, preserving its links. When existing layers
+  cannot represent the choice, Apply explains why and lists the possible mission
+  combinations. Editing ScenarioData to create new layer combinations is not yet
+  supported.
 - **Missions panel** (Outliner tab "Missions"): each mission's name (editable,
   in every language the game has, with the current language first), its star
   (which Power Star, where: a link to the star object), its start point, the

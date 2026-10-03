@@ -45,7 +45,7 @@ The **Inspector** shows transforms and named settings for the selection. Hover f
 
 **View → Play view (4)** opens a draggable camera preview from the play marker, or Mario if there is no marker. It follows the camera area, ground camera or default camera there, independently of your selection. Read the label and any fallback message: it previews scene models, without sky, effects or full lighting; some special cameras need live gameplay. Use **Select** to inspect its camera area when available.
 
-The numbered toolbar buttons switch missions and rebuild the scene. Hover them for mission names. **View → Other missions' objects** shows ghosts. The Inspector's **Appears in** badges show membership; they are currently read-only, not a layer-transfer tool. A new Browser copy from an off-mission layer is placed in the common layer, so check where it appears.
+The numbered toolbar buttons switch missions and rebuild the scene. Hover them for mission names. **View → Other missions' objects** shows ghosts. In the Inspector's **Appears in** section, choose mission chips and **Apply** or **Cancel**. **Only this mission** applies immediately. One change is one undo step; matching copies in other missions change together. If existing layers cannot represent your choice, Apply explains the allowed combinations instead of changing objects. A new Browser copy from an off-mission layer is placed in the common layer, so check where it appears.
 
 Point at the ground and press **M** to set the play marker. **Tab / Play** rebuilds and starts there; **Shift+Tab / Resume** continues the frozen moment; **Option+Tab / From start** begins at the mission start. Return with Tab to adjust the layout.
 

@@ -133,3 +133,22 @@ help and returns to play. Require both `[editor-help]` PASS lines and the stage 
 visually inspect the captures. The runner removes its cache. `native_editor_ui` separately
 checks the question-mark/typing/modifier gates, Escape ownership without cancelling tools,
 non-modal bounds and Focus-mode drawing. Screenshots remain in `build/`, not Git.
+
+### Editable mission membership
+
+`native/tools/editor_missions_smoke.py --app <Petari> --output build/<your-missions-run>`
+uses a private Good Egg fixture. It places a common Launch Star, observes the mission 2
+capacity error, and moves it to Layer A (missions 1/4/6) in one undo step. It verifies
+all cells and l_id survive, the old actor retires, the capacity error clears, undo/redo
+restore it, and the scene does not reload. A disjoint A+B split and coalescing from
+one selected sibling check matching copies and current-mission actor counts.
+Good Egg has no main-zone layer for mission 1 alone: the fixture requires that exact
+request to fail with an explanation, rather than broadening it silently.
+
+The live fixture exercises the placement request, ModelOps and Runtime adapters.
+`native_editor_ui` drives ImGui chips and Apply/Cancel buttons, including mixed
+selections, unsupported/empty masks and reselecting one split copy;
+`native_editor_model` covers layer covers, undo and mission capacity checks.
+Require the final `[editor-missions] PASS`, then inspect the common/repaired/split
+surfaces. Source and binary hashes are in `revision.json`; the runner stops its
+server and removes only its own fixture cache.
