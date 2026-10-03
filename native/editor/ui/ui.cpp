@@ -507,6 +507,11 @@ bool viewportRect(float* x, float* y, float* width, float* height) {
     return true;
 }
 
+bool drawStyledOverlay(const std::function< bool() >& draw) {
+    StyleScope style;
+    return draw();
+}
+
 void drawFrame(float windowWidth, float windowHeight) {
     updateEditMode(windowWidth, windowHeight);  // uses last frame's viewport
     gViewportValid = false;

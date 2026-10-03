@@ -348,7 +348,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
     // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
     const Area area = cameraArea(windowWidth, windowHeight);
-    const bool areasConsumed = drawAreasOverlay(area.x, area.y, area.w, area.h);  // M3 areas: shortcuts and camera preview.
+    const bool areasConsumed = drawStyledOverlay([&] { return drawAreasOverlay(area.x, area.y, area.w, area.h); });  // M3 areas: camera preview.
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
     const bool toolConsumed = drawPathsViewport(area.x, area.y, area.w, area.h) || areasConsumed;  // M3 paths: handles precede picking.
     cameraInput(area, toolConsumed);
