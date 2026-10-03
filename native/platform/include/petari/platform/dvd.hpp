@@ -64,6 +64,8 @@ MountInfo mountInfo();
 // directories, invalid entries, or when nothing is mounted. For host-side
 // consumers (for example streamed media) that cannot go through DVDRead.
 std::filesystem::path hostPathForEntry(std::int32_t entryNum);
+// The mod that supplies a file entry (MountOptions::overlay), or "" for the disc's own file.
+std::string overlayModForEntry(std::int32_t entryNum);
 
 // Cancels all queued commands (their callbacks receive -3), stops the drive
 // thread, and unmounts. DVDInit() may be called again afterwards. Must not be

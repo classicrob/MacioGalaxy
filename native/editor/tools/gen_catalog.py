@@ -198,10 +198,14 @@ def main():
     # Where each class is placed on the disc (gen_class_tables.py): the table the editor adds new rows to.
     tables_path = ROOT / "native/editor/catalog/tables.json"
     if tables_path.is_file():
-        tables = json.loads(tables_path.read_text())["tables"]
+        doc = json.loads(tables_path.read_text())
+        tables, collision = doc["tables"], {a.lower() for a in doc.get("collision", [])}
         for entry in out:
             if entry["name"] in tables:
                 entry["table"] = tables[entry["name"]]
+            # Collision when one of its archives (or the name's own) holds a .kcl.
+            if any(a.lower() in collision for a in entry["archives"] + [entry["name"]]):
+                entry["hasCollision"] = True
     target = ROOT / "native/editor/catalog/generated.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]

@@ -257,6 +257,7 @@ struct Status {
     std::uint64_t errorSerial = 0;  // bumps with each new error
     std::string notice;             // the last success worth a toast ("Saved 2 archives to mods/MyMod")
     std::uint64_t noticeSerial = 0;  // bumps with each new notice
+    std::string loadedMod;      // the enabled mod whose archives this galaxy loaded from (its edits are the session's start); "" for the disc
 };
 /// Updated at each seam.
 const Status& status();

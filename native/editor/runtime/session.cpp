@@ -127,6 +127,13 @@ namespace {
                 list += (mission > 1 ? ", " : "") + std::to_string(mission) + " \"" + names.back() + "\"";
             }
             s.model->setMissionNames(std::move(names));
+            // The mod the galaxy's archives came from (the Save sheet defaults to it).
+            std::string loadedMod;
+            for (int zone = 0; zone < s.model->zoneCount() && loadedMod.empty(); zone++) {
+                const std::string path = std::string("/StageData/") + s.model->zoneName(zone) + ".arc";
+                loadedMod = PetariNative::Platform::DVD::overlayModForEntry(DVDConvertPathToEntrynum(path.c_str()));
+            }
+            Core::mutableStatus().loadedMod = loadedMod;
             std::fprintf(stderr, "[editor] editing %s mission %d: %d zones; missions %s\n", pStage, scenario, s.model->zoneCount(),
                          list.c_str());
         }
