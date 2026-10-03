@@ -30,9 +30,9 @@ namespace PetariEditor::Ui {
             gDraft.model = &model;
             gDraft.revision = model.revision();
             gDraft.rows = rows;
-            const auto first = model.rowMissions(rows.front());
+            const auto first = ModelOps::objectMissions(model, rows.front());
             for (const auto row : rows) {
-                const auto mask = model.rowMissions(row);
+                const auto mask = ModelOps::objectMissions(model, row);
                 gDraft.mask |= mask;
                 for (int bit = 0; bit < count; ++bit)
                     gDraft.members[bit] += (mask & (1u << bit)) != 0;
