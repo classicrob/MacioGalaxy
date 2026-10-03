@@ -272,7 +272,17 @@ namespace EditorPaths {
             curveWire(camera, anchor(*model, wire.from.row), anchor(*model, wire.to.row), &w);
             out.wires.push_back(std::move(w));
         }
-        for (auto row : rows) {
+        auto socketRows = rows;
+        if (V::linkingSwitch()) {
+            PetariNative::EditorPick::Item hover;
+            if (PetariNative::EditorPick::hover(&hover) && hover.row && !selected(socketRows, {hover.row}))
+                socketRows.push_back({hover.row});
+            // Keep the target's menu available while the pointer leaves its model to choose a socket.
+            const auto menu = V::socketMenu();
+            if (menu.valid() && model->locate(menu, nullptr, nullptr) && !selected(socketRows, menu))
+                socketRows.push_back(menu);
+        }
+        for (auto row : socketRows) {
             if (!model->hasTransform(row))
                 continue;
             float x, y;

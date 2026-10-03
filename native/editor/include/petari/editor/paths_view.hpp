@@ -53,4 +53,8 @@ namespace PetariEditor::PathsView {
     Visibility visibility();
     void setLinkingPath(bool value);
     bool linkingPath();
+    void setLinkingSwitch(bool value);
+    bool linkingSwitch();
+    void setSocketMenu(RowId row);
+    RowId socketMenu();
 }  // namespace PetariEditor::PathsView

@@ -5,8 +5,8 @@ namespace PetariEditor::PathsView {
         View snapshot;
         Input pending;
         Visibility shown = Visibility::Selection;
-        bool pathLink = false;
-        RowId hoveredWire, selectedWire;
+        bool pathLink = false, switchLink = false;
+        RowId hoveredWire, selectedWire, menuRow;
         std::string hoveredField, selectedField;
     }  // namespace
     void publish(View value) {
@@ -40,6 +40,18 @@ namespace PetariEditor::PathsView {
     }
     void setLinkingPath(bool value) {
         pathLink = value;
+    }
+    void setSocketMenu(RowId row) {
+        menuRow = row;
+    }
+    RowId socketMenu() {
+        return menuRow;
+    }
+    void setLinkingSwitch(bool value) {
+        switchLink = value;
+    }
+    bool linkingSwitch() {
+        return switchLink;
     }
     bool linkingPath() {
         return pathLink;

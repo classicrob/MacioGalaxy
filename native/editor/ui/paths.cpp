@@ -22,7 +22,7 @@ namespace PetariEditor::Ui {
             bool active = false;
             V::Mark mark;
         } drag;
-        RowId chosenWireRow;
+        RowId chosenWireRow, expandedSockets;
         std::string chosenWireField, error;
         RowId targetRow;
         bool reactionPopup = false;
@@ -46,12 +46,14 @@ namespace PetariEditor::Ui {
         void startLink(RowId row, const std::string& field, ImVec2 at, bool output = false) {
             link = {row, field, true, false, at, output};
             V::setLinkingPath(field == "CommonPath_ID");
+            V::setLinkingSwitch(field != "CommonPath_ID");
             chosenWireRow = {};
             error.clear();
         }
         void finishLink() {
             link.active = false;
             V::setLinkingPath(false);
+            V::setLinkingSwitch(false);
         }
         const P::Rail* findRail(const std::vector< P::Rail >& rails, RowId id) {
             for (const auto& r : rails)
@@ -116,6 +118,23 @@ namespace PetariEditor::Ui {
                 ImGui::EndTable();
             }
         }
+        std::string socketLabel(const ModelView& m, RowId row, const std::string& field, bool output) {
+            if (field == "CommonPath_ID")
+                return "Rides path";
+            const char* name = m.objectName(row);
+            if (const auto* info = name ? Catalog::find(name) : nullptr)
+                for (const auto& socket : info->switches)
+                    if (socket.field == field && (socket.role == Catalog::SwitchRole::Write) == output && !socket.help.empty())
+                        return socket.help;
+            if (field == "SW_APPEAR")
+                return "Appears when on";
+            if (field == "SW_DEAD")
+                return output ? "Turns on when defeated" : "Reacts to defeat";
+            if (field == "SW_SLEEP")
+                return "Sleeps until on";
+            const std::string kind = field.rfind("SW_", 0) == 0 ? field.substr(3) : field;
+            return (output ? "Turns on " : "Reacts to ") + kind;
+        }
         void socketButton(const ModelView& m, RowId row, const char* field, bool output) {
             ImGui::PushID(field);
             ImGui::PushID(output ? 1 : 0);
@@ -131,11 +150,13 @@ namespace PetariEditor::Ui {
             if (ImGui::IsItemActivated())
                 startLink(row, field, center, output);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Drag onto %s to link", std::string(field) == "CommonPath_ID" ? "a path" : "an object");
+                ImGui::SetTooltip("%s — drag onto %s to link", field, std::string(field) == "CommonPath_ID" ? "a path" : "an object");
                 helpText() = "Drag a socket to link; x unlinks in one undo step.";
             }
             ImGui::SameLine();
-            ImGui::Text("%s  %s", field, id < 0 ? "Unlinked" : std::to_string(id).c_str());
+            ImGui::TextWrapped("%s  %s", socketLabel(m, row, field, output).c_str(), id < 0 ? "Unlinked" : std::to_string(id).c_str());
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("%s", field);
             if (id >= 0) {
                 ImGui::SameLine();
                 if (ImGui::SmallButton("x"))
@@ -302,41 +323,93 @@ namespace PetariEditor::Ui {
         }
         struct SocketGroup {
             RowId row;
-            ImVec2 origin;
-            int count = 0, index = 0;
+            ImVec2 handle;
+            std::vector< const V::SocketMark* > sockets;
         };
         std::vector< SocketGroup > groups;
         for (const auto& socket : view.sockets) {
             auto group = std::find_if(groups.begin(), groups.end(), [&](const SocketGroup& g) { return g.row == socket.row; });
-            if (group == groups.end())
-                groups.push_back({socket.row, at(socket.x, socket.y), 1, 0});
-            else
-                ++group->count;
+            if (group == groups.end()) {
+                const auto anchor = at(socket.x, socket.y);
+                groups.push_back(
+                    {socket.row, {std::clamp(anchor.x + 30, x + 12, x + width - 12), std::clamp(anchor.y, y + 12, y + height - 12)}, {&socket}});
+            } else
+                group->sockets.push_back(&socket);
         }
-        for (std::size_t i = 0; i < groups.size(); ++i) {
-            auto& group = groups[i];
-            group.origin.x = std::clamp(group.origin.x + 35, x + 12, std::max(x + 12, x + width - 180));
-            group.origin.y = std::clamp(group.origin.y, y + 12, std::max(y + 12, y + height - group.count * 20 - 12));
-            for (std::size_t j = 0; j < i; ++j) {
-                const auto& other = groups[j];
-                if (std::fabs(group.origin.x - other.origin.x) < 180 && group.origin.y < other.origin.y + other.count * 20 &&
-                    other.origin.y < group.origin.y + group.count * 20)
-                    group.origin.x = other.origin.x > x + width / 2 ? other.origin.x - 185 : other.origin.x + 185;
+        auto compatible = [&](const V::SocketMark& socket) {
+            return link.active && link.field != "CommonPath_ID" && socket.field != "CommonPath_ID" && socket.row != link.row &&
+                   socket.output != link.output;
+        };
+        auto panelOrigin = [&](const SocketGroup& group) {
+            return ImVec2(std::clamp(group.handle.x - 10, x + 2, std::max(x + 2, x + width - 260)),
+                          std::clamp(group.handle.y + 12, y + 2, std::max(y + 2, y + height - group.sockets.size() * 22 - 8)));
+        };
+        auto inPanel = [&](const SocketGroup& group) {
+            const auto p = panelOrigin(group);
+            return inside && io.MousePos.x >= p.x && io.MousePos.x <= p.x + 258 && io.MousePos.y >= p.y - 4 &&
+                   io.MousePos.y <= p.y + group.sockets.size() * 22 + 4;
+        };
+        bool overSockets = false;
+        RowId hoveredGroup;
+        for (const auto& group : groups) {
+            const bool hovered = inside && std::hypot(group.handle.x - io.MousePos.x, group.handle.y - io.MousePos.y) < 12;
+            const bool validTarget = std::any_of(group.sockets.begin(), group.sockets.end(), [&](const auto* socket) { return compatible(*socket); });
+            if (hovered) {
+                hoveredGroup = group.row;
+                overSockets = true;
+            }
+            const auto tint = validTarget ? IM_COL32(106, 230, 121, 255) : IM_COL32(220, 237, 247, 230);
+            list->AddCircleFilled(group.handle, 9, IM_COL32(17, 25, 34, 240));
+            list->AddCircle(group.handle, 9, tint, 20, validTarget ? 2 : 1);
+            for (int dx : {-4, 0, 4})
+                list->AddCircleFilled(ImVec2(group.handle.x + dx, group.handle.y), 1.3f, tint);
+        }
+        auto expanded = std::find_if(groups.begin(), groups.end(), [&](const auto& group) { return group.row == expandedSockets; });
+        if (hoveredGroup.valid())
+            expandedSockets = hoveredGroup;
+        else if (expanded == groups.end() || !inPanel(*expanded)) {
+            expandedSockets = {};
+            if (link.active) {
+                Pick::Item hover;
+                if (Pick::hover(&hover) && hover.row)
+                    expandedSockets = {hover.row};
             }
         }
-        for (const auto& socket : view.sockets) {
-            auto& group = *std::find_if(groups.begin(), groups.end(), [&](const SocketGroup& g) { return g.row == socket.row; });
-            const ImVec2 p(group.origin.x, group.origin.y + group.index++ * 20);
-            list->AddCircle(p, 6, socket.color, 16, 2);
-            if (socket.output)
-                list->AddCircleFilled(p, 3, socket.color);
-            const std::string label = socket.field + (socket.output ? " out" : " in");
-            list->AddText(ImVec2(p.x + 10, p.y - 7), socket.color, label.c_str());
-            if (inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && std::hypot(p.x - io.MousePos.x, p.y - io.MousePos.y) < 10) {
-                startLink(socket.row, socket.field, p, socket.output);
-                consumed = true;
+        V::setSocketMenu(expandedSockets);
+        const V::SocketMark* targetSocket = nullptr;
+        for (const auto& group : groups) {
+            if (group.row != expandedSockets)
+                continue;
+            const auto origin = panelOrigin(group);
+            list->AddRectFilled(origin, ImVec2(origin.x + 258, origin.y + group.sockets.size() * 22 + 4), IM_COL32(17, 25, 34, 245), 5);
+            if (inPanel(group))
+                overSockets = true;
+            list->PushClipRect(origin, ImVec2(origin.x + 258, origin.y + group.sockets.size() * 22 + 4), true);
+            for (std::size_t i = 0; i < group.sockets.size(); ++i) {
+                const auto& socket = *group.sockets[i];
+                const ImVec2 p(origin.x + 12, origin.y + 12 + i * 22);
+                const bool validTarget = compatible(socket);
+                const auto tint = !link.active || validTarget ? socket.color : IM_COL32(130, 145, 154, 150);
+                list->AddCircle(p, 6, tint, 16, validTarget ? 3 : 2);
+                if (socket.output)
+                    list->AddCircleFilled(p, 3, tint);
+                const auto label = socketLabel(*m, socket.row, socket.field, socket.output);
+                list->AddText(ImVec2(p.x + 12, p.y - 7), tint, label.c_str());
+                const bool hovered = inside && io.MousePos.x >= origin.x && io.MousePos.x < origin.x + 258 && std::fabs(p.y - io.MousePos.y) < 11;
+                if (hovered) {
+                    ImGui::SetTooltip("%s (%s)\n%s", socket.field.c_str(), socket.output ? "output" : "input", label.c_str());
+                    if (validTarget)
+                        targetSocket = &socket;
+                    if (!link.active && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                        startLink(socket.row, socket.field, p, socket.output);
+                        consumed = true;
+                    }
+                }
             }
+            list->PopClipRect();
         }
+        if (overSockets && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            consumed = true;
         if (std::none_of(view.wires.begin(), view.wires.end(),
                          [&](const V::WireMark& wire) { return wire.to.row == chosenWireRow && wire.to.field == chosenWireField; })) {
             chosenWireRow = {};
@@ -344,7 +417,7 @@ namespace PetariEditor::Ui {
         }
         const V::WireMark* hoveredWire = nullptr;
         float wireDistance = 9;
-        if (!link.active && !drag.active && inside && !hit && !io.KeyAlt) {
+        if (!link.active && !drag.active && inside && !hit && !io.KeyAlt && !overSockets) {
             for (const auto& wire : view.wires) {
                 for (const auto& c : wire.segments) {
                     const float d = distance(io.MousePos, at(c.x0, c.y0), at(c.x1, c.y1));
@@ -410,7 +483,14 @@ namespace PetariEditor::Ui {
                             error = "Drop the socket onto a path.";
                     } else {
                         Pick::Item hover;
-                        if (Pick::hover(&hover) && hover.row)
+                        if (targetSocket) {
+                            for (const auto& source : P::sockets(*m, link.row))
+                                if (source.field == link.field && (source.role == Catalog::SwitchRole::Write) == link.output)
+                                    for (const auto& target : P::sockets(*m, targetSocket->row))
+                                        if (target.field == targetSocket->field &&
+                                            (target.role == Catalog::SwitchRole::Write) == targetSocket->output)
+                                            submit(P::linkSwitchOp(*m, source, target, &error));
+                        } else if (Pick::hover(&hover) && hover.row)
                             chooseTarget(*m, {hover.row});
                         else
                             error = "Drop the socket onto an object.";
@@ -432,7 +512,8 @@ namespace PetariEditor::Ui {
         if (ImGui::BeginPopup("Choose switch reaction")) {
             for (const auto& socket : P::sockets(*m, targetRow))
                 if (socket.role != sourceSocket.role) {
-                    if (ImGui::Selectable(socket.field.c_str())) {
+                    if (ImGui::Selectable(
+                            (socketLabel(*m, socket.row, socket.field, socket.role == Catalog::SwitchRole::Write) + "##" + socket.field).c_str())) {
                         submit(P::linkSwitchOp(*m, sourceSocket, socket, &error));
                         ImGui::CloseCurrentPopup();
                     }
