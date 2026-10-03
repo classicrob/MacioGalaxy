@@ -138,10 +138,13 @@ class Verdict(unittest.TestCase):
         self.assertEqual(v({}), "unmeasured")
         self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "nonactor"}}), "safe")
         self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "invisible"}}), "suspect")
-        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "crash"}}), "unsafe")
-        # crashes with empty links but is fine with its own row's links: a live recreate (clone of the row) is safe
+        # empty-link crash, nothing known about the row's own links
+        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "crash"}}), "unverified")
+        # crashes with empty links but is fine from its own row with its links: safe
         keep = {"status": "crash", "links": {"result": "required", "source": "drop-keep", "fields": {"CommonPath_ID": 7}}}
         self.assertEqual(v({"a": keep}), "safe")
+        # still fails from its own row, or only works with provisioned ids: unsafe
+        self.assertEqual(v({"a": {"status": "crash", "links": {"result": "unresolved"}}}), "unsafe")
         provisioned = {"status": "crash", "links": {"result": "required", "source": "drop-provision", "fields": {"SW_A": 1}}}
         self.assertEqual(v({"a": provisioned}), "unsafe")
 

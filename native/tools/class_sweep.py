@@ -665,23 +665,27 @@ SUSPECT_STATUSES = ("nan", "invisible", "dead")
 
 
 def live_recreate_verdict(results):
-    """What the editor should do when it recreates this class live (from a placed row), from the per-stage results.
+    """What the editor should do when it recreates this class live, from the per-stage results (sweep runs create with EMPTY
+    links; the editor recreates a placed row WITH its links, so empty-link failures alone prove nothing about that).
 
-    unsafe     the process crashed, asserted, hung, ran out of heap or killed Mario creating it with empty links on some stage
-               (and no bisect run showed it safe with the row's own links): do not recreate live, fall back to the reload path
-    suspect    created but nan / invisible / dead on some stage: allowed, but tell the user it may not show or behave
-    safe       ok, ok-nomodel or nonactor on every measured stage
-    unmeasured nothing recorded yet (partial sweep)
-    needs_links (separate field): the link fields the class needs, when the bisect found them."""
+    unsafe      creating it crashed/asserted/hung/ran out of heap/killed Mario even from the stage's own row with its links (bisect
+                `keep` failed), or needed other ids too: fall back to the reload path (pending)
+    unverified  fails with empty links, and no keep run has shown whether the row's own links fix it (no bisect yet, or no row of
+                the class in that stage): recreating a placed row is probably fine, adding one from scratch needs its links
+    suspect     created but nan / invisible / dead on some stage: allowed, tell the user it may not show or behave
+    safe        ok / ok-nomodel / nonactor everywhere measured, or fails empty but passes from its own row (needs_links says which)
+    unmeasured  nothing recorded yet (partial sweep)"""
     statuses = [r["status"] for r in results.values()]
     if not statuses:
         return "unmeasured"
-    if any(s in FAIL_STATUSES for s in statuses):
-        # Safe with its own row's links (bisect `keep` passed on every stage that failed)?
-        failed = [r for r in results.values() if r["status"] in FAIL_STATUSES]
-        if all(r.get("links", {}).get("result") == "required" and r["links"].get("source") == "drop-keep" for r in failed):
+    failed = [r for r in results.values() if r["status"] in FAIL_STATUSES]
+    if failed:
+        verdicts = [r.get("links") for r in failed]
+        if any(v and (v.get("result") == "unresolved" or v.get("source") == "drop-provision") for v in verdicts):
+            return "unsafe"
+        if all(v and v.get("result") == "required" and v.get("source") == "drop-keep" for v in verdicts):
             return "safe"
-        return "unsafe"
+        return "unverified"
     return "suspect" if any(s in SUSPECT_STATUSES for s in statuses) else "safe"
 
 
@@ -752,8 +756,10 @@ def build_catalog(args, stages):
             "order": "most placed on the disc first (placed_on_disc)",
             "stages": [{"stage": s, "scenario": n, "why": w} for s, n, w in stages], "link_fields": LINK_FIELDS,
             "live_recreate": {"safe": "recreate live", "suspect": "recreate live, tell the user it may not show or behave",
+                              "unverified": "fails with empty links, row-link behaviour not yet verified: recreating a placed row is "
+                                            "probably fine; allow it, with a notice",
                               "unsafe": "do not recreate live: fall back to the reload path (pending)",
-                              "unmeasured": "not measured yet: treat as unsafe until it is"},
+                              "unmeasured": "not measured yet: treat like unverified"},
             "statuses": {"ok": "created, alive and drawn after the observation window",
                          "ok-nomodel": "created and alive, has no model (logic actor)",
                          "nonactor": "created without any LiveActor (areas, managers, ...)",
