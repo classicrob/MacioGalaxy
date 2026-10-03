@@ -417,12 +417,15 @@ test runs listed; only the ctest targets were re-run for this summary.
 
 ## Known flaky tests
 
-- `native_rfl_render` can fail on the first run in a fresh build tree (cold shader
-  cache), with `model frame: background where there is no face` or `icon corner is
-  RFL's copy-clear color`, and passes on later runs (3/3 after warming; it also fails
-  under heavy machine load). The test does not wait for asynchronous shader
-  compilation. Owner to be decided; low priority. Rerun it alone before treating a
-  failure as a regression.
+- `native_rfl_render` (FIXED, was the most frequent flake): with an empty pipeline cache (a fresh
+  build directory, the first run of a clean check) Aurora's default `bounded` pipeline policy
+  skipped any GX draw whose pipeline was still compiling after ~6 ms, so the test's pixel checks
+  read zeros or the wrong colour (the failing check differed per run: model frame background,
+  second capture fill, icon corner). Measured: empty-cache baseline failed 3/3 with 18-23 skipped
+  draws; with `PETARI_PIPELINE_POLICY=blocking` set by the test it passed 5/5 with an emptied cache
+  each time. `native_present_gpu` (not built in the default configuration) has the same exposure
+  and got the same one-line change, unverified because it cannot be built here. A pixel-reading
+  GPU test must run under the blocking policy.
 - `native_platform_allocation` has performance assertions ("faster than dladdr", "first-seen
   addresses resolve in under 20 us each") that fail under machine load and pass on rerun; it is now
   labelled `timing` and runs with the quiet-machine tests.
