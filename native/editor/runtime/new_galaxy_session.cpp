@@ -6,6 +6,7 @@
 // (PETARI_OPEN_*: app_main, LogoScene, FileSelector).
 #include "new_galaxy_session.hpp"
 #include "runtime_core.hpp"
+#include "galaxy_checks.hpp"
 
 #include <petari/editor/galaxy/new_galaxy.hpp>
 #include <petari/host_allocation.hpp>
@@ -124,6 +125,7 @@ namespace {
 }  // namespace
 
 void registerNewGalaxyServices() {
+    registerGalaxyChecks();
     Core::NewGalaxyServices services;
     services.choices = &choices;
     services.internalName = &internalName;

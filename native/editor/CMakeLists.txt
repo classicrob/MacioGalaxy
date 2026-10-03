@@ -92,7 +92,7 @@ endif()
 
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
 # game code (src/Game/Editor), so only the app and the link check link it.
-add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/new_galaxy_session.cpp runtime/new_galaxy_test.cpp runtime/terrain_sync.cpp runtime/import_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
+add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/new_galaxy_session.cpp runtime/new_galaxy_test.cpp runtime/galaxy_checks.cpp runtime/terrain_sync.cpp runtime/import_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
     runtime/redraw_test.cpp runtime/ensure_test.cpp runtime/scratch_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp runtime/new_path_test.cpp runtime/areas_test.cpp runtime/array_test.cpp runtime/import_test.cpp runtime/placement_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_editor_terrain_catalog petari_editor_galaxy petari_editor_import_catalog petari_native_config)
