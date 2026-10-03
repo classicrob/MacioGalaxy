@@ -43,12 +43,17 @@ struct SurfacePreset {
 };
 const std::vector< SurfacePreset >& surfacePresets();
 
+/// Obj_arg3: the stage's gravity, a field fitted to the shape, or straight down over its top (a
+/// box-shaped field with only its top face: upright platforming with no pull round the edges).
+enum class GravityMode { Stage, Fitted, DownOnly };
+const std::vector< std::string >& gravityModeNames();  // "The stage's", "Fitted to the shape", "Down only"
+
 struct Brush {
     BrushShape shape = BrushShape::Box;
     Vec3 size{1000, 1000, 1000};  // world units (scale * 1000), clamped to a minimum
     int material = 0;
     int surface = 0;
-    bool fittedGravity = true;
+    GravityMode gravity = GravityMode::Fitted;
 };
 
 /// A brush from its row's values (arg -1 means the default: box, the first material, normal,

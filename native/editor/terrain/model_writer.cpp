@@ -124,6 +124,123 @@ namespace {
         return false;
     }
 
+    // MaterialClone::vertexTint: the CLR0 colours of the shapes under `material` in INF1's
+    // hierarchy, read from their display lists (VTX1 for the colours, SHP1 for the indices).
+    Vec3 donorVertexTint(const Bytes& donor, std::size_t material) {
+        const Vec3 none{1.0f, 1.0f, 1.0f};
+        std::size_t infStart, infSize, vtxStart, vtxSize, shpStart, shpSize;
+        if (!findBlock(donor, "INF1", &infStart, &infSize) || !findBlock(donor, "VTX1", &vtxStart, &vtxSize) ||
+            !findBlock(donor, "SHP1", &shpStart, &shpSize) || infSize < 0x18 || vtxSize < 0x40 || shpSize < 0x2C) {
+            return none;
+        }
+        auto inside = [](std::size_t start, std::size_t size, std::size_t at, std::size_t n) { return at >= start && at + n <= start + size; };
+        // VTX1: the CLR0 array and its component type.
+        const std::uint32_t colorData = get32(donor, vtxStart + 0x0C + 3 * 4);
+        std::uint32_t colorType = 0xFFFFFFFF;
+        for (std::size_t at = vtxStart + get32(donor, vtxStart + 0x08); inside(vtxStart, vtxSize, at, 16); at += 16) {
+            const std::uint32_t attribute = get32(donor, at);
+            if (attribute == 0xFF) {
+                break;
+            }
+            if (attribute == 0x0B) {
+                colorType = get32(donor, at + 8);
+            }
+        }
+        const std::size_t stride = colorType == 5 || colorType == 2 ? 4 : colorType == 1 ? 3 : 0;  // RGBA8, RGBX8, RGB8
+        if (colorData == 0 || stride == 0) {
+            return none;
+        }
+        // INF1: the shapes that hang under the material.
+        std::vector< bool > ofMaterial;
+        long current = -1;
+        for (std::size_t at = infStart + get32(donor, infStart + 0x14); inside(infStart, infSize, at, 4); at += 4) {
+            const std::uint16_t type = get16(donor, at), index = get16(donor, at + 2);
+            if (type == 0) {
+                break;
+            }
+            if (type == 0x11) {
+                current = index;
+            } else if (type == 0x12) {
+                if (ofMaterial.size() <= index) {
+                    ofMaterial.resize(index + 1u, false);
+                }
+                ofMaterial[index] = current == static_cast< long >(material);
+            }
+        }
+        // SHP1: each shape's vertex descriptors and display lists.
+        const std::uint16_t shapes = get16(donor, shpStart + 0x08);
+        const std::uint32_t initOffset = get32(donor, shpStart + 0x0C), indexOffset = get32(donor, shpStart + 0x10),
+                            descOffset = get32(donor, shpStart + 0x18), listOffset = get32(donor, shpStart + 0x20),
+                            drawOffset = get32(donor, shpStart + 0x28);
+        double sum[3] = {0.0, 0.0, 0.0};
+        std::size_t count = 0;
+        for (std::uint16_t s = 0; s < shapes && s < ofMaterial.size(); s++) {
+            if (!ofMaterial[s] || !inside(shpStart, shpSize, shpStart + indexOffset + s * 2u, 2)) {
+                continue;
+            }
+            const std::size_t init = shpStart + initOffset + get16(donor, shpStart + indexOffset + s * 2u) * 0x28u;
+            if (!inside(shpStart, shpSize, init, 0x28)) {
+                return none;
+            }
+            const std::uint16_t groups = get16(donor, init + 2), desc = get16(donor, init + 4), drawInit = get16(donor, init + 8);
+            std::vector< std::pair< std::uint32_t, std::uint32_t > > attributes;  // (attribute, 1 direct / 2 index8 / 3 index16)
+            for (std::size_t at = shpStart + descOffset + desc; inside(shpStart, shpSize, at, 8); at += 8) {
+                const std::uint32_t attribute = get32(donor, at);
+                if (attribute == 0xFF) {
+                    break;
+                }
+                const std::uint32_t kind = get32(donor, at + 4);
+                if (kind == 1 && attribute > 8) {
+                    return none;  // direct data other than matrix indices: not a planet's layout
+                }
+                attributes.push_back({attribute, kind});
+            }
+            for (std::uint16_t g = 0; g < groups; g++) {
+                const std::size_t draw = shpStart + drawOffset + (drawInit + g) * 8u;
+                if (!inside(shpStart, shpSize, draw, 8)) {
+                    return none;
+                }
+                std::size_t at = shpStart + listOffset + get32(donor, draw + 4);
+                const std::size_t end = at + get32(donor, draw);
+                if (!inside(shpStart, shpSize, at, end - at)) {
+                    return none;
+                }
+                while (at < end) {
+                    const std::uint8_t op = donor[at++];
+                    if (op == 0) {
+                        continue;  // padding
+                    }
+                    if ((op & 0xF8) < 0x80 || (op & 0xF8) > 0xB8 || at + 2 > end) {
+                        break;
+                    }
+                    const std::uint16_t vertices = get16(donor, at);
+                    at += 2;
+                    for (std::uint16_t v = 0; v < vertices; v++) {
+                        for (const auto& [attribute, kind] : attributes) {
+                            const std::size_t size = kind == 3 ? 2 : kind == 0 ? 0 : 1;
+                            if (at + size > end) {
+                                return none;
+                            }
+                            const std::uint32_t index = size == 2 ? get16(donor, at) : size == 1 ? donor[at] : 0;
+                            at += size;
+                            const std::size_t color = vtxStart + colorData + index * stride;
+                            if (attribute == 0x0B && kind != 1 && inside(vtxStart, vtxSize, color, 3)) {
+                                sum[0] += donor[color];
+                                sum[1] += donor[color + 1];
+                                sum[2] += donor[color + 2];
+                                count++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (count == 0) {
+            return none;
+        }
+        return {static_cast< float >(sum[0] / count / 255.0), static_cast< float >(sum[1] / count / 255.0), static_cast< float >(sum[2] / count / 255.0)};
+    }
+
     const std::size_t kMat3Header = 0x84;
     const std::size_t kMaterialInitSize = 0x14C;
     const std::size_t kIndInitSize = 0x138;
@@ -229,6 +346,7 @@ std::optional< MaterialClone > cloneMaterial(const Bytes& donor, const std::stri
 
     MaterialClone clone;
     clone.name = materialName;
+    clone.vertexTint = donorVertexTint(donor, material);
     clone.mat3 = out.finish();
 
     // TEX1 with only the textures this material uses: its init entry's 8 texture slots (u16 at
@@ -382,8 +500,8 @@ ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const Mo
             for (std::size_t i = 0; i < vertexCount; i++) {
                 const Vec3& n = mesh.normals[i];
                 const float lit = options.ambient + options.diffuse * std::max(0.0f, n.x * sun.x + n.y * sun.y + n.z * sun.z);
-                const std::uint8_t level = static_cast< std::uint8_t >(std::clamp(lit, 0.0f, 1.0f) * 255.0f + 0.5f);
-                colors.insert(colors.end(), {level, level, level, 0xFF});
+                auto level = [&](float tint) { return static_cast< std::uint8_t >(std::clamp(lit * tint, 0.0f, 1.0f) * 255.0f + 0.5f); };
+                colors.insert(colors.end(), {level(material.vertexTint.x), level(material.vertexTint.y), level(material.vertexTint.z), 0xFF});
             }
         } else {
             colors = {0xFF, 0xFF, 0xFF, 0xFF};
