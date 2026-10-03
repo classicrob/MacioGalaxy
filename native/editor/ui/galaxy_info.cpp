@@ -69,7 +69,7 @@ namespace PetariEditor::Ui {
         }
         noteTestTarget("combo:Galaxy music");
         ImGui::TextWrapped("Music changes take effect on the next Play or reload.");
-        drawSection("Missions", "1–8");
+        drawSection("Missions", "1-8");
         for (std::size_t i = 0; i < draft.missions.size(); ++i) {
             ImGui::PushID(static_cast< int >(i));
             ImGui::Text("Mission %zu", i + 1);
