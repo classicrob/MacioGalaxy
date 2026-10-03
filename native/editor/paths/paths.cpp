@@ -401,6 +401,21 @@ namespace PetariEditor::Paths {
             }
         return result;
     }
+    std::uint32_t switchColor(const std::string& field) {
+        if (field == "SW_APPEAR")
+            return 0xff79e66a;
+        if (field == "SW_DEAD")
+            return 0xff6262ff;
+        if (field == "SW_A")
+            return 0xffffda48;
+        if (field == "SW_B")
+            return 0xffff8dc3;
+        if (field == "SW_SLEEP" || field == "SW_AWAKE")
+            return 0xff65c9ff;
+        if (field == "CommonPath_ID")
+            return 0xff38ccfa;
+        return 0xffe7e7e7;
+    }
     std::uint32_t switchColor(int id) {
         static constexpr std::uint32_t colors[] = {0xff75d9ff, 0xffffb57a, 0xff8fe6a5, 0xffd991fa, 0xfff0ce7e, 0xff8799ff, 0xffd7e873};
         return colors[static_cast< unsigned >(std::max(id, 0)) % (sizeof(colors) / sizeof(colors[0]))];
