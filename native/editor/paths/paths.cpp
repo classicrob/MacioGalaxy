@@ -102,7 +102,7 @@ namespace PetariEditor::Paths {
         }
         return rails;
     }
-    Op addRail(const ModelView& m, int zone, const std::vector< Point >& points, bool closed, RowId freshRail, std::string* error) {
+    Op addRail(const ModelView& m, int zone, const std::vector< Point >& points, bool closed, RowId freshRail, std::string* error, RowId rider) {
         auto reject = [&](const char* message) {
             if (error)
                 *error = message;
@@ -121,6 +121,11 @@ namespace PetariEditor::Paths {
                 if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z))
                     return reject("Path coordinates must be finite.");
         }
+        if (rider.valid()) {
+            int riderZone = -1;
+            if (!m.locate(rider, &riderZone, nullptr) || m.state(rider) == RowState::Deleted || riderZone != zone)
+                return reject("The path and its object must be in the same zone.");
+        }
         int index = 0, id = 0;
         std::set< int > used;
         for (const auto& rail : collect(m))
@@ -131,7 +136,9 @@ namespace PetariEditor::Paths {
         while (used.count(id))
             ++id;
         Op op;
-        op.label = "Create path";
+        op.label = rider.valid() ? "Create and link flight path" : "Create path";
+        if (rider.valid())
+            op.sets.push_back({rider, columnHash("CommonPath_ID"), Cell{CellType::Int, id, 0, {}}});
         AddRow rail;
         rail.id = freshRail;
         rail.zone = zone;

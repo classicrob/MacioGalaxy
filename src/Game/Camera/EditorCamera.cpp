@@ -1,4 +1,5 @@
 #ifdef PETARI_NATIVE
+#include <petari/editor/paths_view.hpp>
 // The level editor's camera over the frozen scene (Game/Camera/EditorCamera.hpp).
 #include "Game/Camera/EditorCamera.hpp"
 #include "Game/AudioLib/AudSystem.hpp"
@@ -308,6 +309,7 @@ namespace EditorCamera {
         AudWrap::getSystem()->exitPauseMenu();
         gState.active = false;
         EditorGizmo::reset();
+        PetariEditor::PathsView::endCreate();  // M3 paths: discard unfinished points when leaving/rebuilding.
         EditorPicking::reset();
         petari_editor_set_active(0);
         PetariEditor::notifyEditLeft();
@@ -322,6 +324,7 @@ namespace EditorCamera {
         if (!gState.active) return;
         gState.active = false;
         EditorGizmo::reset();
+        PetariEditor::PathsView::endCreate();  // M3 paths: discard unfinished points when leaving/rebuilding.
         EditorPicking::reset();  // the old scene's actors are gone: drop them before anything looks
         GameSystemFunction::onPauseEndAllRumble();
         AudWrap::getSystem()->exitPauseMenu();

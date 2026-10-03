@@ -9,6 +9,7 @@
 #include <petari/editor/debug_draw.hpp>
 #include <petari/editor/patch.hpp>
 #include <petari/editor/paths.hpp>
+#include <petari/editor/paths_view.hpp>
 
 #include <cmath>
 #include <cstdio>
@@ -277,6 +278,52 @@ namespace {
         check(creationSaved, "patch creates numeric-suffix point table from sibling schema");
         check(P::addRail(*m, 0, newPoints, false, E::newRowId(), &error).adds.empty(), "create rejects reused point identities");
         check(m->undo(), "undo creation before remaining checks");
+        check(m->apply(P::linkPath(*m, output, P::collect(*m).front(), &error), &error), "set prior rider link");
+        const int previousRailId = m->cell(output, E::columnHash("CommonPath_ID"))->i;
+        const int draftCursor = m->historyCursor();
+        std::vector< P::Point > flightPoints = {{E::newRowId(), {0, 30, 0}, {0, 30, 0}, {0, 30, 0}},
+                                                {E::newRowId(), {40, 80, 0}, {40, 80, 0}, {40, 80, 0}},
+                                                {E::newRowId(), {80, 30, 0}, {80, 30, 0}, {80, 30, 0}}};
+        const auto flightRow = E::newRowId();
+        const auto flightOp = P::addRail(*m, 0, flightPoints, false, flightRow, &error, output);
+        check(flightOp.adds.size() == 4 && flightOp.sets.size() == 1 && m->apply(flightOp, &error), "create three-point path and link atomically");
+        const auto flight = P::collect(*m).back();
+        check(m->historyCursor() == draftCursor + 1 && m->cell(output, E::columnHash("CommonPath_ID"))->i == flight.id,
+              "new flight rail and link use one history entry");
+        check(m->undo() && P::collect(*m).size() == 1 && m->cell(output, E::columnHash("CommonPath_ID"))->i == previousRailId,
+              "one undo removes flight and restores prior link");
+        check(m->redo() && m->railPoints(flightRow).size() == 3 && m->cell(output, E::columnHash("CommonPath_ID"))->i == flight.id,
+              "redo restores flight and link");
+        const auto flightPatch = m->patch();
+        const auto flightFiles =
+            E::Patch::build({{"Paths", flightPatch.json}}, [&](const std::string& path) { return source("/" + path); }, &patchLog);
+        bool flightSaved = false;
+        for (const auto& file : flightFiles) {
+            if (file.path != "StageData/TestGalaxy.arc")
+                continue;
+            const auto arc = F::Archive::parse(file.bytes);
+            const auto* bytes = arc->file("jmp/path/commonpathpointinfo.1");
+            if (bytes) {
+                const auto table = F::Table::parse(*bytes);
+                flightSaved = table && table->rowCount() == 3 && table->get(1, table->column(F::jmapHash("pnt0_y"))).f == 80;
+            }
+        }
+        check(flightSaved, "three-point flight survives patch rebuild");
+        check(m->undo() && m->undo(), "restore fixture after flight test");
+        for (auto& point : flightPoints)
+            point.row = E::newRowId();
+        check(P::addRail(*m, 0, flightPoints, false, E::newRowId(), &error, cross).adds.empty(), "reject cross-zone flight link");
+        E::PathsView::beginCreate(output);
+        E::PathsView::CreateInput draftInput;
+        draftInput.hover = true;
+        draftInput.x = 0.25f;
+        draftInput.add = true;
+        E::PathsView::sendCreate(draftInput);
+        const auto request = E::PathsView::takeCreate();
+        check(E::PathsView::creating() && request.begin && request.add && request.rider == output && request.x == 0.25f,
+              "first viewport frame preserves new-path request and rider");
+        E::PathsView::endCreate();
+        check(!E::PathsView::creating() && !E::PathsView::takeCreate().add, "cancel clears uncommitted requests");
         E::AddRow emptyRail;
         emptyRail.id = E::newRowId();
         emptyRail.zone = 0;
