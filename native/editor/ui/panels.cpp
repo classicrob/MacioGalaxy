@@ -1116,16 +1116,20 @@ void drawInspectorWindow(const char* title) {
             bool named = false;
             if (info != nullptr && !info->args.empty()) {
                 section("Settings", rows.size() > 1 ? "edits apply to all" : "named");
+                ImGui::PushID("named");  // the raw fields below use the same column ids
                 for (const Catalog::Arg& arg : info->args) argField(*model, rows, arg);
+                ImGui::PopID();
                 named = true;
             }
             if (named) ImGui::Spacing();
             if (!named || ImGui::CollapsingHeader("All fields")) {
                 if (!named) section("Fields", rows.size() > 1 ? "edits apply to all" : "raw");
+                ImGui::PushID("raw");
                 for (const Column& column : model->columns(zone, table)) {
                     if (isTransformColumn(column.name)) continue;
                     field(*model, rows, column, info);
                 }
+                ImGui::PopID();
             }
             if (gHelp.empty() && gHintFrames > 0) gHelp = gHint;
             if (gHelp.empty() && info != nullptr && !info->description.empty()) gHelp = info->displayName + ": " + info->description;

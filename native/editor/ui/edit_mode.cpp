@@ -351,7 +351,18 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) undo();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z)) redo();
     // Cmd+S: save the mod (the sheet the first time); Cmd+Shift+S: the sheet again (another name or format).
-    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) requestSave(false);
+    // Even from a focused field (not a text key): the field's edit is ended first, so its value commits, and the save
+    // follows a couple of frames later.
+    static int sSaveIn = 0;
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
+        if (io.WantTextInput) {
+            ImGui::ClearActiveID();
+            sSaveIn = 3;
+        } else {
+            requestSave(false);
+        }
+    }
+    if (sSaveIn > 0 && --sSaveIn == 0) requestSave(false);
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
     // Cmd+N: New galaxy (UX section 14).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_N)) openNewGalaxySheet();
