@@ -4,6 +4,7 @@
 #include "Game/Util/AreaObjUtil.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "runtime_core.hpp"
 #include <cmath>
@@ -24,6 +25,7 @@ namespace PetariEditor::Runtime {
         namespace G = Gizmo;
         namespace Pick = PetariNative::EditorPick;
         static const char* enabled = std::getenv("PETARI_EDITOR_ARRAY_TEST");
+        static const char* sourceClass = std::getenv("PETARI_EDITOR_ARRAY_CLASS");
         static int frame = -1, wait = 0, cursor = 0;
         static bool done = false;
         static RowId source;
@@ -68,7 +70,9 @@ namespace PetariEditor::Runtime {
             const auto* mario = MR::getPlayerPos();
             forEachBoundRow([&](RowId row, LiveActor* actor) {
                 const char* name = m->objectName(row);
-                if (!name || std::string(name) != "Coin" || !actor || MR::isDead(actor))
+                if (!name || std::string(name) != (sourceClass ? sourceClass : "Coin") || !actor || MR::isDead(actor))
+                    return;
+                if (sourceClass && (MR::isClipped(actor) || MR::isHiddenModel(actor) || !MR::getJ3DModel(actor)))
                     return;
                 const float distance = mario ? (actor->mPosition - *mario).length() : 0;
                 if (distance < nearest) {
@@ -78,7 +82,7 @@ namespace PetariEditor::Runtime {
                 }
             });
             if (!original)
-                return finish("FAIL: no live Coin fixture");
+                return finish("FAIL: no live source fixture");
             originalPosition = original->mPosition;
             serial = Hooks::sceneSerial();
             cursor = m->historyCursor();

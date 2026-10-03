@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--stage', default='EggStarGalaxy')
     parser.add_argument('--owner', default='editor-paths')
+    parser.add_argument('--source-class', help='Require a visible model of this class for the preview capture')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     main = main_checkout()
@@ -35,6 +36,8 @@ def main():
                PETARI_SURFACE_DUMP=str(output / 'surfaces'),
                PETARI_SURFACE_DUMP_LABELS='array-line,array-ring,array-applied',
                PETARI_SURFACE_DUMP_EVERY='5', PETARI_SURFACE_DUMP_SPAN='15')
+    if args.source_class:
+        env['PETARI_EDITOR_ARRAY_CLASS'] = args.source_class
     command = [str(main / 'build/locked-app.sh'), args.owner, '/usr/bin/perl', '-e',
                'alarm shift; exec @ARGV or die', '600', str(app), '--disc', str(main / 'build/game-data/RMGE01'),
                '--user', str(user), '--test-fixture', 'stage']
