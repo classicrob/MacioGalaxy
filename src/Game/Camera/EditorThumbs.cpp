@@ -2,6 +2,7 @@
 // The level editor's thumbnails (Game/Camera/EditorThumbs.hpp).
 #include "Game/Camera/EditorThumbs.hpp"
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorDraw.hpp"
 #include "Game/Camera/EditorPicking.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -108,7 +109,8 @@ namespace EditorThumbs {
             model = model != nullptr || actor == nullptr ? model : EditorTerrain::partModel(actor);  // a terrain brush
             if (model != nullptr) break;
         }
-        if (model == nullptr) {
+        if (model == nullptr || !EditorDraw::spend(model, 1)) {
+            // Nothing drawable, or a model too big for this frame's draw budget (EP-004): the initials tile.
             PetariNative::EditorPick::publishThumbnail(name, nullptr);
             return;
         }

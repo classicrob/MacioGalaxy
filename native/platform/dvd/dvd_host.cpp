@@ -594,6 +594,14 @@ fs::path hostPathForEntry(s32 entryNum) {
     return fst->hostPath(static_cast<u32>(entryNum));
 }
 
+std::string overlayModForEntry(s32 entryNum) {
+    const Fst* fst = drive().fst.load();
+    if (fst == nullptr || entryNum < 0 || static_cast<u32>(entryNum) >= fst->entryCount()) {
+        return {};
+    }
+    return fst->overlayMod(static_cast<u32>(entryNum));
+}
+
 void shutdown() {
     // No HostAllocationScope: cancelled commands' game callbacks run below,
     // and this only frees (routed by address) host-owned state.

@@ -5,6 +5,7 @@
 #include <petari/editor/check_providers.hpp>
 #include <petari/editor/paths.hpp>
 #include <petari/editor/terrain/bake.hpp>
+#include <petari/editor/terrain/brush_catalog.hpp>
 #include <petari/platform/dvd.hpp>
 #include <revolution/dvd.h>
 
@@ -85,6 +86,8 @@ std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const
     if (!Catalog::loadWithUser(userDirectory, pCatalogError)) {
         // Reported by the caller; the galaxy still loads (checks then know fewer classes).
     }
+    Terrain::registerBrushClass();   // the terrain brush is a class headless tools know too
+    Terrain::registerBrushChecks();
     if (registerClasses) {
         registerClasses();
     }
