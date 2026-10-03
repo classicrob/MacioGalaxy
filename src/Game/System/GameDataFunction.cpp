@@ -35,6 +35,17 @@ namespace {
 };  // namespace
 
 namespace GameDataFunction {
+#ifdef PETARI_NATIVE
+    UserFile* nativeCurrentUserFile() {
+        SaveDataHandleSequence* pSequence = ::getSaveDataHandleSequence();
+        return pSequence != nullptr ? pSequence->getCurrentUserFile() : nullptr;
+    }
+
+    GameDataTemporaryInGalaxy* nativeTemporaryInGalaxy() {
+        return ::getGameDataTemporaryInGalaxy();
+    }
+#endif
+
     bool isDataMario() {
         return getCurrentGameDataHolder()->isDataMario();
     }

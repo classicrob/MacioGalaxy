@@ -97,6 +97,7 @@ GameScene::GameScene()
 
 GameScene::~GameScene() {
 #ifdef PETARI_NATIVE
+    PetariEditor::Runtime::sceneEnded();  // before the hooks forget the scene
     PetariEditor::Hooks::sceneDestroyed();
 #endif
     MR::destroySceneMessage();

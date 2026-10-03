@@ -94,6 +94,10 @@ bool requestEdit(const char* reason);
 /// in-memory progress is restored at End, and other progress writers (progress.json, the mod
 /// galaxies' sidecars) skip their writes while this is true. Any thread.
 bool progressIsolated();
+/// GameScene's destructor: a scene that ends other than by an editor reload (the title, file
+/// select, another galaxy) ends the edit session there: End told, progress put back while the
+/// save file in use is still the session's, the model dropped.
+void sceneEnded();
 /// Mario starts a miss (MR::startPlayerEvent with a miss event: down, abyss, fire, game over, a
 /// race lost). Handlers (the play loop's adapter) are asked in order; true: handled, the game's
 /// miss event isn't started (the adapter froze the moment with requestEditAfterMiss).
