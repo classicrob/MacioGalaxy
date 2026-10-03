@@ -349,15 +349,24 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
             if (!target.empty()) next.baseDirectory = target.string() + ".refreeze-" + std::to_string(getpid());
             Error error;
             auto fresh = Level::open(next, &error);
-            if (!fresh) { Json::Value reply = Json::Value::object(); reply.set("ok", false); reply.set("error", error.toJson()); return reply; }
+            if (!fresh) {
+                Json::Value reply = Json::Value::object();
+                reply.set("ok", false);
+                reply.set("error", error.toJson());
+                return reply;
+            }
             if (!target.empty() && fs::exists(next.baseDirectory)) {
                 const fs::path old = target.string() + ".refreeze-old-" + std::to_string(getpid());
                 std::error_code ec;
                 fs::remove_all(old, ec);
                 const bool existed = fs::exists(target);
                 if (existed) fs::rename(target, old);
-                try { fs::rename(next.baseDirectory, target); }
-                catch (...) { if (existed) fs::rename(old, target); throw; }
+                try {
+                    fs::rename(next.baseDirectory, target);
+                } catch (...) {
+                    if (existed) fs::rename(old, target);
+                    throw;
+                }
                 fs::remove_all(old, ec);
                 fresh->mOptions.baseDirectory = target;
                 fresh->mImpl->mountedSource = frozenSource(fresh->mOptions, fresh->mImpl->baseMetadata);
