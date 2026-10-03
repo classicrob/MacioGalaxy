@@ -2,7 +2,7 @@ foreach(_relative lib/dolphin/gx/GXVert.cpp lib/dolphin/gx/GXDispList.cpp lib/gx
     get_filename_component(_kind "${_relative}" NAME)
     set(_original "${aurora_SOURCE_DIR}/${_relative}")
     if(_kind STREQUAL "command_processor.cpp")
-        set(_input "${CMAKE_CURRENT_BINARY_DIR}/sync/${_relative}")
+        set(_input "${CMAKE_CURRENT_BINARY_DIR}/geometry/command_processor.cpp")
     else()
         set(_input "${_original}")
     endif()
