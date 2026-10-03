@@ -149,7 +149,7 @@ bool drawPathsViewport(float x,float y,float width,float height) {
     if(!io.WantTextInput&&ImGui::IsKeyPressed(ImGuiKey_5,false))V::setVisibility(static_cast<V::Visibility>((static_cast<int>(V::visibility())+1)%3));
     const auto& view=V::view();
     auto at=[&](float a,float b){return ImVec2(x+(a+1)*width*0.5f,y+(1-b)*height*0.5f);};
-    const bool inside=io.MousePos.x>=x&&io.MousePos.y>=y&&io.MousePos.x<x+width&&io.MousePos.y<y+height&&!io.WantCaptureMouse;
+    const bool inside=io.MousePos.x>=x&&io.MousePos.y>=y&&io.MousePos.x<x+width&&io.MousePos.y<y+height&&(!io.WantCaptureMouse||link.active||drag.active);
     bool consumed=link.active||drag.active||captureClick;
     auto* list=ImGui::GetForegroundDrawList();
     list->PushClipRect(ImVec2(x,y),ImVec2(x+width,y+height),true);
