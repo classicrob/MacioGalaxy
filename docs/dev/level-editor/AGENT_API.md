@@ -57,6 +57,10 @@ command. `serve` keeps one process and takes JSON lines (the Python wrapper uses
 low-level ops in JSON (`export` prints them) with stable refs, so they replay after a restart and a
 running game accepts them unchanged (live mode).
 
+**Rails.** `get` on a path row (`jmp/path/commonpathinfo`) lists its points in world space
+(`points: [{ref, pos, in, out}]`, `closed`, `rail_id`, the `CommonPath_ID` objects use); summaries
+give the point count and the first point as `pos`. Point rows have their own refs.
+
 **Refs** name one row and stay valid across undo, reload and restarts:
 
 | form | meaning |
@@ -113,10 +117,10 @@ row in the zone uses; `"@goomba.SW_DEAD"` takes another row's switch (in the sam
 | `set` (`move`, `rotate`, `scale`, `transform`) | change `ref` / `refs` / `select` rows |
 | `duplicate` | copy a row (every field), then edit the copy |
 | `delete`, `revert` | delete rows; put rows back to the disc |
-| `array` | many adds along a `line`, `arc`, `ring`, `grid` or `path` (polyline) |
+| `array` | many adds along a `line`/`arc` (`start`, `end`; `from`/`to` also accepted), `ring`, `grid` or `path` (polyline) |
 | `path` | a rail from world points (`Paths::addRail`): smooth Catmull-Rom handles unless given, `closed`, `on_ground`; label it |
 | `link` | objects' `CommonPath_ID` to a path (`Paths::linkPath`: same zone); `add` takes `"path": "@flight"` too |
-| `fix` | apply a check's automatic fix by its key |
+| `fix` | apply a check's automatic fix: `{"op": "fix", "check": "<key from checks>"}` |
 | `label` | name an existing row |
 | `raw` | a low-level op (the journal's format) |
 
@@ -146,6 +150,13 @@ collision surface. Replies say
 which field was used (`"gravity": "GlobalPointGravity EggStarGalaxy:common/planetobjinfo:4"`). Give
 `down: [x,y,z]` to override, or use live mode for the engine's own answer.
 
+A point **inside** a collider is refused with `inside-collision`: the message names the collider and
+how far below its surface the point is, so raise it by that much. Only numerical slack (5 units) is
+forgiven. Start ray origins above the ground: e.g. a point carried along a slope needs a lift
+against gravity first (`pos` + up x 300). (Casting from inside a planet would
+otherwise land on whatever lies below it.) `ground` answers `"inside": <ref>, "surface_above": N`
+for such a point instead of a hit.
+
 Arrays snap each copy on their own: an `arc` of coins with `on_ground` hugs the planet; without it
 the arc is a parabola between `from` and `to` whose middle is `peak` above the line, along -gravity.
 
@@ -156,6 +167,27 @@ the arc is a parabola between `from` and `to` whose middle is `peak` above the l
   repair it.
 - `diff`: rows added or changed against the disc, with `[disc, now]` cells.
 - Live mode (below): the same ops in the running game, reload, screenshot, teleport Mario, trace him.
+
+## Python
+
+`native/tools/petari_level` (`import petari_level`; put `native/tools` on `sys.path`). One `petari-level
+serve` process per `Level`; every method raises `LevelError` (`.code`, `.hint`, `.candidates`, `.where`).
+
+| | |
+| --- | --- |
+| `Level.init(ws, disc=, galaxy=, mission=1, user=None, user_mods=False, force=False)` / `Level.open(ws)` | create / open a workspace |
+| `lv.call(cmd, **args)` | any command; returns the reply without `ok` |
+| `lv.help(command=, op=)`, `info()`, `catalog(query, category=, placed_here=)`, `describe(cls)`, `list(cls, full=, **filters)`, `get(ref)` | discovery |
+| `with lv.batch(key=, label=, dry_run=) as b:` | ops collected and applied as one transaction at the end of the block (`b.result` is the reply) |
+| `b.add(cls, pos, label=, **edit)` -> `"@label"` | `edit` = any add key: `zone`, `missions`, `args`, `switches`, `on_ground`, `height`, `up`, `path`, ... |
+| `b.array(cls, shape, label=, **keys)` -> `"@label"` | the JSON op's keys: `start`, `end`, `count`, `spacing`, `peak`, `center`, `radius`, `origin`, `size`, `points`, ... |
+| `b.path(points, label=, **keys)` -> `"@label"`, `b.link(ref, path)` | rails and links |
+| `b.set(ref, **edit)`, `b.move(ref, pos, by=)`, `b.duplicate(ref, label=, **edit)`, `b.delete(ref, select=)`, `b.fix(key)`, `b.label(ref, name)`, `b.op(dict)` | the other ops |
+| `lv.apply(ops, key=, label=, dry_run=)`, `add(...)`, `set(...)`, `delete(ref)` | one-shot batches |
+| `undo(steps)`, `redo(steps)`, `history()`, `checks(all=)`, `diff()`, `ground(pos, down=)`, `gravity(pos)`, `colliders()`, `save(mod, full=)`, `export(start, stop)` | the rest |
+
+Labels returned by the builders are usable by later ops in the same batch (`path=flight`,
+`"@goomba.SW_DEAD"`). `Live` (below) drives a running game.
 
 ## Live mode
 

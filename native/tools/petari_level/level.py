@@ -4,7 +4,9 @@
 
     lv = Level.init("build/ws/coins", disc="build/game-data/RMGE01", galaxy="EggStarGalaxy")
     with lv.batch(key="arc-1", label="Coin arc") as b:
-        b.array("Coin", shape="arc", start=[0, 1200, 0], end=[1500, 1200, 0], peak=600, count=8, on_ground=True, height=150)
+        b.array("Coin", "arc", start=[0, 1200, 0], end=[1500, 1200, 0], peak=600, count=8)
+        flight = b.path([[0, 1300, 0], [800, 2600, 0], [1600, 1300, 0]], label="flight")
+        b.add("Launch Star", [0, 1200, 0], on_ground=True, height=150, path=flight)
         star = b.add("PowerStar", pos=[1700, 1400, 0], on_ground=True, height=200, args={"Star ID": 1}, label="star")
     print(lv.checks())
     lv.save("Coin Arc")
@@ -29,8 +31,8 @@ def _repo_root() -> Path:
 
 
 def find_binary() -> Path:
-    """$PETARI_LEVEL_X, else the build tree's petari-level."""
-    env = os.environ.get("PETARI_LEVEL_X")
+    """$PETARI_LEVEL, else the build tree's petari-level."""
+    env = os.environ.get("PETARI_LEVEL")
     if env:
         return Path(env)
     return _repo_root() / "build/macos-gx/native/editor/level_api/petari-level"
@@ -55,6 +57,11 @@ class LevelError(Exception):
 
 def _clean(args: dict) -> dict:
     return {k: v for k, v in args.items() if v is not None}
+
+
+def _vectors(kw: dict) -> dict:
+    """Tuples (and other sequences) of numbers as JSON lists."""
+    return {k: list(v) if isinstance(v, tuple) else v for k, v in kw.items()}
 
 
 class Batch:
@@ -83,22 +90,29 @@ class Batch:
         """Place one object. kw: zone, layer, missions, like, preset, rot, up, front, turn, scale,
         args, switches, links, fields, on_ground, height, down, align. Returns "@label"."""
         name = self._label(label)
-        self.ops.append(_clean({"op": "add", "class": cls, "pos": list(pos) if pos is not None else None, "as": name, **kw}))
+        self.ops.append(_clean({"op": "add", "class": cls, "pos": list(pos) if pos is not None else None, "as": name, **_vectors(kw)}))
         return "@" + name
 
-    def array(self, cls: str, shape: str, *, label: Optional[str] = None, start: Optional[Vec] = None, end: Optional[Vec] = None,
-              **kw: Any) -> str:
-        """Many copies along a shape: line/arc (start, end, count|spacing, peak), ring (center, radius,
-        count), grid (origin, size [nx, nz], spacing), path (points). Copies are "@label.0", ".1", ...
-        Returns the label prefix ("@label")."""
+    def array(self, cls: str, shape: str, *, label: Optional[str] = None, **kw: Any) -> str:
+        """Many copies along a shape, with the JSON op's keys: line/arc (start, end, count | spacing, peak),
+        ring (center, radius, count), grid (origin, size [nx, nz], spacing), path (points), plus every add
+        key (args, on_ground, height, ...). Copies are "@label.0", ".1", ... Returns "@label"."""
         name = self._label(label)
-        op = {"op": "array", "class": cls, "shape": shape, "as": name, **kw}
-        if start is not None:
-            op["from"] = list(start)
-        if end is not None:
-            op["to"] = list(end)
-        self.ops.append(_clean(op))
+        self.ops.append(_clean({"op": "array", "class": cls, "shape": shape, "as": name, **_vectors(kw)}))
         return "@" + name
+
+    def path(self, points: Sequence[Any], *, label: Optional[str] = None, **kw: Any) -> str:
+        """A rail through world points ([x,y,z] or {"pos", "in", "out"}); kw: zone, closed, smooth,
+        on_ground, height, down. Returns "@label" (link objects to it with link() or add(path=...))."""
+        name = self._label(label)
+        pts = [list(p) if not isinstance(p, dict) else p for p in points]
+        self.ops.append(_clean({"op": "path", "points": pts, "as": name, **kw}))
+        return "@" + name
+
+    def link(self, ref: Any, path: str) -> "Batch":
+        """Link an object to a path (its CommonPath_ID); same zone."""
+        self.ops.append({"op": "link", "ref": ref, "path": path})
+        return self
 
     def set(self, ref: Any, **kw: Any) -> "Batch":
         """Change a row (pos, by, rot, up, args, switches, links, fields, on_ground, ...)."""

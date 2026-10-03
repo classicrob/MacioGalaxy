@@ -41,12 +41,13 @@ def main():
     flat = [d[i] - up[i] * dot for i in range(3)]
     n = sum(v * v for v in flat) ** 0.5
     ahead = [v / n for v in flat]
-    sling = add(start, ahead, 1000)
+    sling = add(lv.ground(add(add(start, ahead, 1000), up, 300))["point"], up, 120)   # 120 over the ground there
 
     with lv.batch(key="sling-course", label="Sling Star course") as b:
-        b.array("Coin", "line", start=add(start, ahead, 250), end=add(start, ahead, 800), count=5,
+        # Ray origins start above the ground (300 against gravity): on_ground refuses points inside the planet.
+        b.array("Coin", "line", start=add(add(start, ahead, 250), up, 300), end=add(add(start, ahead, 800), up, 300), count=5,
                 on_ground=True, height=80, label="trail")
-        b.add("SpinDriver", sling, on_ground=True, height=120, args={"Speed / flight time": 40}, label="sling")
+        b.add("SpinDriver", sling, args={"Speed / flight time": 40}, label="sling")
         b.array("Coin", "line", start=add(sling, up, 350), end=add(sling, up, 950), count=5, label="column")
         # No layer of the galaxy zone is active in mission 1 alone (the API lists them): layer A is missions 1, 4, 6.
         b.add("PowerStar", add(sling, up, 1150), missions=[1, 4, 6], args={"Star ID": 1}, up=up, label="star")

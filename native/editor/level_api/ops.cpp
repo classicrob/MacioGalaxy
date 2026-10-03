@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 
 namespace PetariEditor::LevelApi {
@@ -107,6 +108,36 @@ namespace {
 
     const std::vector< std::string > kEditKeys = {"pos", "zone_pos", "by", "rot", "zone_rot", "up", "front", "turn", "scale",
                                                   "args", "switches", "links", "fields", "on_ground", "height", "down", "align"};
+
+
+    // The ground below `point` along `down` (front faces only), or a failure an agent can act on: the point
+    // is inside a collider (say how far to raise it), or nothing is below.
+    constexpr float kInsideTolerance = 5.0f;  // numerical slack only: a point inside a collider is an error
+
+    Hit groundBelow(World& world, const ModelView& model, G::V3 point, G::V3 down, const std::string& gravitySource, const std::string& where,
+                    float* pLifted = nullptr) {
+        if (std::optional< Hit > inside = world.insideOf(point, down); inside && inside->distance <= kInsideTolerance) {
+            if (pLifted != nullptr) *pLifted = inside->distance;
+            return *inside;  // the surface just above (it faces up, away from the point)
+        }
+        if (std::optional< Hit > inside = world.insideOf(point, down)) {
+            const char* name = model.objectName(inside->row);
+            char text[64];
+            std::snprintf(text, sizeof(text), "%.0f", inside->distance);
+            fail("inside-collision",
+                 where + ": " + Json::write(vecJson(point, 0)) + " is inside " + (name != nullptr ? name : "a collider") + " (" + rowRef(model, inside->row) +
+                     "), " + text + " units below its surface",
+                 std::string("raise the point at least ") + text + " units against gravity (" + gravitySource + "), or start from above the ground",
+                 {rowRef(model, inside->row)}, where);
+        }
+        std::optional< Hit > hit = world.ray(point, down, 50000.0f);
+        if (!hit) {
+            fail("no-ground", where + ": no ground below " + Json::write(vecJson(point, 0)) + " along gravity " + Json::write(vecJson(down, 3)) + " (" +
+                                  gravitySource + ")",
+                 "move the point over a planet, give \"down\": [x,y,z], or check `colliders`", {}, where);
+        }
+        return *hit;
+    }
 
     std::vector< std::string > with(std::vector< std::string > a, const std::vector< std::string >& b) {
         a.insert(a.end(), b.begin(), b.end());
@@ -286,20 +317,16 @@ namespace {
                 }
                 if (ground) {
                     // The ground below the point along gravity; from a little above it too, for points just under the surface.
-                    World& w = impl.world();
-                    std::optional< Hit > hit = w.ray(world, down, 50000.0f);
-                    if (!hit) hit = w.ray(world - down * 1500.0f, down, 51500.0f);
-                    if (!hit) {
-                        fail("no-ground", where + ": no ground below " + Json::write(vecJson(world, 0)) + " along gravity " + Json::write(vecJson(down, 3)) +
-                                              " (" + gravitySource + ")",
-                             "move the point over a planet, give \"down\": [x,y,z], or check `colliders`", {}, where + ".on_ground");
-                    }
+                    float lifted = 0;
+                    const Hit ground = groundBelow(impl.world(), model, world, down, gravitySource, where + ".on_ground", &lifted);
+                    const Hit* hit = &ground;
                     const float height = op.has("height") ? static_cast< float >(op["height"].asNumber()) : 0.0f;
                     world = hit->point - down * height;
                     groundInfo = Json::Value::object();
                     groundInfo.set("ground", vecJson(hit->point, 1));
                     groundInfo.set("on", rowRef(model, hit->row));
                     groundInfo.set("gravity", gravitySource);
+                    if (lifted > 0) groundInfo.set("lifted", std::round(lifted * 10.0f) / 10.0);
                     groundInfo.set("ref", rowRef(model, row));
                     placements.push(groundInfo);
                 }
@@ -485,7 +512,11 @@ namespace {
                 return impl.world().gravityAt(model, at).down * -1.0f;
             };
             if (shape == "line" || shape == "arc") {
-                const G::V3 a = parseVec(op["from"], where + ".from"), b = parseVec(op["to"], where + ".to");
+                // "start"/"end" (Python-friendly); "from"/"to" are accepted too.
+                const char* startKey = op.has("start") ? "start" : "from";
+                const char* endKey = op.has("end") ? "end" : "to";
+                if (!op.has(startKey) || !op.has(endKey)) fail("bad-args", where + ": a " + shape + " needs \"start\" and \"end\"", "", {"start", "end"}, where);
+                const G::V3 a = parseVec(op[startKey], where + "." + startKey), b = parseVec(op[endKey], where + "." + endKey);
                 const int n = count(G::length(b - a));
                 const float peak = shape == "arc" ? static_cast< float >(op.has("peak") ? op["peak"].asNumber() : 500.0) : 0.0f;
                 const G::V3 up = shape == "arc" ? upAt((a + b) * 0.5f) : G::V3{0, 1, 0};
@@ -609,10 +640,9 @@ namespace {
                     // As the Browser places: in the zone that owns the ground below (if it is placed).
                     const G::V3 p = parseVec(op["pos"], where + ".pos");
                     const G::V3 down = op.has("down") ? G::normalized(parseVec(op["down"], where + ".down"), {0, -1, 0}) : impl.world().gravityAt(model, p).down;
-                    std::optional< Hit > hit = impl.world().ray(p, down, 50000.0f);
-                    if (!hit) hit = impl.world().ray(p - down * 1500.0f, down, 51500.0f);
+                    const Hit hit = groundBelow(impl.world(), model, p, down, "the gravity there", where + ".on_ground");
                     int hitZone = 0, hitTable = 0;
-                    if (hit && model.locate(hit->row, &hitZone, &hitTable)) zone = hitZone;
+                    if (model.locate(hit.row, &hitZone, &hitTable)) zone = hitZone;
                 }
                 std::string table;
                 if (like.valid() && !op.has("layer") && !op.has("missions") && !op.has("class")) {
@@ -668,10 +698,8 @@ namespace {
                     }
                     if (op["on_ground"].asBool()) {
                         const G::V3 down = op.has("down") ? G::normalized(parseVec(op["down"], where + ".down"), {0, -1, 0}) : impl.world().gravityAt(model, p.pos).down;
-                        std::optional< Hit > hit = impl.world().ray(p.pos, down, 50000.0f);
-                        if (!hit) hit = impl.world().ray(p.pos - down * 1500.0f, down, 51500.0f);
-                        if (!hit) fail("no-ground", at + ": no ground below the point", "", {}, at);
-                        const G::V3 moved = hit->point - down * static_cast< float >(op["height"].asNumber(0));
+                        const Hit hit = groundBelow(impl.world(), model, p.pos, down, "the gravity there", at);
+                        const G::V3 moved = hit.point - down * static_cast< float >(op["height"].asNumber(0));
                         p.in = p.in + (moved - p.pos);
                         p.out = p.out + (moved - p.pos);
                         p.pos = moved;
@@ -719,7 +747,7 @@ namespace {
                 if (!op.has("path")) fail("bad-args", where + ": link needs \"path\": a path ref", "", {}, where);
                 for (RowId row : impl.resolveTargets(op, where)) linkRail(row, op["path"], where + ".path");
             } else if (kind == "array") {
-                checkKeys(op, with({"op", "class", "zone", "layer", "missions", "like", "preset", "as", "force", "shape", "from", "to", "count", "spacing",
+                checkKeys(op, with({"op", "class", "zone", "layer", "missions", "like", "preset", "as", "force", "shape", "start", "end", "from", "to", "count", "spacing",
                                     "center", "radius", "start_angle", "points", "origin", "size", "peak", "closed", "rot", "face_along"},
                                    {"args", "switches", "links", "fields", "on_ground", "height", "down", "align", "up", "front", "turn", "scale"}),
                           where);
@@ -729,7 +757,7 @@ namespace {
                 for (std::size_t i = 0; i < points.size(); i++) {
                     Json::Value add = Json::Value::object();
                     for (const auto& [k, v] : op.members()) {
-                        static const std::set< std::string > kShape = {"shape", "from", "to", "count", "spacing", "center", "radius", "start_angle",
+                        static const std::set< std::string > kShape = {"shape", "start", "end", "from", "to", "count", "spacing", "center", "radius", "start_angle",
                                                                       "points", "origin", "size", "peak", "closed", "as", "face_along"};
                         if (!kShape.count(k)) add.set(k, v);
                     }

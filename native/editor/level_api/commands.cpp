@@ -99,12 +99,12 @@ namespace {
              S(R"({"type":"object","required":["op"],"properties":{"op":{"const":"add"},"class":{"type":"string"},"zone":{"type":["string","integer"]},"layer":{"type":"string"},"missions":{"type":"array","items":{"type":"integer"}},"like":{},"preset":{"type":"string"},"as":{"type":"string"},"force":{"type":"boolean"},"pos":{"type":"array"},"zone_pos":{"type":"array"},"rot":{"type":"array"},"up":{"type":"array"},"front":{"type":"array"},"turn":{"type":"number"},"scale":{},"args":{"type":"object"},"switches":{"type":"object"},"links":{"type":"object"},"fields":{"type":"object"}}})"),
              R"({"op": "add", "class": "PowerStar", "pos": [0, 1500, 0], "args": {"Star ID": 1}, "as": "star"})", true},
             {"array", "Many copies of one add along a shape: line, arc (a coin arc), ring, grid, path (a polyline); each may snap to the ground",
-             "shape    string  line | arc | ring | grid | path\nline/arc: from [x,y,z], to [x,y,z], count | spacing; arc: peak (height at the middle, along -gravity)\n"
+             "shape    string  line | arc | ring | grid | path\nline/arc: start [x,y,z], end [x,y,z] (or from/to), count | spacing; arc: peak (height at the middle, along -gravity)\n"
              "ring:    center, radius, count | spacing, start_angle (degrees), up/front (the plane)\ngrid:    origin (the centre), size [nx, nz], spacing n|[sx,sz], up/front\n"
              "path:    points [[x,y,z], ...], count | spacing, closed\nface_along bool  each copy faces the next\nas       string  labels as.0, as.1, ...\n"
              "and every add key (class, args, on_ground, height, ...)",
-             S(R"({"type":"object","required":["op","shape","class"],"properties":{"op":{"const":"array"},"shape":{"enum":["line","arc","ring","grid","path"]},"class":{"type":"string"},"from":{"type":"array"},"to":{"type":"array"},"count":{"type":"integer"},"spacing":{},"peak":{"type":"number"},"center":{"type":"array"},"radius":{"type":"number"},"start_angle":{"type":"number"},"origin":{"type":"array"},"size":{"type":"array"},"points":{"type":"array"},"closed":{"type":"boolean"},"face_along":{"type":"boolean"},"as":{"type":"string"}}})"),
-             R"({"op": "array", "class": "Coin", "shape": "arc", "from": [0, 1200, 0], "to": [1200, 1200, 0], "peak": 600, "count": 8, "as": "arc"})", true},
+             S(R"({"type":"object","required":["op","shape","class"],"properties":{"op":{"const":"array"},"shape":{"enum":["line","arc","ring","grid","path"]},"class":{"type":"string"},"start":{"type":"array"},"end":{"type":"array"},"from":{"type":"array"},"to":{"type":"array"},"count":{"type":"integer"},"spacing":{},"peak":{"type":"number"},"center":{"type":"array"},"radius":{"type":"number"},"start_angle":{"type":"number"},"origin":{"type":"array"},"size":{"type":"array"},"points":{"type":"array"},"closed":{"type":"boolean"},"face_along":{"type":"boolean"},"as":{"type":"string"}}})"),
+             R"({"op": "array", "class": "Coin", "shape": "arc", "start": [0, 1200, 0], "end": [1200, 1200, 0], "peak": 600, "count": 8, "as": "arc"})", true},
             {"path", "Make a path (rail) from world points, smooth by default; label it to link objects to it",
              "points    [[x,y,z] | {pos, in, out}]  2+ points, world space (in/out: explicit Bezier handles)\nzone      string  the zone it belongs to (objects link to rails of their own zone; default the galaxy's)\n"
              "closed    bool\nsmooth    bool    Catmull-Rom handles where none are given (default true)\non_ground bool    each point onto the ground (with height, down)\nas        string  a label",
@@ -158,6 +158,7 @@ const std::vector< std::pair< std::string, std::string > >& errorCodes() {
         {"no-fix", "a check has no automatic fix"},
         {"capacity", "a limit was reached (zone switches)"},
         {"no-ground", "on_ground found no collision below the point along gravity"},
+        {"inside-collision", "on_ground started inside a collider (message says how far below its surface; raise the point)"},
         {"unknown-command", "no command by that name"},
         {"unknown-galaxy", "no galaxy by that name on the disc"},
         {"bad-disc", "no extracted disc at the path"},

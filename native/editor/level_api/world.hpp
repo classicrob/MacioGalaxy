@@ -41,6 +41,10 @@ public:
     /// The first surface along the ray (dir normalized); frontOnly: only surfaces facing the ray (ground seen from above).
     std::optional< Hit > ray(G::V3 origin, G::V3 dir, float maxDistance, bool frontOnly = true) const;
     std::optional< Hit > nearest(G::V3 point, float maxDistance) const;
+    /// The point is inside a collider: the nearest surfaces above and below it (along `down`) both face away
+    /// from it. Returns the surface above (its row, how far above). Placement refuses such points (an origin
+    /// inside a planet would otherwise snap to whatever lies below it).
+    std::optional< Hit > insideOf(G::V3 point, G::V3 down) const;
     Gravity gravityAt(const EditModel& model, G::V3 point) const;
 
     struct Collider {

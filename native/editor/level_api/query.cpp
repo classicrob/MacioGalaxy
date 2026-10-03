@@ -1,6 +1,8 @@
 // Queries: refs and selectors, classes by any name, objects as JSON (level_api.hpp).
 #include "level_internal.hpp"
 
+#include <petari/editor/paths.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -428,6 +430,31 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
                 o.set("zone_pos", vecJson(v3(t.pos), 1));
                 o.set("zone_rot", vecJson(v3(t.dirDeg), 2));
             }
+        }
+    }
+    // A rail (jmp/path/commonpathinfo): its points in world space (summaries: the count and the first point).
+    if (std::string(model->tablePath(zone, table)) == "jmp/path/commonpathinfo") {
+        for (const Paths::Rail& rail : Paths::collect(*model)) {
+            if (rail.row != row) continue;
+            const Frame f = zoneFrame(*model, zone);
+            if (!rail.points.empty()) o.set("pos", vecJson(toWorld(f, v3(rail.points.front().position)), 1));
+            o.set("rail_id", rail.id);
+            if (!full) {
+                o.set("points", static_cast< int >(rail.points.size()));
+                break;
+            }
+            o.set("closed", rail.closed);
+            Json::Value points = Json::Value::array();
+            for (const Paths::Point& p : rail.points) {
+                Json::Value j = Json::Value::object();
+                j.set("ref", rowRef(*model, p.row));
+                j.set("pos", vecJson(toWorld(f, v3(p.position)), 1));
+                j.set("in", vecJson(toWorld(f, v3(p.incoming)), 1));
+                j.set("out", vecJson(toWorld(f, v3(p.outgoing)), 1));
+                points.push(std::move(j));
+            }
+            o.set("points", std::move(points));
+            break;
         }
     }
     Json::Value missions = Json::Value::array();
