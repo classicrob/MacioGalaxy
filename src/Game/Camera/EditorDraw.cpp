@@ -28,6 +28,7 @@
 #include <cstdlib>
 #include <petari/editor/array.hpp>
 #include <petari/host_allocation.hpp>
+#include <petari/j3d_overrides.hpp>
 
 namespace {
     // A flat colour, blended over what is there; no textures, no lighting.
@@ -144,7 +145,9 @@ namespace {
                 PSMTXConcat(saved, delta, j3dSys.mViewMtx);
                 model->viewCalc();
                 setupFlat(GXColor{100, 235, 230, 110}, GX_LEQUAL);
+                const bool immediate = PetariNative::J3D::setImmediateMatrixLoads(true);
                 drawShapes(actor);
+                PetariNative::J3D::setImmediateMatrixLoads(immediate);
                 PSMTXCopy(saved, j3dSys.mViewMtx);
                 model->viewCalc();
             } else {

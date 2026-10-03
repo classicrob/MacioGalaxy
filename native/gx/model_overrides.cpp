@@ -8,15 +8,26 @@
 
 namespace {
     PetariNative::J3D::ShapePacketTexMtxLoader sShapePacketTexMtxLoader = nullptr;
+    bool sImmediateMatrixLoads = false;
 }  // namespace
 
 void PetariNative::J3D::setShapePacketTexMtxLoader(ShapePacketTexMtxLoader loader) {
     sShapePacketTexMtxLoader = loader;
 }
 
+bool PetariNative::J3D::setImmediateMatrixLoads(bool enabled) {
+    const bool previous = sImmediateMatrixLoads;
+    sImmediateMatrixLoads = enabled;
+    return previous;
+}
+
+bool PetariNative::J3D::immediateMatrixLoads() {
+    return sImmediateMatrixLoads;
+}
+
 void J3DShapeMtx::loadMtxIndx_PNGP(int slot, u16 index) const {
-    J3DFifoLoadIndx(0x20, index, 0xB000 | static_cast< u16 >(slot * 12));
-    J3DFifoLoadNrmMtxIndx3x3(index, slot * 3);
+    j3dSys.loadPosMtxIndx(slot, index);
+    j3dSys.loadNrmMtxIndx(slot, index);
     if (sShapePacketTexMtxLoader != nullptr) {
         sShapePacketTexMtxLoader(j3dSys.getShapePacket(), slot, index);
     }
