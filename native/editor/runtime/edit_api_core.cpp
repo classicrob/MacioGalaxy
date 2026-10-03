@@ -169,3 +169,27 @@ namespace Core {
 }  // namespace Core
 
 }  // namespace PetariEditor
+
+namespace PetariEditor {
+namespace {
+    Core::NewGalaxyServices gNewGalaxy;
+}
+
+void Core::setNewGalaxyServices(const NewGalaxyServices& services) {
+    gNewGalaxy = services;
+}
+
+const NewGalaxyChoices& newGalaxyChoices() {
+    static const NewGalaxyChoices sNone;
+    return gNewGalaxy.choices != nullptr ? gNewGalaxy.choices() : sNone;
+}
+
+std::string newGalaxyInternalName(const std::string& name) {
+    return gNewGalaxy.internalName != nullptr ? gNewGalaxy.internalName(name) : std::string();
+}
+
+std::string checkNewGalaxyName(const std::string& internalName) {
+    return gNewGalaxy.check != nullptr ? gNewGalaxy.check(internalName) : std::string("new galaxies need the game running");
+}
+
+}  // namespace PetariEditor

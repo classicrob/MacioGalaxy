@@ -8,6 +8,7 @@
 #include "model_io.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
+#include "new_galaxy_session.hpp"
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/paths.hpp>
 
@@ -568,11 +569,17 @@ namespace {
                     enqueue(std::move(commands[j]));
                 }
             };
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy) {  // from Edit, or from Level Select with no model
+                if (!createNewGalaxy(command.newGalaxy, s.model && status().unsaved, &error)) {
+                    Core::reportError("New galaxy: " + error);
+                }
+                continue;
+            }
             if (!s.model) {
                 Core::reportError("No galaxy is loaded for editing");
                 continue;
             }
-            std::string error;
             switch (command.kind) {
             case Command::Kind::Apply: {
                 PetariNative::HostAllocationScope host;
@@ -734,6 +741,9 @@ bool reloading() {
 void plainReloadTestTick(bool playable);  // reload_test.cpp (PETARI_EDITOR_PLAIN_RELOAD_TEST)
 
 void tick(bool playable) {
+    static const bool sNewGalaxyServices = (registerNewGalaxyServices(), true);
+    (void)sNewGalaxyServices;
+    newGalaxyTick();
     plainReloadTestTick(playable);
     // A plain reloadScene() completes whether or not the editor is on.
     if (session().plainReload && Hooks::sceneSerial() != session().reloadFromScene && playable) {
@@ -763,7 +773,18 @@ void tick(bool playable) {
         }
     }
     if (!s.model) {
-        Core::drainCommands();
+        // Only a new galaxy can be made without one (Level Select's New galaxy).
+        std::vector< Command > commands;
+        {
+            PetariNative::HostAllocationScope host;
+            commands = Core::drainCommands();
+        }
+        for (Command& command : commands) {
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy && !createNewGalaxy(command.newGalaxy, false, &error)) {
+                Core::reportError("New galaxy: " + error);
+            }
+        }
         Core::runUiSeamHook();
         return;
     }
