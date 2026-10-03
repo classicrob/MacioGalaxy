@@ -23,6 +23,7 @@ extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsign
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <filesystem>
 #include <fstream>
 #ifdef PETARI_EDITOR_UI
 #include <aurora/imgui.h>
@@ -656,6 +657,30 @@ App::FrameStats::Phase framePhaseForPipelines() {
                         sClickAt = -1;  // done
                     }
                     if (t == 599 && sClickAt == 0) std::fputs("[editor-test] sdl pick: no off-centre object on screen\n", stderr);
+                }
+#endif
+#ifdef PETARI_EDITOR_UI
+                // PETARI_EDITOR_TEST_SHARE=1 (UX section 17): save the mod, export it with the Share sheet into
+                // PETARI_EDITOR_SHARE_DIR, then install that zip through the Install sheet (it is installed already,
+                // so the second press replaces it). The log shows each step.
+                if (std::getenv("PETARI_EDITOR_TEST_SHARE") != nullptr) {
+                    if (t == 196) PetariEditor::Ui::openSaveSheet();
+                    if (t == 200) PetariEditor::Ui::submitSaveSheet();
+                    if (t == 206) PetariEditor::Ui::openShareSheetForTest();
+                    if (t == 212) PetariEditor::Ui::submitShareSheet();
+                    if (t == 222) {
+                        std::string zip;
+                        std::error_code ec;
+                        if (const char* dir = std::getenv("PETARI_EDITOR_SHARE_DIR")) {
+                            for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+                                if (entry.path().extension() == ".zip") zip = entry.path().string();
+                            }
+                        }
+                        std::fprintf(stderr, "[editor-test] share: zip %s\n", zip.empty() ? "(none)" : zip.c_str());
+                        if (!zip.empty()) PetariEditor::Ui::openInstallSheet(zip.c_str());
+                    }
+                    if (t == 228) PetariEditor::Ui::submitInstallSheet();
+                    if (t == 234) PetariEditor::Ui::submitInstallSheet();  // "Replace it"
                 }
 #endif
                 // PETARI_EDITOR_TEST_MISSION=<n>: switch to mission n as the toolbar's chip does, then leave later.
