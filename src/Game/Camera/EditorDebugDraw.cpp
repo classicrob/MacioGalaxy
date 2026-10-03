@@ -32,7 +32,7 @@ namespace PetariEditor::DebugDraw {
                 const u8 width = lineWidth(mesh.lines[base].width);
                 const std::size_t end = lineBatchEnd(mesh.lines, base);
                 assert(end > base && (end - base) * 4 <= kMaxBatchVertices);
-                if (!EditorDraw::spendBytes(static_cast< std::uint32_t >((end - base) * 12 + 16))) {
+                if (!EditorDraw::spendBytes(16)) {
                     break;
                 }
                 GXSetLineWidth(width, GX_TO_ZERO);
