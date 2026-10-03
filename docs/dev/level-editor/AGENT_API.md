@@ -385,3 +385,15 @@ with lv.batch(label="Gravity and platform") as b:
     b.add("EditorBrush", [0, 2000, 0], scale=[0.5, 0.1, 0.5],
           args={"Shape": "Box", "Gravity": "Down only"}, label="platform")
 ```
+
+### Ground arrays and heading
+
+`ground_array` takes the same shapes and add keys as `array`, and always snaps to ground. Both it and `array` with `on_ground: true` probe **all** candidate points against the pre-array world before creating any copy. Earlier copies, including overlapping brushes, cannot become the ground for later copies. If any ray fails or starts inside collision, the batch creates nothing. `height` is clearance along the opposite of gravity; per-copy `placements` identify the ground collider and hit.
+
+`front` is a world-space heading hint. With ground alignment, it is projected onto the plane perpendicular to gravity, preserving the intended heading. `face_along` derives the hint from the next grounded point. Explicit `up` overrides gravity alignment; `align: false` keeps normal transform semantics. Python exposes `Batch.ground_array`.
+
+```python
+with lv.batch(label="Ground coins") as b:
+    b.ground_array("Coin", "line", start=[-1000, 2000, 0], end=[1000, 2000, 0],
+                   count=8, height=100, down=[0, -1, 0], front=[1, 0, 0])
+```

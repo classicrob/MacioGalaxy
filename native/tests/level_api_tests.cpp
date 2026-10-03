@@ -64,6 +64,29 @@ bool hasCandidate(const Value& reply, const std::string& text) {
 double ms(std::chrono::steady_clock::time_point since) {
     return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now() - since).count();
 }
+    void testGroundArrays(const L::OpenOptions& originalOptions) {
+        auto options = originalOptions;
+        options.user /= "ground_arrays";
+        L::Error error;
+        auto level = L::Level::open(options, &error);
+        check(level != nullptr, "ground array test open: " + error.message);
+        auto& lv = *level;
+        check(ok(call(lv, "apply", R"({"ops":[{"op":"add","class":"EditorBrush","pos":[0,50000,0],"scale":[0.6,0.1,0.6],"args":{"Shape":"Box","Gravity":"Stage"},"as":"ground"}]})"), "ground brush"), "controlled ground for array test");
+        Value placed = call(lv, "apply", R"({"ops":[{"op":"ground_array","class":"EditorBrush","shape":"ring","center":[0,50500,0],"radius":50,"count":3,"height":50,"down":[0,-1,0],"front":[1,0,1],"scale":[0.15,0.1,0.15],"args":{"Shape":"Box","Gravity":"Stage"},"as":"copies"}]})");
+        check(ok(placed, "ground array") && placed["placements"].items().size() == 3, "ground array reports each preflight hit");
+        for (int i = 0; i < 3; ++i) {
+            Value args = Value::object(); args.set("ref", "@copies." + std::to_string(i));
+            const Value copy = lv.call("get", args);
+            check(std::fabs(copy["pos"].items()[1].asNumber() - 50150) < .1, "overlapping copies all use original ground, not earlier copies");
+            check(std::fabs(copy["rot"].items()[1].asNumber() - 45) < .1, "front retains projected heading while standing against gravity");
+            check(placed["placements"].items()[i]["on"].asString() == call(lv, "get", R"({"ref":"@ground"})")["ref"].asString(), "placement evidence names original collider");
+        }
+        const auto before = lv.journal();
+        Value failed = call(lv, "apply", R"({"ops":[{"op":"ground_array","class":"Coin","shape":"line","start":[0,50500,0],"end":[5000,50500,0],"count":2,"down":[0,-1,0],"as":"missing"}]})");
+        check(failed["error"]["code"].asString() == "no-ground" && show(lv.journal()) == show(before), "one missing probe refuses the entire ground array");
+        check(call(lv, "apply", R"({"ops":[{"op":"ground_array","class":"Coin","shape":"ring","center":[0,50500,0],"radius":50,"count":2,"down":[0,0,0]}]})")["error"]["code"].asString() == "bad-value", "zero gravity ray direction is rejected");
+    }
+
     void testGravityEdits(const L::OpenOptions& originalOptions) {
         auto options = originalOptions;
         options.user /= "gravity";
@@ -493,6 +516,7 @@ int main() {
 
     testPathEdits(options);
     testGravityEdits(options);
+    testGroundArrays(options);
     fs::remove_all(user);
     std::printf("petari_level: %d checks passed\n", sChecks);
     return 0;

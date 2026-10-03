@@ -101,6 +101,12 @@ class Batch:
         self.ops.append(_clean({"op": "array", "class": cls, "shape": shape, "as": name, **_vectors(kw)}))
         return "@" + name
 
+    def ground_array(self, cls: str, shape: str, *, label: Optional[str] = None, **kw: Any) -> str:
+        """Probe every copy before placing any; fail atomically if any ground ray fails."""
+        name = self._label(label)
+        self.ops.append(_clean({"op": "ground_array", "class": cls, "shape": shape, "as": name, **_vectors(kw)}))
+        return "@" + name
+
     def path(self, points: Sequence[Any], *, label: Optional[str] = None, **kw: Any) -> str:
         """A rail through world points ([x,y,z] or {"pos", "in", "out"}); kw: zone, closed, smooth,
         on_ground, height, down. Returns "@label" (link objects to it with link() or add(path=...))."""

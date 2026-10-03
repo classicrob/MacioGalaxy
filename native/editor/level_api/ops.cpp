@@ -1030,7 +1030,7 @@ namespace {
                     fail("bad-args", where + ": link needs \"path\": a path ref", "", {}, where);
                 for (RowId row : impl.resolveTargets(op, where))
                     linkRail(row, op["path"], where + ".path");
-            } else if (kind == "array") {
+            } else if (kind == "array" || kind == "ground_array") {
                 checkKeys(op,
                           with({"op",          "class",  "zone",  "layer",  "missions", "like",  "preset",  "as",     "force",
                                 "shape",       "start",  "end",   "from",   "to",       "count", "spacing", "center", "radius",
@@ -1040,6 +1040,36 @@ namespace {
                 const std::vector< G::V3 > points = arrayPoints(op, where);
                 if (points.size() > 500)
                     fail("bad-value", where + ": " + std::to_string(points.size()) + " objects is too many for one array (500)", "", {}, where);
+                if (kind == "ground_array" && op.has("on_ground") && !op["on_ground"].asBool())
+                    fail("bad-args", where + ": ground_array always snaps to ground", "use array without on_ground", {}, where + ".on_ground");
+                const bool snap = kind == "ground_array" || op["on_ground"].asBool();
+                const double height = op["height"].asNumber(0);
+                if (snap && ((op.has("height") && op["height"].type() != Json::Value::Type::Number) || !std::isfinite(height)))
+                    fail("bad-value", where + ".height must be finite", "", {}, where + ".height");
+                // Resolve every ground hit before creating any row. Earlier copies cannot
+                // become the ground for later copies, including overlapping brush arrays.
+                std::vector<G::V3> placed = points, downs;
+                std::vector<Hit> hits;
+                std::vector<Json::Value> probeInfo;
+                for (std::size_t i = 0; snap && i < points.size(); ++i) {
+                    const std::string at = where + "[" + std::to_string(i) + "]";
+                    const auto gravity = impl.world().gravityAt(model, points[i]);
+                    const G::V3 requestedDown = op.has("down") ? parseVec(op["down"], at + ".down") : gravity.down;
+                    if (G::length(requestedDown) < 1e-6f)
+                        fail("bad-value", at + ".down must be nonzero", "", {}, at + ".down");
+                    const G::V3 down = G::normalized(requestedDown);
+                    float lifted = 0;
+                    const Hit hit = groundBelow(impl.world(), model, points[i], down, gravity.source, at + ".on_ground", &lifted);
+                    placed[i] = hit.point - down * static_cast<float>(height);
+                    downs.push_back(down);
+                    hits.push_back(hit);
+                    Json::Value detail = Json::Value::object();
+                    detail.set("ground", vecJson(hit.point, 1));
+                    detail.set("on", rowRef(model, hit.row));
+                    detail.set("gravity", op.has("down") ? "given" : gravity.source);
+                    if (lifted > 0) detail.set("lifted", std::round(lifted * 10) / 10.0);
+                    probeInfo.push_back(std::move(detail));
+                }
                 const std::string as = op["as"].asString();
                 for (std::size_t i = 0; i < points.size(); i++) {
                     Json::Value add = Json::Value::object();
@@ -1051,14 +1081,29 @@ namespace {
                             add.set(k, v);
                     }
                     add.set("op", "add");
-                    add.set("pos", vecJson(points[i], 3));
+                    add.set("pos", vecJson(placed[i], 3));
+                    if (snap) {
+                        add.set("on_ground", false);
+                        add.set("align", false);
+                        if ((!op.has("align") || op["align"].asBool()) && !op.has("up"))
+                            add.set("up", vecJson(downs[i] * -1.0f, 6));
+                        if (!op.has("zone")) {
+                            int zone = 0, table = 0;
+                            model.locate(hits[i].row, &zone, &table);
+                            add.set("zone", zone);
+                        }
+                    }
                     if (op["face_along"].asBool() && points.size() > 1) {
-                        const G::V3 next = i + 1 < points.size() ? points[i + 1] - points[i] : points[i] - points[i - 1];
+                        const G::V3 next = i + 1 < placed.size() ? placed[i + 1] - placed[i] : placed[i] - placed[i - 1];
                         add.set("front", vecJson(next, 4));
                     }
                     if (!as.empty())
                         add.set("as", as + "." + std::to_string(i));
                     run(add, where + "[" + std::to_string(i) + "]");
+                    if (snap) {
+                        probeInfo[i].set("ref", rowRef(model, created.back()));
+                        placements.push(std::move(probeInfo[i]));
+                    }
                 }
             } else if (kind == "set" || kind == "move" || kind == "rotate" || kind == "scale" || kind == "transform") {
                 checkKeys(op, with({"op", "ref", "refs", "select"}, kEditKeys), where);

@@ -135,6 +135,10 @@ namespace {
              S(R"({"type":"object","required":["op","class"],"properties":{"op":{"const":"array"},"shape":{"enum":["line","arc","ring","grid","path"]},"class":{"type":"string"},"start":{"type":"array"},"end":{"type":"array"},"from":{"type":"array"},"to":{"type":"array"},"count":{"type":"integer"},"spacing":{},"peak":{"type":"number"},"center":{"type":"array"},"radius":{"type":"number"},"start_angle":{"type":"number"},"origin":{"type":"array"},"size":{"type":"array"},"points":{"type":"array"},"along":{},"closed":{"type":"boolean"},"face_along":{"type":"boolean"},"as":{"type":"string"}}})"),
              R"({"op": "array", "class": "Coin", "shape": "arc", "start": [0, 1200, 0], "end": [1200, 1200, 0], "peak": 600, "count": 8, "as": "arc"})",
              true},
+            {"ground_array", "Probe all placements first, then add a ground-snapped array in one transaction",
+             "The array keys: class, shape | along, shape coordinates, count | spacing, height, down, align, front, face_along and add keys. All rays use the world before any copies are created. on_ground cannot be false.",
+             S(R"({"type":"object","required":["op","class"],"properties":{"op":{"const":"ground_array"},"class":{"type":"string"},"shape":{"enum":["line","arc","ring","grid","path"]},"along":{},"height":{"type":"number"},"down":{"type":"array"},"front":{"type":"array"},"align":{"type":"boolean"}}})"),
+             R"({"op":"ground_array","class":"Coin","shape":"line","start":[0,3000,0],"end":[1000,3000,0],"count":6,"height":100,"front":[1,0,0]})", true},
             {"path", "Make a path (rail) from world points, smooth by default; label it to link objects to it",
              "points    [[x,y,z] | {pos, in, out}]  2+ points, world space (in/out: explicit Bezier handles)\nzone      string  the zone it "
              "belongs to (objects link to rails of their own zone; default the galaxy's)\n"
@@ -146,7 +150,7 @@ namespace {
              "ref | refs | select  gravity fields\nshape  Point | Cube | Cone | Disk | Torus | Parallel | Segment | Wire\nbound  Sphere | Box | Cylinder (Parallel only)",
              S(R"({"type":"object","required":["op","shape"],"properties":{"op":{"const":"gravity-shape"},"ref":{},"refs":{"type":"array"},"select":{"type":"object"},"shape":{"enum":["Point","Cube","Cone","Disk","Torus","Parallel","Segment","Wire"]},"bound":{"enum":["Sphere","Box","Cylinder"]}}})"),
              R"({"op":"gravity-shape","ref":"@gravity","shape":"Parallel","bound":"Box"})", true},
-            {"gravity-values", "Edit gravity values with the editor's canonical numeric op", 
+            {"gravity-values", "Edit gravity values with the editor's canonical numeric op",
              "ref | refs | select  gravity fields\nvalues  object: Range, Distant, Priority, Inverse, Obj_arg0..7. Integers for Priority, Inverse and args; Inverse also takes bool. Range < 0 becomes -1; Distant/Priority clamp to 0.",
              S(R"({"type":"object","required":["op","values"],"properties":{"op":{"const":"gravity-values"},"ref":{},"refs":{"type":"array"},"select":{"type":"object"},"values":{"type":"object","minProperties":1}}})"),
              R"({"op":"gravity-values","ref":"@gravity","values":{"Range":3000,"Distant":0,"Priority":2,"Inverse":false}})", true},
