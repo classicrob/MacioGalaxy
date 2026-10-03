@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--stage', default='EggStarGalaxy')
     parser.add_argument('--owner', default='editor-paths')
+    parser.add_argument('--idle-frames', type=int, default=1200)
     parser.add_argument('--source-class', help='Require a visible model of this class for the preview capture')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
@@ -30,7 +31,7 @@ def main():
     (output / 'revision.txt').write_text(subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True)
                                        + hashlib.sha256(app.read_bytes()).hexdigest() + '\n')
     env = dict(os.environ, PETARI_SMOKE='stage', PETARI_STAGE=args.stage, PETARI_SCENARIO='1',
-               PETARI_SMOKE_FRAMES='12000', PETARI_STAGE_IDLE_FRAMES='1200', PETARI_STAGE_GATE_MS='0',
+               PETARI_SMOKE_FRAMES='12000', PETARI_STAGE_IDLE_FRAMES=str(max(400, args.idle_frames)), PETARI_STAGE_GATE_MS='0',
                PETARI_FAST_BOOT='1', PETARI_PIPELINE_GLOBAL_PRECOMPILE='0', PETARI_LOCK_CLASS='functional',
                PETARI_MODS='LevelEditor', PETARI_EDITOR_ARRAY_TEST=str(output),
                PETARI_SURFACE_DUMP=str(output / 'surfaces'),
