@@ -228,7 +228,7 @@ namespace {
         if (found < 0) return -1;
         const std::string points = "/commonpathpointinfo." + std::to_string(found);
         for (int t = 0; t < m.tableCount(zone); t++) {
-            if (endsWith(m.tablePath(zone, t), points)) {
+            if (endsWith(m.tablePath(zone, t), points.c_str())) {
                 int count = 0;
                 m.forEachRow(zone, t, [&](RowId row) { count += m.state(row) != RowState::Deleted; });
                 return count;
