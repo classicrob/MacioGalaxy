@@ -1,3 +1,4 @@
+#include "help.hpp"
 #include "array.hpp"
 #include "imgui.h"
 #include "panels.hpp"
@@ -176,7 +177,7 @@ namespace PetariEditor::Ui {
         const bool inside = mouse.x >= x && mouse.x < x + width && mouse.y >= y && mouse.y < y + height;
         const bool hot = inside && !io.WantCaptureMouse && view.handleVisible && std::hypot(mouse.x - center.x, mouse.y - center.y) < 12;
         if (view.handleVisible) {
-            auto* draw = ImGui::GetForegroundDrawList();
+            auto* draw = viewportDrawList();
             draw->PushClipRect({x, y}, {x + width, y + height}, true);
             draw->AddCircleFilled(center, hot || dragging ? 8 : 6, IM_COL32(100, 235, 230, 255));
             draw->AddCircle(center, 10, IM_COL32(3, 35, 50, 255), 0, 2);

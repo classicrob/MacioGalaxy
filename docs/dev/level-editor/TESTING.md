@@ -115,3 +115,13 @@ the placement request and game adapter; it does not simulate clicking the Browse
 The runner records source and binary hashes, captures both new objects, stops its
 server and removes its fixture cache. `native_editor_placement` covers catalog
 metadata, typed link resets, donor preservation, and destination-layer visibility.
+
+### Editor help
+
+`native/tools/editor_help_smoke.py --app <Petari> --output build/<your-help-run>`
+uses a private Good Egg fixture and the real SDL toolbar-click path. It opens Keys and tips,
+records the overlay and the six-mission toolbar at the default 1280x720 window size, closes
+help and returns to play. Require both `[editor-help]` PASS lines and the stage PASS, then
+visually inspect the captures. The runner removes its cache. `native_editor_ui` separately
+checks the question-mark/typing/modifier gates, Escape ownership without cancelling tools,
+non-modal bounds and Focus-mode drawing. Screenshots remain in `build/`, not Git.
