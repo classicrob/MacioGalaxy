@@ -14,6 +14,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
+#include <unistd.h>
 #include <iterator>
 #include <string>
 #include <thread>
@@ -23,6 +25,7 @@
 #include "../app/spike_profiler.hpp"
 #include "../app/smoke.hpp"
 #include "petari/app.hpp"
+#include "petari/agent_replay.hpp"
 #include "petari/frame_telemetry.hpp"
 #include "petari/host_allocation.hpp"
 
@@ -41,6 +44,7 @@ void check(bool condition, const std::string& label) {
 
 std::vector<std::string> calls;
 int hostScopes = 0;
+std::uint64_t missingLayout = 0, missingSound = 0, manifestFailures = 0;
 bool hostScopeMissed = false;
 int beginFailures = 0;
 std::vector<std::vector<AuroraEvent>> updates;  // returned by successive aurora_update calls
@@ -219,13 +223,13 @@ bool SDL_GetWindowSize(SDL_Window*, int* w, int* h) {
 }
 // Smoke result gates in the seam; these tests never trip them.
 std::uint64_t petari_layout_missing_reference_count() {
-    return 0;
+    return missingLayout;
 }
 std::uint64_t petari_sound_missing_reference_count() {
-    return 0;
+    return missingSound;
 }
 std::uint64_t petari_gx_pipeline_manifest_failure_count() {
-    return 0;
+    return manifestFailures;
 }
 void petari_gx_pipeline_report() {}
 // The movement harness's Cappy tasks (src/Game/Player/MarioCappy.cpp).
@@ -575,9 +579,49 @@ void testSpikeProfiler() {
     unsetenv("PETARI_SPIKE_PROFILE");
     check(report.find("=== frame 7: 60.00 ms ===") != std::string::npos, "the kept spike is reported");
     const auto game = report.find("-- game (main): ");
-    check(game != std::string::npos && std::atoi(report.c_str() + game + 16) >= 20,
-          "the game thread was sampled through the spike");
+    check(game != std::string::npos && std::atoi(report.c_str() + game + 16) >= 20, "the game thread was sampled through the spike");
     check(report.find("spikeProfilerBusyWork") != std::string::npos, "samples are symbolized to the busy function");
+}
+
+void testReplayDiagnostics() {
+    namespace Replay = App::AgentReplay;
+    const auto route = std::filesystem::temp_directory_path() / ("editor-cli-seam-route-" + std::to_string(getpid()) + ".csv");
+    {
+        std::ofstream out(route);
+        out << "0,0,0,Walk\n100,0,0,Walk\n";
+    }
+    missingLayout = 5;
+    missingSound = 7;
+    manifestFailures = 11;
+    PetariNative::App::Smoke::smokeObservation = {};
+    auto& observation = PetariNative::App::Smoke::smokeObservation;
+    observation.scene = "Game";
+    observation.stage = "EggStarGalaxy";
+    observation.scenario = 1;
+    observation.sceneReady = true;
+    observation.videoConfigured = true;
+    observation.videoBlack = false;
+    observation.playerValid = true;
+    observation.playerOnGround = true;
+    observation.pausePermitted = true;
+    observation.playerX = 100;
+    std::string error;
+    check(Replay::start(route.string(), "EggStarGalaxy", 1, 1000, false, &error), "start live replay over prior unrelated diagnostic counts");
+    for (int frame = 0; frame < 500 && Replay::active(); ++frame)
+        petari_host_frame_seam();
+    check(Replay::finished() && Replay::passed(), "prior unrelated asset misses do not poison a later route");
+    ++missingLayout;
+    check(Replay::passed(), "a later unrelated miss cannot rewrite a completed verdict");
+    for (auto* counter : {&missingLayout, &missingSound, &manifestFailures}) {
+        check(Replay::start(route.string(), "EggStarGalaxy", 1, 1000, false, &error), "start another live replay");
+        ++*counter;
+        for (int frame = 0; frame < 500 && Replay::active(); ++frame)
+            petari_host_frame_seam();
+        check(Replay::finished() && !Replay::passed(), "an asset failure during this run fails its verdict");
+    }
+    Replay::cancel();
+    missingLayout = missingSound = manifestFailures = 0;
+    std::filesystem::remove(route);
 }
 
 }  // namespace
@@ -590,8 +634,14 @@ int main() {
     testFrameStats();
     testSeamTiming();
     testSpikeProfiler();
+    testReplayDiagnostics();
     std::printf("native app seam tests passed (%d checks)\n", checks);
     return 0;
 }
 
-namespace PetariNative::App { void recordRouteFrame(bool) {} void observeProgressFrame() {} }
+namespace PetariNative::App {
+    void recordRouteFrame(bool) {
+    }
+    void observeProgressFrame() {
+    }
+}  // namespace PetariNative::App

@@ -3,6 +3,9 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/AllLiveActorGroup.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
+#include "Game/Scene/TestServerEditor.hpp"
+#include "Game/Scene/TestServerReplay.hpp"
+#include <petari/agent_replay.hpp>
 #include "Game/Util/DemoUtil.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
@@ -109,6 +112,18 @@ namespace {
             std::fflush(stderr);
             _exit(0);
         }
+        if (TestServerReplay::run(name, w, playable, reply)) {
+            return true;
+        }
+        if (TestServerReplay::controlsActive() && w[0] != "mario" && w[0] != "editor-state" && w[0] != "editor-checks" &&
+            w[0] != "screenshot" && w[0] != "wait" && w[0] != "ground" && w[0] != "gravity") {
+            reply(name, R"(error {"code":"busy","message":"Playback owns the scene and controls","hint":"Cancel it before editing, warping or starting another plan","where":"playback"})");
+            return true;
+        }
+        // The live-editing and verification commands (TestServerEditor.cpp) also run in Edit mode.
+        if (TestServerEditor::run(name, w, playable, reply)) {
+            return true;
+        }
         {
             std::string inputReply;
             const TestServerInput::Result input = TestServerInput::start(name, line, playable, &inputReply);
@@ -205,6 +220,9 @@ namespace TestServer {
             }
         }
         const bool playable = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isPlayerDead();
+        if (TestServerEditor::tick(playable, reply)) {
+            return;
+        }
         if (gHavePending && gPending.isReload) {
             if (!PetariEditor::Runtime::reloading()) {
                 char text[160];

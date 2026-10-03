@@ -192,6 +192,12 @@ void testPanelsLogic() {
 
     // Placement tokens: example rows as they are, class placements with the high bit (EP-005).
     CHECK(!Ui::isClassToken(42) && Ui::isClassToken(Ui::kClassTokenBit | 3));
+    bool keepLinks = true;
+    PetariNative::EditorPick::place(42);
+    CHECK(PetariNative::EditorPick::takePlace(&keepLinks) == 42 && !keepLinks);
+    PetariNative::EditorPick::place(43, true);
+    CHECK(PetariNative::EditorPick::takePlace(&keepLinks) == 43 && keepLinks);
+    CHECK(PetariNative::EditorPick::takePlace(&keepLinks) == 0 && !keepLinks);
 
     // Share: the next version and the zip's name.
     CHECK(Ui::bumpVersion("") == "1.0" && Ui::bumpVersion("1.0") == "1.1" && Ui::bumpVersion("2.9") == "2.10" && Ui::bumpVersion("3") == "4");
