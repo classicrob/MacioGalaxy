@@ -30,7 +30,7 @@ def main():
     server = [sys.executable, str(TOOLS / "test_server.py")]
     try:
         subprocess.run(server + ["start", "--app", str(args.app.resolve()), "--dir", str(directory),
-                                "--owner", args.owner], env=env, check=True)
+                                "--owner", args.owner, "--warm-current-stage"], env=env, check=True)
         trigger.write_text("start\n")
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:

@@ -184,6 +184,7 @@ namespace {
     struct State {
         G::View view;
         D::Mesh mesh;
+        std::vector< std::pair< RowId, std::vector< D::Line > > > pickLines;
         std::uint32_t scene = ~0u;
         std::uint64_t revision = 0;
         unsigned frame = 0;
@@ -199,7 +200,7 @@ namespace {
         static State* s = new State;
         return *s;
     }
-    G::Probe probe(Vec3 point, bool ground) {
+    G::Probe probe(Vec3 point, bool ground, bool details = false) {
         G::Probe p;
         p.valid = true;
         p.position = point;
@@ -214,6 +215,8 @@ namespace {
         if (p.covered) {
             p.priority = info.mLargestPriority;
             p.winnerIdentity = reinterpret_cast< std::uintptr_t >(info.mGravityInstance);
+            if (!details)
+                return p;
             auto found = std::find_if(state().view.fields.begin(), state().view.fields.end(),
                                       [&](const auto& f) { return f.identity == reinterpret_cast< std::uintptr_t >(info.mGravityInstance); });
             p.name = std::string(G::shapeName(shapeOf(info.mGravityInstance))) + " gravity";
@@ -363,7 +366,7 @@ namespace EditorGravity {
         PetariNative::HostAllocationScope host;
         if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z))
             return {};
-        auto result = probe(position, false);
+        auto result = probe(position, false, true);
         if (result.covered && !result.winner.valid())
             forEachBoundRow([&](RowId row, LiveActor* actor) {
                 PlanetGravity* field = isGlobal(actor) ? static_cast< GlobalGravityObj* >(actor)->getGravity() : EditorTerrain::partGravity(actor);
@@ -461,7 +464,7 @@ namespace EditorGravity {
             point = add(c.eye, mul(ray, depth));
             hit = false;
         }
-        s.view.probe = probe(point, hit);
+        s.view.probe = probe(point, hit, true);
         if (hit) {
             s.view.probe.groundPosition = raw;
             s.view.probe.groundNormal = normal;
@@ -501,11 +504,14 @@ namespace EditorGravity {
             Runtime::invalidateChecks();
         }
         s.mesh = {};
+        s.pickLines.clear();
         if (G::visible()) {
             auto selected = PetariNative::EditorPick::selection();
             for (auto& f : s.view.fields) {
                 bool isSelected = std::any_of(selected.begin(), selected.end(), [&](const auto& item) { return item.row && item.row == f.row.v; });
                 auto mesh = G::geometry(f, isSelected);
+                if (f.row.valid())
+                    s.pickLines.emplace_back(f.row, mesh.lines);
                 s.mesh.lines.insert(s.mesh.lines.end(), mesh.lines.begin(), mesh.lines.end());
                 s.mesh.triangles.insert(s.mesh.triangles.end(), mesh.triangles.begin(), mesh.triangles.end());
             }
@@ -585,17 +591,14 @@ namespace EditorGravity {
         return false;
     }
     RowId pick(Vec3 eye, Vec3 ray, float* distance) {
-        if (!G::visible())
+        if (!G::visible() || state().scene != Hooks::sceneSerial())
             return {};
         RowId found;
         float best = 1e30f;
         // Closest approach to the visible field outlines; testing lines avoids swallowing every click
         // inside a planet-sized bounding sphere.
-        for (const auto& f : state().view.fields) {
-            if (!f.row.valid())
-                continue;
-            auto mesh = G::geometry(f);
-            for (auto& l : mesh.lines) {
+        for (const auto& field : state().pickLines) {
+            for (const auto& l : field.second) {
                 Vec3 v = sub(l.b, l.a), w = sub(eye, l.a);
                 float vv = dot(v, v), rv = dot(ray, v), den = vv - rv * rv;
                 if (vv < 1e-5f || den < 1e-5f)
@@ -609,7 +612,7 @@ namespace EditorGravity {
                 float tolerance = std::clamp(t * 0.007f, 12.0f, 100.0f);
                 if (length(sub(add(eye, mul(ray, t)), nearest)) < tolerance) {
                     best = t;
-                    found = f.row;
+                    found = field.first;
                 }
             }
         }
