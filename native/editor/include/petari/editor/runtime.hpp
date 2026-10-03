@@ -74,6 +74,11 @@ void registerPlayListener(PlayListener listener);
 /// Back to Edit now (a play-test star caught): `reason` becomes the notice ("Cleared in 0:42").
 /// False outside Play.
 bool requestEdit(const char* reason);
+/// True while an edit session exists (its model loaded, until End): progress made now is a
+/// play-test's and must not reach the player's real records. The save goes to a scratch copy,
+/// in-memory progress is restored at End, and other progress writers (progress.json, the mod
+/// galaxies' sidecars) skip their writes while this is true. Any thread.
+bool progressIsolated();
 /// GameScene::requestEndMissDemo: during a play-test a miss returns to Edit (an editor reload; no
 /// lives lost) instead of the game's restart. False (the game's own path) outside Play.
 bool interceptMiss();

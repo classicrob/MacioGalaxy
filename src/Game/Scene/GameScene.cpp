@@ -47,6 +47,7 @@ extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/EditorCameraPreview.hpp"
 #include "Game/Camera/EditorDraw.hpp"
 #include "Game/Camera/EditorGravity.hpp"
+#include "Game/Camera/EditorPlaytest.hpp"
 #include "Game/Camera/EditorThumbs.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
 #include "Game/Editor/EditorGalaxyTest.hpp"
@@ -215,7 +216,10 @@ void GameScene::update() {
     }
 #endif
 #ifdef PETARI_NATIVE
+    EditorPlaytest::init();  // M3 play-test: subscribe before the command drain.
     PetariEditor::Runtime::tick(isPermitToPauseMenu());  // the level editor's commands and SceneSync; nothing while it is off
+    EditorPlaytest::update(isPermitToPauseMenu());  // M3 play-test: sample once per game frame.
+    EditorPlaytest::testTick(isPermitToPauseMenu());  // M3 play-test: opt-in live checks.
     EditorGravity::testTick(isPermitToPauseMenu());  // M3 gravity: opt-in live smoke.
     EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
     EditorTerrainTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_TERRAIN_TEST
