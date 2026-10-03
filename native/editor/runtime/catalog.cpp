@@ -77,6 +77,10 @@ namespace {
         if (e.has("appearSound")) info.appearSound = e["appearSound"].asString();
         if (e.has("table")) info.table = e["table"].asString();
         if (e.has("hasCollision")) info.hasCollision = e["hasCollision"].asBool(false);
+        if (e["collisionBox"].items().size() == 6) {
+            info.hasCollisionBox = true;
+            for (size_t k = 0; k < 6; k++) info.collisionBox[k] = static_cast< float >(e["collisionBox"].items()[k].asNumber());
+        }
         if (e.has("thumbnailArchive")) info.thumbnailArchive = e["thumbnailArchive"].asString();
         if (e.has("thumbnailJoint")) info.thumbnailJoint = e["thumbnailJoint"].asString();
         if (e.has("curated")) info.curated = e["curated"].asBool(false);
