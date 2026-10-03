@@ -21,7 +21,7 @@ void pathsTestTick() {
     static const char* output=std::getenv("PETARI_EDITOR_PATHS_TEST");
     static int frame=-1,wait=0,cursor=0;
     static bool done=false;
-    static RowId rider,point,railRow,other;
+    static RowId rider,point,railRow,other,inserted;
     static std::string writerField,readerField;
     static int switchId=-1;
     static LiveActor* old=nullptr;
@@ -59,6 +59,7 @@ void pathsTestTick() {
     }
     if(f==8)PetariNative::EditorPick::selectRow(railRow.v,PetariNative::EditorPick::Click::Replace);
     if(f==12)PetariNative::EditorSettings::frame();
+    if(f==16)PetariNative::EditorSettings::dolly(-5);
     if(f==25) {
         Command command{Command::Kind::Apply};command.op.label="Move rail in live check";
         int zone=0;m->locate(rider,&zone,nullptr);
@@ -129,6 +130,28 @@ void pathsTestTick() {
     }
     if(f==120) {
         if(m->cell(other,columnHash(readerField.c_str()))->i!=switchId || Hooks::sceneSerial()!=scene)return finish("FAIL: unlink undo or unexpected reload");
+        std::fprintf(stderr,"[editor-paths] switch link/unlink undo: endpoints restored, scene unchanged\n");
+    }
+    if(f==125) {
+        inserted=newRowId();
+        for(const auto& rail:Paths::collect(*m))if(rail.row==railRow) {
+            std::string error;Command command{Command::Kind::Apply};
+            command.op=Paths::insertPoint(rail,0,0.5f,inserted,&error);
+            if(command.op.adds.empty())return finish("FAIL: insert point: "+error);
+            enqueue(std::move(command));
+        }
+    }
+    if(f==135) {
+        auto* actor=actorForRow(rider);
+        if(!actor || !actor->mRailRider || actor->mRailRider->getPointNum()!=3 || m->railPoints(railRow)[1]!=inserted)
+            return finish("FAIL: ordered point insertion did not reach live rider");
+        enqueue(Command{Command::Kind::Undo});
+    }
+    if(f==145) {
+        auto* actor=actorForRow(rider);
+        if(!actor || !actor->mRailRider || actor->mRailRider->getPointNum()!=2 || Hooks::sceneSerial()!=scene)
+            return finish("FAIL: insertion undo or unexpected reload");
+        std::fprintf(stderr,"[editor-paths] point insertion/undo: live rider point count restored without reload\n");
         finish("PASS");
     }
 }
