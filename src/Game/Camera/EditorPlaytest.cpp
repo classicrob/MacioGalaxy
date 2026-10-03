@@ -39,6 +39,7 @@ namespace {
         case Runtime::PlayEvent::Resume:
             s.trail.resume();
             s.cleared = false;
+            s.keepResult.clear();
             break;
         case Runtime::PlayEvent::ToEdit:
             s.trail.pause();

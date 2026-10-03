@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <map>
 #include <petari/editor/playtest.hpp>
 #include <petari/editor/runtime.hpp>
 #include <petari/editor_pick.hpp>
@@ -22,6 +23,7 @@ namespace EditorPlaytest {
         static const char* trigger = std::getenv("PETARI_EDITOR_PLAYTEST_TEST");
         static int step = -1, frame = 0, total = 0;
         static RowId kept;
+        static std::map< RowId, Vec3 > initialPositions;
         static RowTransform original, expected;
         static int history;
         static std::uint64_t pausedFrames;
@@ -70,8 +72,14 @@ namespace EditorPlaytest {
             play(PlayFrom::Marker);
             advance(1);
         } else if (step == 1 && mode() == Mode::Playing && playable && frame > 15) {
+            forEachBoundRow([&](RowId row, LiveActor* actor) {
+                if (actor && !MR::isDead(actor) && Playtest::keepReason(*m, row).empty())
+                    initialPositions[row] = {actor->mPosition.x, actor->mPosition.y, actor->mPosition.z};
+            });
             const auto g = *MR::getPlayerGravity();
-            MR::forceJumpPlayer(TVec3f(-g.x * 35, -g.y * 35, -g.z * 35));
+            TVec3f side;
+            MR::getPlayerSideVec(&side);
+            MR::forceJumpPlayer(TVec3f(-g.x * 35 + side.x * 4, -g.y * 35 + side.y * 4, -g.z * 35 + side.z * 4));
             advance(2);
         } else if (step == 2 && frame > 180 && playable) {
             if (!view.active || view.frames < 120)
@@ -86,6 +94,13 @@ namespace EditorPlaytest {
                          static_cast< unsigned long long >(view.frames));
             forEachBoundRow([&](RowId row, LiveActor* actor) {
                 if (kept.valid() || !actor || MR::isDead(actor) || !Playtest::keepReason(*m, row).empty())
+                    return;
+                const auto initial = initialPositions.find(row);
+                if (initial == initialPositions.end())
+                    return;
+                const auto p = initial->second;
+                const float mx = actor->mPosition.x - p.x, my = actor->mPosition.y - p.y, mz = actor->mPosition.z - p.z;
+                if (mx * mx + my * my + mz * mz <= 400)
                     return;
                 int zone;
                 m->locate(row, &zone, nullptr);

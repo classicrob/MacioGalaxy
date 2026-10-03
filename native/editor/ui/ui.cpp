@@ -247,6 +247,7 @@ void drawToolbar(float width) {
         bool gravity = Gravity::visible();  // M3 gravity: view toggle.
         if (ImGui::Checkbox("Gravity", &gravity)) Gravity::setVisible(gravity);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show gravity fields, flow arrows and uncovered ground (1)");
+        ImGui::SameLine(0.0f, 10.0f);
         drawPlaytestToggle();  // M3 play-test: recorded Mario trail.
         ImGui::SameLine(0.0f, 16.0f);
     }

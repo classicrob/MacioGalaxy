@@ -30,7 +30,6 @@ namespace PetariEditor::Ui {
             keep();
     }
     void drawPlaytestToggle() {
-        ImGui::SameLine(0, 10);
         bool visible = Playtest::visible();
         if (ImGui::Checkbox("Show trail", &visible))
             Playtest::setVisible(visible);
