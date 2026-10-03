@@ -79,6 +79,7 @@ struct ClassInfo {
     std::vector< Arg > args;
     std::vector< Switch > switches;
     std::vector< Link > links;
+    std::string liveRecreate;  // Own-row sweep: safe, suspect, unsafe; empty = not classified.
     bool keepable = false;     // the placed transform is the actor's (UX "Keep"); false for rail riders, children
     bool hasCollision = false;
     std::vector< std::string > archives;  // archives it loads (ObjectData/<name>.arc)

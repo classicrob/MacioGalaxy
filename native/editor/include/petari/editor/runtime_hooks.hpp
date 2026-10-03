@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+class JMapInfo;
+
 namespace PetariEditor::Hooks {
 
 /// The editor is on for this session (Home menu, Mods page, "Level editor"; or
@@ -39,6 +41,15 @@ struct Placed {
 };
 /// The placements noted since the scene began (cleared when it ends).
 const std::vector< Placed >& placed();
+
+// Rail tables copied from the model. Owned by Runtime until this scene ends.
+struct RailTables {
+    const JMapInfo* info = nullptr;
+    std::vector< const JMapInfo* > points;
+};
+void setRailTables(int zoneId, RailTables tables);
+const RailTables* railTables(int zoneId);
+void clearRailTables();
 
 // ---- reload from the model (TECH.md 2.6) ----
 
