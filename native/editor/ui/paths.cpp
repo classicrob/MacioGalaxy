@@ -366,32 +366,6 @@ namespace PetariEditor::Ui {
         if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
             chosenWireRow = {};
         V::focusWires(hoveredWire ? hoveredWire->to.row : RowId{}, hoveredWire ? hoveredWire->to.field : "", chosenWireRow, chosenWireField);
-        for (const auto& wire : view.wires) {
-            const bool emphasized = &wire == hoveredWire || (wire.to.row == chosenWireRow && wire.to.field == chosenWireField);
-            auto dot = [&](float px, float py, const std::string& field) {
-                const auto center = at(px, py);
-                const float radius = emphasized ? 6 : 5;
-                list->AddCircleFilled(center, radius + 2, IM_COL32(17, 25, 34, 245));
-                list->AddCircleFilled(center, radius, P::switchColor(field));
-                list->AddCircle(center, radius, IM_COL32(255, 255, 255, 230), 20, 1);
-            };
-            if (wire.fromVisible)
-                dot(wire.fromX, wire.fromY, wire.from.field);
-            if (wire.toVisible)
-                dot(wire.toX, wire.toY, wire.to.field);
-            if (emphasized && wire.midpointVisible) {
-                const std::string label =
-                    wire.from.field + " -> " + wire.to.field + "  #" + std::to_string(wire.from.id) + (wire.from.id >= 1000 ? " (galaxy)" : "");
-                const auto size = ImGui::CalcTextSize(label.c_str());
-                auto center = at(wire.x, wire.y);
-                const ImVec2 origin(std::clamp(center.x - size.x / 2 - 7, x + 4, std::max(x + 4, x + width - size.x - 18)),
-                                    std::clamp(center.y - size.y - 17, y + 4, std::max(y + 4, y + height - size.y - 14)));
-                const ImVec2 end(origin.x + size.x + 14, origin.y + size.y + 10);
-                list->AddRectFilled(origin, end, IM_COL32(17, 25, 34, 245), 5);
-                list->AddRect(origin, end, P::switchColor(wire.to.field), 5);
-                list->AddText(ImVec2(origin.x + 7, origin.y + 5), IM_COL32(245, 248, 255, 255), label.c_str());
-            }
-        }
         if (!link.active && !drag.active && inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !consumed) {
             if (hit && !io.KeyAlt) {
                 drag = {true, *hit};
@@ -471,5 +445,40 @@ namespace PetariEditor::Ui {
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
             captureClick = false;
         return consumed;
+    }
+    void drawPathsWireOverlay(float x, float y, float width, float height) {
+        if (!model() || width <= 0 || height <= 0)
+            return;
+        const auto& view = V::view();
+        auto at = [&](float a, float b) { return ImVec2(x + (a + 1) * width * 0.5f, y + (1 - b) * height * 0.5f); };
+        auto* list = ImGui::GetForegroundDrawList();
+        list->PushClipRect(ImVec2(x, y), ImVec2(x + width, y + height), true);
+        for (const auto& wire : view.wires) {
+            const bool emphasized = V::wireFocused(wire.to);
+            auto dot = [&](float px, float py, const std::string& field) {
+                const auto center = at(px, py);
+                const float radius = emphasized ? 6 : 5;
+                list->AddCircleFilled(center, radius + 2, IM_COL32(17, 25, 34, 245));
+                list->AddCircleFilled(center, radius, P::switchColor(field));
+                list->AddCircle(center, radius, IM_COL32(255, 255, 255, 230), 20, 1);
+            };
+            if (wire.fromVisible)
+                dot(wire.fromX, wire.fromY, wire.from.field);
+            if (wire.toVisible)
+                dot(wire.toX, wire.toY, wire.to.field);
+            if (emphasized && wire.midpointVisible) {
+                const std::string label =
+                    wire.from.field + " -> " + wire.to.field + "  #" + std::to_string(wire.from.id) + (wire.from.id >= 1000 ? " (galaxy)" : "");
+                const auto size = ImGui::CalcTextSize(label.c_str());
+                auto center = at(wire.x, wire.y);
+                const ImVec2 origin(std::clamp(center.x - size.x / 2 - 7, x + 4, std::max(x + 4, x + width - size.x - 18)),
+                                    std::clamp(center.y - size.y - 17, y + 4, std::max(y + 4, y + height - size.y - 14)));
+                const ImVec2 end(origin.x + size.x + 14, origin.y + size.y + 10);
+                list->AddRectFilled(origin, end, IM_COL32(17, 25, 34, 245), 5);
+                list->AddRect(origin, end, P::switchColor(wire.to.field), 5);
+                list->AddText(ImVec2(origin.x + 7, origin.y + 5), IM_COL32(245, 248, 255, 255), label.c_str());
+            }
+        }
+        list->PopClipRect();
     }
 }  // namespace PetariEditor::Ui
