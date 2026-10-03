@@ -16,7 +16,8 @@ std::atomic<bool> gClear{false};
 std::atomic<bool> gByNameWanted{false};
 std::vector<RowRequest> gRowRequests;  // under gMutex
 std::atomic<bool> gPlaceMarker{false};
-std::atomic<std::uint64_t> gPlace{0};
+std::uint64_t gPlace = 0;  // row and option under gMutex
+bool gPlaceKeepLinks = false;
 std::atomic<bool> gDuplicate{false};
 char gByName[64] = {};
 std::mutex gMutex;
@@ -35,8 +36,19 @@ void selectByName(const char* name) {
     gByNameWanted.store(true, std::memory_order_release);
 }
 void placeMarker() { gPlaceMarker.store(true, std::memory_order_relaxed); }
-void place(std::uint64_t exampleRow) { gPlace.store(exampleRow, std::memory_order_relaxed); }
-std::uint64_t takePlace() { return gPlace.exchange(0, std::memory_order_relaxed); }
+void place(std::uint64_t exampleRow, bool keepLinks) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    gPlace = exampleRow;
+    gPlaceKeepLinks = keepLinks;
+}
+std::uint64_t takePlace(bool* keepLinks) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    const auto row = gPlace;
+    if (keepLinks) *keepLinks = gPlaceKeepLinks;
+    gPlace = 0;
+    gPlaceKeepLinks = false;
+    return row;
+}
 
 namespace {
 PlaceClass gPlaceClass;  // under gMutex
@@ -151,6 +163,8 @@ bool takeThumbnail(char* className, int size, const void** copy) {
 
 void resetForTesting() {
     std::lock_guard<std::mutex> lock(gMutex);
+    gPlace = 0;
+    gPlaceKeepLinks = false;
     gHoverWanted.store(false);
     gClick.store(0);
     gClear.store(false);

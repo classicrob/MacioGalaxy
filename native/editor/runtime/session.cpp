@@ -14,6 +14,7 @@
 #include <petari/editor/paths.hpp>
 
 #include "Game/Editor/EditorScene.hpp"
+#include "Game/Editor/EditorScratch.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/host_allocation.hpp>
@@ -22,6 +23,7 @@
 #include <revolution/dvd.h>
 
 #include <cassert>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -48,6 +50,7 @@ namespace {
     bool gChecksInvalid = false;
     std::vector< PlayListener > gPlayListeners;
     std::vector< MissHandler > gMissHandlers;
+    std::atomic< bool > gIsolated{false};  // progressIsolated(): read by the NAND thread too
 
     // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
     // are spent by every creation, retired fields included, until the next scene build.
@@ -109,9 +112,19 @@ namespace {
         s.inPlay = event == PlayEvent::Begin || event == PlayEvent::Resume;
         s.hadRun = event == PlayEvent::End ? false : (s.hadRun || event == PlayEvent::Begin);
         if (event == PlayEvent::End || event == PlayEvent::Begin) {
-            s.missed = false;
+            s.missed = false;  // a new run (or none): a frozen miss no longer forces a restart
         }
         s.scenePlayed = s.scenePlayed || s.inPlay;
+    }
+
+    // The edit session ends: listeners told, the save file's progress put back, then the
+    // isolation released (in that order: nothing may write progress in between).
+    void endSession() {
+        firePlay(PlayEvent::End);
+        if (gIsolated.load()) {
+            EditorScratch::restore();
+            gIsolated.store(false);
+        }
     }
 
     bool endsWith(const std::string& text, const char* pSuffix) {
@@ -127,7 +140,7 @@ namespace {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
         if (s.model) {
-            firePlay(PlayEvent::End);  // another galaxy or mission: this session ends
+            endSession();  // another galaxy or mission: this session ends
             if (mode() == Mode::Playing) {
                 Core::setMode(Mode::Off);  // ordinary play from here, not a play-test
             }
@@ -168,6 +181,11 @@ namespace {
                 list += (mission > 1 ? ", " : "") + std::to_string(mission) + " \"" + names.back() + "\"";
             }
             s.model->setMissionNames(std::move(names));
+            // A new session: the save file's progress as found, until End (TECH.md 2.7).
+            if (!gIsolated.load()) {
+                EditorScratch::snapshot();
+                gIsolated.store(true);
+            }
             // The mod the galaxy's archives came from (the Save sheet defaults to it).
             std::string loadedMod;
             for (int zone = 0; zone < s.model->zoneCount() && loadedMod.empty(); zone++) {
@@ -661,6 +679,7 @@ namespace {
         } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed) || s.missed) {
             // Edits to rebuild, or a fresh run in a scene already played (UX 3: collected and
             // defeated objects, switches and Mario's state reset; only Resume keeps them).
+            // (After a frozen miss even Resume restarts: from the marker, as a fresh run.)
             startReload(from == PlayFrom::Marker || s.missed ? Session::After::PlayMarker : Session::After::PlayStart);
             s.missed = false;
         } else {
@@ -828,7 +847,9 @@ void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITO
 void areasTestTick();
 void arrayTestTick();
 void importTestTick();
+void placementTestTick();  // EP-008: clean donor placement live regression.
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
+void scratchTestTick(); // scratch_test.cpp: play-test progress isolation (PETARI_EDITOR_SCRATCH_TEST)
 void newPathTestTick();
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
@@ -918,7 +939,22 @@ bool requestEdit(const char* reason) {
 }
 
 bool progressIsolated() {
-    return Hooks::enabled() && session().model != nullptr;
+    return gIsolated.load();
+}
+
+void sceneEnded() {
+    Session& s = session();
+    if (Hooks::editorReload() || !s.model) {
+        return;  // an editor reload keeps the session
+    }
+    PetariNative::HostAllocationScope host;
+    endSession();
+    Core::clearBindings();
+    Core::setModel(nullptr);
+    s.model.reset();
+    s.keepModel = false;
+    s.actors.clear();
+    s.liveRows.clear();
 }
 
 bool interceptMiss() {
@@ -1004,11 +1040,12 @@ void tick(bool playable) {
         Hooks::setEditorReload(false);
         std::fprintf(stderr, "[editor] scene reload done in %.0f ms\n", nowMs() - session().reloadStartMs);
     }
+    scratchTestTick();
     if (!Hooks::enabled()) {
         if (session().model) {
             // The editor was turned off: the session ends once.
             PetariNative::HostAllocationScope host;
-            firePlay(PlayEvent::End);
+            endSession();
             Core::clearBindings();
             Core::setModel(nullptr);
             session().model.reset();
@@ -1031,6 +1068,7 @@ void tick(bool playable) {
     areasTestTick();
     arrayTestTick();
     importTestTick();
+    placementTestTick();  // EP-008 placement.
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)

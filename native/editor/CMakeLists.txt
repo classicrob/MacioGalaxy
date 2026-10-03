@@ -66,7 +66,7 @@ add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC array/array.cpp playtest/playtest.cpp areas/areas.cpp areas/camera_preview.cpp gravity/gravity.cpp paths/paths.cpp paths/paths_view.cpp runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
+add_library(petari_editor_core STATIC placement/placement.cpp array/array.cpp playtest/playtest.cpp areas/areas.cpp areas/camera_preview.cpp gravity/gravity.cpp paths/paths.cpp paths/paths_view.cpp runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
     ${_petari_catalog_cpp})
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_core PUBLIC petari_editor_formats petari_editor_share petari_native_config petari_host_runtime)
@@ -75,8 +75,6 @@ if(TARGET petari_platform_dvd)
 endif()
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
-# The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
-# game code (src/Game/Editor), so only the app and the link check link it.
 # Loading for editing and saving as a mod, without the game (runtime/model_io.hpp): the Runtime and
 # headless tools (petari-level) share it. Needs the native DVD layer (the disc and the mod overlay).
 if(TARGET petari_platform_dvd)
@@ -87,8 +85,15 @@ if(TARGET petari_platform_dvd)
         petari_native_config)
 endif()
 
+# The agent level-authoring API and its CLI, petari-level (headless).
+if(TARGET petari_editor_save)
+    add_subdirectory(level_api)
+endif()
+
+# The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
+# game code (src/Game/Editor), so only the app and the link check link it.
 add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/new_galaxy_session.cpp runtime/new_galaxy_test.cpp runtime/galaxy_checks.cpp runtime/terrain_sync.cpp runtime/import_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
-    runtime/redraw_test.cpp runtime/ensure_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp runtime/new_path_test.cpp runtime/areas_test.cpp runtime/array_test.cpp runtime/import_test.cpp)
+    runtime/redraw_test.cpp runtime/ensure_test.cpp runtime/scratch_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp runtime/new_path_test.cpp runtime/areas_test.cpp runtime/array_test.cpp runtime/import_test.cpp runtime/placement_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_editor_terrain_catalog petari_editor_galaxy petari_editor_import_catalog petari_native_config)
 if(TARGET petari_platform_dvd)
@@ -155,6 +160,11 @@ if(BUILD_TESTING)
     target_include_directories(petari_editor_model_tests PRIVATE runtime)
     target_link_libraries(petari_editor_model_tests PRIVATE petari_editor_model petari_editor_core)
     add_test(NAME native_editor_model COMMAND petari_editor_model_tests)
+
+    add_executable(petari_editor_placement_tests ${PETARI_REPO_ROOT}/native/tests/editor_placement_tests.cpp)
+    target_include_directories(petari_editor_placement_tests PRIVATE runtime)
+    target_link_libraries(petari_editor_placement_tests PRIVATE petari_editor_model petari_editor_core)
+    add_test(NAME native_editor_placement COMMAND petari_editor_placement_tests)
 
     # The KCL writer round-tripped through the game's own collision server (KCollision.cpp).
     if(TARGET petari_j3d)

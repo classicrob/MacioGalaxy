@@ -1,5 +1,6 @@
 #include "playtest.hpp"
 #include "areas.hpp"
+#include "play_view.hpp"
 #include "array.hpp"
 #include <petari/editor/array.hpp>
 // Edit mode, UI side (docs/dev/level-editor/UX.md sections 3 and 5): the panels follow the game's Edit
@@ -340,8 +341,14 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!active) {
         return;
     }
+    // Typing (a field, or any sheet: friction #10) makes a Tab tap wait for the edit to commit; under a sheet it does nothing.
+    const bool sheetOpen = ImGui::GetTopMostPopupModal() != nullptr;
+    Settings::setTyping(ImGui::GetIO().WantTextInput || sheetOpen);
     // A sheet (modal) owns the keys and sits above the viewport: no shortcuts, no camera input, no viewport overlays under it.
-    if (ImGui::GetTopMostPopupModal() != nullptr) return;
+    if (sheetOpen) {
+        Settings::takeDeferredToggle();  // dropped: Tab doesn't play from under a sheet
+        return;
+    }
     // Cmd+. : Focus mode (the game fills the window; panels away).
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Period)) {
@@ -363,6 +370,13 @@ void updateEditMode(float windowWidth, float windowHeight) {
         }
     }
     if (sSaveIn > 0 && --sSaveIn == 0) requestSave(false);
+    // Tab while typing (friction #10): end the edit so the value commits, then play.
+    static int sToggleIn = 0;
+    if (Settings::takeDeferredToggle()) {
+        ImGui::ClearActiveID();
+        sToggleIn = 3;
+    }
+    if (sToggleIn > 0 && --sToggleIn == 0) Settings::toggle();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
     // Cmd+N: New galaxy (UX section 14).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_N)) openNewGalaxySheet();
@@ -373,10 +387,11 @@ void updateEditMode(float windowWidth, float windowHeight) {
     updatePlaytestInput();  // M3 play-test: K keeps the selected live transform.
     const Area area = cameraArea(windowWidth, windowHeight);
     const bool areasConsumed = drawStyledOverlay([&] { return drawAreasOverlay(area.x, area.y, area.w, area.h); });  // M3 areas: camera preview.
+    const bool playViewConsumed = drawStyledOverlay([&] { return drawPlayViewOverlay(area.x, area.y, area.w, area.h); });  // friction #14
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
     const bool arrayConsumed = drawArrayOverlay(area.x, area.y, area.w, area.h);  // Array: handles precede picking.
     const bool toolConsumed =
-        drawStyledOverlay([&] { return drawPathsViewport(area.x, area.y, area.w, area.h); }) || areasConsumed || arrayConsumed;  // M3 paths: handles precede picking.
+        drawStyledOverlay([&] { return drawPathsViewport(area.x, area.y, area.w, area.h); }) || areasConsumed || playViewConsumed || arrayConsumed;  // M3 paths: handles precede picking.
     cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);

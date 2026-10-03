@@ -1,0 +1,18 @@
+# The agent level-authoring API (docs/dev/level-editor/AGENT_API.md): the editor core driven by JSON
+# commands, headless (no game, no renderer). petari-level is its CLI.
+add_library(petari_level_api STATIC level.cpp query.cpp ops.cpp op_json.cpp commands.cpp world.cpp base.cpp)
+target_include_directories(petari_level_api PUBLIC include PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime)
+target_link_libraries(petari_level_api PUBLIC petari_editor_save petari_editor_model petari_editor_core petari_editor_patch petari_editor_terrain)
+target_compile_features(petari_level_api PUBLIC cxx_std_17)
+
+add_executable(petari-level cli.cpp)
+target_link_libraries(petari-level PRIVATE petari_level_api)
+
+if(BUILD_TESTING)
+    add_test(NAME native_level_live_python COMMAND ${Python3_EXECUTABLE} ${PETARI_REPO_ROOT}/native/tests/level_live_tests.py)
+    add_executable(petari_level_api_tests ${PETARI_REPO_ROOT}/native/tests/level_api_tests.cpp)
+    target_compile_definitions(petari_level_api_tests PRIVATE PETARI_TEST_DISC_FILES="${PETARI_REPO_ROOT}/build/game-data/RMGE01/files")
+    target_include_directories(petari_level_api_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime)
+    target_link_libraries(petari_level_api_tests PRIVATE petari_level_api)
+    add_test(NAME native_level_api COMMAND petari_level_api_tests)
+endif()
