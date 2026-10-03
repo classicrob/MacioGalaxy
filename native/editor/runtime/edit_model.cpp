@@ -764,6 +764,13 @@ bool EditModel::addRow(const AddRow& add, Entry* pEntry, std::string* pError) {
         writeCell(add.zone, table, index, Formats::jmapHash("l_id"), Cell{CellType::Int, nextLinkId(add.zone) , 0, {}});
     }
     mChanged.insert(id);
+    // At a position: taken from the end and put back there (undo removes it by id; redo puts it back at `at`).
+    if (add.at >= 0 && add.at < index) {
+        RowRecord moved = removeRecord(add.zone, table, index);
+        moved.index = add.at;
+        insertRecord(moved);
+        index = add.at;
+    }
     // What redo needs: the finished row.
     RowRecord record;
     record.id = id;

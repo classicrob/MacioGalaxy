@@ -1011,3 +1011,11 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - **Install:** `installModZip(zip, replace)` unpacks into `<user>/mods/<Name>` through a staging folder and turns the mod on.
     - It refuses paths escaping the folder, zips that aren't one mod folder, more than 2 GB, and an installed folder of the same name unless `replace`.
   - **Zip format:** our own (deflate via zlib, CRC-checked on read; no zip64 or encryption). The system's `unzip` accepts our zips (`native_editor_share`).
+- **SceneSync extensions for M3** (`editor/sync-hooks`; `petari/editor/runtime.hpp`, `check_providers.hpp`):
+  - **Preview handlers:** `registerPreviewHandler` lets classes whose look isn't just the actor's transform (gravity shapes) take Preview and EndPreview.
+  - **Live updaters:** `registerLiveUpdater` updates a changed row's actor in place instead of re-creating it, so a gravity field spends no new manager slot. Owners whitelist which columns may change in place.
+  - **Checks:** `invalidateChecks()` recomputes without re-baselining, and `registerCheckProvider` is public (once per provider).
+  - **Gravity rows:** `/planetobjinfo` (the `Global*Gravity` classes) is live.
+    - At 128 registered fields (retired ones count until a Reload) a change stays pending with a notice, and the current field stays.
+    - A `GlobalWireGravity` row without a path, or with `Obj_arg0` outside 0-4096, is refused before its constructor (it divides by the point count).
+  - **Ordered insert:** `AddRow::at` inserts at an index (a path's points); undo and redo keep it.

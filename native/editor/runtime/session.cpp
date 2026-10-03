@@ -33,6 +33,27 @@ namespace {
         JMapInfo info;
     };
 
+    constexpr s32 kGravityLimit = 128;  // PlanetGravityManager's array
+    std::vector< PreviewHandler > gPreviewHandlers;
+    std::vector< LiveUpdater > gLiveUpdaters;
+    bool gChecksInvalid = false;
+
+    // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
+    // are spent by every creation, retired fields included, until the next scene build.
+    bool isGravityTable(const std::string& path) {
+        return path.size() >= 14 && path.compare(path.size() - 14, 14, "/planetobjinfo") == 0;
+    }
+
+    void pokeTransform(LiveActor* pActor, int zoneId, const RowTransform& t) {
+        for (PreviewHandler handler : gPreviewHandlers) {
+            if (handler(pActor, zoneId, t)) {
+                return;
+            }
+        }
+        const f32 pos[3] = {t.pos.x, t.pos.y, t.pos.z}, dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z}, scale[3] = {t.scale.x, t.scale.y, t.scale.z};
+        EditorScene::applyTransform(pActor, zoneId, pos, dir, scale);
+    }
+
     struct Session {
         std::unique_ptr< EditModel > model;
         std::uint32_t boundScene = 0;
@@ -196,7 +217,8 @@ namespace {
         }
         const std::string path = m.tablePath(zone, table);
         const int layer = m.tableLayer(zone, table);
-        const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo");
+        const bool gravity = isGravityTable(path);
+        const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
         if (!live) {
             s.pending.insert(id);
             return;
@@ -209,9 +231,9 @@ namespace {
         if (!m.zonePlaced(zone) || layer < 0 || !(m.activeLayers(zone, m.scenario()) & (1u << layer))) {
             return;  // not in this mission's scene; nothing to show
         }
-        retireRow(id);
         const char* pName = m.objectName(id);
         if (pName == nullptr || pName[0] == '\0') {
+            retireRow(id);
             return;
         }
         int rowIndex = 0;
@@ -225,6 +247,36 @@ namespace {
             row->info.setName("ObjInfo");
             Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
         }
+        // In place when a registered updater can (no new actor; for gravity, no new slot).
+        if (LiveActor* pCurrent = actorForRow(id)) {
+            for (LiveUpdater updater : gLiveUpdaters) {
+                if (updater(id, pCurrent, JMapInfoIter(&row->info, 0))) {
+                    s.pending.erase(id);
+                    s.liveRows.push_back(std::move(row));
+                    return;
+                }
+            }
+        }
+        // Wire gravity divides by its point count (Obj_arg0 + 2) and walks its path: a bad row would
+        // crash or hang the constructor.
+        if (std::string(pName) == "GlobalWireGravity") {
+            const Cell* pPoints = m.cell(id, columnHash("Obj_arg0"));
+            const Cell* pPath = m.cell(id, columnHash("CommonPath_ID"));
+            if (pPoints == nullptr || pPoints->i < 0 || pPoints->i > 4096 || pPath == nullptr || pPath->i < 0) {
+                Hooks::unregisterRows(row->bytes.data());
+                s.pending.insert(id);
+                Core::reportError("Wire gravity needs a path and 0-4096 sample points (Obj_arg0)");
+                return;
+            }
+        }
+        // A new gravity field needs a free slot; at the cap the current one stays until a Reload.
+        if (gravity && EditorScene::gravityCount() >= kGravityLimit) {
+            Hooks::unregisterRows(row->bytes.data());
+            s.pending.insert(id);
+            Core::reportNotice("All 128 gravity fields are in use (retired ones count until a Reload): Reload to apply this change");
+            return;
+        }
+        retireRow(id);
         EditorScene::Created created;
         const char* pError = "";
         if (!EditorScene::createFromRow(JMapInfoIter(&row->info, 0), &created, &pError)) {
@@ -252,10 +304,7 @@ namespace {
             if (pActor == nullptr || !s.model->locate(command.rows[i], &zone, &table)) {
                 continue;
             }
-            const RowTransform& t = command.previews[i];
-            const f32 pos[3] = {t.pos.x, t.pos.y, t.pos.z}, dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z},
-                      scale[3] = {t.scale.x, t.scale.y, t.scale.z};
-            EditorScene::applyTransform(pActor, s.model->zoneId(zone), pos, dir, scale);
+            pokeTransform(pActor, s.model->zoneId(zone), command.previews[i]);
             s.previewing.insert(command.rows[i]);
         }
     }
@@ -266,10 +315,7 @@ namespace {
             LiveActor* pActor = actorForRow(id);
             int zone = 0, table = 0;
             if (pActor != nullptr && s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
-                const RowTransform t = s.model->transform(id);
-                const f32 pos[3] = {t.pos.x, t.pos.y, t.pos.z}, dir[3] = {t.dirDeg.x, t.dirDeg.y, t.dirDeg.z},
-                          scale[3] = {t.scale.x, t.scale.y, t.scale.z};
-                EditorScene::applyTransform(pActor, s.model->zoneId(zone), pos, dir, scale);
+                pokeTransform(pActor, s.model->zoneId(zone), s.model->transform(id));
             }
             s.previewing.erase(id);
         }
@@ -439,7 +485,7 @@ namespace {
         st.heapFree = heapFree;
         st.heapTotal = heapTotal;
         st.capacities = {{"Objects", EditorScene::liveActorCount(), EditorScene::liveActorLimit()},
-                         {"Gravity fields", EditorScene::gravityCount(), 128},
+                         {"Gravity fields", EditorScene::gravityCount(), kGravityLimit},
                          {"Archives", EditorScene::mountedArchiveCount(), EditorScene::mountedArchiveLimit()}};
     }
 }  // namespace
@@ -465,6 +511,18 @@ bool reloadScene(bool fromStart) {
     s.reloadStartMs = nowMs();
     EditorReload::requestReload(fromStart);
     return true;
+}
+
+void registerPreviewHandler(PreviewHandler handler) {
+    if (std::find(gPreviewHandlers.begin(), gPreviewHandlers.end(), handler) == gPreviewHandlers.end()) gPreviewHandlers.push_back(handler);
+}
+
+void registerLiveUpdater(LiveUpdater updater) {
+    if (std::find(gLiveUpdaters.begin(), gLiveUpdaters.end(), updater) == gLiveUpdaters.end()) gLiveUpdaters.push_back(updater);
+}
+
+void invalidateChecks() {
+    gChecksInvalid = true;
 }
 
 bool reloading() {
@@ -530,7 +588,8 @@ void tick(bool playable) {
     if (!changed.empty()) {
         EditorScene::flushConnectionRequests();  // Edit mode is frozen: no movement step to do it
     }
-    if (s.model->revision() != s.checkedRevision) {
+    if (s.model->revision() != s.checkedRevision || (gChecksInvalid && s.checkedRevision != 0)) {
+        gChecksInvalid = false;
         PetariNative::HostAllocationScope host;
         std::vector< Check > all = computeChecks(*s.model);
         if (s.checkedRevision == 0) {
