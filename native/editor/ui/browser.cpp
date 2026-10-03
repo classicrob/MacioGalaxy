@@ -56,6 +56,7 @@ std::string gQuery;
 std::string gCategory;          // empty: all
 std::string gSelectedClass;     // the card shown in detail
 std::uint64_t gArmed = 0;       // stamp mode: what each click places (armedPlacement)
+bool gKeepLinks = false;       // Browser placement only; copies normally clear optional donor links
 
 // Class placements (no example): the specs tokens point at, kept for the session.
 struct PlaceSpec {
@@ -397,7 +398,11 @@ void drawBrowser(const ModelView& model) {
             if (armed) ImGui::PopStyleColor();
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each click in the viewport places a new one. Or drag the card onto the viewport.");
         } else {
-            // See an example: select one of the game's own placements (and its settings come along when placing).
+            // See an example: copy its settings, with optional scene wiring only when requested.
+            ImGui::Checkbox("Keep links", &gKeepLinks);
+            noteTestTarget("checkbox:Keep links");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reuse the example's switches, groups, cameras and optional paths. Required links are always kept.");
+            ImGui::TextWrapped(gKeepLinks ? "Copies keep the example's links and zone." : "Copies clear optional links. Required paths stay with their zone.");
             ImGui::TextDisabled("Examples (click to select):");
             for (size_t i = 0; i < selected->examples.size() && i < 4; i++) {
                 int zone = 0, table = 0;
@@ -410,7 +415,7 @@ void drawBrowser(const ModelView& model) {
             if (armed) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.98f, 0.80f, 0.22f, 0.55f));
             if (ImGui::Button(armed ? "Placing: click the ground (Esc stops)" : "Place")) gArmed = armed ? 0 : selected->examples.front().v;
             if (armed) ImGui::PopStyleColor();
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each click in the viewport places a copy of the first example, settings included. Or drag the card onto the viewport.");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Each click places the first example's settings, using Keep links above. Or drag the card onto the viewport.");
         }
     }
 }
@@ -464,7 +469,7 @@ bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, f
 void placeToken(std::uint64_t token) {
     frameNextSelection();  // the new object comes into view (the lead: a fresh brush must be seen whole)
     if (!isClassToken(token)) {
-        Pick::place(token);
+        Pick::place(token, gKeepLinks);
         return;
     }
     const size_t index = static_cast< size_t >(token & ~kClassTokenBit);

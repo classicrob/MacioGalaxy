@@ -30,7 +30,7 @@ void selectByName(const char* name);  // select the first object with this row o
 void selectRow(std::uint64_t row, Click mode);  // select a row's object (the Changes and Outliner lists)
 void placeMarker();  // M: the play marker onto the ground under the cursor
 // Place a copy of `exampleRow` (its class and settings) on the ground under the cursor (the Browser).
-void place(std::uint64_t exampleRow);
+void place(std::uint64_t exampleRow, bool keepLinks = false);
 // Place a class with no example in the galaxy (a catalog class, a Terrain brush preset): the game adds a row
 // from the catalog's table and defaults, then these args (Obj_arg<index> = value), on the ground under the cursor.
 struct PlaceClass {
@@ -54,7 +54,7 @@ struct RowRequest {
 };
 std::vector<RowRequest> takeSelectRows();  // in order
 bool takePlaceMarker();
-std::uint64_t takePlace();  // 0: none
+std::uint64_t takePlace(bool* keepLinks = nullptr);  // 0: none; option belongs to this request
 bool takePlaceClass(PlaceClass* out);
 bool takeDuplicate();
 void publish(const Item* hover, const std::vector<Item>& selection);
