@@ -29,12 +29,14 @@ def main():
     env = dict(os.environ, PETARI_EDITOR='1', PETARI_MODS='LevelEditor', PETARI_EDITOR_PLACEMENT_TEST='1',
                PETARI_SURFACE_DUMP=str(out / 'surfaces'), PETARI_SURFACE_DUMP_LABELS='placement-clean,placement-launch',
                PETARI_SURFACE_DUMP_EVERY='5', PETARI_SURFACE_DUMP_SPAN='10')
+    starter = None
     try:
-        subprocess.run(server + ['start', '--app', str(app), '--dir', str(directory), '--owner', 'gravity',
-                                 '--warm-current-stage'], env=env, check=True)
-        deadline = time.monotonic() + 120
+        starter = subprocess.Popen(server + ['start', '--app', str(app), '--dir', str(directory), '--owner', 'gravity',
+                                 '--warm-current-stage'], env=env)
+        deadline = time.monotonic() + 1000
         while time.monotonic() < deadline:
-            text = (directory / 'server.log').read_text(errors='replace')
+            log = directory / 'server.log'
+            text = log.read_text(errors='replace') if log.exists() else ''
             lines = [line for line in text.splitlines() if '[editor-placement]' in line]
             if any('FAIL:' in line for line in lines):
                 print('\n'.join(lines))
@@ -46,6 +48,9 @@ def main():
         print('FAIL: timed out waiting for clean placement checks')
         return 1
     finally:
+        if starter is not None and starter.poll() is None:
+            starter.terminate()
+            starter.wait(timeout=10)
         if (directory / 'server.pid').exists():
             subprocess.run(server + ['stop', '--dir', str(directory)], check=False)
         shutil.rmtree(directory / 'user/cache', ignore_errors=True)

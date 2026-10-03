@@ -459,15 +459,7 @@ namespace {
         PetariEditor::AddRow add;
         add.id = PetariEditor::newRowId();
         add.zone = zone;
-        add.table = model->tablePath(exampleZone, exampleTable);
-        // EP-008: the copy goes where the mission being edited sees it. An example from another mission's layer
-        // ("jmp/placement/layerb/objinfo") is placed in the zone's common layer instead (in every mission).
-        if (const int scenario = model->scenario(); scenario >= 1 && (model->rowMissions(example) & (1u << (scenario - 1))) == 0) {
-            const size_t at = add.table.find("/layer");
-            if (at != std::string::npos && at + 7 < add.table.size() && add.table[at + 7] == '/') {
-                add.table.replace(at + 1, 6, "common");
-            }
-        }
+        add.table = PetariEditor::Placement::visibleTable(*model, zone, model->tablePath(exampleZone, exampleTable));
         add.copyOf = example;
         static const char* const kColumns[9] = {"pos_x", "pos_y", "pos_z", "dir_x", "dir_y", "dir_z", "scale_x", "scale_y", "scale_z"};
         const float values[9] = {t.pos.x, t.pos.y, t.pos.z, t.dirDeg.x, t.dirDeg.y, t.dirDeg.z, t.scale.x, t.scale.y, t.scale.z};

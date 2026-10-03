@@ -591,6 +591,12 @@ cursor with **Space**.
 
 ### Placing
 
+- Copies from Browser examples keep settings and scale, but clear optional switch,
+  group, camera and other catalog links so the new object can stand on its own.
+  **Keep links**, in the example details, preserves the wiring. Required links
+  (such as a Launch Star's flight path) always stay; linked copies stay in the
+  donor's zone. A destination layer inactive in the edited mission falls back
+  to Common. Duplicates and arrays keep their links.
 - **Drag a card into the viewport**: the object follows the cursor on the
   ground, upright for gravity, with a ghost preview, and lands where you
   release. Esc while dragging cancels.

@@ -41,6 +41,16 @@ namespace PetariEditor::Placement {
         }
     }  // namespace
 
+    std::string visibleTable(const ModelView& model, int zone, std::string table) {
+        const auto at = table.find("/layer");
+        if (at != std::string::npos && at + 7 < table.size() && table[at + 7] == '/' && table[at + 6] >= 'a' && table[at + 6] <= 'p') {
+            const unsigned layer = 1u + table[at + 6] - 'a';
+            if (!(model.activeLayers(zone, model.scenario()) & (1u << layer)))
+                table.replace(at + 1, 6, "common");
+        }
+        return table;
+    }
+
     void cleanDonorLinks(const ModelView& model, RowId donor, AddRow& add, bool keepLinks) {
         if (keepLinks)
             return;

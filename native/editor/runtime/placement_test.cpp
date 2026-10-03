@@ -57,15 +57,19 @@ namespace PetariEditor::Runtime {
             return cell ? cell->i : -9999;
         };
         if (f == 5) {
-            for (int t = 0; t < m.tableCount(0) && !donor.valid(); ++t) {
-                m.forEachRow(0, t, [&](RowId row) {
-                    const char* name = m.objectName(row);
-                    if (!donor.valid() && m.state(row) != RowState::Deleted && name && std::string(name) == "BenefitItemOneUp")
-                        donor = row;
-                });
+            for (int z = 0; z < m.zoneCount() && !donor.valid(); ++z) {
+                if (!m.zonePlaced(z))
+                    continue;
+                for (int t = 0; t < m.tableCount(z) && !donor.valid(); ++t) {
+                    m.forEachRow(z, t, [&](RowId row) {
+                        const char* name = m.objectName(row);
+                        if (!donor.valid() && m.state(row) != RowState::Deleted && name && std::string(name) == "BenefitItemOneUp")
+                            donor = row;
+                    });
+                }
             }
             if (!donor.valid())
-                return finish("FAIL: no main-zone 1-Up donor");
+                return finish("FAIL: no 1-Up donor in a placed zone");
             Command fixture{Command::Kind::Apply};
             fixture.op.label = "Prepare hidden donor fixture";
             for (const char* field : {"SW_APPEAR", "SW_SLEEP", "GroupId", "ViewGroupId", "ClippingGroupId", "CameraSetId"})

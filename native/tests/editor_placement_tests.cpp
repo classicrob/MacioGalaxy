@@ -46,10 +46,12 @@ int main() {
     F::Table scenarios;
     scenarios.addRow(-1);
     scenarios.addColumn(E::columnHash("ScenarioNo"), F::ColumnType::Long, integer(1));
-    scenarios.addColumn(E::columnHash("TestGalaxy"), F::ColumnType::Long, integer(0));
+    scenarios.addColumn(E::columnHash("TestGalaxy"), F::ColumnType::Long, integer(1));
     F::Table zones;
     zones.addRow(-1);
     zones.addColumn(E::columnHash("ZoneName"), F::ColumnType::StringOffset, text("TestGalaxy"));
+    zones.addRow(-1);
+    zones.set(1, zones.column(E::columnHash("ZoneName")), text("ChildZone"));
     F::Table objects;
     objects.addRow(-1);
     objects.addColumn(E::columnHash("name"), F::ColumnType::StringOffset, text("PlacementFixture"));
@@ -61,7 +63,8 @@ int main() {
     std::map< std::string, F::Bytes > disc{
         {"/StageData/TestGalaxy/TestGalaxyScenario.arc",
          F::Archive::create("stage", {{"ScenarioData.bcsv", scenarios.build()}, {"ZoneList.bcsv", zones.build()}}).build()},
-        {"/StageData/TestGalaxy.arc", F::Archive::create("stage", {{"jmp/placement/common/objinfo", objects.build()}}).build()}};
+        {"/StageData/TestGalaxy.arc", F::Archive::create("stage", {{"jmp/placement/common/objinfo", objects.build()}}).build()},
+        {"/StageData/ChildZone.arc", F::Archive::create("stage", {{"jmp/placement/common/objinfo", objects.build()}}).build()}};
     auto model = E::EditModel::load(
         "TestGalaxy", 1,
         [&](const std::string& path) -> std::optional< F::Bytes > {
@@ -70,6 +73,13 @@ int main() {
         },
         &error);
     check(bool(model), "fixture loads");
+    check(E::Placement::visibleTable(*model, 0, "jmp/placement/layera/objinfo") == "jmp/placement/layera/objinfo",
+          "active destination layer retained");
+    check(E::Placement::visibleTable(*model, 0, "jmp/placement/layerb/objinfo") == "jmp/placement/common/objinfo",
+          "inactive destination layer uses Common");
+    check(E::Placement::visibleTable(*model, 1, "jmp/placement/layera/objinfo") == "jmp/placement/common/objinfo",
+          "cross-zone donor uses destination visibility");
+    check(E::Placement::visibleTable(*model, 1, "jmp/path/commonpathinfo") == "jmp/path/commonpathinfo", "non-layer table unchanged");
     E::RowId donor;
     model->forEachRow(0, 0, [&](E::RowId row) { donor = row; });
     E::AddRow add;
