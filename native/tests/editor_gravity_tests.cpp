@@ -21,16 +21,18 @@ bool finite(Vec3 p) {
 }
 void modelChecks() {
     namespace F = Formats;
-    auto table = [](std::vector< std::pair< const char*, F::CellValue > > values) {
+    auto table = [](std::vector< std::pair< const char*, F::CellValue > > values, bool populated = true) {
         F::Bytes raw(16, 0);
         raw[11] = 16;
         auto t = *F::Table::parse(raw);
         for (auto& v : values)
             t.addColumn(F::jmapHash(v.first), v.second.kind == F::CellValue::Kind::String ? F::ColumnType::StringOffset : F::ColumnType::Long,
                         v.second);
-        const int row = t.addRow();
-        for (std::size_t column = 0; column < values.size(); ++column)
-            t.set(row, static_cast< int >(column), values[column].second);
+        if (populated) {
+            const int row = t.addRow();
+            for (std::size_t column = 0; column < values.size(); ++column)
+                t.set(row, static_cast< int >(column), values[column].second);
+        }
         return t.build();
     };
     auto i = [](int value) { return F::CellValue{F::CellValue::Kind::Int, value, 0, {}}; };
@@ -42,7 +44,11 @@ void modelChecks() {
             .build();
     files["/StageData/TestGalaxy.arc"] =
         F::Archive::create("stage", {{"jmp/placement/common/planetobjinfo",
-                                      table({{"name", str("GlobalPointGravity")}, {"Priority", i(0)}, {"CommonPath_ID", i(-1)}})}})
+                                      table({{"name", str("GlobalPointGravity")}, {"Priority", i(0)}, {"CommonPath_ID", i(-1)}})},
+                                  {"jmp/path/commonpathinfo", table({{"l_id", i(0)}, {"no", i(0)}, {"num_pnt", i(0)}, {"type", str("Bezier")}, {"closed", str("OPEN")}}, false)},
+                                  {"jmp/path/commonpathpointinfo.0", table({{"id", i(0)}, {"pnt0_x", i(0)}, {"pnt0_y", i(0)}, {"pnt0_z", i(0)},
+                                                                         {"pnt1_x", i(0)}, {"pnt1_y", i(0)}, {"pnt1_z", i(0)},
+                                                                         {"pnt2_x", i(0)}, {"pnt2_y", i(0)}, {"pnt2_z", i(0)}}, false)}})
             .build();
     auto m = EditModel::load(
         "TestGalaxy", 1,
@@ -53,7 +59,8 @@ void modelChecks() {
         nullptr);
     require(m != nullptr, "gravity model loaded");
     RowId row;
-    m->forEachRow(0, 0, [&](RowId r) { row = r; });
+    for (int t = 0; t < m->tableCount(0); ++t)
+        m->forEachRow(0, t, [&](RowId r) { if (G::shapeForPlacement(m->objectName(r)) != G::Shape::Unknown) row = r; });
     require(row.valid(), "gravity row loaded");
     auto op = G::numericOp(*m, {row}, "Priority", 7, true);
     require(m->apply(op, nullptr), "priority op applied");
