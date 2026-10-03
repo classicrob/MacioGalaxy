@@ -52,6 +52,15 @@ void trailTests() {
     require(P::motionColor(P::Motion::Ground) != P::motionColor(P::Motion::Air) &&
                 P::motionColor(P::Motion::Dive) != P::motionColor(P::Motion::CapBounce),
             "distinct movement colours");
+    std::vector< P::Sample > states;
+    for (int i = 0; i < 5; ++i)
+        states.push_back({{float(i * 10), 0, 0}, {0, 1, 0}, static_cast< P::Motion >(i % 4), i == 2, i > 0, 1});
+    mesh = P::geometry(states);
+    require(mesh.lines.size() == 8, "four coloured segments plus four peak edges");
+    require(mesh.lines[0].color == P::motionColor(P::Motion::Air) && mesh.lines[1].color == P::motionColor(P::Motion::Dive),
+            "air and dive segment colours");
+    require(mesh.lines[6].color == P::motionColor(P::Motion::CapBounce) && mesh.lines[7].color == P::motionColor(P::Motion::Ground),
+            "cap bounce and ground segment colours");
     t.begin();
     require(t.frames() == 0 && t.samples().empty(), "new run resets timer and trail");
     t.record({}, {0, 1, 0}, {0, -1, 0}, P::Motion::Air);
