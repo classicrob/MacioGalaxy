@@ -1075,3 +1075,14 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - The Runtime's `saveMod` and `loadModel` are thin wrappers that add the user folder, turning the mod on, mission names and bindings.
   - Test: `native_editor_save` runs it headless on Good Egg; the patch builds exactly the Full save's archive.
 - **ensureModel** (`editor/ensure-model`): `Runtime::ensureModel()` loads and binds the edit model without entering Edit, and keeps it loaded for the rest of the run. Commands then apply in Play, with SceneSync re-creating actors in the running scene; this is the agent tools' live mode through the test server. Live check: editor_sync_smoke's fourth run moves Good Egg's Octoomba from Play.
+- **The play-test loop** (`editor/play-lifecycle`; UX 3, TECH 2.7): `registerPlayListener` hears every run.
+  - **Events:**
+    - `Begin` fires on a fresh Play, or Resume with no earlier run.
+    - `Resume` keeps the run.
+    - `ToEdit` fires on Tab, `requestEdit`, or a miss.
+    - `End` fires on another galaxy or mission (Play drops to normal play), or when the editor is turned off.
+  - `requestEdit(reason)`, for a play-test star caught, returns to Edit with the reason as the notice.
+  - `interceptMiss()` (from `GameScene::requestEndMissDemo`) turns a play-test miss into an editor reload back to Edit, with no lives lost.
+  - A fresh Play in a scene already played rebuilds it, so collected and defeated objects come back; only Resume keeps them.
+  - Catalog presets carry a size (`Preset::scale`).
+  - Scratch saves (progress isolation) follow in their own branch.

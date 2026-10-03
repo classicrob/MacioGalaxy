@@ -80,6 +80,7 @@ namespace {
         bool keepModel = false;    // ensureModel(): the model stays loaded outside Edit
         bool inPlay = false;       // a play-test run is on (Begin/Resume told, ToEdit not yet)
         bool hadRun = false;       // a run began this session (Resume continues it; with none, Resume is a Begin)
+        bool scenePlayed = false;  // this scene has been played since it was built (a fresh Play rebuilds it)
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -98,6 +99,7 @@ namespace {
         }
         s.inPlay = event == PlayEvent::Begin || event == PlayEvent::Resume;
         s.hadRun = event == PlayEvent::End ? false : (s.hadRun || event == PlayEvent::Begin);
+        s.scenePlayed = s.scenePlayed || s.inPlay;
     }
 
     bool endsWith(const std::string& text, const char* pSuffix) {
@@ -114,6 +116,9 @@ namespace {
         Session& s = session();
         if (s.model) {
             firePlay(PlayEvent::End);  // another galaxy or mission: this session ends
+            if (mode() == Mode::Playing) {
+                Core::setMode(Mode::Off);  // ordinary play from here, not a play-test
+            }
         }
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
@@ -274,6 +279,7 @@ namespace {
     void bindPlacements() {
         PetariNative::HostAllocationScope host;
         Session& s = session();
+        s.scenePlayed = false;
         s.actors.clear();
         s.liveRows.clear();
         Hooks::clearRailTables();
@@ -535,7 +541,9 @@ namespace {
         Session& s = session();
         if (from == PlayFrom::MissionStart) {
             startReload(Session::After::PlayStart);
-        } else if (!s.pending.empty()) {
+        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed)) {
+            // Edits to rebuild, or a fresh run in a scene already played (UX 3: collected and
+            // defeated objects, switches and Mario's state reset; only Resume keeps them).
             startReload(from == PlayFrom::Marker ? Session::After::PlayMarker : Session::After::PlayStart);
         } else {
             // Nothing needs a reload: unfreeze where we are (and put Mario on the marker).
