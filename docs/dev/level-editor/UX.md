@@ -512,7 +512,12 @@ Hold **Cmd** while dragging to suspend all snapping for that drag.
   a line or curve of coins along the planet.
 - **Array** (`Cmd+Shift+D`, or the Inspector's Arrange section): pattern the
   selection with live preview and on-canvas handles:
-  - **Line**: count or spacing; drag the end handle and the count updates.
+  - **Line**: count or spacing; colored **Forward/Back**, **Right/Left**, and
+    **Up/Down** direction buttons follow the source heading and local gravity.
+    Up/Down turns ground snapping off to keep the copies at their chosen elevation.
+    Drag the end handle and the count updates. Changing the settings reframes
+    an offscreen handle after the edit; **F** or **Frame preview** fits the source,
+    copies and handle together. Camera framing waits until a handle drag ends.
   - **Ring**: around a centre (the play marker, the pivot, or a picked object),
     lying on the surface; radius handle; "face outward / inward / along".
   - **Grid**: rows × columns on the surface.

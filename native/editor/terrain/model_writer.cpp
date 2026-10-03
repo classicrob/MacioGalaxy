@@ -616,8 +616,12 @@ ModelResult buildModel(const Mesh& mesh, const MaterialClone& material, const Mo
             const std::size_t count = std::min(perCommand, mesh.indices.size() - first);
             dl.push_back(0x90);  // GX_DRAW_TRIANGLES, vertex format 0
             append16(dl, static_cast< std::uint16_t >(count));
+            // GX takes clockwise triangles (seen from outside) as front faces, the opposite of the
+            // mesh's counter-clockwise ones (which the KCL's normals come from): each triangle goes
+            // in as (a, c, b), or culling shows a brush inside out.
             for (std::size_t i = first; i < first + count; i++) {
-                const std::uint16_t v = static_cast< std::uint16_t >(mesh.indices[i]);
+                const std::size_t corner = (i - first) % 3;
+                const std::uint16_t v = static_cast< std::uint16_t >(mesh.indices[corner == 1 ? i + 1 : corner == 2 ? i - 1 : i]);
                 append16(dl, v);  // POS
                 append16(dl, v);  // NRM
                 append16(dl, options.bakeLight ? v : 0);  // CLR0: per vertex, or the single white entry

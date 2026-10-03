@@ -81,11 +81,107 @@ namespace {
     }
 }  // namespace
 
+namespace {
+    // PETARI_EDITOR_BRUSH_TEST=cylinder: a playtester's thin wooden cylinder (650 x 150, rotated
+    // -180/0/-180, down-only gravity), Mario dropped onto its cap at several radii; he must land
+    // on it each time.
+    void cylinderTestTick() {
+        static int sFrame = -1, sDrop = -1, sDropFrame = 0, sOnFrames = 0;
+        static RowId sRow;
+        static bool sDone = false;
+        if (sDone) {
+            return;
+        }
+        if (sFrame < 0) {
+            if (!PetariNative::SmokePhase::stageChecksDone.load()) {
+                return;
+            }
+            sFrame = 0;
+            notifyEditEntered();
+            return;
+        }
+        const int frame = ++sFrame;
+        PetariNative::HostAllocationScope host;
+        const float top = kY + 150.0f;
+        const float radii[] = {0.0f, 120.0f, 200.0f, 250.0f, 300.0f, 200.0f};
+        const float angles[] = {0.0f, 0.5f, 3.14f, 1.6f, 4.7f, 0.06f};
+        auto done = [&](const std::string& result) {
+            std::fprintf(stderr, "[editor-brush] %s\n", result.c_str());
+            sDone = true;
+            PetariNative::SmokePhase::followDone.store(true);
+        };
+        if (frame == 5) {
+            sRow = newRowId();
+            Command add{Command::Kind::Apply};
+            add.op.label = "Add cylinder";
+            AddRow row;
+            row.id = sRow;
+            row.zone = 0;
+            row.table = "jmp/placement/common/objinfo";
+            row.cells = {{columnHash("name"), Cell{CellType::StringOffset, 0, 0.0f, "EditorBrush"}},
+                         {columnHash("pos_x"), f(kX)}, {columnHash("pos_y"), f(kY)}, {columnHash("pos_z"), f(kZ)},
+                         {columnHash("dir_x"), f(-180)}, {columnHash("dir_y"), f(-0.0f)}, {columnHash("dir_z"), f(-180)},
+                         {columnHash("scale_x"), f(0.65f)}, {columnHash("scale_y"), f(0.15f)}, {columnHash("scale_z"), f(0.65f)},
+                         {columnHash("Obj_arg0"), n(2)}, {columnHash("Obj_arg1"), n(4)}, {columnHash("Obj_arg2"), n(0)},
+                         {columnHash("Obj_arg3"), n(2)}};
+            add.op.adds.push_back(row);
+            enqueue(std::move(add));
+        }
+        if (frame == 10) {
+            if (part(sRow) == nullptr) {
+                return done("FAIL: the cylinder has no part");
+            }
+            Command marker{Command::Kind::SetPlayMarker};
+            marker.markerPos = {kX, top + 400.0f, kZ};
+            marker.markerUp = {0, 1, 0};
+            marker.markerFront = {0, 0, 1};
+            enqueue(std::move(marker));
+            Command play{Command::Kind::Play};
+            play.from = PlayFrom::Marker;
+            enqueue(std::move(play));
+        }
+        if (frame < 40 || mode() != Mode::Playing) {
+            return;
+        }
+        if (sDrop < 0 || frame - sDropFrame > 240 || sOnFrames >= 30) {
+            if (sDrop >= 0 && sOnFrames < 30) {
+                const TVec3f* p = MR::getPlayerPos();
+                return done("FAIL: drop " + std::to_string(sDrop) + " (radius " + std::to_string(static_cast< int >(radii[sDrop])) +
+                            ") did not land on the cylinder; Mario at (" + std::to_string(static_cast< int >(p->x)) + ", " +
+                            std::to_string(static_cast< int >(p->y)) + ", " + std::to_string(static_cast< int >(p->z)) + ")");
+            }
+            if (++sDrop == static_cast< int >(sizeof(radii) / sizeof(radii[0]))) {
+                return done("PASS: Mario landed on the thin rotated cylinder's cap at every radius");
+            }
+            EditorReload::teleportPlayer(kX + radii[sDrop] * std::cos(angles[sDrop]), top + 400.0f, kZ + radii[sDrop] * std::sin(angles[sDrop]));
+            sDropFrame = frame;
+            sOnFrames = 0;
+            return;
+        }
+        Triangle* pGround = MR::isOnGroundPlayer() ? MR::getPlayerGroundingPolygon() : nullptr;
+        const char* pHost = pGround != nullptr && pGround->mParts != nullptr && pGround->mParts->mHitSensor != nullptr
+                                ? pGround->mParts->mHitSensor->mHost->mName : "";
+        if (std::strncmp(pHost, "EditorBrush_", 12) == 0 && MR::getPlayerPos()->y > top - 20.0f) {
+            sOnFrames++;
+        }
+        if (MR::getPlayerPos()->y < kY - 100.0f) {
+            const TVec3f* p = MR::getPlayerPos();
+            return done("FAIL: drop " + std::to_string(sDrop) + " (radius " + std::to_string(static_cast< int >(radii[sDrop])) +
+                        ") fell through the cylinder to (" + std::to_string(static_cast< int >(p->x)) + ", " +
+                        std::to_string(static_cast< int >(p->y)) + ", " + std::to_string(static_cast< int >(p->z)) + ")");
+        }
+    }
+}  // namespace
+
 void brushTestTick() {
-    static const bool sOn = [] {
+    static const std::string sMode = [] {
         const char* p = std::getenv("PETARI_EDITOR_BRUSH_TEST");
-        return p != nullptr && p[0] == '1';
+        return std::string(p != nullptr ? p : "");
     }();
+    if (sMode == "cylinder") {
+        return cylinderTestTick();
+    }
+    static const bool sOn = sMode == "1";
     State& s = gState;
     if (!sOn || s.done) {
         return;

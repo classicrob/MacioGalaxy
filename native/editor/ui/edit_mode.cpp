@@ -340,8 +340,14 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!active) {
         return;
     }
+    // Typing (a field, or any sheet: friction #10) makes a Tab tap wait for the edit to commit; under a sheet it does nothing.
+    const bool sheetOpen = ImGui::GetTopMostPopupModal() != nullptr;
+    Settings::setTyping(ImGui::GetIO().WantTextInput || sheetOpen);
     // A sheet (modal) owns the keys and sits above the viewport: no shortcuts, no camera input, no viewport overlays under it.
-    if (ImGui::GetTopMostPopupModal() != nullptr) return;
+    if (sheetOpen) {
+        Settings::takeDeferredToggle();  // dropped: Tab doesn't play from under a sheet
+        return;
+    }
     // Cmd+. : Focus mode (the game fills the window; panels away).
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Period)) {
@@ -363,6 +369,13 @@ void updateEditMode(float windowWidth, float windowHeight) {
         }
     }
     if (sSaveIn > 0 && --sSaveIn == 0) requestSave(false);
+    // Tab while typing (friction #10): end the edit so the value commits, then play.
+    static int sToggleIn = 0;
+    if (Settings::takeDeferredToggle()) {
+        ImGui::ClearActiveID();
+        sToggleIn = 3;
+    }
+    if (sToggleIn > 0 && --sToggleIn == 0) Settings::toggle();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
     // Cmd+N: New galaxy (UX section 14).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_N)) openNewGalaxySheet();

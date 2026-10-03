@@ -178,7 +178,8 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
     if (const char* open = std::getenv("PETARI_OPEN_STAGE"); open != nullptr && open[0] != '\0' && launchStage.empty()) {
         const char* edit = std::getenv("PETARI_OPEN_EDIT");
         const char* title = std::getenv("PETARI_OPEN_TITLE");
-        PetariNative::PlayerLaunch::openEdit = edit != nullptr && edit[0] == '1';
+        // A test fixture's stage checks need play, so it only logs the Edit request.
+        PetariNative::PlayerLaunch::openEdit = edit != nullptr && edit[0] == '1' && !fixture;
         PetariNative::PlayerLaunch::openTitle = title != nullptr && title[0] != '\0' ? title : open;
         if (!fixture) {
             const char* file = std::getenv("PETARI_OPEN_FILE");
@@ -187,7 +188,7 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
             launchScenario = 1;
         }
         std::fprintf(stderr, "PETARI OPEN: %s (file %d, edit %d)\n", open, PetariNative::PlayerLaunch::openFile,
-                     PetariNative::PlayerLaunch::openEdit ? 1 : 0);
+                     edit != nullptr && edit[0] == '1' ? 1 : 0);
     }
     for (const char* name : {"PETARI_OPEN_STAGE", "PETARI_OPEN_FILE", "PETARI_OPEN_EDIT", "PETARI_OPEN_TITLE"}) {
         unsetenv(name);
@@ -593,7 +594,10 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     auto click = [](const char* target, bool down) {
                         float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
                         SDL_Window* window = SDL_GetWindows(nullptr) != nullptr ? SDL_GetWindows(nullptr)[0] : nullptr;
-                        if (!PetariEditor::Ui::testTargetRect(target, &x, &y, &w, &h) || window == nullptr) {
+                        if (std::strcmp(target, "viewport") == 0) {
+                            PetariEditor::Ui::viewportRect(&x, &y, &w, &h);
+                            // the centre: the driver framed the ground there
+                        } else if (!PetariEditor::Ui::testTargetRect(target, &x, &y, &w, &h) || window == nullptr) {
                             std::fprintf(stderr, "[editor-test] sdl click: no %s\n", target);
                             return;
                         }
@@ -632,6 +636,13 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     if (t == 177) click("button:Cancel", false);
                     if (t == 185) click("button:View", true);
                     if (t == 187) click("button:View", false);
+                    // Card-to-arm (friction #13): one click on a Browser card, one on the ground, and it's placed.
+                    if (t == 205) click("tab:Browser", true);
+                    if (t == 207) click("tab:Browser", false);
+                    if (t == 215) click("card:first", true);
+                    if (t == 217) click("card:first", false);
+                    if (t == 225) click("viewport", true);
+                    if (t == 227) click("viewport", false);
                 }
 #endif
 #ifdef PETARI_EDITOR_UI

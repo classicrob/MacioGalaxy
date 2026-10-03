@@ -119,9 +119,11 @@ void drawSaveSheet() {
     const ModelView* model = PetariEditor::model();
     if (gOpenSave) {
         gOpenSave = false;
-        // The session's mod, else the last one saved for this galaxy, else one named after it.
+        // The session's mod, else the mod this galaxy was loaded from (friction #11: re-saving a course must
+        // update it, not start a second one), else the last one saved for this galaxy, else one named after it.
         std::string name = gModName;
         bool full = gFullArchives;
+        if (name.empty()) name = status().loadedMod;
         if (name.empty() && model != nullptr) {
             const std::string remembered = readSetting(std::string("mod.") + model->galaxy());
             const size_t bar = remembered.rfind('|');
@@ -269,6 +271,7 @@ void drawShareSheet() {
         gOpenShare = false;
         gShare = ShareFields{};
         gShare.modName = gModName;
+        if (gShare.modName.empty()) gShare.modName = status().loadedMod;
         if (gShare.modName.empty() && model != nullptr) {
             const std::string remembered = readSetting(std::string("mod.") + model->galaxy());
             gShare.modName = remembered.substr(0, remembered.rfind('|'));
@@ -337,7 +340,13 @@ void drawShareSheet() {
                            gShare.preview.archives.size() == 1 ? "" : "s");
         ImGui::PopTextWrapPos();
     }
-    if (gShare.preview.fullArchives) {
+    if (!gShare.preview.newGalaxies.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(kWarn, "New galaxy: it plays only in Petari. The original game has no way to add galaxies without code patches; "
+                                  "edits to existing galaxies play anywhere the mod is installed.");
+        ImGui::PopTextWrapPos();
+    }
+    if (gShare.preview.fullArchives && !gShare.preview.newGalaxyFilesOnly) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(kWarn, "This mod holds full archives (the game's own data). Don't share it publicly: save it as a patch (Cmd+Shift+S) and share that.");
         ImGui::PopTextWrapPos();
