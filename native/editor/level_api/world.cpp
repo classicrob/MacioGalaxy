@@ -116,8 +116,11 @@ std::vector< Triangle > readKclTriangles(const Formats::Bytes& kcl) {
     auto vec = [](Terrain::Vec3 p) { return G::V3{p.x, p.y, p.z}; };
     for (std::size_t i = 0; i < mesh->indices.size(); i += 3) {
         const auto index = mesh->indices[i];
-        out.push_back({vec(mesh->positions[index]), vec(mesh->positions[mesh->indices[i + 1]]),
-                       vec(mesh->positions[mesh->indices[i + 2]]), G::normalized(vec(mesh->normals[index]))});
+        const G::V3 a = vec(mesh->positions[index]), b = vec(mesh->positions[mesh->indices[i + 1]]),
+                    c = vec(mesh->positions[mesh->indices[i + 2]]);
+        const G::V3 normal = G::cross(b - a, c - a);
+        if (G::length(normal) < 1e-8f) continue;
+        out.push_back({a, b, c, G::normalized(normal)});
     }
     return out;
 }
