@@ -7,5 +7,6 @@ namespace EditorPlaytest {
     void draw();
     void testTick(bool playable);
     bool collectStar(LiveActor* star);
+    bool miss();
 }  // namespace EditorPlaytest
 #endif
