@@ -44,6 +44,35 @@ namespace {
         double since = 0;
     };
     Pending gPending;
+    struct BaseIdentity {
+        const E::ModelView* model = nullptr;
+        char galaxy[64] = {};
+        char fingerprint[17] = {};
+        int mission = 0;
+        int history = 0;
+        u64 revision = 0;
+    };
+    BaseIdentity gBase;
+
+    void observeBase() {
+        const E::ModelView* model = E::model();
+        if (model == nullptr) {
+            gBase = BaseIdentity{};
+            return;
+        }
+        if (gBase.model != model || std::strcmp(gBase.galaxy, model->galaxy()) != 0 || gBase.mission != model->scenario() ||
+            model->revision() < gBase.revision || (model->historySize() == 0 && gBase.history != 0)) {
+            // Retain the initial content through edits/reloads; capture a new model before its first API op.
+            PetariNative::HostAllocationScope host;
+            const std::string fingerprint = E::LevelApi::modelFingerprint(*model);
+            gBase.model = model;
+            gBase.mission = model->scenario();
+            std::snprintf(gBase.galaxy, sizeof(gBase.galaxy), "%s", model->galaxy());
+            std::snprintf(gBase.fingerprint, sizeof(gBase.fingerprint), "%s", fingerprint.c_str());
+        }
+        gBase.history = model->historySize();
+        gBase.revision = model->revision();
+    }
 
     double nowMs() {
         return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -67,13 +96,14 @@ namespace {
     }
 
     std::string modelJson() {
+        observeBase();
         const E::ModelView* m = E::model();
         if (m == nullptr) return "{\"model\":false}";
         static const char* const kModes[] = {"off", "editing", "reloading", "playing"};
         char text[512];
-        std::snprintf(text, sizeof(text), "{\"model\":true,\"galaxy\":\"%s\",\"mission\":%d,\"revision\":%llu,\"history\":%d,\"cursor\":%d,\"mode\":\"%s\",\"pending\":%d}",
+        std::snprintf(text, sizeof(text), "{\"model\":true,\"galaxy\":\"%s\",\"mission\":%d,\"revision\":%llu,\"history\":%d,\"cursor\":%d,\"mode\":\"%s\",\"pending\":%d,\"base_fingerprint\":\"%s\"}",
                       m->galaxy(), m->scenario(), static_cast< unsigned long long >(m->revision()), m->historySize(), m->historyCursor(),
-                      kModes[static_cast< int >(E::mode())], E::status().pendingCount);
+                      kModes[static_cast< int >(E::mode())], E::status().pendingCount, gBase.fingerprint);
         return text;
     }
 
@@ -293,6 +323,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
 }
 
 bool tick(bool playable, const Reply& reply) {
+    observeBase();
     if (gPending.wait == Wait::None) return false;
     const double elapsed = nowMs() - gPending.since;
     const E::Status& s = E::status();
