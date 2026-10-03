@@ -267,6 +267,8 @@ namespace {
         std::vector< RowId > created;
         Json::Value groundInfo;  // the last on_ground placement (reported per created row)
         Json::Value placements = Json::Value::array();
+        Json::Value allocatedSwitches = Json::Value::array();
+        std::map<int, std::set<std::int32_t>> reservedSwitches;
 
         void apply(const Op& op, const std::string& where) {
             std::string error;
@@ -534,6 +536,14 @@ namespace {
                     fail("bad-args", at + ": the table has no " + column, "", have, at);
                 }
                 put(column.c_str(), intCell(v), at);
+                if (value.type() == Json::Value::Type::String && lower(value.asString()) == "new") {
+                    Json::Value allocation = Json::Value::object();
+                    allocation.set("ref", rowRef(model, row));
+                    allocation.set("zone", model.zoneName(zone));
+                    allocation.set("field", column);
+                    allocation.set("id", v);
+                    allocatedSwitches.push(std::move(allocation));
+                }
             }
             for (const auto& [key, value] : op["links"].members()) {
                 const std::string at = where + ".links." + key;
@@ -553,7 +563,7 @@ namespace {
 
         // The lowest zone switch (0-127) no row of the zone uses.
         std::int32_t freeSwitch(int zone) {
-            std::set< std::int32_t > used;
+            std::set< std::int32_t > used = reservedSwitches[zone];
             for (int t = 0; t < model.tableCount(zone); t++) {
                 std::vector< std::uint32_t > columns;
                 for (const Column& c : model.columns(zone, t)) {
@@ -570,8 +580,10 @@ namespace {
                 });
             }
             for (std::int32_t id = 0; id < 128; id++) {
-                if (!used.count(id))
+                if (!used.count(id)) {
+                    reservedSwitches[zone].insert(id);
                     return id;
+                }
             }
             fail("capacity", "every zone switch (0-127) of " + std::string(model.zoneName(zone)) + " is used", "use a shared switch (1000-1127)");
         }
@@ -1186,6 +1198,7 @@ Json::Value Level::Impl::applyBatch(const Json::Value& args, bool dryRun) {
     out.set("deleted", std::move(deleted));
     if (!batch.placements.items().empty())
         out.set("placements", batch.placements);
+    if (!batch.allocatedSwitches.items().empty()) out.set("allocated_switches", batch.allocatedSwitches);
     out.set("checks_introduced", std::move(introduced));
     out.set("checks_resolved", std::move(resolved));
     if (args["show_op"].asBool())

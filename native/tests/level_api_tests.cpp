@@ -218,6 +218,30 @@ int main() {
     std::printf("open: %.0f ms\n", ms(t0));
     L::Level& lv = *level;
 
+    const Value info = call(lv, "info");
+    check(!info.has("existing_checks"), "existing checks are omitted from default replies");
+    const Value diagnostics = call(lv, "info", R"({"existing_checks":true})");
+    check(diagnostics.has("existing_checks") && diagnostics["existing_checks"].isArray(), "existing checks are explicitly available");
+    check(diagnostics["existing_checks"].items().size() == call(lv, "checks", R"({"all":true})")["checks"].items().size(),
+          "fresh-model existing checks match the core baseline");
+    for (const auto& zone : info["zones"].items()) {
+        const auto matrix = zone["world_matrix"];
+        check(matrix.items().size() == 4 && matrix.items()[3].items()[3].asNumber() == 1, "zone matrix is homogeneous 4x4");
+        const auto core = lv.model().zoneWorldMatrix(zone["index"].asInt());
+        for (int row = 0; row < 3; ++row)
+            for (int column = 0; column < 4; ++column)
+                check(matrix.items()[row].items()[column].asNumber() == core.m[row][column], "zone matrix retains core precision");
+    }
+    const auto beforeDiagnosticsFailure = lv.journal();
+    check(call(lv, "apply", R"({"existing_checks":"yes","ops":[{"op":"add","class":"Coin","pos":[0,2000,0]}]})")["error"]["code"].asString() == "bad-value" &&
+          show(lv.journal()) == show(beforeDiagnosticsFailure), "bad diagnostic option cannot mutate the model");
+    Value allocated = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"add","class":"Coin","pos":[0,2000,0],"switches":{"SW_A":"new","SW_B":"new"},"as":"switch_probe"}]})");
+    check(ok(allocated, "switch allocation") && allocated["allocated_switches"].items().size() == 2, "mutation replies report both allocated switches");
+    const auto allocations = allocated["allocated_switches"].items();
+    check(allocations[0]["id"].asInt() != allocations[1]["id"].asInt() && allocations[0]["zone"].asString() == "EggStarGalaxy" &&
+          allocations[0]["ref"].asString() == allocations[1]["ref"].asString(), "switch allocation reserves distinct IDs within one row");
+    check(show(lv.journal()) == show(beforeDiagnosticsFailure), "dry-run switch reservation leaves no committed rows or labels");
+
     // Self-description.
     Value help = L::Level::help(Value::object());
     check(help["ok"].asBool() && help["commands"].items().size() >= 10 && help["ops"].items().size() >= 8, "help lists commands and ops");

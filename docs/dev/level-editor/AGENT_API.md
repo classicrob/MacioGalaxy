@@ -360,3 +360,11 @@ with lv.batch(label="Rail coins") as b:
 ```
 
 Low-level journal adds include `at` (the ordered table insertion index; absent means append). Float cells outside the standard transform columns carry `{ "type": "float", "value": ... }`, so integer-valued path coordinates retain their type when replay creates a new point table.
+
+### Coordinate and diagnostic replies
+
+Each zone in `info` includes `world_matrix`: a full-precision 4x4 row-major matrix. Multiply it by the column vector `[zone_x, zone_y, zone_z, 1]` to obtain world coordinates. The bottom row is `[0,0,0,1]`; `origin` and `rot` remain available for quick inspection.
+
+Pass `existing_checks: true` to any loaded-level command to include the currently present baseline checks in an `existing_checks` array. The default remains compact; new problems still appear in the usual checks fields. The option must be boolean, and is validated before mutation.
+
+Mutation and dry-run replies report new switch reservations in `allocated_switches`, each `{ref, zone, field, id}`. Separate `"new"` requests reserve distinct free IDs even within one row. Connect another socket to the returned ID or to `"@label.SW_A"` when it should share that switch.

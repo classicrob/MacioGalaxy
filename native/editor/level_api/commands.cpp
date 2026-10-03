@@ -37,7 +37,7 @@ namespace {
             std::optional< Json::Value > v = Json::parse(text, &error);
             return v ? *v : Json::Value::object();
         };
-        return {
+        std::vector<CommandSpec> result = {
             {"help", "This overview, or one command / op in full",
              "command  string  a command name (optional)\nop       string  a batch op name (optional)",
              S(R"({"type":"object","properties":{"command":{"type":"string"},"op":{"type":"string"}}})"), R"({"op": "add"})", false},
@@ -96,6 +96,13 @@ namespace {
              "from  int  first entry (default 0)\nto    int  past the last (default: the cursor)",
              S(R"({"type":"object","properties":{"from":{"type":"integer"},"to":{"type":"integer"}}})"), "{}", false},
         };
+        for (auto& spec : result) {
+            Json::Value properties = spec.schema["properties"].isObject() ? spec.schema["properties"] : Json::Value::object();
+            properties.set("existing_checks", S(R"({"type":"boolean"})"));
+            spec.schema.set("properties", std::move(properties));
+            spec.argsDoc += "\nexisting_checks  bool  include currently present baseline checks (default false)";
+        }
+        return result;
     }
 
     std::vector< CommandSpec > makeOps() {

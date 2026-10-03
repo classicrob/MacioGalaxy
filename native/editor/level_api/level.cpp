@@ -250,6 +250,8 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
         for (const auto& [k, v] : result.members()) out.set(k, v);
     };
     try {
+        if (args.has("existing_checks") && args["existing_checks"].type() != Json::Value::Type::Bool)
+            fail("bad-value", "existing_checks must be boolean", "omit it for compact replies", {}, "existing_checks");
         if (command == "help") {
             merge(helpJson(args));
         } else if (command == "info") {
@@ -272,6 +274,15 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
                 const Frame f = zoneFrame(model, z);
                 j.set("origin", vecJson(f.origin, 1));
                 j.set("rot", vecJson(G::toEulerDegrees(f.basis), 2));
+                const Mtx34 transform = model.zoneWorldMatrix(z);
+                Json::Value matrix = Json::Value::array();
+                for (int row = 0; row < 4; ++row) {
+                    Json::Value values = Json::Value::array();
+                    for (int column = 0; column < 4; ++column)
+                        values.push(row < 3 ? static_cast<double>(transform.m[row][column]) : (column == 3 ? 1.0 : 0.0));
+                    matrix.push(std::move(values));
+                }
+                j.set("world_matrix", std::move(matrix));
                 int rows = 0;
                 for (int t = 0; t < model.tableCount(z); t++) model.forEachRow(z, t, [&](RowId) { rows++; });
                 j.set("rows", rows);
@@ -502,6 +513,14 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
             std::vector< std::string > names;
             for (const CommandSpec& s : commands()) names.push_back(s.name);
             fail("unknown-command", "no command '" + command + "'", "`help` lists the commands", closest(names, command, 5));
+        }
+        if (args["existing_checks"].asBool()) {
+            Json::Value existing = Json::Value::array();
+            const Json::Value allChecks = impl.checksJson(true);
+            for (const auto& check : allChecks["checks"].items()) {
+                if (check["shipped"].asBool()) existing.push(check);
+            }
+            out.set("existing_checks", std::move(existing));
         }
     } catch (const Failure& f) {
         Json::Value err = Json::Value::object();

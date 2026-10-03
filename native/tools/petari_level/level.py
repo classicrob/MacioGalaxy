@@ -252,8 +252,8 @@ class Level:
     def help(self, command: Optional[str] = None, op: Optional[str] = None) -> dict:
         return self.call("help", command=command, op=op)
 
-    def info(self) -> dict:
-        return self.call("info")
+    def info(self, *, existing_checks: bool = False) -> dict:
+        return self.call("info", existing_checks=existing_checks or None)
 
     def catalog(self, query: Optional[str] = None, *, category: Optional[str] = None, placed_here: Optional[bool] = None,
                 limit: Optional[int] = None) -> list[dict]:
@@ -275,17 +275,17 @@ class Level:
     # ---- edits ------------------------------------------------------------------------------------
 
     def apply(self, ops: Iterable[dict], *, key: Optional[str] = None, label: Optional[str] = None,
-              dry_run: bool = False) -> dict:
+              dry_run: bool = False, existing_checks: bool = False) -> dict:
         """One transaction. Returns created/changed/deleted, placements and the checks introduced."""
-        return self.call("apply", ops=list(ops), key=key, label=label, dry_run=dry_run or None)
+        return self.call("apply", ops=list(ops), key=key, label=label, dry_run=dry_run or None, existing_checks=existing_checks or None)
 
     @contextmanager
-    def batch(self, *, key: Optional[str] = None, label: Optional[str] = None, dry_run: bool = False):
+    def batch(self, *, key: Optional[str] = None, label: Optional[str] = None, dry_run: bool = False, existing_checks: bool = False):
         """`with lv.batch(key=...) as b:` ... applied at the end of the block (nothing if it raises)."""
         b = Batch(self)
         yield b
         if b.ops:
-            b.result = self.apply(b.ops, key=key, label=label, dry_run=dry_run)
+            b.result = self.apply(b.ops, key=key, label=label, dry_run=dry_run, existing_checks=existing_checks)
 
     def add(self, cls: str, pos: Optional[Vec] = None, **kw: Any) -> str:
         """Add one object in its own batch; returns its ref."""
