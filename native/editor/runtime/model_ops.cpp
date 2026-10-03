@@ -139,6 +139,33 @@ std::vector< std::uint32_t > possibleMissionMasks(const ModelView& m, int zone) 
     return std::vector< std::uint32_t >(out.begin(), out.end());
 }
 
+namespace {
+    // The row and its identical copies in the zone's other layers.
+    std::vector< RowId > objectRows(const ModelView& m, RowId row, std::set< RowId >* pTaken) {
+        std::vector< RowId > object{row};
+        int zone = 0, table = 0;
+        if (!m.locate(row, &zone, &table)) return object;
+        if (pTaken != nullptr) pTaken->insert(row);
+        const std::string leaf = leafOf(m.tablePath(zone, table));
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (t == table || leafOf(m.tablePath(zone, t)) != leaf || layerOf(m.tablePath(zone, t)) < 0) continue;
+            m.forEachRow(zone, t, [&](RowId other) {
+                if ((pTaken == nullptr || !pTaken->count(other)) && m.state(other) != RowState::Deleted && sameObject(m, row, other)) {
+                    object.push_back(other);
+                    if (pTaken != nullptr) pTaken->insert(other);
+                }
+            });
+        }
+        return object;
+    }
+}  // namespace
+
+std::uint32_t objectMissions(const ModelView& m, RowId row) {
+    std::uint32_t out = 0;
+    for (RowId r : objectRows(m, row, nullptr)) out |= m.rowMissions(r);
+    return out;
+}
+
 MissionChange changeMissions(const ModelView& m, const std::vector< RowId >& rows, std::uint32_t missionMask) {
     MissionChange out;
     out.op.label = "Change missions";
@@ -152,19 +179,7 @@ MissionChange changeMissions(const ModelView& m, const std::vector< RowId >& row
         if (taken.count(row) || m.state(row) == RowState::Deleted) continue;
         int zone = 0, table = 0;
         if (!m.locate(row, &zone, &table)) continue;
-        std::vector< RowId > object{row};
-        taken.insert(row);
-        const std::string leaf = leafOf(m.tablePath(zone, table));
-        for (int t = 0; t < m.tableCount(zone); t++) {
-            if (t == table || leafOf(m.tablePath(zone, t)) != leaf || layerOf(m.tablePath(zone, t)) < 0) continue;
-            m.forEachRow(zone, t, [&](RowId other) {
-                if (!taken.count(other) && m.state(other) != RowState::Deleted && sameObject(m, row, other)) {
-                    object.push_back(other);
-                    taken.insert(other);
-                }
-            });
-        }
-        objects.push_back(object);
+        objects.push_back(objectRows(m, row, &taken));
     }
     for (const std::vector< RowId >& object : objects) {
         int zone = 0, table = 0;

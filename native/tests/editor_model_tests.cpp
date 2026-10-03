@@ -678,6 +678,7 @@ void testMissionOps() {
     copy.copyOf = kuribo;
     copy.cells.push_back({E::columnHash("l_id"), E::Cell{E::CellType::Int, lid, 0, {}}});
     check(m->apply(E::Op{"Split", {}, {}, {copy}, {}}, &error), error);
+    check(O::objectMissions(*m, kuribo) == 0b11 && m->rowMissions(kuribo) == 0b01, "the object is in both missions through its copy");
     O::MissionChange both = O::changeMissions(*m, {kuribo}, 0b11);
     check(both.error.empty() && both.rows.size() == 1 && both.op.deletes.size() == 2, "split copies merge into one Common row");
     check(m->apply(both.op, &error) && m->rowMissions(both.rows[0]) == 0b11, "in both missions once");
