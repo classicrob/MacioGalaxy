@@ -1,25 +1,23 @@
-// Bakes terrain brushes into a Full-archive mod (spikes S6 and S7, docs/dev/level-editor/TECH.md
-// 6.3): each brush becomes ObjectData/<Name>.arc with <name>.bmd (the mesh, its material cloned
-// from a model on the disc), <name>.kcl and <name>.pa (its collision), registered as a planet in
-// PlanetMapDataTable and placed in a stage with a fitted gravity row. Everything goes through
-// the game's normal archive path, as a player's baked mod would.
+// Writes terrain brushes as rows and bakes them into a Full-archive mod (spikes S6-S8; M5), the
+// way the editor's save does (petari/editor/terrain/bake.hpp): each EditorBrush row becomes a
+// generated planet (ObjectData/<Planet>.arc with its model, .kcl and .pa), registered in
+// PlanetMapDataTable, with its fitted gravity row. Everything then goes through the game's normal
+// archive path, as a player's saved mod would.
 //
 // The spike scene (the same places as src/Game/Editor/EditorTerrainTest.cpp):
-//   EditorBlockoutBox     3000 x 300 x 3000 box centred at (-20000, 0, 30000), BathtubPlanet's
-//                         checker material, top face Sound_code Stone; GlobalCubeGravity
-//   EditorBlockoutSphere  radius-1000 sphere centred at (-20000, 0, 40000), BeeWallClimbPlanetA's
-//                         Soil06_v, Sound_code Lawn; GlobalPointGravity
+//   a checker box, 3000 x 300 x 3000, centred at (-20000, 0, 30000): cube gravity
+//   a grass sphere, radius 1000, centred at (-20000, 0, 40000): point gravity
 //
 // usage: petari_terrain_bake --disc <disc files/> --out <mod>/files [--stage EggStarGalaxy]
 //        petari_terrain_bake --disc <disc files/> --out <mod>/files --galaxy ModTestGalaxy
 // --galaxy (spike S8, TECH.md 5.7) writes a new galaxy instead of editing a stage: its stage and
 // Scenario archives (the tables of a small disc galaxy, TransformationExGalaxy, emptied: schemas
-// only) holding the box planet at the origin with its cube gravity, a start above it and Power Star
-// 1 where Mario lands; and <mod>/galaxy.json for the mod galaxy registry.
+// only) holding a checker box brush at the origin, a start above it and Power Star 1 where Mario
+// lands; and <mod>/galaxy.json for the mod galaxy registry.
 // The disc is only read. Writes plain (uncompressed) RARCs, which the game and mod loader accept.
 #include <petari/editor/formats/formats.hpp>
-#include <petari/editor/terrain/kcl_writer.hpp>
-#include <petari/editor/terrain/model_writer.hpp>
+#include <petari/editor/terrain/bake.hpp>
+#include <petari/editor/terrain/brush.hpp>
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -131,54 +129,40 @@ namespace {
         return std::max(id, 9000);
     }
 
-    struct Brush {
-        const char* name;
-        T::Mesh mesh;
-        T::Vec3 position;
-        const char* donorArchive;
-        const char* donorModel;
-        const char* donorMaterial;
-    };
-
-    F::Bytes bakeArchive(const fs::path& disc, const Brush& brush) {
-        const auto donor = readArchive(disc / "ObjectData" / (std::string(brush.donorArchive) + ".arc"));
-        const F::Bytes* pDonorModel = donor ? donor->file(brush.donorModel) : nullptr;
-        if (pDonorModel == nullptr) {
-            die(std::string("donor model not found: ") + brush.donorArchive + "/" + brush.donorModel);
-        }
-        std::string error;
-        const auto material = T::cloneMaterial(*pDonorModel, brush.donorMaterial, &error);
-        if (!material) {
-            die(error);
-        }
-        const T::ModelResult model = T::buildModel(brush.mesh, *material);
-        if (!model.error.empty()) {
-            die(model.error);
-        }
-        const T::KclResult kcl = T::buildKcl(brush.mesh);
-        if (!kcl.error.empty()) {
-            die(kcl.error);
-        }
-        const std::string base = lower(brush.name);
-        std::printf("%s: %d triangles; model %zu bytes (material %s from %s), kcl %zu bytes, pa %zu bytes\n", brush.name, model.triangles,
-                    model.model.size(), brush.donorMaterial, brush.donorArchive, kcl.kcl.size(), kcl.pa.size());
-        return F::Archive::create(base, {{base + ".bmd", model.model}, {base + ".kcl", kcl.kcl}, {base + ".pa", kcl.pa}}).build();
+    // A brush row: bottom centre `base`, size / 1000 as the scale, shape and look in Obj_arg0-3.
+    void addBrushRow(F::Table& table, std::int32_t id, const T::Vec3& base, const T::Vec3& scale, T::BrushShape shape, int material,
+                     bool fittedGravity = true) {
+        const int row = addPlacementRow(table, T::kBrushClass, id, base, scale);
+        set(table, row, "Obj_arg0", integer(static_cast< int >(shape)));
+        set(table, row, "Obj_arg1", integer(material));
+        set(table, row, "Obj_arg2", integer(0));
+        set(table, row, "Obj_arg3", integer(fittedGravity ? 1 : 0));
     }
-    // Cube gravity fitted to the 3000 x 300 x 3000 box centred at `center`: the row's position is
-    // the cube's bottom centre, its scale the size / 1000 (CubeGravityCreator); Obj_arg0-2 = 3:
-    // both faces of each axis attract.
-    int addBoxGravity(F::Table& gravity, std::int32_t id, const T::Vec3& center) {
-        const int row = addPlacementRow(gravity, "GlobalCubeGravity", id, {center.x, center.y - 150, center.z}, {3, 0.3f, 3});
-        set(gravity, row, "Range", real(2000));
-        set(gravity, row, "Distant", real(0));
-        set(gravity, row, "Priority", integer(1000));
-        set(gravity, row, "Inverse", integer(0));
-        set(gravity, row, "Power", text("Normal"));
-        set(gravity, row, "Gravity_type", text("Normal"));
-        for (const char* pArg : {"Obj_arg0", "Obj_arg1", "Obj_arg2"}) {
-            set(gravity, row, pArg, integer(3));
+
+    // Bakes the brushes of `archives` and writes every file of the result below `out`.
+    void bakeAndWrite(const fs::path& disc, const fs::path& out, std::map< std::string, F::Bytes > archives) {
+        T::BakeInput input;
+        input.stageArchives = std::move(archives);
+        input.readDisc = [&disc](const std::string& path) -> std::optional< F::Bytes > {
+            F::Bytes bytes;
+            if (!readFile(disc / path.substr(1), &bytes)) {
+                return std::nullopt;
+            }
+            return bytes;
+        };
+        const T::BakeOutput baked = T::bakeBrushes(input);
+        if (!baked.error.empty()) {
+            die(baked.error);
         }
-        return row;
+        for (const std::string& line : baked.log) {
+            std::printf("%s\n", line.c_str());
+        }
+        for (const auto& [path, bytes] : baked.files) {
+            if (!writeFile(out / path.substr(1), bytes)) {
+                die("cannot write " + path);
+            }
+        }
+        std::printf("baked %d brushes into %zu files\n", baked.brushes, baked.files.size());
     }
 
     void writeSkeletonGalaxy(const fs::path& disc, const fs::path& out, const std::string& name) {
@@ -210,20 +194,24 @@ namespace {
             tables.emplace(path, *table);
         }
         F::Table& objects = tables.at("jmp/placement/common/objinfo");
-        F::Table& gravity = tables.at("jmp/placement/common/planetobjinfo");
         F::Table& start = tables.at("jmp/start/common/startinfo");
-        addPlacementRow(objects, "EditorBlockoutBox", 0, {0, 0, 0}, {1, 1, 1});
+        addBrushRow(objects, 0, {0, -150, 0}, {3, 0.3f, 3}, T::BrushShape::Box, 0);  // top face at y = 150
+        // A small blockout around it: a wood pillar and a metal ramp on the box (the box's gravity),
+        // a floating ice platform, and a grass planetoid with its own gravity.
+        addBrushRow(objects, 3, {-900, 150, -700}, {0.6f, 1.5f, 0.6f}, T::BrushShape::Cylinder, 4, false);
+        addBrushRow(objects, 4, {700, 150, -500}, {0.8f, 0.4f, 1.2f}, T::BrushShape::Ramp, 5, false);
+        addBrushRow(objects, 5, {0, 900, -2600}, {1.2f, 0.2f, 1.2f}, T::BrushShape::Box, 6);
+        addBrushRow(objects, 6, {2600, 700, 600}, {1.4f, 1.4f, 1.4f}, T::BrushShape::Sphere, 1);
         // Power Star 1 just above the top face, where Mario lands from the start.
         const int star = addPlacementRow(objects, "PowerStar", 1, {0, 260, 0}, {1, 1, 1});
         set(objects, star, "Obj_arg0", integer(1));
-        addBoxGravity(gravity, 2, {0, 0, 0});
         const int mario = addPlacementRow(start, "Mario", 0, {0, 600, 0}, {1, 1, 1});
         set(start, mario, "MarioNo", integer(0));
         set(start, mario, "Camera_id", integer(-1));
         for (auto& [path, table] : tables) {
             files.push_back({path, table.build()});
         }
-        writeFile(out / "StageData" / (name + ".arc"), F::Archive::create("stage", files).build());
+        bakeAndWrite(disc, out, {{"/StageData/" + name + ".arc", F::Archive::create("stage", files).build()}});
 
         // The Scenario archive: one mission (Power Star 1) with only the Common layer, one zone.
         auto scenarios = F::Table::parse(*scenarioTemplate->file("scenariodata.bcsv"));
@@ -275,88 +263,24 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    // The brushes, in their parts' local space (the placement row puts them in the stage).
-    T::Mesh box = T::makeBox({0, 0, 0}, {1500, 150, 1500});
-    T::Surface stone;
-    stone.sound = T::soundCode("Stone");
-    box.surfaces.push_back(stone);
-    for (std::size_t t = 0; t < box.triangleCount(); t++) {
-        if (box.normals[box.indices[t * 3]].y > 0.5f) {
-            box.triangleSurface[t] = 1;
-        }
-    }
-    T::Surface lawn;
-    lawn.sound = T::soundCode("Lawn");
-    const Brush brushes[] = {
-        {"EditorBlockoutBox", box, {-20000, 0, 30000}, "BathtubPlanet", "bathtubplanet.bdl", "CheckMat_v"},
-        {"EditorBlockoutSphere", T::makeSphere({0, 0, 0}, 1000.0f, 24, 32, lawn), {-20000, 0, 40000}, "BeeWallClimbPlanetA",
-         "beewallclimbplaneta.bdl", "Soil06_v"},
-    };
-    for (const Brush& brush : brushes) {
-        if (!writeFile(out / "ObjectData" / (std::string(brush.name) + ".arc"), bakeArchive(disc, brush))) {
-            die("cannot write the planet archive");
-        }
-    }
-
-    // Register the planets: rows in PlanetMapDataTable (no Low/Middle/Bloom/Water/Indirect).
-    auto planets = readArchive(disc / "ObjectData" / "PlanetMapDataTable.arc");
-    const F::Bytes* pPlanetTable = planets ? planets->file("planetmapdatatable.bcsv") : nullptr;
-    if (pPlanetTable == nullptr) {
-        die("PlanetMapDataTable.arc not found");
-    }
-    auto planetTable = F::Table::parse(*pPlanetTable);
-    for (const Brush& brush : brushes) {
-        const int row = planetTable->addRow(0);
-        for (const char* pFlag : {"LowFlag", "MiddleFlag", "BloomFlag", "WaterFlag", "IndirectFlag"}) {
-            set(*planetTable, row, pFlag, integer(0));
-        }
-        for (int i = 0; i < 8; i++) {
-            set(*planetTable, row, ("ForceLowScenarioName" + std::to_string(i)).c_str(), text(""));
-        }
-        set(*planetTable, row, "PlanetName", text(brush.name));
-    }
-    planets->replace("planetmapdatatable.bcsv", planetTable->build());
-    writeFile(out / "ObjectData" / "PlanetMapDataTable.arc", planets->build());
-
     if (!galaxy.empty()) {
         writeSkeletonGalaxy(disc, out, galaxy);
         return 0;
     }
 
-    // Place them, with their gravity, in the stage's own (galaxy) zone, on the Common layer.
+    // The two brushes, placed in the stage's own (galaxy) zone on the Common layer, then baked.
     auto stageArchive = readArchive(disc / "StageData" / (stage + ".arc"));
     if (!stageArchive) {
         die("stage archive not found");
     }
     auto objects = F::Table::parse(*stageArchive->file("jmp/placement/common/objinfo"));
-    auto gravity = F::Table::parse(*stageArchive->file("jmp/placement/common/planetobjinfo"));
-    if (!objects || !gravity) {
-        die("the stage has no Common ObjInfo / PlanetObjInfo");
+    if (!objects) {
+        die("the stage has no Common ObjInfo");
     }
-    std::int32_t id = std::max(nextId(*objects), nextId(*gravity));
-    for (const Brush& brush : brushes) {
-        addPlacementRow(*objects, brush.name, id++, brush.position, {1, 1, 1});
-    }
-    // GlobalCubeGravity: the row's position is the cube's bottom centre, its scale the size / 1000
-    // (CubeGravityCreator); Obj_arg0-2 = 3: both faces of each axis attract.
-    const int cube = addPlacementRow(*gravity, "GlobalCubeGravity", id++, {-20000, -150, 30000}, {3, 0.3f, 3});
-    // GlobalPointGravity: Distant is the radius, so Range counts from the surface.
-    const int point = addPlacementRow(*gravity, "GlobalPointGravity", id++, {-20000, 0, 40000}, {2, 2, 2});
-    for (int row : {cube, point}) {
-        set(*gravity, row, "Range", real(2000));
-        set(*gravity, row, "Distant", real(row == point ? 1000 : 0));
-        set(*gravity, row, "Priority", integer(1000));
-        set(*gravity, row, "Inverse", integer(0));
-        set(*gravity, row, "Power", text("Normal"));
-        set(*gravity, row, "Gravity_type", text("Normal"));
-    }
-    for (const char* pArg : {"Obj_arg0", "Obj_arg1", "Obj_arg2"}) {
-        set(*gravity, cube, pArg, integer(3));
-    }
+    std::int32_t id = nextId(*objects);
+    addBrushRow(*objects, id++, {-20000, -150, 30000}, {3, 0.3f, 3}, T::BrushShape::Box, 0);   // checker (Stone)
+    addBrushRow(*objects, id++, {-20000, -1000, 40000}, {2, 2, 2}, T::BrushShape::Sphere, 1);  // grass (Lawn)
     stageArchive->replace("jmp/placement/common/objinfo", objects->build());
-    stageArchive->replace("jmp/placement/common/planetobjinfo", gravity->build());
-    writeFile(out / "StageData" / (stage + ".arc"), stageArchive->build());
-    std::printf("placed %zu planets and 2 gravity fields in %s; PlanetMapDataTable has %d rows\n", std::size(brushes), stage.c_str(),
-                planetTable->rowCount());
+    bakeAndWrite(disc, out, {{"/StageData/" + stage + ".arc", stageArchive->build()}});
     return 0;
 }

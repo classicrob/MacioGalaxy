@@ -8,6 +8,7 @@
 #include "Game/System/GameSequenceFunction.hpp"
 #include "Game/System/GameSystem.hpp"
 #include "Game/System/GameSystemSceneController.hpp"
+#include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/JMapIdInfo.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
@@ -81,6 +82,7 @@ namespace EditorReload {
 
     void teleportPlayer(f32 x, f32 y, f32 z) {
         MR::setPlayerPosAndWait(TVec3f(x, y, z));
+        MR::resetCameraMan();  // the camera follows him there at once, as after a launcher
     }
 }  // namespace EditorReload
 #endif
