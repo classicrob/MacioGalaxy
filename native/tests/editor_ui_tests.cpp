@@ -177,6 +177,11 @@ void testPanelsLogic() {
     // Mission names: shown when drawable, else "Mission <n>" (FakeModel names every mission "Test mission").
     CHECK(Ui::missionLabel(model, 1) == "Test mission");
 
+    // The tool modules' helpers: display names as the panels show them; the help strip is shared.
+    CHECK(!Ui::displayName(model, model.rows.front().id).empty());
+    Ui::helpText() = "hint";
+    CHECK(Ui::helpText() == "hint");
+
     // Mod names: folder-safe, trimmed, capped; the default from the galaxy.
     CHECK(Ui::modNameFrom("  My/Cool:Mod!  ") == "MyCoolMod" && Ui::modNameFrom("Pipe Dream_2-b") == "Pipe Dream_2-b" && Ui::modNameFrom("///").empty());
     CHECK(Ui::modNameFrom(std::string(60, 'a')).size() == 40);
