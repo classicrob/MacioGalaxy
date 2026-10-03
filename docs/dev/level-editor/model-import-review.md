@@ -1,4 +1,4 @@
-# M6 model import: ready for review
+# M6 model import: reviewed and verified
 
 Implementation: `editor/model-import`. The executable verified below was built at
 `de8829bf7199b715d8e8a72a03064b6af1c2c2dc`; subsequent documentation does not change it.
@@ -21,11 +21,14 @@ full PBR shading are not imported.
 - Terrain: `Part::setCollision(nullptr, nullptr)` invalidates old collision and supports
   visual-only imported parts. The KCL and BMD writers themselves are unchanged.
 
-Review requests were sent to Runtime and UI, then to the lead and integrator for substitute
-review. All four threads reported `error` on 2026-10-03. This branch has **not been merged**;
-there is no merged PRS row yet. Resolve the review, merge any newer level-editor changes,
-run the prescribed incremental build/targeted tests, add the PRS row and fast-forward via
-the shared helper.
+The lead assigned Gravity as substitute Runtime/UI reviewer. Review found provider-transition
+retirement and import session guard/reset issues, fixed in `a28aa1f23` and explicitly approved
+after the expanded live smoke. The final app SHA-256 is
+`28fc69a539cea266afbbf2bf606d8033cc0838d3ac2332b28c091e4fed797b55`.
+`build/import-review-live/run.log` proves ordinary/import/brush transitions plus undo/redo
+retire each prior actor and model, retain one history step, and preserve the scene. Patch/full
+baking and 1800 ordinary idle frames pass. `build/import-review-tests.log` records all five
+targeted suites passing. `level-editor` at `2a3f8806a` was already included; PR 61 records delivery.
 
 ## Verification
 
