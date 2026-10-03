@@ -46,6 +46,14 @@ int main(int argc, char** argv) {
 
 extern "C" bool rfl_render_initialize(int argc, char** argv) {
     PetariNative::HostAllocationScope host;
+    // This test reads pixels back and checks them, so every draw must reach the EFB. The default pipeline policy waits at most
+    // ~6 ms per frame for a pending pipeline and then SKIPS that draw until its compile lands. With an empty pipeline cache
+    // (build/rfl-render-state below: a fresh checkout or build directory, i.e. the first run of a clean full check) every pipeline
+    // compiles from scratch, takes far more than 6 ms, and the fill, the face or the icon was skipped: the capture read zeros or the
+    // wrong colour, differently on each run, until the cache was warm (then it passed, "always alone"). On an empty cache this
+    // failed 3 of 3 runs with 18-23 skipped draws; blocking waits for each pipeline, 0 skipped. Set before the first pipeline
+    // lookup (the policy is read once).
+    setenv("PETARI_PIPELINE_POLICY", "blocking", 1);
     gStatePath = (std::filesystem::current_path() / "build/rfl-render-state").string();
     std::filesystem::create_directories(gStatePath);
     AuroraConfig config{};
