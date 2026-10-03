@@ -101,6 +101,7 @@ static void testBrushClass() {
     const C::ClassInfo info = PetariEditor::Terrain::brushClassInfo();
     check(info.name == "EditorBrush" && info.placeable && info.args.size() == 4 && info.presets.size() == 4, "brush class: 4 args, 4 presets");
     check(info.args.size() == 4 && info.args[3].choices.size() == 3 && info.args[3].defaultValue == 1, "brush gravity: 3 modes, fitted by default");
+    check(info.presets.size() == 4 && info.presets[0].scale[1] < 0.2f && info.presets[1].scale[0] > 1.0f, "brush presets: human-scale sizes");
     PetariEditor::Terrain::registerBrushClass();
     check(C::find("EditorBrush") != nullptr, "brush class registered");
 }

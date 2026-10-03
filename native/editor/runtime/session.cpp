@@ -348,6 +348,9 @@ namespace {
         EditModel& m = *s.model;
         int zone = 0, table = 0;
         if (!m.locate(id, &zone, &table)) {
+            // Gone from the model (an Add undone): whatever showed it goes too (EP-007).
+            retireRow(id);
+            s.pending.erase(id);
             return;
         }
         const std::string path = m.tablePath(zone, table);
@@ -679,6 +682,7 @@ void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITO
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
+void newGalaxyTestTick();  // new_galaxy_test.cpp: New Galaxy across its restart (PETARI_EDITOR_NEWGALAXY_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
@@ -744,6 +748,7 @@ void tick(bool playable) {
     static const bool sNewGalaxyServices = (registerNewGalaxyServices(), true);
     (void)sNewGalaxyServices;
     newGalaxyTick();
+    newGalaxyTestTick();
     plainReloadTestTick(playable);
     // A plain reloadScene() completes whether or not the editor is on.
     if (session().plainReload && Hooks::sceneSerial() != session().reloadFromScene && playable) {

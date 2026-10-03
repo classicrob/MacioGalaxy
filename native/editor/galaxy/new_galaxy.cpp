@@ -413,11 +413,14 @@ NewGalaxyFiles buildNewGalaxy(const NewGalaxySpec& spec, const DiscReader& readD
         const int mario = addPlacementRow(start, "Mario", 0, {0, ground + 600.0f, 0}, {1, 1, 1});
         set(start, mario, "MarioNo", integer(0));
         set(start, mario, "Camera_id", integer(-1));
-        // A Power Star per mission (on its layer), in a row past the start, except in empty space.
+        // A Power Star per mission (on its layer), 900 units from the start and spread round it (not
+        // where the first steps go), except in empty space.
         if (spec.from != Template::Empty) {
             for (int m = 1; m <= missionCount; m++) {
                 F::Table& layer = stage->table("jmp/placement/" + layerOf(m, missionCount) + "/objinfo", "jmp/placement/common/objinfo");
-                const int star = addPlacementRow(layer, "PowerStar", 100 + m, {300.0f * m, ground + 150.0f, 0}, {1, 1, 1});
+                const float angle = 3.14159265f * (1.0f + 0.4f * static_cast< float >(m - 1));
+                const T::Vec3 at{900.0f * std::sin(angle), ground + 150.0f, 900.0f * std::cos(angle)};
+                const int star = addPlacementRow(layer, "PowerStar", 100 + m, at, {1, 1, 1});
                 set(layer, star, "Obj_arg0", integer(m));
             }
         }

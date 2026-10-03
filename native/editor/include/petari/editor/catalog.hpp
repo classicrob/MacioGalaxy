@@ -3,6 +3,7 @@
 // words a person reads, and what it needs. Built from the decompilation (which args each class
 // reads, its switches and links), the class sweep (which classes crash without a link) and hand
 // curation (names and help). Read-only data; any thread.
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -66,6 +67,7 @@ struct Link {
 struct Preset {
     std::string label;
     std::vector< std::pair< int, std::int32_t > > args;  // Obj_arg index -> value
+    std::array< float, 3 > scale{1.0f, 1.0f, 1.0f};      // the new row's scale (a brush: x 1000 units)
 };
 
 struct ClassInfo {
