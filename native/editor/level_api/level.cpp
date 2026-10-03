@@ -126,7 +126,7 @@ std::unique_ptr< Level > Level::open(const OpenOptions& options, Error* pError) 
     }
     level->mImpl->baseFingerprint = modelFingerprint(model);
     const auto& recorded = level->mImpl->baseMetadata["fingerprint"];
-    if (recorded.isString() && recorded.asString() != level->mImpl->baseFingerprint)
+    if (recorded.type() == Json::Value::Type::String && recorded.asString() != level->mImpl->baseFingerprint)
         return failed({"bad-workspace", "the frozen base no longer matches its recorded content", "restore the workspace base or explicitly refreeze", {}, "base"});
     level->mImpl->baseMetadata.set("fingerprint", level->mImpl->baseFingerprint);
     return level;

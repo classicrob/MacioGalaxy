@@ -218,7 +218,7 @@ namespace PetariEditor::LevelApi {
             } catch (const std::exception&) {
                 current = "unreadable";
             }
-            const std::string expected = source["accepted_hash"].asString(source["hash"].asString());
+            const std::string expected = source.has("accepted_hash") ? source["accepted_hash"].asString() : source["hash"].asString();
             if (current == expected)
                 continue;
             Json::Value warning = Json::Value::object();
