@@ -55,18 +55,30 @@ namespace {
                                               Input::Action::Shake,    Input::Action::ModCappyThrow, Input::Action::DpadLeft,
                                               Input::Action::DpadRight, Input::Action::Plus,      Input::Action::Minus};
 
+    // Presses or releases the first input bound to the action, through the device it is bound to (a key, a mouse button, or a
+    // pad button); an action with no binding is reported once, never replaced by an input of another device.
     void pressAction(Input::Action action, bool down) {
         const Input::Bindings bindings = Input::bindings();
         const auto& inputs = bindings.inputs(action);
         if (inputs.empty()) {
-            std::fprintf(stderr, "[test-server] input: no input is bound to %s\n", Input::actionName(action));
+            static unsigned reported = 0;
+            if ((reported & (1u << static_cast< unsigned >(action))) == 0 && static_cast< unsigned >(action) < 32) {
+                reported |= 1u << static_cast< unsigned >(action);
+                std::fprintf(stderr, "[test-server] input: no input is bound to %s\n", Input::actionName(action));
+            }
             return;
         }
         const Input::Binding& input = inputs.front();
-        if (input.device == Input::Binding::Device::Key) {
+        switch (input.device) {
+        case Input::Binding::Device::Key:
             Input::keyEvent(input.code, down, false);
-        } else {
+            break;
+        case Input::Binding::Device::Mouse:
             Input::mouseButtonEvent(static_cast< Input::MouseButton >(input.code), down);
+            break;
+        case Input::Binding::Device::Pad:
+            Input::padButtonEvent(static_cast< Input::PadButton >(input.code), down);
+            break;
         }
     }
 
