@@ -67,7 +67,8 @@ using AssetBuilder = std::function< bool(const std::filesystem::path& modRoot, c
 void registerAssetBuilder(const std::string& version, AssetBuilder builder);
 
 /// The mod loader's step (ModFolder::setPatchBuilder): builds the archives of the enabled patch
-/// mods (`roots`, lowest priority first; each with edits/*.json) from `discFiles` (the disc's
+/// mods (`roots`, lowest priority first; each with edits/*.json, or an editor mod with stage
+/// archives of its own, which only the asset builders read) from `discFiles` (the disc's
 /// files/ folder) into `cacheDirectory`, then runs the asset builders, unless an identical build is
 /// there already. Returns (disc path, built file) pairs.
 std::vector< std::pair< std::string, std::filesystem::path > > buildForLoader(const std::vector< std::filesystem::path >& roots,

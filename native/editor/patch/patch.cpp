@@ -364,6 +364,26 @@ std::vector< std::pair< std::string, fs::path > > buildForLoader(const std::vect
         }
     }
     for (const AssetBuilderEntry& b : assetBuilders()) key = fnv(key, b.version.data(), b.version.size() + 1);
+    // An editor mod's own stage archives (a new galaxy's): the asset builders read them (terrain
+    // brushes in them are baked), so they are part of the key too.
+    bool ownStages = false;
+    for (const fs::path& root : roots) {
+        std::error_code ec;
+        std::vector< fs::path > stages;
+        for (fs::directory_iterator it(root / "files" / "StageData", ec), end; !ec && it != end; it.increment(ec)) {
+            if (it->path().extension() == ".arc" && it->is_regular_file(ec)) stages.push_back(it->path());
+        }
+        std::sort(stages.begin(), stages.end());
+        for (const fs::path& file : stages) {
+            ownStages = true;
+            const std::string name = file.lexically_relative(root).generic_string();
+            const std::uintmax_t size = fs::file_size(file, ec);
+            const auto time = fs::last_write_time(file, ec).time_since_epoch().count();
+            key = fnv(key, name.data(), name.size());
+            key = fnv(key, &size, sizeof(size));
+            key = fnv(key, &time, sizeof(time));
+        }
+    }
     for (const fs::path& root : roots) {
         std::error_code ec;
         for (fs::recursive_directory_iterator it(root / "assets", ec), end; !ec && it != end; it.increment(ec)) {
@@ -377,7 +397,7 @@ std::vector< std::pair< std::string, fs::path > > buildForLoader(const std::vect
         }
     }
     std::vector< std::pair< std::string, fs::path > > out;
-    if (sources.empty()) return out;
+    if (sources.empty() && (!ownStages || assetBuilders().empty())) return out;
     auto log = [&](const std::string& line) {
         if (pLog != nullptr) pLog->push_back(line);
     };
