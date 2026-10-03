@@ -25,6 +25,8 @@ namespace PetariEditor::PathsView {
     struct WireMark {
         Paths::Socket from, to;
         float x = 0, y = 0;
+        float fromX = 0, fromY = 0, toX = 0, toY = 0;
+        bool midpointVisible = false, fromVisible = false, toVisible = false;
         std::vector< Curve > segments;
     };
     struct View {
@@ -45,8 +47,14 @@ namespace PetariEditor::PathsView {
     const View& view();
     void send(Input input);
     Input take();
+    void focusWires(RowId hovered, std::string hoverField, RowId selected, std::string selectedField);
+    bool wireFocused(const Paths::Socket& socket);
     void setVisibility(Visibility value);
     Visibility visibility();
     void setLinkingPath(bool value);
     bool linkingPath();
+    void setLinkingSwitch(bool value);
+    bool linkingSwitch();
+    void setSocketMenu(RowId row);
+    RowId socketMenu();
 }  // namespace PetariEditor::PathsView

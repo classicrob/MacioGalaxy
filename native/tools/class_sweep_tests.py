@@ -103,11 +103,19 @@ class BisectSearch(unittest.TestCase):
         return search.verdict
 
     def test_template_links_are_reduced_to_the_required_one(self):
-        record = {"class": "X", "metrics": {"tpl_links": "SW_A:3,CommonPath_ID:7,GroupId:2"}}
-        search = cs.Bisect(record, {}, "")
-        verdict = self.run_search(search, lambda j: j["mode"] == "keep" or "CommonPath_ID=keep" in j["overrides"])
+        search = cs.Bisect({"class": "X"}, {}, "")
+        job = search.jobs()
+        self.assertEqual(job["mode"], "keep")
+        search.feed({"status": "ok", "metrics": {"row": "cloned", "tpl_links": "SW_A:3,CommonPath_ID:7,GroupId:2"}})
+        verdict = self.run_search(search, lambda j: "CommonPath_ID=keep" in j["overrides"])
         self.assertEqual(verdict["result"], "required")
         self.assertEqual(verdict["fields"], {"CommonPath_ID": 7})
+
+    def test_keep_that_passes_on_a_synthesized_row_proves_nothing(self):
+        search = cs.Bisect({"class": "X"}, {"SW_A": [9]}, "")
+        search.jobs()
+        search.feed({"status": "ok", "metrics": {"row": "synth", "tpl_links": "-"}})
+        self.assertEqual(search.jobs()["mode"], "empty")  # went on to provision real ids
 
     def test_provisioned_ids_are_reduced(self):
         search = cs.Bisect({"class": "X"}, {"CommonPath_ID": [4], "SW_A": [9], "GroupId": [1]}, "scale_x=0.02")
@@ -122,6 +130,23 @@ class BisectSearch(unittest.TestCase):
         search = cs.Bisect({"class": "X"}, {"SW_A": [9]}, "")
         verdict = self.run_search(search, lambda j: True)
         self.assertEqual(verdict["fields"], {})
+
+
+class Verdict(unittest.TestCase):
+    def test_live_recreate(self):
+        v = cs.live_recreate_verdict
+        self.assertEqual(v({}), "unmeasured")
+        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "nonactor"}}), "safe")
+        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "invisible"}}), "suspect")
+        # empty-link crash, nothing known about the row's own links
+        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "crash"}}), "unverified")
+        # crashes with empty links but is fine from its own row with its links: safe
+        keep = {"status": "crash", "links": {"result": "required", "source": "drop-keep", "fields": {"CommonPath_ID": 7}}}
+        self.assertEqual(v({"a": keep}), "safe")
+        # still fails from its own row, or only works with provisioned ids: unsafe
+        self.assertEqual(v({"a": {"status": "crash", "links": {"result": "unresolved"}}}), "unsafe")
+        provisioned = {"status": "crash", "links": {"result": "required", "source": "drop-provision", "fields": {"SW_A": 1}}}
+        self.assertEqual(v({"a": provisioned}), "unsafe")
 
 
 class Scrub(unittest.TestCase):

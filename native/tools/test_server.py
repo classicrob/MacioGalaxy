@@ -64,7 +64,7 @@ def cmd_start(args):
     a.app, a.disc, a.frames, a.idle_frames, a.pipeline_policy = app, main / "build/game-data/RMGE01", 10_000_000, 10_000_000, "default"
     command, env_extra = sweep.app_command(a, user, args.stage, args.scenario)
     command += []
-    wargs = argparse.Namespace(app=app, seed_root=str(main / "build/shader-seed"), stages=warm_seed.DEFAULT_STAGES, owner="test-server",
+    wargs = argparse.Namespace(app=app, seed_root=str(main / "build/shader-seed"), stages=[args.stage] if args.warm_current_stage else warm_seed.DEFAULT_STAGES, owner="test-server",
                                timeout=900, idle=900, force=False, user=user)
     wargs.sha = warm_seed.sha256_of(app)
     seed = warm_seed.ensure(wargs)
@@ -115,6 +115,7 @@ def main():
     p.set_defaults(fn=cmd_start)
     p.add_argument("--app", required=True)
     p.add_argument("--stage", default="EggStarGalaxy")
+    p.add_argument("--warm-current-stage", action="store_true", help="Warm only --stage for this binary (the default warms all standard stages)")
     p.add_argument("--scenario", type=int, default=1)
     p.add_argument("--dir")
     p.add_argument("--owner", default="test-server")
