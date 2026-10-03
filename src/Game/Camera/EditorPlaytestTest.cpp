@@ -17,6 +17,8 @@
 #include <petari/editor_settings.hpp>
 #include <petari/efb_dump_mark.hpp>
 #include <petari/host_allocation.hpp>
+#include <petari/progress.hpp>
+#include <petari/progress_hook.hpp>
 
 namespace EditorPlaytest {
     void testTick(bool playable) {
@@ -31,6 +33,9 @@ namespace EditorPlaytest {
         static std::uint32_t runScene;
         static PowerStar* star = nullptr;
         static bool hadStar = false;
+        static double personalTime;
+        static int personalDeaths;
+        static std::string personalRecord;
         if (!trigger || step == 999)
             return;
         PetariNative::HostAllocationScope host;
@@ -64,6 +69,11 @@ namespace EditorPlaytest {
             return;
         const auto view = Playtest::view();
         if (step == 0 && mode() == Mode::Editing && frame > 10) {
+            if (!Runtime::progressIsolated())
+                return fail("Edit did not isolate progress");
+            personalTime = PetariNative::Progress::currentRunTimeS();
+            personalDeaths = PetariNative::Progress::currentRunDeaths();
+            personalRecord = PetariNative::Progress::serialize();
             const auto p = *MR::getPlayerPos();
             const auto g = *MR::getPlayerGravity();
             Command marker{Command::Kind::SetPlayMarker};
@@ -92,6 +102,11 @@ namespace EditorPlaytest {
         } else if (step == 3 && mode() == Mode::Editing && frame > 15) {
             if (view.samples < 120 || view.peaks == 0 || view.running)
                 return fail("trail/peak capture or pause");
+            if (PetariNative::Progress::currentRunTimeS() != personalTime || PetariNative::Progress::currentRunDeaths() != personalDeaths)
+                return fail("play-test leaked personal time or deaths");
+            petari_progress_star_get(1, 0);
+            if (PetariNative::Progress::serialize() != personalRecord)
+                return fail("isolated star event wrote personal progress");
             pausedFrames = view.frames;
             std::fprintf(stderr, "[editor-playtest] trail samples=%zu peaks=%zu frames=%llu\n", view.samples, view.peaks,
                          static_cast< unsigned long long >(view.frames));
