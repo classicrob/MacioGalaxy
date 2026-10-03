@@ -1,4 +1,5 @@
 #include "playtest.hpp"
+#include "help.hpp"
 #include "areas.hpp"
 // The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
 #include <petari/editor/ui.hpp>
@@ -216,6 +217,7 @@ void drawToolbar(float width) {
         if (ImGui::MenuItem("Save", "Cmd+S")) requestSave(false);
         if (ImGui::MenuItem("Save as...", "Cmd+Shift+S")) requestSave(true);
         if (ImGui::MenuItem("Share...", "Cmd+Shift+E")) openShareSheet();
+        if (ImGui::MenuItem("Keys and tips", "?")) toggleHelp();  // Editor guide
         ImGui::EndPopup();
     }
     ImGui::SameLine(0.0f, 24.0f);
@@ -286,6 +288,15 @@ void drawToolbar(float width) {
         ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
         if (ImGui::Button("Share")) openShareSheet();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pack the saved mod as a .zip to give someone (Cmd+Shift+E)");
+    }
+    // Editor guide: compact help button immediately left of Share.
+    {
+        const float w = ImGui::CalcTextSize("?").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (ImGui::Button("?")) toggleHelp();
+        noteTestTarget("button:Help");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keys and tips (?)");
     }
     // Save (UX section 17): highlighted while there are unsaved edits; Cmd+S.
     {
@@ -569,6 +580,10 @@ void drawFrame(float windowWidth, float windowHeight) {
     }
     gViewportValid = false;
     if (!gVisible || gFocus || !(windowWidth > 0.0f) || !(windowHeight > kToolbarHeight + kFooterHeight + 50.0f)) {
+        if (gVisible && gFocus) {
+            StyleScope style;
+            drawHelpOverlay();  // Editor guide: help also works with the panels hidden.
+        }
         if (gAreaSet) setArea(0, 0, 0, 0);  // the game takes the whole window again
         return;
     }
@@ -602,6 +617,7 @@ void drawFrame(float windowWidth, float windowHeight) {
     drawShareSheet();
     drawNewGalaxySheet();
     drawImportSheet();  // M6 import
+    drawHelpOverlay();  // Editor guide
 
     if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
                                                                         central->Size.y > 8.0f) {

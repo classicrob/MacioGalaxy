@@ -4,6 +4,8 @@
 
 #include "../editor/runtime/runtime_core.hpp"
 #include "panels.hpp"
+#include "help.hpp"
+#include "imgui_internal.h"
 #include "paths.hpp"
 #include <petari/editor/paths_view.hpp>
 #include <petari/editor_pick.hpp>
@@ -313,6 +315,54 @@ void testPathInputCapture() {
     PetariEditor::Core::setModel(nullptr);
 }
 
+void testHelpInput() {
+    namespace Ui = PetariEditor::Ui;
+    auto& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(800, 600);
+    auto key = [&](ImGuiKey code, bool down, bool typing = false, bool command = false) {
+        io.AddKeyEvent(ImGuiMod_Shift, code == ImGuiKey_Slash);
+        io.AddKeyEvent(ImGuiMod_Ctrl, command);
+        io.AddKeyEvent(code, down);
+        ImGui::NewFrame();
+        io.WantTextInput = typing;
+        const bool consumed = Ui::updateHelpInput();
+        Ui::drawHelpOverlay();
+        ImGui::Render();
+        return consumed;
+    };
+    CHECK(!Ui::helpVisible());
+    key(ImGuiKey_Slash, true, true);  // Typing a question mark does not open help.
+    CHECK(!Ui::helpVisible());
+    key(ImGuiKey_Slash, false);
+    key(ImGuiKey_Slash, true, false, true);
+    CHECK(!Ui::helpVisible());
+    key(ImGuiKey_Slash, false);
+    key(ImGuiKey_Slash, true);
+    CHECK(Ui::helpVisible());
+    const auto* window = ImGui::FindWindowByName("Keys and tips###editor-help");
+    CHECK(window && !(window->Flags & ImGuiWindowFlags_Modal));
+    CHECK(window && window->Pos.x >= 0 && window->Pos.y >= 0);
+    CHECK(window && window->Size.x <= 800 && window->Size.y <= 600);
+    key(ImGuiKey_Slash, false);
+    CHECK(key(ImGuiKey_Escape, true));  // Closing help consumes Esc before selection/tools see it.
+    CHECK(!Ui::helpVisible());
+    key(ImGuiKey_Escape, false);
+    key(ImGuiKey_Slash, true);
+    CHECK(Ui::helpVisible());
+    key(ImGuiKey_Slash, false);
+    key(ImGuiKey_Slash, true);
+    CHECK(!Ui::helpVisible());
+    key(ImGuiKey_Slash, false);
+    Ui::setVisible(true);
+    Ui::setFocusMode(true);
+    Ui::toggleHelp();
+    frame(800, 600);
+    CHECK(ImGui::FindWindowByName("Keys and tips###editor-help")->Active);
+    CHECK(Ui::helpVisible());
+    Ui::toggleHelp();
+    Ui::setFocusMode(false);
+}
+
 int main() {
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
@@ -377,6 +427,7 @@ int main() {
     CHECK(!Ui::viewportRect(&x, &y, &w, &h));
 
     testPathInputCapture();
+    testHelpInput();
     ImGui::DestroyContext();
     testPanelsLogic();
     if (gFailures != 0) {

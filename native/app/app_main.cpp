@@ -634,15 +634,29 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     if (t == 160) PetariEditor::Ui::openSaveSheet();
                     if (t == 175) click("button:Cancel", true);
                     if (t == 177) click("button:Cancel", false);
-                    if (t == 185) click("button:View", true);
-                    if (t == 187) click("button:View", false);
+                    const bool helpTest = std::getenv("PETARI_EDITOR_TEST_HELP") != nullptr;
+                    if (t == 185 && !helpTest) click("button:View", true);
+                    if (t == 187 && !helpTest) click("button:View", false);
                     // Card-to-arm (friction #13): one click on a Browser card, one on the ground, and it's placed.
-                    if (t == 205) click("tab:Browser", true);
-                    if (t == 207) click("tab:Browser", false);
-                    if (t == 215) click("card:first", true);
-                    if (t == 217) click("card:first", false);
-                    if (t == 225) click("viewport", true);
-                    if (t == 227) click("viewport", false);
+                    if (helpTest) {
+                        if (t == 205) click("button:Help", true);
+                        if (t == 207) click("button:Help", false);
+                        if (t == 215) {
+                            std::fprintf(stderr, "[editor-help] toolbar opens overlay: %s\n", PetariEditor::Ui::helpVisible() ? "PASS" : "FAIL");
+                            PetariNative::EfbDump::mark("editor-help");
+                        }
+                        if (t == 240) PetariEditor::Ui::toggleHelp();
+                        if (t == 245) {
+                            std::fprintf(stderr, "[editor-help] closes overlay: %s\n", !PetariEditor::Ui::helpVisible() ? "PASS" : "FAIL");
+                        }
+                    } else {
+                        if (t == 205) click("tab:Browser", true);
+                        if (t == 207) click("tab:Browser", false);
+                        if (t == 215) click("card:first", true);
+                        if (t == 217) click("card:first", false);
+                        if (t == 225) click("viewport", true);
+                        if (t == 227) click("viewport", false);
+                    }
                 }
 #endif
 #ifdef PETARI_EDITOR_UI

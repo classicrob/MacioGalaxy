@@ -1,4 +1,5 @@
 #include "playtest.hpp"
+#include "help.hpp"
 #include "areas.hpp"
 #include "array.hpp"
 #include <petari/editor/array.hpp>
@@ -348,6 +349,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
         Settings::takeDeferredToggle();  // dropped: Tab doesn't play from under a sheet
         return;
     }
+    if (updateHelpInput()) return;  // Editor guide: Escape closes help without cancelling the active tool.
     // Cmd+. : Focus mode (the game fills the window; panels away).
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Period)) {

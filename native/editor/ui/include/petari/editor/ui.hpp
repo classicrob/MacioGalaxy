@@ -16,6 +16,10 @@ bool installFonts(float displayScale);
 void setVisible(bool visible);
 bool visible();
 
+// The non-modal Keys and tips overlay.
+void toggleHelp();
+bool helpVisible();
+
 // Focus mode (UX section 4: Cmd+.): panels hidden, the game fills the window.
 void setFocusMode(bool focus);
 bool focusMode();
