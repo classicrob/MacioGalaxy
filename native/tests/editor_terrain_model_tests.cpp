@@ -30,6 +30,8 @@
 #include <cstring>
 #include <optional>
 #include <fstream>
+#include <unistd.h>
+#include <filesystem>
 #include <iterator>
 #include <string>
 
@@ -335,6 +337,25 @@ static void testBake(const char* pDisc) {
     auto tableIt = std::find_if(built.begin(), built.end(), [](const PetariEditor::Patch::Built& b) { return b.path == "ObjectData/PlanetMapDataTable.arc"; });
     check(tableIt != built.end() && tableRows(tableIt->bytes) == discPlanets + 5 && tableIt->mods == std::vector< std::string >{"Low"},
           "the built table holds the five planets once");
+    // A new galaxy's own stage archive (no row edits): the builder reads it from the mod's files/.
+    {
+        namespace fs = std::filesystem;
+        const fs::path root = fs::temp_directory_path() / ("petari-bake-own-" + std::to_string(::getpid()));
+        fs::create_directories(root / "files" / "StageData");
+        {
+            const Bytes& own = input.stageArchives.at("/StageData/EggStarGalaxy.arc");
+            std::ofstream file(root / "files" / "StageData" / "BoxTestGalaxy.arc", std::ios::binary);
+            file.write(reinterpret_cast< const char* >(own.data()), static_cast< std::streamsize >(own.size()));
+        }
+        std::vector< PetariEditor::Patch::Built > own;
+        std::vector< std::string > ownLog;
+        std::string ownError;
+        check(T::bakePatchAssets(root, discReader, &own, &ownLog, &ownError) && ownError.empty(), "the builder bakes a mod's own stage archive");
+        auto ownStage = std::find_if(own.begin(), own.end(), [](const PetariEditor::Patch::Built& b) { return b.path == "StageData/BoxTestGalaxy.arc"; });
+        check(own.size() == 1 + 5 + 1 && ownStage != own.end(), "its baked stage, five planets and the table replace the mod's own file");
+        std::error_code ec;
+        fs::remove_all(root, ec);
+    }
     std::printf("bake: 5 brushes -> %d planets, %zu files\n", planets, out.files.size());
 }
 

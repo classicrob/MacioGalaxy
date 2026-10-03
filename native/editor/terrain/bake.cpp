@@ -4,6 +4,8 @@
 #include <petari/editor/terrain/kcl_writer.hpp>
 #include <petari/editor/terrain/model_writer.hpp>
 #include <algorithm>
+#include <iterator>
+#include <fstream>
 #include <cctype>
 #include <cmath>
 #include <cstdio>
@@ -341,6 +343,20 @@ bool bakePatchAssets(const std::filesystem::path& modRoot, const Patch::DiscRead
     for (const Patch::Built& built : *pInOut) {
         if (built.path.rfind("StageData/", 0) == 0) {
             input.stageArchives["/" + built.path] = built.bytes;
+        }
+    }
+    // The mod's own stage archives (a new galaxy's), unless its row edits rebuilt them already.
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(modRoot / "files" / "StageData", ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = it->path().filename().string();
+        const std::string path = "/StageData/" + name;
+        if (it->path().extension() != ".arc" || input.stageArchives.count(path) != 0) {
+            continue;
+        }
+        std::ifstream file(it->path(), std::ios::binary);
+        Formats::Bytes bytes((std::istreambuf_iterator< char >(file)), std::istreambuf_iterator< char >());
+        if (!bytes.empty()) {
+            input.stageArchives[path] = std::move(bytes);
         }
     }
     // Built files first: a table an earlier call extended (another mod's brushes) is kept.

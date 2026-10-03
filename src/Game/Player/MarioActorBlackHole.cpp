@@ -1,5 +1,8 @@
 #include "Game/Enemy/KariKariDirector.hpp"
 #include "Game/MapObj/BlackHole.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime.hpp>
+#endif
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioConst.hpp"
 #include "Game/Util/CameraUtil.hpp"
@@ -40,6 +43,11 @@ void MarioActor::initBlackHoleOut() {
 }
 
 void MarioActor::exeGameOverBlackHole2() {
+#ifdef PETARI_NATIVE
+    if (MR::isFirstStep(this) && PetariEditor::Runtime::playerMissing("マリオ奈落")) {
+        return;
+    }
+#endif
     if (MR::isFirstStep(this)) {
         MR::setCubeBgmChangeInvalid();
         MR::clearBgmQueue();

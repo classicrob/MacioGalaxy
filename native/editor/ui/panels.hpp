@@ -31,6 +31,8 @@ void drawSaveSheet();
 void drawShareSheet();
 void openShareSheet();  // Cmd+Shift+E, the toolbar's Share
 void drawInstallSheet();  // drawn even outside Edit (a zip dropped during play)
+void drawNewGalaxySheet();
+void openNewGalaxySheet();  // Cmd+N, the title menu
 // "1.0" -> "1.1" (the Share sheet's next version); "" -> "1.0".
 std::string bumpVersion(const std::string& version);
 // "<Name>-<version>.zip", folder-safe (spaces as dashes).

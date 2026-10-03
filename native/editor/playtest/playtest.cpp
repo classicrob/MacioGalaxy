@@ -71,6 +71,14 @@ namespace PetariEditor::Playtest {
         vertical_ = vertical;
         connect_ = true;
     }
+    void Trail::miss(Vec3 p, Vec3 velocity, Vec3 gravity, Motion motion) {
+        if (!running_)
+            return;
+        record(p, velocity, gravity, motion);
+        if (size_)
+            ring_[(next_ + capacity - 1) % capacity].missed = true;
+        pause();
+    }
     std::vector< Sample > Trail::samples() const {
         std::vector< Sample > out;
         out.reserve(size_);
@@ -91,6 +99,12 @@ namespace PetariEditor::Playtest {
             if (i && s.connected && s.frame % 4 < 2)
                 mesh.lines.push_back(
                     {vec(v(samples[i - 1].position) + v(samples[i - 1].up) * 8), vec(v(s.position) + v(s.up) * 8), motionColor(s.motion), 2});
+            if (s.missed) {
+                const auto b = G::gravityFrame(v(s.up), {0, 0, 1});
+                const auto p = v(s.position);
+                for (const auto axis : {b.x, b.y, b.z})
+                    mesh.lines.push_back({vec(p - axis * 30), vec(p + axis * 30), 0xff5050ff, 4});
+            }
             if (s.peak) {
                 const auto b = G::gravityFrame(v(s.up), {0, 0, 1});
                 const auto p = v(s.position) + b.y * 12;

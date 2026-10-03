@@ -409,7 +409,13 @@ namespace {
         EditModel& m = *s.model;
         int zone = 0, table = 0;
         if (!m.locate(id, &zone, &table)) {
-            // Gone from the model (an Add undone): whatever showed it goes too (EP-007).
+            // Undoing an insertion removes the row identity entirely.
+            for (RowUpdater updater : gRowUpdaters) {
+                if (updater(id, JMapInfoIter())) {
+                    break;
+                }
+            }
+
             retireRow(id);
             s.pending.erase(id);
             return;
@@ -787,6 +793,7 @@ void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_
 void newGalaxyTestTick();  // new_galaxy_test.cpp: New Galaxy across its restart (PETARI_EDITOR_NEWGALAXY_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void areasTestTick();
+void arrayTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void scratchTestTick(); // scratch_test.cpp: play-test progress isolation (PETARI_EDITOR_SCRATCH_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
@@ -992,6 +999,7 @@ void tick(bool playable) {
     ensureTestTick();
     pathsTestTick();
     areasTestTick();
+    arrayTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)

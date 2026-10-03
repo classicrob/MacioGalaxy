@@ -31,7 +31,7 @@ def main():
     env = dict(os.environ, PETARI_EDITOR="1", PETARI_MODS="LevelEditor",
                PETARI_EDITOR_PLAYTEST_TEST=str(trigger),
                PETARI_SURFACE_DUMP=str(output / "surfaces"),
-               PETARI_SURFACE_DUMP_LABELS="playtest-trail,playtest-cleared", PETARI_SURFACE_DUMP_SPAN="15",
+               PETARI_SURFACE_DUMP_LABELS="playtest-trail,playtest-cleared,playtest-missed", PETARI_SURFACE_DUMP_SPAN="15",
                PETARI_SURFACE_DUMP_EVERY="5")
     server = [sys.executable, str(TOOLS / "test_server.py")]
     try:

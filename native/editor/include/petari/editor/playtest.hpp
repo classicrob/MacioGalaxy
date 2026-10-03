@@ -9,6 +9,7 @@ namespace PetariEditor::Playtest {
         Motion motion = Motion::Ground;
         bool peak = false, connected = false;
         std::uint64_t frame = 0;
+        bool missed = false;
     };
     class Trail {
     public:
@@ -18,6 +19,7 @@ namespace PetariEditor::Playtest {
         void pause();
         void end();
         void record(Vec3 position, Vec3 velocity, Vec3 gravity, Motion motion);
+        void miss(Vec3 position, Vec3 velocity, Vec3 gravity, Motion motion);
         std::vector< Sample > samples() const;
         std::uint64_t frames() const {
             return frames_;
@@ -48,7 +50,7 @@ namespace PetariEditor::Playtest {
     // Validates every row before constructing the single undo step; failure never keeps a subset.
     Op keepOp(const ModelView& model, const std::vector< LiveTransform >& live, std::string* error);
     struct View {
-        bool active = false, running = false, cleared = false;
+        bool active = false, running = false, cleared = false, missed = false;
         std::uint64_t frames = 0;
         std::size_t samples = 0, peaks = 0;
         std::vector< RowId > keepRows;
