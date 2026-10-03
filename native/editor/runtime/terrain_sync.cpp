@@ -3,6 +3,7 @@
 
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
+#include <petari/editor/runtime.hpp>
 
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
@@ -131,6 +132,7 @@ void registerWithEditor() {
     // replaces it); the check once (registering again is ignored).
     T::registerBrushClass();
     T::registerBrushChecks();
+    Runtime::registerGeneratedRowProvider({isBrush, syncBrush, retireBrush, beginScene});
 }
 
 bool isBrush(const char* pName) {
@@ -272,35 +274,12 @@ void retireBrush(RowId id) {
     Core::unbindRow(id);
 }
 
-void sceneBound(const EditModel& model) {
-    // The previous scene and its parts are gone.
+void beginScene() {
     live().clear();
     for (void* pBuffer : sceneBuffers()) {
         std::free(pBuffer);
     }
     sceneBuffers().clear();
-    for (int zone = 0; zone < model.zoneCount(); zone++) {
-        if (!model.zonePlaced(zone)) {
-            continue;
-        }
-        const std::uint32_t layers = model.activeLayers(zone, model.scenario());
-        for (int table = 0; table < model.tableCount(zone); table++) {
-            const std::string path = model.tablePath(zone, table);
-            const int layer = model.tableLayer(zone, table);
-            if (path.size() < 8 || path.compare(path.size() - 8, 8, "/objinfo") != 0 || layer < 0 || !(layers & (1u << layer))) {
-                continue;
-            }
-            std::vector< RowId > brushes;
-            model.forEachRow(zone, table, [&](RowId id) {
-                if (model.state(id) != RowState::Deleted && isBrush(model.objectName(id))) {
-                    brushes.push_back(id);
-                }
-            });
-            for (RowId id : brushes) {
-                syncBrush(model, id);
-            }
-        }
-    }
 }
 
 std::size_t triangleCount(RowId id) {

@@ -514,6 +514,8 @@ void handleEvents(const AuroraEvent* event) {
             if (event->sdl.type == SDL_EVENT_DROP_FILE && event->sdl.drop.data != nullptr) {
                 const std::string dropped = event->sdl.drop.data;
                 if (dropped.size() > 4 && dropped.compare(dropped.size() - 4, 4, ".zip") == 0) PetariEditor::Ui::openInstallSheet(dropped.c_str());
+                const auto extension = std::filesystem::path(dropped).extension().string();
+                if (extension == ".gltf" || extension == ".glb" || extension == ".obj") PetariEditor::Ui::openImportSheet(dropped.c_str());  // M6 import
             }
 #endif
             Events::input(event->sdl);

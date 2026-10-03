@@ -54,7 +54,8 @@ namespace {
 
 #ifdef PETARI_NATIVE
         CreationFuncPtr creator = NameObjFactory::getCreator(rIdentifier.mName);
-        if (creator == nullptr && std::strcmp(rIdentifier.mName, "EditorBrush") == 0 && PetariEditor::Hooks::enabled()) {
+        if (creator == nullptr && (std::strcmp(rIdentifier.mName, "EditorBrush") == 0 || std::strncmp(rIdentifier.mName, "EditorModel_", 12) == 0) &&
+            PetariEditor::Hooks::enabled()) {
             PetariEditor::Hooks::noteBrushRow();  // the editor shows terrain brushes (TerrainSync)
         }
         return creator;
