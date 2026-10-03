@@ -64,6 +64,9 @@ namespace EditorTerrain {
     /// has no model of its own: the editor's thumbnails), else null.
     J3DModel* partModel(const LiveActor* pActor);
 
+    /// The fitted field of a brush part, else null.
+    PlanetGravity* partGravity(const LiveActor* pActor);
+
     /// Serves `pBytes` (a plain RARC) as the archive `pPath` ("/ObjectData/EditorTerrainBox.arc"):
     /// it is registered with the editor's archive overrides (PetariEditor::Hooks), so the game's
     /// loaders mount it from memory as if it were on the disc.

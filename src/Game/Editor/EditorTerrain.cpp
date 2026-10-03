@@ -228,6 +228,11 @@ namespace EditorTerrain {
         return nullptr;
     }
 
+    PlanetGravity* partGravity(const LiveActor* pActor) {
+        const Part* pPart = findPart(pActor);
+        return pPart != nullptr ? pPart->mGravity : nullptr;
+    }
+
     void injectArchive(const char* pPath, const void* pBytes, u32 size) {
         // The editor's archive registry (also reload's edited stages): the next mount of the path
         // (ModelObj, placement) takes these bytes (EditorReload::injectOverriddenArchive), and
