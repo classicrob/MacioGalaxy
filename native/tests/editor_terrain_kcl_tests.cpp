@@ -327,6 +327,41 @@ static void testBrushes() {
           "down only: the sphere's bounds, top face only");
 }
 
+// A playtester's thin wooden cylinder (650 wide, 150 tall, down-only gravity; EP report): every
+// vertical arrow over its cap hits the cap in the game's own collision server.
+static void testThinCylinder() {
+    const T::Brush brush = T::brushFromRow(2, 4, 0, 2, {0.65f, 0.15f, 0.65f});
+    const T::Mesh mesh = T::brushMesh(brush);
+    checkMesh(mesh, "thin cylinder", 4000, 31);
+    Loaded loaded;
+    if (!load(T::buildKcl(mesh), &loaded, "thin cylinder")) {
+        return;
+    }
+    int probes = 0, misses = 0;
+    float worstX = 0, worstZ = 0;
+    for (float x = -318.0f; x <= 318.0f; x += 7.0f) {
+        for (float z = -318.0f; z <= 318.0f; z += 7.0f) {
+            if (x * x + z * z > 318.0f * 318.0f) {
+                continue;
+            }
+            probes++;
+            f32 dists[8];
+            u8 flags[8];
+            KC_PrismData* prisms[8];
+            u32 count = 0;
+            loaded.server.checkArrow(TVec3f(x, 300.0f, z), TVec3f(0.0f, -200.0f, 0.0f), dists, flags, &count, prisms, 8);
+            if (count == 0) {
+                misses++;
+                worstX = x;
+                worstZ = z;
+            }
+        }
+    }
+    std::printf("thin cylinder cap: %d vertical arrows, %d miss%s\n", probes, misses,
+                misses != 0 ? (" (e.g. at " + std::to_string(worstX) + ", " + std::to_string(worstZ) + ")").c_str() : "");
+    check(misses == 0, "every vertical arrow over the thin cylinder's cap hits it");
+}
+
 // The reader (kcl_reader.hpp) on the writer's output: the same triangles; rays meet them.
 static void testReader() {
     const T::Mesh box = T::makeBox({0, 150, 0}, {1500, 150, 1500});
@@ -591,6 +626,7 @@ int main() {
     testAttributes();
     testLimits();
     testReader();
+    testThinCylinder();
 #ifdef PETARI_TEST_DISC_FILES
     for (const char* pName : {"AssemblyBlockPlanet", "BroadBeanPlanet", "BathtubPlanet"}) {
         testDiscPlanet(PETARI_TEST_DISC_FILES, pName);

@@ -36,6 +36,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--owner", default="editor-terrain")
     parser.add_argument("--timeout", type=int, default=900)
+    parser.add_argument("--mode", default="1", help="1: the brush flow; cylinder: a thin rotated cylinder's cap, dropped onto at several radii")
     parser.add_argument("--frames", type=int, default=12000)
     parser.add_argument("--idle-frames", type=int, default=1500)
     args = parser.parse_args()
@@ -48,7 +49,7 @@ def main():
     env = dict(os.environ, **env_extra)
     for key in ("PETARI_EDITOR_HOOKS_TEST", "PETARI_EDITOR_TERRAIN_TEST", "PETARI_STAGE_WARP", "PETARI_MOD_FOLDERS"):
         env.pop(key, None)
-    env.update(PETARI_LOCK_CLASS="functional", PETARI_EDITOR="1", PETARI_EDITOR_BRUSH_TEST="1",
+    env.update(PETARI_LOCK_CLASS="functional", PETARI_EDITOR="1", PETARI_EDITOR_BRUSH_TEST=args.mode,
                PETARI_EDITOR_BRUSH_SHOTS=str(args.output.resolve()))
     log = args.output / "brush.log"
     full = [str(args.lock), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die", str(args.timeout)] + command
@@ -63,7 +64,8 @@ def main():
     if not any(line.startswith("PASS") for line in lines) or result != "PASS":
         print("FAIL")
         return 1
-    print("PASS: a brush made through the editor is live, playable, resizable, undoable and deletable")
+    print("PASS: " + ("a brush made through the editor is live, playable, resizable, undoable and deletable" if args.mode == "1"
+                      else "Mario lands on the thin rotated cylinder at every radius"))
     return 0
 
 
