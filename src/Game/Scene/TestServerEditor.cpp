@@ -101,9 +101,12 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
     (void)playable;
     const std::string& c = w[0];
     if (c == "editor-begin") {
-        // Load the edit model for the current stage without the Edit nerve (as the live editor tests do):
-        // ops then apply, and SceneSync re-creates their actors in the running scene.
-        if (E::model() == nullptr) E::notifyEditEntered();
+        // The edit model for the current stage without entering Edit (Runtime::ensureModel): ops then apply on the
+        // next tick and SceneSync re-creates their actors in the running scene, in Play.
+        if (E::model() == nullptr && !PetariEditor::Runtime::ensureModel()) {
+            reply(name, "error no edit model: " + E::status().lastError);
+            return true;
+        }
         begin(Wait::Model, name);
         return true;
     }

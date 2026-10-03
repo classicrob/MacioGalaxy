@@ -138,7 +138,7 @@ class Live:
         words = " ".join(f"{v:.2f}" for v in [*pos, *up, *front])
         return self.send(f"editor-play {words}")
 
-    def warp(self, pos: Sequence[float]) -> dict:
+    def teleport(self, pos: Sequence[float]) -> dict:
         """Mario to pos right now (no editor involved); returns Mario two frames later."""
         return self.send("teleport " + " ".join(f"{v:.2f}" for v in pos))
 

@@ -29,17 +29,22 @@ def dot(a, b):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--server", required=True, help="the test server's directory")
-    ap.add_argument("--ws", default=str(ROOT / "build/ws/sling"))
+    ap.add_argument("--course", choices=["sling", "launch"], default="sling")
+    ap.add_argument("--ws", help="default build/ws/<course>")
     ap.add_argument("--shots", default=str(ROOT / "build/shots/level-api-x"))
     args = ap.parse_args()
 
-    subprocess.run([sys.executable, str(HERE / "sling_star_course.py"), "--ws", args.ws], check=True, stdout=subprocess.DEVNULL)
+    args.ws = args.ws or str(ROOT / "build/ws" / args.course)
+    script = "sling_star_course.py" if args.course == "sling" else "launch_star_course.py"
+    subprocess.run([sys.executable, str(HERE / script), "--ws", args.ws], check=True, stdout=subprocess.DEVNULL)
     lv = Level.open(args.ws)
     live = Live(args.server)
     report = {"begin": live.begin()}
     report["sync"] = live.sync(lv)
     report["reload"] = live.reload()
 
+    if args.course == "launch":
+        return verify_launch(lv, live, report, Path(args.shots))
     sling = lv.get("@sling")
     star = lv.get("@star")
     up = sling["up"]
@@ -60,9 +65,9 @@ def main():
     # Onto the Sling Star (it catches Mario within 240 units and flings him along its up).
     onto = [sling["pos"][i] + up[i] * 60 for i in range(3)]
     try:
-        report["warp_sling"] = live.warp(onto)
-    except LevelError:  # an app without the warp command: Play from a marker there
-        report["warp_sling"] = live.play(pos=onto, up=up)
+        report["onto_sling"] = live.teleport(onto)
+    except LevelError:  # an app without teleport: Play from a marker there
+        report["onto_sling"] = live.play(pos=onto, up=up)
     base = dot(sling["pos"], up)
     heights = []
     for _ in range(40):
@@ -73,6 +78,32 @@ def main():
     report["star_height_above_sling"] = round(dot(star["pos"], up) - base)
     report["reached_star_height"] = bool(heights) and max(heights) >= report["star_height_above_sling"] - 150
     report["shot_end"] = live.screenshot(Path(args.shots) / "after-launch.png")
+    print(json.dumps(report, indent=1))
+    lv.close()
+
+
+def verify_launch(lv, live, report, shots):
+    """The Launch Star course: the new rows live, the engine's ground under the landing, screenshots of the
+    course from Mario's start and from the landing (the camera follows Mario; a Launch Star needs a spin,
+    so the flight itself is not driven)."""
+    star, launch = lv.get("@star"), lv.get("@launch")
+    up = launch["up"]
+    probe = [star["pos"][i] + up[i] * 400 for i in range(3)]
+    report["ground_landing"] = {"headless": lv.ground(probe).get("point"), "engine": live.ground(probe).get("point")}
+    report["checks_live"] = live.checks()
+    shots.mkdir(parents=True, exist_ok=True)
+    report["play"] = live.play(pos=lv.get("@trail.0")["pos"], up=up)
+    live.wait(40)
+    report["shot_start"] = live.screenshot(shots / "launch-start.png")
+    # Short of the star (touching it would end the mission), looking back along the flight.
+    back = [launch["pos"][i] - star["pos"][i] for i in range(3)]
+    d = dot(back, up)
+    back = [back[i] - up[i] * d for i in range(3)]
+    n = sum(v * v for v in back) ** 0.5
+    report["teleport_landing"] = live.teleport([star["pos"][i] + back[i] / n * 450 + up[i] * 50 for i in range(3)])
+    live.wait(60)
+    report["shot_landing"] = live.screenshot(shots / "launch-landing.png")
+    report["mario"] = live.mario()
     print(json.dumps(report, indent=1))
     lv.close()
 

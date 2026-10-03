@@ -152,7 +152,7 @@ the arc is a parabola between `from` and `to` whose middle is `peak` above the l
   Each has a stable `key`, `severity`, `message`, the rows, and `fix` when `{"op": "fix"}` can
   repair it.
 - `diff`: rows added or changed against the disc, with `[disc, now]` cells.
-- Live mode (below): the same ops in the running game, reload, screenshot, warp Mario, trace him.
+- Live mode (below): the same ops in the running game, reload, screenshot, teleport Mario, trace him.
 
 ## Live mode
 
