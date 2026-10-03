@@ -131,7 +131,15 @@ def main():
         print(f"Octoomba l_id {lid}: disc {before}, with the mod {now}, moved {moved}")
         if moved is None or abs(moved - 600.0) > 1.0:
             failures.append("the mod's Octoomba is not 600 units from the disc's (both saves)")
-        for r in (disc, save, patched, play):
+        # Again, in the editor over the patch mod the loader built (the editor reads it rebuilt from
+        # the row edits, not the loader's copy: ModelIO::editingSource): one more move, saved as a patch.
+        again2 = run(args, "5-save-over-patch", user, editor, fresh=False)
+        third = next((m for line in again2["save"] for m in [re.match(edited_re, line)] if m), None)
+        if "PASS" not in again2["save"] or third is None:
+            failures.append(f"save over the patch: {again2['save'][-2:]}")
+        elif abs(float(third.group(3)) - final) > 0.1:
+            failures.append(f"the editor didn't start from the patch's edits ({third.group(3)} != {final})")
+        for r in (disc, save, patched, play, again2):
             if r is not None and r["result"] != "PASS":
                 failures.append(f"{r['name']}: stage smoke {r['result']}")
         for cache in user.glob("mods-cache/*"):
