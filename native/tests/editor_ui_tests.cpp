@@ -188,6 +188,10 @@ void testPanelsLogic() {
     Ui::helpText() = "hint";
     CHECK(Ui::helpText() == "hint");
 
+    // The Outliner's Find: case-insensitive contains.
+    CHECK(Ui::matchesQuery("HardBlock", "hard") && Ui::matchesQuery("Ground-pound rock", "POUND") && Ui::matchesQuery("x", ""));
+    CHECK(!Ui::matchesQuery("Coin", "hard"));
+
     // Mod names: folder-safe, trimmed, capped; the default from the galaxy.
     CHECK(Ui::modNameFrom("  My/Cool:Mod!  ") == "MyCoolMod" && Ui::modNameFrom("Pipe Dream_2-b") == "Pipe Dream_2-b" && Ui::modNameFrom("///").empty());
     CHECK(Ui::modNameFrom(std::string(60, 'a')).size() == 40);
