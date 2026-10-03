@@ -84,6 +84,10 @@ std::string lower(std::string s) {
 
 std::string columnLabel(std::uint32_t hash) {
     if (const char* pName = knownColumnName(hash)) return pName;
+    // Path table columns the decompilation's literals don't name (Paths writes them by these names).
+    for (const char* pName : {"num_pnt", "no", "closed", "type", "usage", "id"}) {
+        if (columnHash(pName) == hash) return pName;
+    }
     char text[16];
     std::snprintf(text, sizeof(text), "#%08x", hash);
     return text;

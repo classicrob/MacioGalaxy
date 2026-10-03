@@ -53,8 +53,8 @@ def main():
     print(json.dumps({"created": len(result["created"]), "goomba": goomba["switches"], "oneup": oneup["switches"],
                       "checks_introduced": result["checks_introduced"]}, indent=1))
 
-    # What a mistake looks like: a mushroom waiting on a switch nobody turns on (dry run: nothing changes).
-    probe = lv.apply([{"op": "set", "ref": "@oneup", "switches": {"SW_APPEAR": 77}}], dry_run=True)
+    # What a mistake looks like: a mushroom waiting on a fresh switch nobody turns on (dry run: nothing changes).
+    probe = lv.apply([{"op": "set", "ref": "@oneup", "switches": {"SW_APPEAR": "new"}}], dry_run=True)
     print(json.dumps({"dry_run_checks_introduced": probe["checks_introduced"]}, indent=1))
     print(json.dumps(lv.checks(), indent=1))
     if args.save:

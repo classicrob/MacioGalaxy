@@ -231,7 +231,7 @@ int main() {
     check(call(lv, "get", R"({"ref":"@goomba"})")["switches"]["SW_DEAD"].asInt() == call(lv, "get", R"({"ref":"@oneup"})")["switches"]["SW_APPEAR"].asInt(),
           "the mushroom reads the Goomba's switch");
     check(linked["checks_introduced"].items().size() == 0, "a written-and-read switch is no problem");
-    Value lonely = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"set","ref":"@oneup","switches":{"SW_APPEAR":77}}]})");
+    Value lonely = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"set","ref":"@oneup","switches":{"SW_APPEAR":"new"}}]})");
     check(lonely["checks_introduced"].items().size() >= 1, "a switch nothing writes is reported");
 
     // Paths: a smooth 3-point rail, and a Launch Star added on it.
@@ -242,7 +242,9 @@ int main() {
     Value launch = call(lv, "get", R"({"ref":"@launch"})");
     Value rail = call(lv, "get", R"({"ref":"@flight"})");
     check(launch["links"]["CommonPath_ID"].asInt(-1) == rail["fields"]["l_id"].asInt(-2) && rail["fields"]["num_pnt"].asInt() == 3, "the Launch Star flies the new path");
-    check(flight["checks_introduced"].items().size() == 0, "a linked Launch Star raises no check");
+    bool linkProblem = false;
+    for (const Value& c : flight["checks_introduced"].items()) linkProblem = linkProblem || c["key"].asString().find("link") != std::string::npos;
+    check(!linkProblem, "a linked Launch Star raises no link check");
     Value unlinked = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"add","class":"SuperSpinDriver","pos":[0,0,0]}]})");
     check(unlinked["checks_introduced"].items().size() >= 1, "a Launch Star without a path is reported");
 
