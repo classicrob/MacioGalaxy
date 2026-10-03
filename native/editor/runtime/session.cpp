@@ -124,7 +124,17 @@ namespace {
         if (!s.model) {
             Core::reportError(std::string("Can't edit ") + pStage + ": " + error);
         } else {
-            std::fprintf(stderr, "[editor] editing %s mission %d: %d zones\n", pStage, scenario, s.model->zoneCount());
+            // The missions' names as the pause menu shows them (ScenarioData's own are internal, Japanese).
+            std::vector< std::string > names;
+            std::string list;
+            for (int mission = 1; mission <= s.model->missionCount(); mission++) {
+                char name[256];
+                names.push_back(EditorScene::scenarioName(pStage, mission, name, sizeof(name)) ? name : "");
+                list += (mission > 1 ? ", " : "") + std::to_string(mission) + " \"" + names.back() + "\"";
+            }
+            s.model->setMissionNames(std::move(names));
+            std::fprintf(stderr, "[editor] editing %s mission %d: %d zones; missions %s\n", pStage, scenario, s.model->zoneCount(),
+                         list.c_str());
         }
     }
 

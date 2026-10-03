@@ -56,6 +56,8 @@ extern "C" void petari_os_preemption_point(void);
 #include <petari/editor_settings.hpp>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
+#include "Game/Scene/ClassSweep.hpp"
+#include "Game/Scene/TestServer.hpp"
 // StorySequenceExecutor.cpp
 bool petariDirectStageMove(GalaxyMoveArgument* pMoveArgument, const char* pStage, s32 selected, const char* pLabel);
 #endif
@@ -215,6 +217,10 @@ void GameScene::update() {
     EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
     EditorTerrainTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_TERRAIN_TEST
     EditorGalaxyTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_GALAXY_TEST
+#endif
+#ifdef PETARI_NATIVE
+    ClassSweep::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));
+    TestServer::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));
 #endif
     mPauseCtrl->updateNerve();
     updateNerve();
@@ -535,7 +541,16 @@ void GameScene::drawOdhCapture() const {
 }
 
 void GameScene::startStagePlayFirst() {
+#ifdef PETARI_NATIVE
+    // Test-only (PETARI_FAST_BOOT=1, set by the smoke tools): no galaxy fly-over camera at stage start.
+    static const bool fastBoot = [] {
+        const char* pFast = std::getenv("PETARI_FAST_BOOT");
+        return pFast != nullptr && pFast[0] == '1';
+    }();
+    if (isValidScenarioOpeningCamera() && !fastBoot) {
+#else
     if (isValidScenarioOpeningCamera()) {
+#endif
         setNerve(GET_NERVE(GameScene, GameSceneScenarioOpeningCamera));
 
         if (!MR::isBeginScenarioStarter()) {

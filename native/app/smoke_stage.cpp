@@ -353,6 +353,10 @@ Step StageDriver::step(const Observation& o) {
         finish(Result::Fail, "frame limit " + std::to_string(mFrameLimit) + " reached while " + phase(), step);
         return step;
     }
+    if (mPhase == Phase::Tail && std::getenv("PETARI_TEST_SERVER") != nullptr) {
+        PetariNative::SmokePhase::stageChecksDone.store(true);
+        return step;  // the test server warps between stages; it ends the run
+    }
     if (mPhase == Phase::Follow) {
         // A yes/no (the save's System_Save00) needs the pointer on Yes, then A.
         const Observation::Target* yes = nullptr;
@@ -488,7 +492,8 @@ Step StageDriver::step(const Observation& o) {
             mReadyFrame = mFrame;
             note("stage ready: frame " + std::to_string(mFrame) + ", Mario at " + text(position(o)) +
                  (o.playerOnGround ? ", on the ground" : ", in the air"));
-            next(mConfig.warp && !mWarped ? Phase::Warp : Phase::Idle);
+            // Class sweep: skip the movement script; the sweep driver runs while the smoke idles in the Tail.
+            next(std::getenv("PETARI_CLASS_SWEEP_JOBS") != nullptr || std::getenv("PETARI_TEST_SERVER") != nullptr ? Phase::Tail : mConfig.warp && !mWarped ? Phase::Warp : Phase::Idle);
         } else if (mPhaseFrames >= kReadyLimit) {
             finish(Result::Fail, std::string("not ready: gameplay never became ready (player ") +
                                      (o.playerValid ? "present" : "missing") + ", demo " +
@@ -498,7 +503,7 @@ Step StageDriver::step(const Observation& o) {
         }
         return step;
     }
-    if (!o.playerValid && PetariNative::SmokePhase::editorReloading.load()) {
+    if (!o.playerValid && (PetariNative::SmokePhase::editorReloading.load() || std::getenv("PETARI_TEST_SERVER") != nullptr)) {
         return step;  // the level editor is rebuilding the scene
     }
     if (!o.playerValid) {
@@ -771,7 +776,7 @@ void StageDriver::exercise(const Observation& o, Step& step) {
     }
     case Phase::Tail:
         PetariNative::SmokePhase::stageChecksDone.store(true);
-        if (mPhaseFrames >= mConfig.tailFrames) {
+        if (mPhaseFrames >= mConfig.tailFrames && std::getenv("PETARI_TEST_SERVER") == nullptr) {  // the test server ends the run
             finish(Result::Pass,
                    "loaded, ready, pause menu opened and closed, " + std::to_string(mConfig.tailFrames) +
                        " idle frames after the checks; walks responsive " + std::to_string(mWalksOk) + "/4",

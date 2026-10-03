@@ -1037,5 +1037,10 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - **Loader:** `ModFolder::setPatchBuilder` (set by the app) lets the platform layer call the builder without depending on editor code.
     - `resolveForUser(user, disc)` builds every enabled patch mod into `<user>/mods-cache/<key>/files/` (plain RARC; the key covers the patches and the disc files' size and time) and reuses that cache on later starts.
     - The built archives are claimed at the rank of the highest patch mod, ahead of its own `files/` (an older full save of the same mod loses quietly). A higher-priority full-archive mod still wins its paths.
+  - **Generated files** (`editor/patch-assets`): `Patch::registerAssetBuilder(version, fn)` adds a step after the row edits.
+    - The builder gets the mod's root, the disc reader and every built archive. It may replace archives (terrain rewrites brush rows into planet rows) and append files (`ObjectData/EditorBrush<hash>.arc`, `PlanetMapDataTable`).
+    - If a builder fails a mod, the loader builds everything again without that mod (logged), so a broken mod never serves half its files.
+    - The cache key covers each builder's version and every mod's `assets/`.
+    - Builders register before `ModFolder::setPatchBuilder` in `native/app/platform_host.cpp`.
   - **Size:** Good Egg with a move, a delete, a duplicate and a new layer's table comes to 5 ops, 2.6 KB.
   - **Tests:** `native_editor_model` (round trip on the synthetic galaxy and Good Egg, re-save over the built mod, two-mod merge, another disc refused, the loader cache) and `native_mod_folder` (claiming and precedence). Live: `editor_save_smoke.py` saves Full archives, saves again as a patch over them, then starts with the mod: the loader builds the archive and the Octoomba stands 600 units up.

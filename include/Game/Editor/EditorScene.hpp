@@ -54,6 +54,9 @@ namespace EditorScene {
     /// The current stage and mission ("EggStarGalaxy", 1); null when no stage is loaded.
     const char* stageName();
     s32 scenario();
+    /// The mission's name as the pause menu shows it (ScenarioName_<galaxy><n> in the game's
+    /// messages, mod galaxies included), UTF-8 with tags dropped, into pOut. False when there is none.
+    bool scenarioName(const char* pGalaxy, s32 scenario, char* pOut, u32 size);
 
     /// The loaded data of a table of a zone's archive ("jmp/placement/layera/objinfo"), or null
     /// when the zone is not placed or has no such table. Used to bind placed rows to the model.

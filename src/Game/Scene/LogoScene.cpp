@@ -1,4 +1,7 @@
 #include "Game/Scene/LogoScene.hpp"
+#ifdef PETARI_NATIVE
+#include <cstdlib>
+#endif
 #include "Game/LiveActor/Nerve.hpp"
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
@@ -167,7 +170,16 @@ void LogoScene::exeStrapDisplay() {
         MR::setAnimRate(mStrapLayout, 0.0f, 0);
     }
 
+#ifdef PETARI_NATIVE
+    // Test-only (PETARI_FAST_BOOT=1, set by the smoke tools): accept the button after 30 frames instead of 450.
+    static const s32 strapMinFrame = [] {
+        const char* pFast = std::getenv("PETARI_FAST_BOOT");
+        return pFast != nullptr && pFast[0] == '1' ? 30 : STRAP_DISPLAY_MIN_FRAME;
+    }();
+    if (MR::isGreaterStep(this, strapMinFrame) &&
+#else
     if (MR::isGreaterStep(this, STRAP_DISPLAY_MIN_FRAME) &&
+#endif
         (MR::testCorePadTriggerAnyWithoutHome(WPAD_CHAN0) || MR::isGreaterEqualStep(this, STRAP_DISPLAY_MAX_FRAME))) {
         setNerve(GET_NERVE_ANON(LogoSceneStrapFadeout));
     }

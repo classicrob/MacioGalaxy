@@ -56,10 +56,20 @@ using DiscReader = std::function< std::optional< Formats::Bytes >(const std::str
 /// fingerprint that doesn't match) is built without that mod's ops, with a log line.
 std::vector< Built > build(const std::vector< Source >& patches, const DiscReader& readDisc, std::vector< std::string >* pLog);
 
+/// Makes a patch mod's generated files (terrain: brush models, PlanetMapDataTable rows) from the
+/// archives its row edits built. `inOut` holds every built archive (plain RARC); the builder may
+/// replace entries (same path) and append new ones ("ObjectData/EditorBrush1a2b.arc"). False and
+/// *pError: the mod is broken, and the loader builds everything again without it.
+using AssetBuilder = std::function< bool(const std::filesystem::path& modRoot, const DiscReader& readDisc, std::vector< Built >* inOut,
+                                         std::vector< std::string >* pLog, std::string* pError) >;
+/// Registers a builder for buildForLoader (at start-up, before the mods are resolved). `version`
+/// is part of the cache key: change it when the builder's output changes.
+void registerAssetBuilder(const std::string& version, AssetBuilder builder);
+
 /// The mod loader's step (ModFolder::setPatchBuilder): builds the archives of the enabled patch
 /// mods (`roots`, lowest priority first; each with edits/*.json) from `discFiles` (the disc's
-/// files/ folder) into `cacheDirectory`, unless an identical build is there already. Returns
-/// (disc path, built file) pairs.
+/// files/ folder) into `cacheDirectory`, then runs the asset builders, unless an identical build is
+/// there already. Returns (disc path, built file) pairs.
 std::vector< std::pair< std::string, std::filesystem::path > > buildForLoader(const std::vector< std::filesystem::path >& roots,
                                                                              const std::filesystem::path& discFiles,
                                                                              const std::filesystem::path& cacheDirectory,
