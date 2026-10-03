@@ -21,6 +21,13 @@ target_include_directories(petari_editor_patch PUBLIC include)
 target_link_libraries(petari_editor_patch PUBLIC petari_editor_formats)
 target_compile_features(petari_editor_patch PUBLIC cxx_std_17)
 
+# Sharing mods as zips and installing them (UX 17). Pure C++ with zlib.
+find_package(ZLIB REQUIRED)
+add_library(petari_editor_share STATIC share/share.cpp)
+target_include_directories(petari_editor_share PUBLIC include)
+target_link_libraries(petari_editor_share PUBLIC petari_editor_formats PRIVATE ZLIB::ZLIB)
+target_compile_features(petari_editor_share PUBLIC cxx_std_17)
+
 # The EditModel: one galaxy's tables, ops and undo, changed archives. Pure C++ (tested alone).
 add_library(petari_editor_model STATIC runtime/edit_model.cpp runtime/checks.cpp)
 target_include_directories(petari_editor_model PUBLIC include PRIVATE runtime)
@@ -46,10 +53,13 @@ add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp
+add_library(petari_editor_core STATIC runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
     ${_petari_catalog_cpp})
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
-target_link_libraries(petari_editor_core PUBLIC petari_editor_formats petari_native_config petari_host_runtime)
+target_link_libraries(petari_editor_core PUBLIC petari_editor_formats petari_editor_share petari_native_config petari_host_runtime)
+if(TARGET petari_platform_dvd)
+    target_link_libraries(petari_editor_core PRIVATE petari_platform_dvd)  # ModFolder: the user's mods folder
+endif()
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
@@ -78,6 +88,10 @@ if(BUILD_TESTING)
     add_executable(petari_editor_catalog_tests ${PETARI_REPO_ROOT}/native/tests/editor_catalog_tests.cpp)
     target_link_libraries(petari_editor_catalog_tests PRIVATE petari_editor_core)
     add_test(NAME native_editor_catalog COMMAND petari_editor_catalog_tests)
+
+    add_executable(petari_editor_share_tests ${PETARI_REPO_ROOT}/native/tests/editor_share_tests.cpp)
+    target_link_libraries(petari_editor_share_tests PRIVATE petari_editor_share)
+    add_test(NAME native_editor_share COMMAND petari_editor_share_tests)
 
     add_executable(petari_editor_model_tests ${PETARI_REPO_ROOT}/native/tests/editor_model_tests.cpp)
     target_compile_definitions(petari_editor_model_tests PRIVATE

@@ -18,9 +18,17 @@ void drawInspectorWindow(const char* title);
 // Cmd+Z / Cmd+Shift+Z (and the toolbar's buttons): whether there is something to undo / redo.
 void deleteSelection();  // Delete: one op removing the selected rows
 bool canUndo();
-// A mission's name fit to show: Runtime's, when the UI font can draw it (the disc's internal names are
-// Japanese); else "Mission <n>".
+// A mission's name to show: Runtime's (the pause menu's, "Bunnies in the Wind"), else "Mission <n>".
 std::string missionLabel(const ModelView& model, int mission);
+// ---- sheets (sheets.cpp, UX section 17) ----
+// Cmd+S: save the session's mod again, or open the Save sheet the first time (chooseAgain: always the sheet).
+void requestSave(bool chooseAgain);
+void drawSaveSheet();
+const std::string& sessionModName();  // empty until the first save
+// A folder-safe mod name (letters, digits, spaces, - and _; trimmed; at most 40 characters).
+std::string modNameFrom(const std::string& text);
+std::string defaultModName(const char* galaxy);  // "CosmosGardenGalaxy" -> "CosmosGarden edit"
+
 // Bring a Galaxy tab forward ("Checks": the toolbar's badge).
 void openTab(const char* name);
 struct CheckCounts {
@@ -33,6 +41,17 @@ std::vector< const Check* > orderChecks(const std::vector< Check >& all);
 bool canRedo();
 void undo();
 void redo();
+
+// ---- for the tool modules' Inspector sections and viewport tools (M3: paths.cpp, gravity.cpp) ----
+
+// An Inspector section header: title on the left, a dim note on the right ("named", "edits apply to all").
+void drawSection(const char* title, const char* right = nullptr);
+// Records one undo step (op.label names it in History: "Moved 3 path points").
+void applyOp(Op op);
+// The Inspector's help strip for this frame: assign or append while an item is hovered.
+std::string& helpText();
+// A row's name for people: the catalog's display name, else the placement name, else the table's.
+std::string displayName(const ModelView& model, RowId row);
 
 // ---- the logic behind the panels, unit-tested without ImGui (native/tests/editor_ui_tests.cpp) ----
 
