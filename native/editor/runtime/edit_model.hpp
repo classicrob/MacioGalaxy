@@ -59,6 +59,9 @@ public:
     RowTransform transform(RowId row) const override;
     int missionCount() const override;
     const char* missionName(int mission) const override;
+    /// The missions' names as players see them (from the game's messages; index 0 = mission 1).
+    /// missionName() returns these when set, else ScenarioData's internal name.
+    void setMissionNames(std::vector< std::string > names) { mMissionNames = std::move(names); }
     std::uint32_t rowMissions(RowId row) const override;
     int historySize() const override { return static_cast< int >(mHistory.size()); }
     int historyCursor() const override { return mCursor; }
@@ -160,6 +163,7 @@ private:
     std::uint64_t serialAtCursor() const { return mCursor > 0 ? mHistory[mCursor - 1].serial : 0; }
 
     std::string mGalaxy;
+    std::vector< std::string > mMissionNames;
     int mScenario = 1;
     Formats::Table mScenarioData;
     std::vector< ZoneModel > mZones;

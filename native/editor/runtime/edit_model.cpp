@@ -536,6 +536,9 @@ int EditModel::missionCount() const {
 }
 
 const char* EditModel::missionName(int mission) const {
+    if (mission >= 1 && mission <= static_cast< int >(mMissionNames.size()) && !mMissionNames[mission - 1].empty()) {
+        return mMissionNames[mission - 1].c_str();
+    }
     for (int r = 0; r < mScenarioData.rowCount(); r++) {
         if (intCell(mScenarioData, r, "ScenarioNo", -1) == mission) {
             mNameScratch = sjisToUtf8(stringCell(mScenarioData, r, "ScenarioName"));

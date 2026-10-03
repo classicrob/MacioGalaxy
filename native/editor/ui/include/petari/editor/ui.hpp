@@ -36,6 +36,10 @@ void drawFrame(float windowWidth, float windowHeight);
 // keeps the edits and history.
 void switchMission(int mission);
 
+// Test drivers: open the Save sheet (as Cmd+Shift+S) and press its Save button.
+void openSaveSheet();
+void submitSaveSheet();
+
 // The central node (the game's viewport) in window points, from the last drawFrame;
 // false while hidden or in Focus mode.
 bool viewportRect(float* x, float* y, float* width, float* height);

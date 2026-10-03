@@ -694,11 +694,14 @@ std::vector< const Check* > orderChecks(const std::vector< Check >& all) {
 
 void openTab(const char* name) { gOpenTab = name; }
 
+void drawSection(const char* title, const char* right) { section(title, right); }
+void applyOp(Op op) { enqueueOp(std::move(op)); }
+std::string& helpText() { return gHelp; }
+std::string displayName(const ModelView& model, RowId row) { return rowName(model, row); }
+
 std::string missionLabel(const ModelView& model, int mission) {
     const char* name = model.missionName(mission);
-    bool readable = name != nullptr && name[0] != '\0';
-    for (const char* c = name; readable && *c != '\0'; c++) readable = static_cast< unsigned char >(*c) >= 0x20 && static_cast< unsigned char >(*c) < 0x7F;
-    return readable ? std::string(name) : "Mission " + std::to_string(mission);
+    return name != nullptr && name[0] != '\0' ? std::string(name) : "Mission " + std::to_string(mission);
 }
 
 std::string argValueText(const Catalog::Arg& arg, std::int32_t value) {

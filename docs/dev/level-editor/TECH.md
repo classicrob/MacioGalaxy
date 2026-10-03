@@ -978,7 +978,7 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.
 - **Catalog and Checks** (`editor/catalog`):
   - `native/editor/catalog/generated.json` comes from `native/editor/tools/gen_catalog.py`, a decomp scan of all 1,183 factory classes: args and their types, switches, rail-capable, archives, category. It folds in the class sweep's `sweep.json` when present (required links).
-  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 152 most-placed classes. These were researched against the decomp in our own words; no community data.
+  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 210 most-placed classes (the last 58 from the UI worker's list of the most common uncurated classes in five galaxies). These were researched against the decomp in our own words; no community data.
   - Both are embedded in the binary. The user's `<user>/editor/catalog/*.json` override them, and planets come from the disc's PlanetMapDataTable at session start.
   - The Checks engine (`runtime/checks.cpp`) reports only problems the edits introduce. The galaxy as loaded is the baseline, so vanilla Good Egg shows 0.
   - Kinds: unknown classes; missing required links; paths that don't exist or have fewer than 2 points; switch ids out of range or unused by the class; a zone switch only one row uses; duplicate l_ids. Most come with fix Ops or a UI fix kind.
@@ -998,5 +998,16 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - **Loader:** `ModFolder::setPatchBuilder` (set by the app) lets the platform layer call the builder without depending on editor code.
     - `resolveForUser(user, disc)` builds every enabled patch mod into `<user>/mods-cache/<key>/files/` (plain RARC; the key covers the patches and the disc files' size and time) and reuses that cache on later starts.
     - The built archives are claimed at the rank of the highest patch mod, ahead of its own `files/` (an older full save of the same mod loses quietly). A higher-priority full-archive mod still wins its paths.
+  - **Generated files** (`editor/patch-assets`): `Patch::registerAssetBuilder(version, fn)` adds a step after the row edits.
+    - The builder gets the mod's root, the disc reader and every built archive. It may replace archives (terrain rewrites brush rows into planet rows) and append files (`ObjectData/EditorBrush<hash>.arc`, `PlanetMapDataTable`).
+    - If a builder fails a mod, the loader builds everything again without that mod (logged), so a broken mod never serves half its files.
+    - The cache key covers each builder's version and every mod's `assets/`.
+    - Builders register before `ModFolder::setPatchBuilder` in `native/app/platform_host.cpp`.
   - **Size:** Good Egg with a move, a delete, a duplicate and a new layer's table comes to 5 ops, 2.6 KB.
   - **Tests:** `native_editor_model` (round trip on the synthetic galaxy and Good Egg, re-save over the built mod, two-mod merge, another disc refused, the loader cache) and `native_mod_folder` (claiming and precedence). Live: `editor_save_smoke.py` saves Full archives, saves again as a patch over them, then starts with the mod: the loader builds the archive and the Octoomba stands 600 units up.
+- **Share and Install** (`editor/share`; UX 17; `petari/editor/share.hpp`, wrappers in `edit_api.hpp`):
+  - **Export:** `shareMod(modName, info, zipPath)` puts the sheet's name/author/version/description/needs into the mod's `mod.txt` (other lines kept) and writes `preview.png`. It then zips the folder as `<Name>/...`, leaving out host clutter.
+  - **Inspect:** `inspectModZip` gives the Install sheet its preview: title, author, version, needs, screenshot, galaxies changed (from `edits/*.json` and `galaxy.json`), archives touched, whether it's an editor mod, and whether `files/` carries game data.
+  - **Install:** `installModZip(zip, replace)` unpacks into `<user>/mods/<Name>` through a staging folder and turns the mod on.
+    - It refuses paths escaping the folder, zips that aren't one mod folder, more than 2 GB, and an installed folder of the same name unless `replace`.
+  - **Zip format:** our own (deflate via zlib, CRC-checked on read; no zip64 or encryption). The system's `unzip` accepts our zips (`native_editor_share`).
