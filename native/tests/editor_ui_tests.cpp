@@ -177,6 +177,11 @@ void testPanelsLogic() {
     // Mission names: shown when drawable, else "Mission <n>" (FakeModel names every mission "Test mission").
     CHECK(Ui::missionLabel(model, 1) == "Test mission");
 
+    // Mod names: folder-safe, trimmed, capped; the default from the galaxy.
+    CHECK(Ui::modNameFrom("  My/Cool:Mod!  ") == "MyCoolMod" && Ui::modNameFrom("Pipe Dream_2-b") == "Pipe Dream_2-b" && Ui::modNameFrom("///").empty());
+    CHECK(Ui::modNameFrom(std::string(60, 'a')).size() == 40);
+    CHECK(Ui::defaultModName("CosmosGardenGalaxy") == "CosmosGarden edit" && Ui::defaultModName(nullptr) == "My edit");
+
     // Checks: counted by severity, errors listed first, each group in Runtime's order.
     {
         std::vector< PetariEditor::Check > list(4);

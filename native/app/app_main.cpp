@@ -464,6 +464,16 @@ App::FrameStats::Phase framePhaseForPipelines() {
                         }
                     }
                 }
+#ifdef PETARI_EDITOR_UI
+                // PETARI_EDITOR_TEST_SAVE=1: open the Save sheet, then press Save (the mod goes to this --user folder).
+                if (std::getenv("PETARI_EDITOR_TEST_SAVE") != nullptr) {
+                    if (t == 147) PetariEditor::Ui::openSaveSheet();
+                    if (t == 164) {
+                        std::fputs("[editor-test] save: press Save\n", stderr);
+                        PetariEditor::Ui::submitSaveSheet();
+                    }
+                }
+#endif
                 // PETARI_EDITOR_TEST_CHECK=1: give the selection two problems for the Checks tab (a switch out of
                 // range, a path that doesn't exist).
                 if (t == 145 && std::getenv("PETARI_EDITOR_TEST_CHECK") != nullptr) {
