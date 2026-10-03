@@ -130,10 +130,10 @@ void cameraInput(const Area& area, bool toolConsumed) {
     bool placed = false;
     if (inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         if (const ImGuiPayload* payload = ImGui::GetDragDropPayload(); payload != nullptr && payload->IsDataType(kPlacePayload)) {
-            Pick::place(*static_cast<const std::uint64_t*>(payload->Data));
+            placeToken(*static_cast<const std::uint64_t*>(payload->Data));
             placed = true;
         } else if (armedPlacement() != 0 && !io.KeyAlt) {
-            Pick::place(armedPlacement());
+            placeToken(armedPlacement());
             placed = true;
         }
     }

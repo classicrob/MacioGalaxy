@@ -326,6 +326,15 @@ void testChecks() {
         const E::Check* uneven = find(scaled, "uneven-collision:");
         check(uneven && !uneven->fix.sets.empty(), "uneven scale on a solid object, with a fix");
         check(m->apply(uneven->fix, &error) && !find(E::computeChecks(*m), "uneven-collision:"), "the fix makes it even");
+        PetariEditor::Catalog::ClassInfo brush;  // terrain's brush: its scale is baked into the mesh
+        brush.name = "EditorBrush";
+        brush.hasCollision = true;
+        PetariEditor::Catalog::addClass(brush);
+        setName(solid, "EditorBrush");
+        check(m->apply(E::Op{"scale", {setFloat(solid, "scale_y", 0.08f)}, {}}, &error) && !find(E::computeChecks(*m), "uneven-collision:"),
+              "terrain brushes are exempt");
+        m->undo();
+        m->undo();
         m->undo();
         m->undo();
         m->undo();

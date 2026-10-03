@@ -83,6 +83,20 @@ int main() {
     check(built.size() == 1 && plain && built[0].bytes == *plain, "the patch builds exactly the Full save's archive");
     check(E::ModelIO::saveToDirectory(*m, mod, false, &summary, &error, disc) && !fs::exists(archive), "a patch save removes the Full archive");
 
+    // The editor reads a patch-built archive rebuilt from the row edits, not the loader's copy
+    // (which has the asset builders' output: terrain's baked brushes; EP-006).
+    const F::Bytes baked = *readFile(files / "StageData/EggStarGalaxy.arc");  // anything but the patch's result
+    const E::FileSource loaderCopy = [&](const std::string& path) -> std::optional< F::Bytes > {
+        return path == "/StageData/SoramameZone.arc" ? std::optional< F::Bytes >(baked) : disc(path);
+    };
+    const E::FileSource editing = E::ModelIO::editingSource(loaderCopy, disc, {{"Test Mod", patch}},
+                                                           [](const std::string& path) { return path == "/StageData/SoramameZone.arc"; });
+    std::optional< F::Bytes > forEditor = editing("/StageData/SoramameZone.arc");
+    check(forEditor && *forEditor == built[0].bytes, "a patch-built archive is read rebuilt from the row edits");
+    check(editing("/StageData/EggStarGalaxy.arc") == disc("/StageData/EggStarGalaxy.arc"), "other archives as mounted");
+    const E::FileSource notBuilt = E::ModelIO::editingSource(loaderCopy, disc, {{"Test Mod", patch}}, [](const std::string&) { return false; });
+    check(notBuilt("/StageData/SoramameZone.arc") == baked, "an archive the loader didn't build is read as mounted");
+
     fs::create_directories(root / "user/mods/Other");
     std::ofstream(root / "user/mods/Other/mod.txt") << "name=Other\n";
     check(!E::ModelIO::saveToDirectory(*m, root / "user/mods/Other", false, &summary, &error, disc) &&

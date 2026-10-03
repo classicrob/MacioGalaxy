@@ -12,15 +12,17 @@ smoke must pass.
   sphere  warp to (-20000, 1250, 40000): above the sphere's north pole (y = 1000)
 
 The -patch runs (box-patch, sphere-patch) are the same scene saved as a patch mod (petari_terrain_bake
---patch: edits/EggStarGalaxy.json with the two brush rows, no game data); the mod loader bakes them at
-start-up (Terrain::bakePatchAssets) and the game loads the result like the -archive runs.
+--patch: edits/EggStarGalaxy.json with the two brush rows, no game data), with the editor off: the mod
+loader bakes them at start-up (Terrain::bakePatchAssets) and the game loads the result like the -archive
+runs. The -patch-editor runs have the editor on: the loader leaves the rows alone and the editor shows
+them live (TerrainSync), as a player editing the mod sees them.
 The -archive runs (box-archive, sphere-archive) build nothing live: petari_terrain_bake writes the same
 box and sphere as a Full-archive mod into the fixture user (ObjectData planet archives with a .bmd model,
 .kcl and .pa; PlanetMapDataTable rows; placement and gravity rows in EggStarGalaxy.arc), enabled with
 PETARI_MOD_FOLDERS, and the game loads them through its own placement (PETARI_EDITOR_TERRAIN_TEST=archive).
 
 usage: editor_terrain_smoke.py --app Petari.app/Contents/MacOS/Petari --output build/editor-terrain-smoke
-       [--runs box,sphere,box-archive,sphere-archive,box-patch,sphere-patch] [--bake build/macos-gx/native/editor/petari_terrain_bake]
+       [--runs box,sphere,box-archive,sphere-archive,box-patch,sphere-patch,box-patch-editor,sphere-patch-editor] [--bake build/macos-gx/native/editor/petari_terrain_bake]
        [--owner editor-terrain]
 Screenshots (<output>/{live,archive}-{box,sphere}-{90,420}.png) after 90 and 420 frames on a part.
 One app at a time through build/locked-app.sh.
@@ -49,7 +51,7 @@ def run(args, name, extra):
         files = user / "mods" / "TerrainBake" / "files"
         subprocess.run([str(args.bake), "--disc", str(args.disc / "files"), "--out", str(files)], check=True)
         extra = dict(extra, PETARI_MOD_FOLDERS="TerrainBake")
-    if name.endswith("-patch"):
+    if "-patch" in name:
         files = user / "mods" / "TerrainPatch" / "files"
         subprocess.run([str(args.bake), "--disc", str(args.disc / "files"), "--out", str(files), "--patch", "1"], check=True)
         extra = dict(extra, PETARI_MOD_FOLDERS="TerrainPatch")
@@ -93,9 +95,14 @@ def main():
     failures = []
     for name in args.runs.split(","):
         shape = name.split("-")[0]
-        mode = "archive" if name.endswith("-archive") or name.endswith("-patch") else "1"
-        r = run(args, name, {"PETARI_EDITOR": "1", "PETARI_EDITOR_TERRAIN_TEST": mode, "PETARI_STAGE_WARP": WARPS[shape],
+        mode = "archive" if name.endswith("-archive") or "-patch" in name else "1"
+        # -patch: the editor off, so the loader bakes; -patch-editor: on, so the rows stay rows.
+        editor = "0" if name.endswith("-patch") else "1"
+        r = run(args, name, {"PETARI_EDITOR": editor, "PETARI_EDITOR_TERRAIN_TEST": mode, "PETARI_STAGE_WARP": WARPS[shape],
                              "PETARI_EDITOR_TERRAIN_SHOTS": str(args.output.resolve())})
+        baked = any(line.startswith("terrain: ") for line in r["mods"])
+        if "-patch" in name and baked != (editor == "0"):
+            failures.append(f"{name}: the loader {'baked' if baked else 'did not bake'} brushes with the editor {'on' if editor == '1' else 'off'}")
         print(f"{name}: exit {r['status']}, smoke {r['result']}; checks " + ", ".join(f"{c}={v}" for c, v in r["checks"]))
         for line in r["mods"]:
             print(f"  [mods] {line}")

@@ -81,4 +81,9 @@ std::uint32_t sceneSerial();
 /// The scene is being destroyed: forget its rows and placements (their memory goes with the scene).
 void sceneDestroyed();
 
+/// Placement met a terrain brush row (class EditorBrush, which the game has no class for: the
+/// editor shows it, TerrainSync), so the editor loads its model for this scene outside Edit too.
+void noteBrushRow();
+bool sceneHasBrushRows();
+
 }  // namespace PetariEditor::Hooks
