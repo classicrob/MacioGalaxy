@@ -1,6 +1,6 @@
-"""Python API over petari-level-x (docs/dev/level-editor/AGENT_API_X.md).
+"""Python API over petari-level (docs/dev/level-editor/AGENT_API.md).
 
-    from level_api_x import Level, LevelError
+    from petari_level import Level, LevelError
 
     lv = Level.init("build/ws/coins", disc="build/game-data/RMGE01", galaxy="EggStarGalaxy")
     with lv.batch(key="arc-1", label="Coin arc") as b:
@@ -9,7 +9,7 @@
     print(lv.checks())
     lv.save("Coin Arc")
 
-Every call goes to one long-lived `petari-level-x serve` process (JSON lines), so the galaxy is
+Every call goes to one long-lived `petari-level serve` process (JSON lines), so the galaxy is
 loaded once. Errors raise LevelError with the API's code, hint and candidates.
 """
 from __future__ import annotations
@@ -29,11 +29,11 @@ def _repo_root() -> Path:
 
 
 def find_binary() -> Path:
-    """$PETARI_LEVEL_X, else the build tree's petari-level-x."""
+    """$PETARI_LEVEL_X, else the build tree's petari-level."""
     env = os.environ.get("PETARI_LEVEL_X")
     if env:
         return Path(env)
-    return _repo_root() / "build/macos-gx/native/editor/level_api/petari-level-x"
+    return _repo_root() / "build/macos-gx/native/editor/level_api/petari-level"
 
 
 class LevelError(Exception):
@@ -129,13 +129,13 @@ class Batch:
 
 
 class Level:
-    """One workspace (a galaxy + its journal) served by petari-level-x."""
+    """One workspace (a galaxy + its journal) served by petari-level."""
 
     def __init__(self, workspace: str | os.PathLike, binary: Optional[str | os.PathLike] = None):
         self.workspace = Path(workspace)
         self.binary = Path(binary) if binary else find_binary()
         if not self.binary.exists():
-            raise FileNotFoundError(f"petari-level-x not found at {self.binary} (build it, or set PETARI_LEVEL_X)")
+            raise FileNotFoundError(f"petari-level not found at {self.binary} (build it, or set PETARI_LEVEL_X)")
         self._proc: Optional[subprocess.Popen] = None
         self._next_id = 0
         self.last: dict = {}
@@ -198,7 +198,7 @@ class Level:
         line = proc.stdout.readline()
         if not line:
             # The workspace could not be opened: the server printed its error and exited.
-            raise LevelError({"code": "server", "message": f"petari-level-x serve exited ({proc.poll()})",
+            raise LevelError({"code": "server", "message": f"petari-level serve exited ({proc.poll()})",
                               "hint": f"run: {self.binary} --ws {self.workspace} info"})
         reply = json.loads(line)
         if not reply.get("ok"):

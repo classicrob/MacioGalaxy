@@ -1,10 +1,10 @@
-// petari-level-x: the agent level-authoring CLI (docs/dev/level-editor/AGENT_API_X.md).
+// petari-level: the agent level-authoring CLI (docs/dev/level-editor/AGENT_API.md).
 //
-//   petari-level-x help [command|--op NAME]
-//   petari-level-x [--ws DIR] init --disc DISC --galaxy EggStarGalaxy [--mission 1] [--user DIR] [--user-mods]
-//   petari-level-x [--ws DIR] <command> [{json args}] [--key value ...] [positional]
-//   petari-level-x [--ws DIR] apply ops.json|-          (a JSON array of ops, or {"ops": [...], "key": ...})
-//   petari-level-x [--ws DIR] serve                     JSON lines on stdin: {"id": 1, "cmd": "list", "args": {...}}
+//   petari-level help [command|--op NAME]
+//   petari-level [--ws DIR] init --disc DISC --galaxy EggStarGalaxy [--mission 1] [--user DIR] [--user-mods]
+//   petari-level [--ws DIR] <command> [{json args}] [--key value ...] [positional]
+//   petari-level [--ws DIR] apply ops.json|-          (a JSON array of ops, or {"ops": [...], "key": ...})
+//   petari-level [--ws DIR] serve                     JSON lines on stdin: {"id": 1, "cmd": "list", "args": {...}}
 //
 // A workspace (default ./level-ws, or $PETARI_LEVEL_WS) is level.json: the disc, galaxy, mission and
 // user directory it was opened with, and the journal. Each call opens the galaxy, replays the journal,
@@ -103,7 +103,7 @@ namespace {
         const std::optional< std::string > text = readText(ws.file().string());
         if (!text) {
             *pExit = emitError("no-workspace", "no workspace at " + ws.dir.string(),
-                               "create one: petari-level-x --ws " + ws.dir.string() + " init --disc <disc> --galaxy <Galaxy>", 2);
+                               "create one: petari-level --ws " + ws.dir.string() + " init --disc <disc> --galaxy <Galaxy>", 2);
             return nullptr;
         }
         std::string error;
@@ -154,12 +154,12 @@ namespace {
 
     int usage() {
         std::fputs(
-            "petari-level-x: author Super Mario Galaxy levels with the Petari editor's core, in JSON.\n"
-            "  petari-level-x help [command] [--op NAME] [--all]      self-description (JSON)\n"
-            "  petari-level-x [--ws DIR] init --disc DISC --galaxy NAME [--mission N] [--user DIR] [--user-mods]\n"
-            "  petari-level-x [--ws DIR] <command> [{json}] [--key value ...]\n"
-            "  petari-level-x [--ws DIR] apply FILE|-                 a batch: [op, ...] or {\"ops\": [...], \"key\": ...}\n"
-            "  petari-level-x [--ws DIR] serve                        JSON lines: {\"id\":1,\"cmd\":\"list\",\"args\":{}}\n"
+            "petari-level: author Super Mario Galaxy levels with the Petari editor's core, in JSON.\n"
+            "  petari-level help [command] [--op NAME] [--all]      self-description (JSON)\n"
+            "  petari-level [--ws DIR] init --disc DISC --galaxy NAME [--mission N] [--user DIR] [--user-mods]\n"
+            "  petari-level [--ws DIR] <command> [{json}] [--key value ...]\n"
+            "  petari-level [--ws DIR] apply FILE|-                 a batch: [op, ...] or {\"ops\": [...], \"key\": ...}\n"
+            "  petari-level [--ws DIR] serve                        JSON lines: {\"id\":1,\"cmd\":\"list\",\"args\":{}}\n"
             "Global: --ws DIR (default $PETARI_LEVEL_WS or ./level-ws), --pretty, --time\n",
             stderr);
         return 2;
@@ -244,7 +244,7 @@ int main(int argc, char** argv) {
         }
         Value out = LevelApi::Level::help(args);
         if (!args.has("command") && !args.has("op")) {
-            out.set("cli", "petari-level-x [--ws DIR] <command> [{json}] [--key value]; init/serve are CLI-only (see --help)");
+            out.set("cli", "petari-level [--ws DIR] <command> [{json}] [--key value]; init/serve are CLI-only (see --help)");
         }
         emit(out);
         return out["ok"].asBool() ? 0 : 1;

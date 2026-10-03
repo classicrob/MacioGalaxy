@@ -7,7 +7,7 @@ Star waits where the flight comes down. The Launch Star and the star go in missi
 common layer it would be the 17th Launch Star of mission 2, which the Checks report as an error
 (the game keeps paths for 16), so the script shows that probe first as a dry run.
 
-    native/tools/level_api_x/examples/launch_star_course.py [--ws build/ws/launch] [--disc ...] [--save]
+    native/tools/petari_level/examples/launch_star_course.py [--ws build/ws/launch] [--disc ...] [--save]
 """
 import argparse
 import json
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from level_api_x import Level  # noqa: E402
+from petari_level import Level  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[4]
 

@@ -71,7 +71,7 @@ if(TARGET petari_platform_dvd)
         petari_native_config)
 endif()
 
-# The agent level-authoring API and its CLI, petari-level-x (headless).
+# The agent level-authoring API and its CLI, petari-level (headless).
 if(TARGET petari_editor_save)
     add_subdirectory(level_api)
 endif()

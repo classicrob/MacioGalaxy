@@ -1,5 +1,5 @@
 #ifdef PETARI_NATIVE
-// The test server's live-editing commands (docs/dev/level-editor/AGENT_API_X.md "Live mode"): the agent
+// The test server's live-editing commands (docs/dev/level-editor/AGENT_API.md "Live mode"): the agent
 // API's low-level ops applied to the running game through the editor's own command queue, plus the
 // verification commands (exact ground and gravity, Mario, screenshots, waits). Test-only, like the server.
 #include "Game/Scene/TestServerEditor.hpp"
@@ -77,7 +77,7 @@ namespace {
         return text;
     }
 
-    // "ok <json>" / "error <text>" (the server's protocol; the JSON is for petari_level_api_x's live client).
+    // "ok <json>" / "error <text>" (the server's protocol; the JSON is for petari_level_api's live client).
     void begin(Wait wait, const std::string& name) {
         gPending = Pending{};
         gPending.wait = wait;
@@ -119,7 +119,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         return true;
     }
     if (c == "editor-apply" && w.size() >= 2) {
-        // A file with one low-level op or {"ops": [op, ...]} (petari-level-x export).
+        // A file with one low-level op or {"ops": [op, ...]} (petari-level export).
         const E::ModelView* m = E::model();
         if (m == nullptr) {
             reply(name, "error no edit model (send editor-begin first)");

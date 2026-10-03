@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live verification of example 1 in a running game (AGENT_API_X.md "Live mode").
+"""Live verification of example 1 in a running game (AGENT_API.md "Live mode").
 
 Builds the Sling Star course headless (sling_star_course.py's workspace), then in a test server started
 with PETARI_EDITOR=1: loads the editor model, syncs the workspace's batch, reloads, compares the headless
@@ -7,7 +7,7 @@ ground with the engine's, screenshots the course, drops Mario onto the Sling Sta
 along gravity to see whether the launch reaches the Power Star.
 
     PETARI_EDITOR=1 native/tools/test_server.py start --app <Petari> --dir build/test-server/me
-    native/tools/level_api_x/examples/live_verify.py --server build/test-server/me [--shots build/shots/level-api-x]
+    native/tools/petari_level/examples/live_verify.py --server build/test-server/me [--shots build/shots/petari-level]
 """
 import argparse
 import json
@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from level_api_x import Level, LevelError, Live  # noqa: E402
+from petari_level import Level, LevelError, Live  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 ROOT = Path(__file__).resolve().parents[4]
@@ -31,7 +31,7 @@ def main():
     ap.add_argument("--server", required=True, help="the test server's directory")
     ap.add_argument("--course", choices=["sling", "launch"], default="sling")
     ap.add_argument("--ws", help="default build/ws/<course>")
-    ap.add_argument("--shots", default=str(ROOT / "build/shots/level-api-x"))
+    ap.add_argument("--shots", default=str(ROOT / "build/shots/petari-level"))
     args = ap.parse_args()
 
     args.ws = args.ws or str(ROOT / "build/ws" / args.course)

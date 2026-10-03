@@ -1,7 +1,7 @@
 #pragma once
-// The agent level-authoring API (docs/dev/level-editor/AGENT_API_X.md): the in-game editor's own core
+// The agent level-authoring API (docs/dev/level-editor/AGENT_API.md): the in-game editor's own core
 // (EditModel, ops and undo, the catalog, Checks, patch-mod save) driven by JSON commands, without the
-// game or a renderer. petari-level-x (the CLI), its stdio server and the test server's live mode all
+// game or a renderer. petari-level (the CLI), its stdio server and the test server's live mode all
 // go through Level::call, so they share one command set, one op format and one set of error codes.
 //
 // A Level is one galaxy (one mission selected) loaded from the player's disc, plus a journal: the
@@ -70,7 +70,7 @@ public:
     const EditModel& model() const;
     const OpenOptions& options() const { return mOptions; }
 
-    /// Live mode: called with each committed op (apply, undo as an inverse is not sent: see AGENT_API_X.md).
+    /// Live mode: called with each committed op (apply, undo as an inverse is not sent: see AGENT_API.md).
     void setOnCommit(std::function< void(const Json::Value& opJson) > fn) { mOnCommit = std::move(fn); }
 
     struct Impl;  // level_internal.hpp

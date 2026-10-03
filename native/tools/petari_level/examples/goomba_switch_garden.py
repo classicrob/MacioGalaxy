@@ -7,7 +7,7 @@ reads the same one ("@goomba.SW_DEAD"). A grid of Star Bits floats over the arri
 placement is snapped to the planet along its own gravity. Ends with the checks and a dry-run probe of
 a mistake (the mushroom pointed at a switch nobody writes) to show what an agent gets back.
 
-    native/tools/level_api_x/examples/goomba_switch_garden.py [--ws build/ws/garden] [--disc ...] [--save]
+    native/tools/petari_level/examples/goomba_switch_garden.py [--ws build/ws/garden] [--disc ...] [--save]
 """
 import argparse
 import json
@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from level_api_x import Level  # noqa: E402
+from petari_level import Level  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[4]
 

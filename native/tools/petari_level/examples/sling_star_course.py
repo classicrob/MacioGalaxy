@@ -5,7 +5,7 @@ From Mario's start: a trail of coins hugging the planet, a Sling Star that fling
 through a column of coins, and a Power Star waiting at the top (missions 1, 4 and 6: layer A). Then the checks, and
 a patch mod saved into the workspace's user folder.
 
-    native/tools/level_api_x/examples/sling_star_course.py [--ws build/ws/sling] [--disc build/game-data/RMGE01] [--save]
+    native/tools/petari_level/examples/sling_star_course.py [--ws build/ws/sling] [--disc build/game-data/RMGE01] [--save]
 """
 import argparse
 import json
@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from level_api_x import Level  # noqa: E402
+from petari_level import Level  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[4]
 

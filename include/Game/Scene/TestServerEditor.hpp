@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-// The test server's live-editing commands (src/Game/Scene/TestServerEditor.cpp; docs/dev/level-editor/AGENT_API_X.md):
+// The test server's live-editing commands (src/Game/Scene/TestServerEditor.cpp; docs/dev/level-editor/AGENT_API.md):
 // editor-begin, editor-state, editor-apply <op.json>, editor-undo/redo [n], editor-reload, editor-play [x y z [up] [front]],
 // editor-save <mod> [--full], editor-checks, mario, teleport x y z, ground/gravity x y z [dx dy dz], screenshot <png>, wait <frames>.
 namespace TestServerEditor {

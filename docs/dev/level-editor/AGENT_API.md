@@ -1,7 +1,7 @@
-# Agent level authoring: petari-level-x
+# Agent level authoring: petari-level
 
-`petari-level-x` builds and edits Super Mario Galaxy levels from the command line, as JSON in and
-JSON out. `native/tools/level_api_x` wraps it in Python. It is meant for agents and scripting
+`petari-level` builds and edits Super Mario Galaxy levels from the command line, as JSON in and
+JSON out. `native/tools/petari_level` wraps it in Python. It is meant for agents and scripting
 humans. Computer use stays the test of whether a human can use the editor.
 
 It is the in-game editor's own core, linked without the game or a renderer:
@@ -21,7 +21,7 @@ game. stage_edit.py is superseded.
 ## Quick start
 
 ```sh
-X=build/macos-gx/native/editor/level_api/petari-level-x
+X=build/macos-gx/native/editor/level_api/petari-level
 $X help                                                    # every command and op, error codes, refs
 $X --ws build/ws/egg init --disc build/game-data/RMGE01 --galaxy EggStarGalaxy
 $X --ws build/ws/egg catalog "launch star"
@@ -36,7 +36,7 @@ Python:
 
 ```python
 import sys; sys.path.insert(0, "native/tools")
-from level_api_x import Level
+from petari_level import Level
 
 lv = Level.init("build/ws/egg", disc="build/game-data/RMGE01", galaxy="EggStarGalaxy", force=True)
 with lv.batch(key="arc", label="Coin arc") as b:
@@ -173,7 +173,7 @@ The test server (`native/tools/test_server.py`, `PETARI_TEST_SERVER`) takes thes
 | `mario`, `teleport x y z`, `wait N` | Mario's position, gravity, ground, death; move him; let N frames run |
 | `screenshot PNG` | the next presented frame, without the editor's overlay |
 
-Replies are `ok <json>` / `error <text>`. `level_api_x.Live` wraps them: `Live.start(app=...)`,
+Replies are `ok <json>` / `error <text>`. `petari_level.Live` wraps them: `Live.start(app=...)`,
 `live.begin()`, `live.sync(level)` (brings the game to the workspace's journal: undoes what diverged,
 applies what is new; refs resolve in the game because they are stable), `live.reload()`,
 `live.play(pos, up)`, `live.warp(pos)`, `live.trace(frames)`, `live.ground(pos)`,

@@ -1,4 +1,4 @@
-// Tests for the agent level-authoring API (native/editor/level_api, petari-level-x) on Good Egg from the
+// Tests for the agent level-authoring API (native/editor/level_api, petari-level) on Good Egg from the
 // extracted disc: queries, batches as one undo step, atomicity, idempotent keys, named args, refs,
 // errors with candidates, the journal's replay, checks and their fixes, and a patch save loaded back.
 // Skipped without the disc.
@@ -66,10 +66,10 @@ double ms(std::chrono::steady_clock::time_point since) {
 int main() {
     const fs::path disc = fs::path(PETARI_TEST_DISC_FILES).parent_path();
     if (!fs::exists(disc / "files" / "StageData" / "EggStarGalaxy" / "EggStarGalaxyScenario.arc")) {
-        std::printf("level_api_x: no disc at %s, skipped\n", disc.string().c_str());
+        std::printf("petari_level: no disc at %s, skipped\n", disc.string().c_str());
         return 0;
     }
-    const fs::path user = fs::temp_directory_path() / ("petari-level-api-x-" + std::to_string(getpid()));
+    const fs::path user = fs::temp_directory_path() / ("petari-petari-level-" + std::to_string(getpid()));
     fs::remove_all(user);
 
     L::OpenOptions options;
@@ -274,6 +274,6 @@ int main() {
     }
 
     fs::remove_all(user);
-    std::printf("level_api_x: %d checks passed\n", sChecks);
+    std::printf("petari_level: %d checks passed\n", sChecks);
     return 0;
 }

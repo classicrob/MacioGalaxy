@@ -1,6 +1,6 @@
-"""Live mode: the same edits applied to a running game through the test server (AGENT_API_X.md "Live mode").
+"""Live mode: the same edits applied to a running game through the test server (AGENT_API.md "Live mode").
 
-    from level_api_x import Level, Live
+    from petari_level import Level, Live
     live = Live.start(app="build/macos-gx/native/app/Petari.app/Contents/MacOS/Petari", stage="EggStarGalaxy")
     live.begin()                       # the edit model in the running game
     live.sync(lv)                      # the workspace's batches -> the game (undo/redo follow)
@@ -53,7 +53,7 @@ class Live:
 
     @classmethod
     def start(cls, app: str | os.PathLike, *, stage: str = "EggStarGalaxy", scenario: int = 1,
-              directory: Optional[str | os.PathLike] = None, owner: str = "level-api-x") -> "Live":
+              directory: Optional[str | os.PathLike] = None, owner: str = "petari-level") -> "Live":
         """Boot a test server (editor on) and return when the stage answers."""
         argv = [sys.executable, str(TOOLS / "test_server.py"), "start", "--app", str(app), "--stage", stage,
                 "--scenario", str(scenario), "--owner", owner]
@@ -88,7 +88,7 @@ class Live:
         return self.send("editor-state")
 
     def apply_ops(self, ops: Sequence[dict]) -> dict:
-        """Low-level ops (petari-level-x export) applied in order, each one undo step in the game."""
+        """Low-level ops (petari-level export) applied in order, each one undo step in the game."""
         path = self.dir / f"ops-{time.time_ns()}.json"
         path.write_text(json.dumps({"ops": list(ops)}))
         try:

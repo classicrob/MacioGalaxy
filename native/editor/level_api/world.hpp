@@ -1,5 +1,5 @@
 #pragma once
-// The headless world for placement helpers (AGENT_API_X.md "Placing on the ground"): the collision of
+// The headless world for placement helpers (AGENT_API.md "Placing on the ground"): the collision of
 // every row placed in the current mission (its ObjectData/<class>.arc .kcl, terrain brushes from the
 // terrain library's mesh), in world space, with ray and nearest-surface queries; and an approximate
 // gravity direction from the gravity rows. Live mode asks the running game instead (exact).
