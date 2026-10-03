@@ -1,92 +1,113 @@
-# M4: New galaxies as a user-facing flow (design)
+# M4: New galaxies as a user-facing flow (as built)
 
-UX.md section 14 is the sheet; TECH.md 5.7 and [new-galaxies.md](new-galaxies.md) are the engine
-side (registry, guards, sidecar). This note decides how the two meet. Owners: Terrain (the files,
-the registry, `Command::NewGalaxy`, the relaunch, the Checks), UI (the sheet, the Home menu entry,
-the planet palette), Runtime (reviewing the edit_api additions).
+UX.md section 14 covers the sheet. TECH.md 5.7 and [new-galaxies.md](new-galaxies.md) cover the engine side: the registry, the guards and the save sidecar. This note says how the two meet, as built.
+
+Owners:
+- Terrain: the files, the registry, `Command::NewGalaxy` and `Command::SetGalaxyInfo`, the restart, and the Checks.
+- UI: the sheet, the Missions panel, and the Level Select entry.
+- Runtime: reviews the edit_api additions.
 
 ## The one hard constraint: a galaxy can't appear mid-session
 
-The game learns its galaxies once:
+The game learns its galaxies only once, at boot:
 - `ScenarioDataParser` walks `/StageData` at boot.
 - The save's galaxy storage is sized from the parser.
-- The disc overlay is resolved and sorted at mount: adding files renumbers FST entries under live
-  `FileHolder`/`ArchiveHolder` caches.
+- The disc overlay is resolved and sorted when it mounts. Adding files afterwards renumbers FST entries under live `FileHolder`/`ArchiveHolder` caches.
 
-So **Create writes the mod and relaunches Petari straight into the new galaxy, in Edit**. That is
-`OSRestart`'s existing self-relaunch: same argv and environment, with `PETARI_OPEN_STAGE=<G>` and
-`PETARI_OPEN_EDIT=1` added. It takes about 25 s with the warm caches. The sheet says
-"Petari restarts into your galaxy". Everything after that is live:
-- edits;
-- mission names and music (the registry is updated in place);
-- the mission count (the Scenario archive is re-injected and the parser's entry refreshed).
+So **Create writes the galaxy as a mod, switches the mod on, and restarts Petari straight into the galaxy, in Edit** (`new_galaxy_session.cpp`). The restart is `OSRestart`: an `execv` of the same process image, with the same arguments and the same PID.
+
+Before restarting, the editor sets these variables:
+- `PETARI_OPEN_STAGE=<G>`
+- `PETARI_OPEN_TITLE`
+- `PETARI_OPEN_FILE=<the open save file>`
+- `PETARI_OPEN_EDIT=1`
+
+`app_main` maps them to `PlayerLaunch::openStage/openFile/openTitle/openEdit` and clears them. The restarted game then:
+- advances the strap by itself (`LogoScene`);
+- skips the title and opens the same file without the file select (`FileSelector`, milestone `FileSelector.OpenFile`);
+- enters the galaxy;
+- has the UI enter Edit on `openEdit`.
+
+A test fixture's restart (`PETARI_STAGE` set) goes in through the fixture's synthetic entry instead and ignores `openEdit`.
+
+What is live and what restarts:
+
+| Change | How |
+| --- | --- |
+| Edits, Power Stars, the start | Live, as in any galaxy |
+| Galaxy name, mission names, music | Live: `Command::SetGalaxyInfo` rewrites `galaxy.json` and updates the registry in place (`ModGalaxy::update`; earlier message pointers stay valid). Music takes effect at the next reload or Play |
+| Mission count | A restart: `SetGalaxyInfo` rewrites the Scenario archive, then restarts into the galaxy in Edit, the same way Create does. The parser and the save storage are fixed at boot, as above |
 
 ## Templates (Start from)
 
 | Template | Files written |
 | --- | --- |
-| **Empty space** | The galaxy's own zone. Start point at the origin, no planet or gravity, the default camera. The Checks list opens with "Mission 1 has no Power Star" and "Mario starts in mid-air". |
-| **One planet** | Empty space plus one disc planet from `PlanetMapDataTable` (the planet palette), placed under the start, with the gravity row the disc pairs it with (looked up in the galaxies that place it). |
-| **Brush skeleton** | Empty space plus a checker box brush under the start (fitted gravity) and Power Star 1: today's `petari_terrain_bake --galaxy`, as a library call. |
-| **Copy a galaxy** | A disc galaxy's stage and zone archives under the new name, with ScenarioData copied. The zones keep their disc names, so they stay shared and are not copied. |
+| **Empty space** | The galaxy's own zone (an emptied `TransformationExGalaxy` stage), a start point and a sky. No planet, gravity or stars. The Checks list opens with "Mario starts in mid-air" and one "Mission N has no Power Star" per mission |
+| **One planet** | Empty space plus a disc planet from `PlanetMapDataTable` under the start, with the gravity row the disc pairs with it (the nearest gravity within 100 units, in the first galaxy that places it). Plus a Power Star per mission |
+| **Brush skeleton** | Empty space plus a checker box brush under the start (fitted gravity), plus a Power Star per mission |
+| **Copy a galaxy** | A disc galaxy's own stage archive and its ScenarioData, under the new name. Its zones keep their disc names, so they stay shared and are not copied |
 
-The sky (`Sky` class rows from galaxies that use them) and the lighting presets are in step 2. In
-v1 they're a sky row copied from the chosen galaxy; lighting falls back to the default area light.
+In every template:
+- **Missions.** Mission k's Power Star (`Obj_arg0` = k) stands 900 units from the start, on the mission's layer. A single mission uses Common; with more, mission 1 is Layer A, and so on.
+- **Sky.** `NewGalaxyRequest::sky` is one of `newGalaxyChoices().skies`: the game's Sky and ProjectionMapSky classes that the disc has. The row is copied as a disc galaxy places it and moved to the origin, in Common. Empty means Good Egg's sky; for Copy, empty keeps the source's sky. A chosen sky replaces the sky in the copy's own archive (a sky placed in a shared zone stays).
+- **Lighting** falls back to the default area light.
 
 ## The pieces
 
-**Library (pure C++, `petari/editor/galaxy/new_galaxy.hpp`, Terrain):**
-`buildNewGalaxy(spec, readDisc) -> {files, galaxyJson, error}`, generalised from
-`terrain_bake --galaxy`. It also drives the headless tools.
+**Library** (pure C++, `petari/editor/galaxy/new_galaxy.hpp`):
+- `buildNewGalaxy(spec, readDisc, listDisc) -> {files, galaxyJson, log, error}`;
+- `internalNameFor` and `checkInternalName`;
+- `discGalaxies`, `planetNames` and `skyNames`;
+- `galaxyJson`;
+- `resizeScenario`: the first rows are kept, trailing ones dropped, and a new mission k copies mission 1's row with Power Star ID k and its own layer.
 
-**edit_api (Runtime to review):**
+**edit_api.hpp:**
 ```cpp
-struct NewGalaxySpec {
-    std::string name;            // "Pipe Dream" (English; other languages default to it)
-    std::string internalName;    // empty: generated ("PipeDreamGalaxy"), checked against the disc and the save keys
-    enum class From { Empty, OnePlanet, Brushes, Copy } from = From::OnePlanet;
-    std::string planet;          // OnePlanet: a PlanetMapDataTable name
-    std::string copyOf;          // Copy: a disc galaxy
-    std::string musicFrom;       // a disc galaxy (TECH 5.7 borrowing)
-    std::vector<std::string> missions;  // names; their count = the mission count (1..8)
-    std::string mod;             // the mod it goes in (default: the internal name)
-};
-Command::Kind::NewGalaxy        // command.newGalaxy = spec; validates, writes, enables the mod, relaunches
-struct NewGalaxyChoices { planets, galaxies (copy/music), skies };  // newGalaxyChoices(), for the sheet
-std::string checkNewGalaxyName(const std::string& name);  // "" or why not (collision, characters, 64 galaxies)
+struct NewGalaxyRequest { name, internalName, from {Empty, OnePlanet, Brushes, Copy}, planet, copyOf,
+                          musicFrom, missions (1..8 names), sky, discardUnsaved };
+struct NewGalaxyChoices { planets, galaxies, skies };    // newGalaxyChoices(), from the mounted disc
+std::string newGalaxyInternalName(name);                 // "Pipe Dream" -> "PipeDreamGalaxy"
+std::string checkNewGalaxyName(internalName);            // "" or why not (characters, disc names, save key, 64 galaxies)
+Command::Kind::NewGalaxy                                 // command.newGalaxy
+
+struct GalaxyInfo { internalName, mod (read only), name, missions, musicFrom, discardUnsaved };
+std::optional<GalaxyInfo> modGalaxyInfo();               // the edited galaxy if it is a mod galaxy
+std::string checkGalaxyInfo(const GalaxyInfo&);          // "" or why not; cheap enough to call as the user types
+bool galaxyInfoNeedsRestart(const GalaxyInfo&);          // the mission count changes
+Command::Kind::SetGalaxyInfo                             // command.galaxyInfo
 ```
+- **Unsaved edits.** Both commands refuse while there are unsaved edits, unless `discardUnsaved` is set. The UI asks "save or discard" first. `SetGalaxyInfo` asks only when it would restart.
+- **Results.** Results arrive as `status()` notices and errors ("New galaxy: ...", "Galaxy settings: ...").
+- **Internal name.** It is fixed once created: the save, the files and the zones key on it.
 
-**UI:** the three-step sheet:
-- **File → New Galaxy** and Level Select → **New galaxy**;
-- the planet strip, filled from `newGalaxyChoices().planets`. The Browser's thumbnail path needs a
-  live actor, so v1 shows names with the shape group; thumbnails come once a planet is placed;
-- after the relaunch, opening in Edit on `PETARI_OPEN_EDIT=1`: camera on the start, play marker on
-  the start.
+**Files written** (`<user>/mods/<G>/`):
+- `files/StageData/<G>.arc`;
+- `files/StageData/<G>/<G>Scenario.arc`;
+- `galaxy.json` (English names; other languages fall back to them);
+- `mod.txt` with `editor=1`.
 
-**Missions panel (live, Terrain + UI):**
-- **Mission count:** add or remove a ScenarioData row, then re-inject the Scenario archive and
-  refresh the parser.
-- **Names:** a registry upsert.
-- **Power Stars per mission:** a `PowerStar` row on the mission's layer, with `Obj_arg0` = the star
-  id. The Browser already places PowerStar.
-- **Checks** (Runtime's engine, provider from Terrain):
-  - a mission with no star;
-  - missions > 8, stars > 7;
-  - 64 galaxies;
-  - "Mario starts in mid-air" (no collision under the start within 5000 units, from
-    `readKcl` + `raycast`).
+The mod is switched on in `mods.txt`. Brushes in the galaxy's own stage are baked by the loader when the editor is off (TECH.md 6.5). Editor sessions keep the rows live.
 
-**Level Select:** the "Mod galaxies" group already lists registry galaxies. After the relaunch the
-new one is there.
+**Checks** (`galaxy_checks.cpp`; keys `galaxy-`, which are never baselined, so a new galaxy's list opens with them):
+- "Mission N has no Power Star": no `PowerStar` with `Obj_arg0` = N in a layer that mission uses;
+- "The galaxy has no start for Mario";
+- "Mario starts in mid-air": a ray down 5,000 units from the start that hits neither a brush nor a placed planet's collision.
 
-**Share:** a mod with `galaxy.json` gets the line "This new galaxy plays only in Petari (the game
-has no way to add galaxies without code patches)". It's a one-line check in the Share sheet:
-`ModGalaxy::find` over the mod's galaxy.json.
+**Level Select:**
+- The **Mod galaxies** group lists the registry's galaxies.
+- A **New galaxy...** entry opens the sheet from the Home menu (UI).
 
-## Order of work (Terrain)
+**Share:** a mod with `galaxy.json` gets the note "This new galaxy plays only in Petari" (`Preview::newGalaxies`).
 
-1. The library and `Command::NewGalaxy` with the relaunch, verified by a smoke: create, relaunch, in
-   Edit, a star placed, played, saved.
-2. Live mission count and names, plus the Checks.
-3. The Share note, Level Select's "New galaxy" entry (with UI), and the planet palette's gravity
-   pairing.
+## Tests
+
+- `editor_new_galaxy_tests`:
+  - every template against the disc: stage, scenarios, layers, one sky, the registry entry;
+  - `resizeScenario` growing and shrinking;
+  - a `galaxyJson` round trip through `ModGalaxy::update`.
+- `mod_galaxy_tests`: `update` in place; old message pointers stay valid; another mod can't take the galaxy.
+- `native/tools/editor_new_galaxy_smoke.py` (`new_galaxy_test.cpp`):
+  1. Create "Smoke Hop" (One planet, 2 missions) and restart into it. Check the stage, the registry and the hand-over; then the Checks (none, then "mid-air" once the start is moved up 50,000). Then rename it live, see a third mission refused over the unsaved move, and add it with discard across a second restart (3 missions).
+  2. A player's restart, without the fixture: strap, title and file select skipped; in Edit by itself.
+  3. "Smoke Box" (Brush skeleton).
+  4. "Smoke Box" with the editor off: the loader bakes the brush, and the stage checks walk on it.

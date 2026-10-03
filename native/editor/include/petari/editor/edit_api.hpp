@@ -186,6 +186,7 @@ struct NewGalaxyRequest {
     std::string copyOf;        // Copy: one of newGalaxyChoices().galaxies
     std::string musicFrom;     // one of newGalaxyChoices().galaxies; empty: copyOf, else Good Egg's
     std::vector< std::string > missions;  // names; their count is the mission count (1..8); empty: one
+    std::string sky;  // one of newGalaxyChoices().skies; empty: Good Egg's (Copy: the source's own)
     /// The current galaxy's unsaved edits: Create refuses while there are any, unless the sheet
     /// saved them first or the person chose to discard them.
     bool discardUnsaved = false;
@@ -194,6 +195,7 @@ struct NewGalaxyRequest {
 struct NewGalaxyChoices {
     std::vector< std::string > planets;   // placeable by name (PlanetMapDataTable), sorted
     std::vector< std::string > galaxies;  // the disc's, sorted (Copy, music)
+    std::vector< std::string > skies;     // placeable skies on the disc ("VROrbit"...), sorted
 };
 /// From the mounted disc, computed on first use. Empty lists before the runtime is up.
 const NewGalaxyChoices& newGalaxyChoices();

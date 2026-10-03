@@ -33,6 +33,7 @@ struct NewGalaxySpec {
     std::string copyOf;        // Copy: a disc galaxy ("EggStarGalaxy")
     std::string musicFrom;     // a disc galaxy whose music and sound banks it borrows; empty: copyOf or "EggStarGalaxy"
     std::vector< std::string > missions;  // names; their count is the mission count (1..8); empty: one, "Mission 1"
+    std::string sky;  // one of skyNames(); empty: Good Egg's (Copy: the source's own)
 };
 
 struct NewGalaxyFiles {
@@ -54,6 +55,8 @@ std::string checkInternalName(const std::string& internalName, const DiscLister&
 
 /// The disc's galaxies (StageData/<G>/<G>Scenario.arc exists), sorted.
 std::vector< std::string > discGalaxies(const DiscLister& listDisc);
+/// The skies the game can place (its Sky classes) that the disc has, sorted.
+std::vector< std::string > skyNames(const DiscLister& listDisc);
 /// The planets the game can place by name (PlanetMapDataTable), sorted.
 std::vector< std::string > planetNames(const DiscReader& readDisc);
 

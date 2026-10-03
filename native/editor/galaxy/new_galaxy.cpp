@@ -15,6 +15,15 @@ namespace {
     // The emptied stage every non-copy template starts from: a small disc galaxy's own archive,
     // its tables kept as schemas (TECH.md 5.7, spike S8).
     const char* const kTemplateGalaxy = "TransformationExGalaxy";
+    const char* const kDefaultSkyFrom = "EggStarGalaxy";
+    // The objects the game makes as skies (NameObjFactory: Sky, ProjectionMapSky).
+    const char* const kSkies[] = {"AuroraSky",    "ChildRoomSky",     "CloudSky",   "DesertSky",          "FamicomMarioSky", "GalaxySky", "GreenPlanetOrbitSky",
+                                  "HalfGalaxySky", "KoopaVS1Sky",     "KoopaVS2Sky", "MilkyWaySky",       "PhantomSky",      "RockPlanetOrbitSky",
+                                  "StarrySky",    "SummerSky",        "VRDarkSpace", "VROrbit",           "VRSandwichSun"};
+
+    bool isSky(const std::string& name) {
+        return std::find(std::begin(kSkies), std::end(kSkies), name) != std::end(kSkies);
+    }
 
     F::CellValue integer(std::int32_t v) {
         F::CellValue c;
@@ -232,6 +241,55 @@ namespace {
         }
         return out;
     }
+
+    // A sky's row as a disc galaxy places it (`from` first, else any): `sky`, or with `sky` empty
+    // the first sky in `from`. nullopt when none is found.
+    std::optional< std::pair< F::Table, int > > findSky(const std::string& sky, const std::string& from, const DiscReader& readDisc,
+                                                        const DiscLister& listDisc) {
+        std::vector< std::string > archives{from + ".arc"};
+        if (!sky.empty()) {
+            for (const std::string& name : listDisc("StageData")) {
+                if (name.size() > 4 && name.compare(name.size() - 4, 4, ".arc") == 0 && name != archives[0]) {
+                    archives.push_back(name);
+                }
+            }
+        }
+        for (const std::string& name : archives) {
+            const auto raw = readDisc("StageData/" + name);
+            const auto archive = raw ? F::Archive::parse(*raw) : std::nullopt;
+            for (const std::string& path : archive ? archive->files() : std::vector< std::string >{}) {
+                if (path.size() < 8 || path.compare(path.size() - 8, 8, "/objinfo") != 0 || path.find("placement") == std::string::npos) {
+                    continue;
+                }
+                const auto objects = F::Table::parse(*archive->file(path));
+                for (int r = 0; objects && r < objects->rowCount(); r++) {
+                    const std::string object = getS(*objects, r, "name");
+                    if (sky.empty() ? isSky(object) : object == sky) {
+                        return std::make_pair(*objects, r);
+                    }
+                }
+            }
+        }
+        return std::nullopt;
+    }
+
+    // Places `sky` (as the disc places it, at the origin) in `objects`; its name, or "" for none.
+    std::string placeSky(F::Table& objects, const std::string& sky, const std::string& from, const DiscReader& readDisc, const DiscLister& listDisc) {
+        const auto found = findSky(sky, from, readDisc, listDisc);
+        int row = -1;
+        if (found) {
+            row = copyRow(objects, found->first, found->second);
+        } else if (!sky.empty()) {
+            row = addPlacementRow(objects, sky, 0, {0, 0, 0}, {1, 1, 1});
+        } else {
+            return "";
+        }
+        set(objects, row, "pos_x", real(0));
+        set(objects, row, "pos_y", real(0));
+        set(objects, row, "pos_z", real(0));
+        set(objects, row, "l_id", integer(1000));
+        return getS(objects, row, "name");
+    }
 }  // namespace
 
 std::string internalNameFor(const std::string& name) {
@@ -289,6 +347,17 @@ std::vector< std::string > discGalaxies(const DiscLister& listDisc) {
                     out.push_back(name);
                 }
             }
+        }
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector< std::string > skyNames(const DiscLister& listDisc) {
+    std::vector< std::string > out;
+    for (const std::string& name : listDisc("ObjectData")) {
+        if (name.size() > 4 && name.compare(name.size() - 4, 4, ".arc") == 0 && isSky(name.substr(0, name.size() - 4))) {
+            out.push_back(name.substr(0, name.size() - 4));
         }
     }
     std::sort(out.begin(), out.end());
@@ -368,6 +437,33 @@ NewGalaxyFiles buildNewGalaxy(const NewGalaxySpec& spec, const DiscReader& readD
         for (const std::string& path : scenario->files()) {
             scenarioFiles.push_back({path, *scenario->file(path)});
         }
+        if (!spec.sky.empty()) {
+            // The chosen sky in place of the source's own (a sky placed in a shared zone stays).
+            std::optional< F::Table > common;
+            for (const std::string& path : stage->files()) {
+                if (path.size() < 8 || path.compare(path.size() - 8, 8, "/objinfo") != 0 || path.find("placement") == std::string::npos) {
+                    continue;
+                }
+                auto objects = F::Table::parse(*stage->file(path));
+                for (int r = objects ? objects->rowCount() - 1 : -1; r >= 0; r--) {
+                    if (isSky(getS(*objects, r, "name"))) {
+                        out.log.push_back("removed its sky " + getS(*objects, r, "name"));
+                        objects->removeRow(r);
+                    }
+                }
+                if (path == "jmp/placement/common/objinfo") {
+                    common = std::move(objects);
+                } else if (objects) {
+                    stage->replace(path, objects->build());
+                }
+            }
+            if (!common) {
+                out.error = spec.copyOf + " has no common objects table for the sky";
+                return out;
+            }
+            out.log.push_back("sky: " + placeSky(*common, spec.sky, kDefaultSkyFrom, readDisc, listDisc));
+            stage->replace("jmp/placement/common/objinfo", common->build());
+        }
         out.files["StageData/" + G + ".arc"] = stage->build();
         out.files[scenarioPath] = F::Archive::create(lower(G) + "scenario", scenarioFiles).build();
         out.log.push_back("copied " + spec.copyOf + " (" + std::to_string(scenarios->rowCount()) + " missions; its zones are shared)");
@@ -409,6 +505,8 @@ NewGalaxyFiles buildNewGalaxy(const NewGalaxySpec& spec, const DiscReader& readD
             set(objects, row, "Obj_arg2", integer(0));
             set(objects, row, "Obj_arg3", integer(1));
         }
+        const std::string sky = placeSky(objects, spec.sky, kDefaultSkyFrom, readDisc, listDisc);
+        out.log.push_back(sky.empty() ? std::string("no sky found on the disc") : "sky: " + sky);
         // Mario starts above the ground; Empty space has none (the Checks say so).
         const int mario = addPlacementRow(start, "Mario", 0, {0, ground + 600.0f, 0}, {1, 1, 1});
         set(start, mario, "MarioNo", integer(0));

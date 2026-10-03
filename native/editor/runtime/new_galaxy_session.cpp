@@ -66,6 +66,7 @@ namespace {
             PetariNative::HostAllocationScope host;
             sChoices.planets = G::planetNames(readDisc);
             sChoices.galaxies = G::discGalaxies(listDisc);
+            sChoices.skies = G::skyNames(listDisc);
             sDone = !sChoices.galaxies.empty();  // again later if the disc wasn't up yet
         }
         return sChoices;
@@ -250,6 +251,11 @@ bool createNewGalaxy(const NewGalaxyRequest& request, bool unsaved, std::string*
     spec.copyOf = request.copyOf;
     spec.musicFrom = request.musicFrom;
     spec.missions = request.missions;
+    spec.sky = request.sky;
+    if (const std::vector< std::string >& skies = choices().skies; !spec.sky.empty() && std::find(skies.begin(), skies.end(), spec.sky) == skies.end()) {
+        *pError = spec.sky + " is not a sky on the disc";
+        return false;
+    }
     if (std::string why = check(spec.internalName); !why.empty()) {
         *pError = why;
         return false;

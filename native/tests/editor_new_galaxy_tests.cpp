@@ -61,19 +61,43 @@ static void testDisc(const fs::path& disc) {
     check(std::find(galaxies.begin(), galaxies.end(), "EggStarGalaxy") != galaxies.end() && galaxies.size() > 40, "the disc's galaxies");
     const auto planets = G::planetNames(read);
     check(std::find(planets.begin(), planets.end(), "FlowerPlanet") != planets.end() && planets.size() > 100, "the disc's planets");
+    const auto skies = G::skyNames(list);
+    check(skies.size() >= 5 && std::find(skies.begin(), skies.end(), "PhantomSky") != skies.end(), "the disc's skies");
+    // The skies in a stage's objects (any layer).
+    auto skiesIn = [](const F::Archive& stage) {
+        std::string found;
+        for (const std::string& path : stage.files()) {
+            if (path.size() < 8 || path.compare(path.size() - 8, 8, "/objinfo") != 0) {
+                continue;
+            }
+            const auto objects = F::Table::parse(*stage.file(path));
+            const int name = objects ? objects->column(F::jmapHash("name")) : -1;
+            for (int r = 0; name >= 0 && r < objects->rowCount(); r++) {
+                const std::string object = objects->get(r, name).s;
+                if (object.find("Sky") != std::string::npos || object.rfind("VR", 0) == 0) {
+                    found += (found.empty() ? "" : ",") + object;
+                }
+            }
+        }
+        return found;
+    };
 
     struct Case {
         const char* name;
         G::Template from;
         int missions;
+        const char* sky;      // asked for ("" = the default)
+        const char* skyWant;  // in the stage after ("" = whatever the default gives, but one)
     };
-    for (const Case& c : {Case{"Empty Sky", G::Template::Empty, 1}, Case{"Flower Hop", G::Template::OnePlanet, 3},
-                          Case{"Box World", G::Template::Brushes, 2}, Case{"Egg Again", G::Template::Copy, 0}}) {
+    for (const Case& c : {Case{"Empty Sky", G::Template::Empty, 1, "", ""}, Case{"Flower Hop", G::Template::OnePlanet, 3, "", ""},
+                          Case{"Box World", G::Template::Brushes, 2, "PhantomSky", "PhantomSky"},
+                          Case{"Egg Again", G::Template::Copy, 0, "PhantomSky", "PhantomSky"}}) {
         G::NewGalaxySpec spec;
         spec.name = c.name;
         spec.from = c.from;
         spec.planet = "FlowerPlanet";
         spec.copyOf = "EggStarGalaxy";
+        spec.sky = c.sky;
         for (int m = 1; m <= c.missions; m++) {
             spec.missions.push_back(std::string("Mission \"") + std::to_string(m) + "\"");
         }
@@ -95,6 +119,8 @@ static void testDisc(const fs::path& disc) {
         if (!stage || !scenario) {
             continue;
         }
+        const std::string sky = skiesIn(*stage);
+        check(*c.skyWant != '\0' ? sky == c.skyWant : !sky.empty() && sky.find(',') == std::string::npos, where + "one sky: " + sky);
         const auto scenarios = F::Table::parse(*scenario->file("scenariodata.bcsv"));
         const auto zones = F::Table::parse(*scenario->file("zonelist.bcsv"));
         check(scenarios && zones && zones->get(0, zones->column(F::jmapHash("ZoneName"))).s == g, where + "zone 0 is the galaxy itself");
