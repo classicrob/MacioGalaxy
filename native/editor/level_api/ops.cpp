@@ -880,7 +880,7 @@ namespace {
                     }
                     if (shape == EditorGravity::Shape::Unknown)
                         fail("bad-value", where + ".shape is not a gravity shape", "", names, where + ".shape");
-                    const std::string boundName = lower(op["bound"].asString("Sphere"));
+                    const std::string boundName = op.has("bound") ? lower(op["bound"].asString()) : "sphere";
                     if (boundName != "sphere" && boundName != "box" && boundName != "cylinder")
                         fail("bad-value", where + ".bound must be Sphere, Box or Cylinder", "", {"Sphere", "Box", "Cylinder"}, where + ".bound");
                     if (op.has("bound") && shape != EditorGravity::Shape::Parallel)
