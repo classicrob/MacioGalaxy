@@ -18,7 +18,11 @@
 #include <JSystem/J3DGraphBase/J3DSys.hpp>
 #include <revolution/gx.h>
 
+#include <JSystem/J3DGraphAnimator/J3DModelData.hpp>
+#include <JSystem/J3DGraphBase/J3DShapeDraw.hpp>
+
 #include <chrono>
+#include <cstdlib>
 #include <cmath>
 
 namespace {
@@ -43,6 +47,11 @@ namespace {
         GXSetColorUpdate(GX_TRUE);
         GXSetAlphaUpdate(GX_FALSE);
     }
+
+    // EP-004: the budget for the editor's own model draws this frame (estimated index bytes). Aurora's whole
+    // frame has 2 MiB of indices; the game's scene needs most of it, so the editor keeps to a slice.
+    constexpr std::uint32_t kFrameBudget = 640 * 1024;
+    std::uint32_t gSpent = 0;
 
     // The model's shapes as they were posed this frame, in the colour set up before.
     void drawShapes(LiveActor* actor) {
@@ -114,6 +123,43 @@ namespace {
 }  // namespace
 
 namespace EditorDraw {
+    void beginFrame() { gSpent = 0; }
+
+    std::uint32_t modelCost(J3DModel* model) {
+        if (model == nullptr) return 0;
+        // Each vertex reference in a display list becomes an index; strips become lists. Twice the display
+        // lists' bytes covers the usual vertex formats (a few bytes a vertex, 16-bit indices).
+        J3DModelData* data = model->getModelData();
+        std::uint32_t bytes = 0;
+        for (u16 i = 0; i < data->getShapeNum(); i++) {
+            J3DShape* shape = data->getShapeNodePointer(i);
+            if (shape == nullptr) continue;
+            for (u16 g = 0; g < shape->getMtxGroupNum(); g++) {
+                if (J3DShapeDraw* draw = shape->getShapeDraw(g)) bytes += draw->getDisplayListSize();
+            }
+        }
+        return bytes * 2;
+    }
+
+    bool spend(J3DModel* model, int passes) {
+        static const bool unlimited = std::getenv("PETARI_EDITOR_DRAW_BUDGET_OFF") != nullptr;  // tests: the pre-EP-004 behaviour
+        if (unlimited) return true;
+        const std::uint64_t cost = static_cast< std::uint64_t >(modelCost(model)) * static_cast< std::uint64_t >(passes);
+        if (gSpent + cost > kFrameBudget) return false;
+        gSpent += static_cast< std::uint32_t >(cost);
+        return true;
+    }
+
+    bool spendBytes(std::uint32_t indexBytes) {
+        static const bool unlimited = std::getenv("PETARI_EDITOR_DRAW_BUDGET_OFF") != nullptr;
+        if (unlimited) return true;
+        if (gSpent + static_cast< std::uint64_t >(indexBytes) > kFrameBudget) return false;
+        gSpent += indexBytes;
+        return true;
+    }
+
+    std::uint32_t remaining() { return gSpent < kFrameBudget ? kFrameBudget - gSpent : 0; }
+
     void draw3D() {
         if (!EditorCamera::isActive()) return;
         // The selection breathes a little so it reads against gold-coloured things.
@@ -122,13 +168,16 @@ namespace EditorDraw {
         const u8 pulse = static_cast< u8 >(60.0 + 20.0 * std::sin(seconds * 4.0));
         LiveActor* hover = EditorPicking::hoverActor();
         bool hoverSelected = false;
+        // Within the frame's budget: the tint (2 draws) first, then the outline (10) if it still fits. A model too
+        // big for either (a whole planet) keeps only the viewport's ring and label.
+        auto modelOf = [](LiveActor* actor) { return actor != nullptr ? MR::getJ3DModel(actor) : nullptr; };
         for (int i = 0; i < EditorPicking::selectedCount(); i++) {
             LiveActor* actor = EditorPicking::selectedAt(i);
             hoverSelected = hoverSelected || actor == hover;
-            tint(actor, GXColor{250, 204, 56, static_cast< u8 >(pulse / 2)}, 40);
-            outline(actor, GXColor{250, 204, 56, 255}, 2.5f);
+            if (spend(modelOf(actor), 2)) tint(actor, GXColor{250, 204, 56, static_cast< u8 >(pulse / 2)}, 40);
+            if (spend(modelOf(actor), 10)) outline(actor, GXColor{250, 204, 56, 255}, 2.5f);
         }
-        if (hover != nullptr && !hoverSelected) outline(hover, GXColor{102, 219, 255, 255}, 1.5f);
+        if (hover != nullptr && !hoverSelected && spend(modelOf(hover), 10)) outline(hover, GXColor{102, 219, 255, 255}, 1.5f);
         EditorGravity::draw();  // M3 gravity: translucent fields before restoring GX.
         EditorPaths::draw();  // M3 paths: depth-tested rails and wires.
         // Leave the state as the game's own draw passes expect it.
