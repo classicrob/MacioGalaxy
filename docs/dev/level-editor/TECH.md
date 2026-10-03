@@ -1044,6 +1044,14 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
     - Builders register before `ModFolder::setPatchBuilder` in `native/app/platform_host.cpp`.
   - **Size:** Good Egg with a move, a delete, a duplicate and a new layer's table comes to 5 ops, 2.6 KB.
   - **Tests:** `native_editor_model` (round trip on the synthetic galaxy and Good Egg, re-save over the built mod, two-mod merge, another disc refused, the loader cache) and `native_mod_folder` (claiming and precedence). Live: `editor_save_smoke.py` saves Full archives, saves again as a patch over them, then starts with the mod: the loader builds the archive and the Octoomba stands 600 units up.
+- **SceneSync extensions for M3** (`editor/sync-hooks`; `petari/editor/runtime.hpp`, `check_providers.hpp`):
+  - **Preview handlers:** `registerPreviewHandler` lets classes whose look isn't just the actor's transform (gravity shapes) take Preview and EndPreview.
+  - **Live updaters:** `registerLiveUpdater` updates a changed row's actor in place instead of re-creating it, so a gravity field spends no new manager slot. Owners whitelist which columns may change in place.
+  - **Checks:** `invalidateChecks()` recomputes without re-baselining, and `registerCheckProvider` is public (once per provider).
+  - **Gravity rows:** `/planetobjinfo` (the `Global*Gravity` classes) is live.
+    - At 128 registered fields (retired ones count until a Reload) a change stays pending with a notice, and the current field stays.
+    - A `GlobalWireGravity` row without a path, or with `Obj_arg0` outside 0-4096, is refused before its constructor (it divides by the point count).
+  - **Ordered insert:** `AddRow::at` inserts at an index (a path's points); undo and redo keep it.
 - **Share and Install** (`editor/share`; UX 17; `petari/editor/share.hpp`, wrappers in `edit_api.hpp`):
   - **Export:** `shareMod(modName, info, zipPath)` puts the sheet's name/author/version/description/needs into the mod's `mod.txt` (other lines kept) and writes `preview.png`. It then zips the folder as `<Name>/...`, leaving out host clutter.
   - **Inspect:** `inspectModZip` gives the Install sheet its preview: title, author, version, needs, screenshot, galaxies changed (from `edits/*.json` and `galaxy.json`), archives touched, whether it's an editor mod, and whether `files/` carries game data.

@@ -1,5 +1,6 @@
 // The level editor's M1 panels (panels.hpp).
 #include "panels.hpp"
+#include "gravity.hpp"
 #include "paths.hpp"
 
 #include <petari/editor/ui.hpp>
@@ -1020,6 +1021,7 @@ void drawInspectorWindow(const char* title) {
                 transformRow(*model, rows, "Rotation", "dir_", 0.5f);
                 transformRow(*model, rows, "Scale", "scale_", 0.01f);
             }
+            drawGravityInspector(*model, rows);  // M3 gravity: shape, range and priority.
             drawPathsInspector(*model, rows);  // M3 paths: points and link sockets.
             // Settings (UX section 8): the class's named args from the catalog, then every raw field folded below.
             const Catalog::ClassInfo* info = sharedClass(*model, rows);

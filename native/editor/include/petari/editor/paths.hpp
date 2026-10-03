@@ -42,4 +42,5 @@ namespace PetariEditor::Paths {
     Op linkSwitchOp(const ModelView& model, const Socket& source, const Socket& target, std::string* error);
     std::vector< Check > computeChecks(const ModelView& model);
     std::uint32_t switchColor(int id);
+    std::uint32_t switchColor(const std::string& field);
 }  // namespace PetariEditor::Paths

@@ -133,6 +133,9 @@ void brushTestTick() {
         if (EditorTerrain::partModel(s.part) != MR::getJ3DModel(s.part->mModel)) {
             return finish("FAIL: the brush's part does not lead to its model (thumbnails)");
         }
+        if (s.part->mGravity == nullptr || EditorTerrain::partGravity(s.part) != s.part->mGravity || TerrainSync::rowForGravity(s.part->mGravity) != s.brush) {
+            return finish("FAIL: the brush's fitted gravity does not map back to its row (gravity view)");
+        }
         Command marker{Command::Kind::SetPlayMarker};
         marker.markerPos = {kX + 300.0f, kY + 500.0f, kZ};
         marker.markerUp = {0, 1, 0};
