@@ -23,10 +23,12 @@ std::optional< Formats::Bytes > readUnmodded(const std::string& path);
 /// The catalog (shipped + <userDirectory>/editor/catalog), the terrain brush class and checks,
 /// classes other modules define (`registerClasses`, may be empty), the disc's planets, then the model of
 /// `galaxy` mission `scenario`. Null and *pError when the galaxy can't be read; a catalog problem
-/// is only reported (*pCatalogError) and the model still loads.
+/// is only reported (*pCatalogError) and the model still loads. `restored` (may be null): archives
+/// that come before every other source (a journal's edits built over the disc).
 std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const std::string& userDirectory,
                                   const std::function< void() >& registerClasses, std::string* pError, std::string* pCatalogError,
-                                  const FileSource& mounted = readMounted, const FileSource& unmodded = readUnmodded);
+                                  const FileSource& mounted = readMounted, const FileSource& unmodded = readUnmodded,
+                                  const FileSource& restored = nullptr);
 
 /// What the editor reads for a galaxy: `mounted`, except archives the mod loader built from patch
 /// mods (`builtFromPatch`), which are built again from the patches' row edits alone. The loader's

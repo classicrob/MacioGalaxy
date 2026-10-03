@@ -240,6 +240,8 @@ struct Command {
         SaveMod,         // modName, fullArchives: a patch (default; no game data) or Full archives (TECH.md 5.1)
         SwitchScenario,  // index = the mission to edit, 1-based: a reload into it from its start, back in Edit; edits and history kept
         NewGalaxy,       // newGalaxy: write it as a mod, then restart Petari into it in Edit (status().notice says so first)
+        RestoreJournal,  // status().journalEdits > 0: the journal's edits become the session's (a reload into Edit; unsaved)
+        DiscardJournal,  // drop the offered journal
         SetGalaxyInfo,   // galaxyInfo: the mod galaxy's names and music, live; a new mission count restarts into it in Edit
     } kind;
     Op op;
@@ -311,6 +313,11 @@ struct Status {
     std::string notice;             // the last success worth a toast ("Saved 2 archives to mods/MyMod")
     std::uint64_t noticeSerial = 0;  // bumps with each new notice
     std::string loadedMod;      // the enabled mod whose archives this galaxy loaded from (its edits are the session's start); "" for the disc
+    // Unsaved edits of an earlier session of this galaxy (a crash, or quit without saving), found
+    // when it opened: offer "Restore N unsaved edits from <time>?" (RestoreJournal / DiscardJournal).
+    // New edits aren't journaled until the offer is answered. 0: none.
+    int journalEdits = 0;
+    std::int64_t journalTime = 0;  // when they were made (seconds since 1970)
 };
 /// Updated at each seam.
 const Status& status();

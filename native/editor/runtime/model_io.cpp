@@ -118,7 +118,7 @@ FileSource editingSource(const FileSource& mounted, const FileSource& unmodded, 
 
 std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const std::string& userDirectory,
                                   const std::function< void() >& registerClasses, std::string* pError, std::string* pCatalogError,
-                                  const FileSource& mounted, const FileSource& unmodded) {
+                                  const FileSource& mounted, const FileSource& unmodded, const FileSource& restored) {
     if (!Catalog::loadWithUser(userDirectory, pCatalogError)) {
         // Reported by the caller; the galaxy still loads (checks then know fewer classes).
     }
@@ -162,9 +162,13 @@ std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const
             patches.emplace_back(root.filename().string(), text.str());
         }
     }
-    const FileSource source = editingSource(mounted, unmodded, patches, [](const std::string& path) {
+    const FileSource editing = editingSource(mounted, unmodded, patches, [](const std::string& path) {
         const s32 entry = DVDConvertPathToEntrynum(path.c_str());
         return entry >= 0 && PetariNative::Platform::DVD::hostPathForEntry(entry).generic_string().find("/mods-cache/") != std::string::npos;
+    });
+    const FileSource source = !restored ? editing : FileSource([=](const std::string& path) {
+        std::optional< Formats::Bytes > bytes = restored(path);
+        return bytes ? bytes : editing(path);
     });
     std::unique_ptr< EditModel > model = EditModel::load(galaxy, scenario, source, pError, unmodded);
     // The missions' names as players see them, from the disc's messages (the in-game Runtime

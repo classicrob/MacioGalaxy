@@ -196,7 +196,10 @@ void newGalaxyTestTick() {
         if (m->missionCount() != 3 || !info || info->missions.size() != 3 || info->name != kRenamed || std::string(m->missionName(3)) != "Third Time") {
             return finish("FAIL: after the restart: " + std::to_string(m->missionCount()) + " missions, mission 3 \"" + m->missionName(3) + "\"");
         }
-        return finish("PASS (created, restarted into, checks, renamed live, 3 missions across a restart)");
+        if (status().journalEdits != 0) {
+            return finish("FAIL: the discarded edits' journal is offered after the restart");
+        }
+        return finish("PASS (created, restarted into, checks, renamed live, 3 missions across a restart, no journal)");
     }
     const bool box = sMode.find("box") != std::string::npos;
     const Case& c = box ? kBox : kHop;
