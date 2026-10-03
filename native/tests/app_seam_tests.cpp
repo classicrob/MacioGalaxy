@@ -611,13 +611,14 @@ void testReplayDiagnostics() {
         petari_host_frame_seam();
     check(Replay::finished() && Replay::passed(), "prior unrelated asset misses do not poison a later route");
     ++missingLayout;
-    check(!Replay::passed(), "a layout miss during this run fails the route verdict");
-    --missingLayout;
-    ++missingSound;
-    check(!Replay::passed(), "a sound miss during this run fails the route verdict");
-    --missingSound;
-    ++manifestFailures;
-    check(!Replay::passed(), "a manifest failure during this run fails the route verdict");
+    check(Replay::passed(), "a later unrelated miss cannot rewrite a completed verdict");
+    for (auto* counter : {&missingLayout, &missingSound, &manifestFailures}) {
+        check(Replay::start(route.string(), "EggStarGalaxy", 1, 1000, false, &error), "start another live replay");
+        ++*counter;
+        for (int frame = 0; frame < 500 && Replay::active(); ++frame)
+            petari_host_frame_seam();
+        check(Replay::finished() && !Replay::passed(), "an asset failure during this run fails its verdict");
+    }
     Replay::cancel();
     missingLayout = missingSound = manifestFailures = 0;
     std::filesystem::remove(route);

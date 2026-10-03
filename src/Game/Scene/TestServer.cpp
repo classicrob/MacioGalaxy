@@ -117,7 +117,7 @@ namespace {
         }
         if (TestServerReplay::controlsActive() && w[0] != "mario" && w[0] != "editor-state" && w[0] != "editor-checks" &&
             w[0] != "screenshot" && w[0] != "wait" && w[0] != "ground" && w[0] != "gravity") {
-            reply(name, "error playback is active; cancel it before another command changes the scene or controls");
+            reply(name, R"(error {"code":"busy","message":"Playback owns the scene and controls","hint":"Cancel it before editing, warping or starting another plan","where":"playback"})");
             return true;
         }
         // The live-editing and verification commands (TestServerEditor.cpp) also run in Edit mode.

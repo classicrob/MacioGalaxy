@@ -242,6 +242,7 @@ Smoke::ReplayDriver* gAgentReplay = nullptr;
 uint64_t gAgentMissingLayout = 0;
 uint64_t gAgentMissingSound = 0;
 uint64_t gAgentManifestFailures = 0;
+bool gAgentAssetFailure = false;
 Smoke::MovementDriver* gMovement = nullptr;
 
 unsigned long environmentNumber(const char* name, unsigned long fallback) {
@@ -677,6 +678,7 @@ namespace AgentReplay {
         gAgentMissingLayout = petari_layout_missing_reference_count();
         gAgentMissingSound = petari_sound_missing_reference_count();
         gAgentManifestFailures = petari_gx_pipeline_manifest_failure_count();
+        gAgentAssetFailure = false;
         gAgentReplay = new Smoke::ReplayDriver(frames, config);
         return true;
     }
@@ -687,8 +689,7 @@ namespace AgentReplay {
         return gAgentReplay && gAgentReplay->result() != Smoke::Result::Running;
     }
     bool passed() {
-        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Pass && petari_layout_missing_reference_count() == gAgentMissingLayout &&
-               petari_sound_missing_reference_count() == gAgentMissingSound && petari_gx_pipeline_manifest_failure_count() == gAgentManifestFailures;
+        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Pass && !gAgentAssetFailure;
     }
     std::string reason() {
         HostAllocationScope host;
@@ -737,6 +738,11 @@ extern "C" void petari_host_frame_seam(void) {
     recordFrame(entry, gTiming.probe != nullptr ? gTiming.probe() : FrameStats::Phase::Gameplay);
     if (gAgentReplay != nullptr && !AgentReplay::finished()) {
         runSmoke(gAgentReplay, false);
+        if (AgentReplay::finished()) {
+            gAgentAssetFailure = petari_layout_missing_reference_count() != gAgentMissingLayout ||
+                                 petari_sound_missing_reference_count() != gAgentMissingSound ||
+                                 petari_gx_pipeline_manifest_failure_count() != gAgentManifestFailures;
+        }
     } else if (gSmoke != nullptr) {
         runSmoke(gSmoke);
     } else if (gStage != nullptr) {
