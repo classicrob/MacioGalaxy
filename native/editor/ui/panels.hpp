@@ -28,6 +28,15 @@ std::string missionLabel(const ModelView& model, int mission);
 // Cmd+S: save the session's mod again, or open the Save sheet the first time (chooseAgain: always the sheet).
 void requestSave(bool chooseAgain);
 void drawSaveSheet();
+void drawShareSheet();
+void openShareSheet();  // Cmd+Shift+E, the toolbar's Share
+void drawInstallSheet();  // drawn even outside Edit (a zip dropped during play)
+void drawNewGalaxySheet();
+void openNewGalaxySheet();  // Cmd+N, the title menu
+// "1.0" -> "1.1" (the Share sheet's next version); "" -> "1.0".
+std::string bumpVersion(const std::string& version);
+// "<Name>-<version>.zip", folder-safe (spaces as dashes).
+std::string zipFileName(const std::string& title, const std::string& version);
 const std::string& sessionModName();  // empty until the first save
 // A folder-safe mod name (letters, digits, spaces, - and _; trimmed; at most 40 characters).
 std::string modNameFrom(const std::string& text);

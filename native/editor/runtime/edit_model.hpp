@@ -88,6 +88,10 @@ public:
         int ops = 0;
     };
     PatchOut patch() const;
+    /// The row's index in the disc's table (the map made at load: by index when the loaded table
+    /// has the disc's rows, else matched), or -1: added (in this session or by a loaded mod), or
+    /// the disc has no such table.
+    int discRowIndex(RowId row) const;
     /// The mission being edited (1..missionCount()); the edits and history are kept. False when out of range.
     bool setScenario(int scenario);
 

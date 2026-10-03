@@ -347,6 +347,7 @@ These follow UX section 3, agreed between UX and tech.
   - Teleport: the play marker dropped along gravity; the smoke's `PETARI_STAGE_WARP` shows the warp path.
 - **Return to Edit** freezes only; the played state stays visible. Edits made there still go to rows and re-create their actors; the spike re-created actors in a scene that had been playing for 1,000 frames. Played-state caveats are shown, not prevented: switches on, collected items dead, Mario's state.
 - **Trail.** `EditorPlaytest` records Mario at the game-frame seam into a 3,600-sample ring. Returning to Edit draws dotted, depth-tested segments coloured by ground, air, dive or cap-bounce state. Gold diamonds mark peaks along local gravity. Begin resets the run; Resume retains it and breaks the line across time spent in Edit; End clears it. The elapsed timer continues after the ring wraps.
+- **Miss.** Native death entry points call Runtime's miss handlers before death camera, animation or event work; first-step death-nerve hooks cover direct nerve changes. `EditorPlaytest::miss` adds the terminal sample and red marker, pauses the trail, and calls `requestEditAfterMiss` with a `Missed at m:ss` notice. Edit preserves this scene; the next Play or Resume rebuilds from the marker. The normal game follows its original death path.
 - **Keep.** Copies a live actor's transform into its row, for classes the catalog marks as placement-owned (not rail riders, children, or actors that re-derive their position; the spike saw one snap back).
 - **Save isolation.** During an edit session NAND writes go to `<user>/editor/scratch-NAND` (the native NAND is a host folder). On Power Star contact, `EditorPlaytest::collectStar` intercepts the first step of `PowerStar::exeStageClearDemo`, before progress writes or the star-get sequence. It releases Mario, retires the star and requests Edit with a `Cleared in m:ss` notice. Normal play follows the original path.
 - **Mission switch.** `requestGalaxyMove` to the same stage and another scenario (Level Select's path, `src/Game/Scene/GameScene.cpp:191-202`), skipping the intro. 2-4 s.
@@ -1086,3 +1087,9 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - A fresh Play in a scene already played rebuilds it, so collected and defeated objects come back; only Resume keeps them.
   - Catalog presets carry a size (`Preset::scale`).
   - Scratch saves (progress isolation) follow in their own branch.
+- **Shared core for the agent tools** (`editor/shared-core-2`):
+  - `EditModel::discRowIndex(RowId)`: the row's index in the disc's table, or -1 for a row the disc doesn't have.
+  - `ModelIO::load` reads the missions' English names from the disc's message archive (`Formats::messageText`: messageid.tbl plus message.bmg), so headless tools see "Dino Piranha" rather than ScenarioData's Japanese names.
+  - Checks:
+    - `launch-star-facing:<row>`: a Launch or Sling Star more than 45 degrees off its path's first segment, with a "Face along the path" fix.
+    - `duplicate-star:<mission>:<id>`: Power Stars sharing a Star ID in a mission.

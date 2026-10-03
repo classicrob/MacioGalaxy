@@ -15,6 +15,7 @@ extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsign
 #include <pthread/qos.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
 
 #include <cctype>
@@ -23,6 +24,7 @@ extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsign
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <filesystem>
 #include <fstream>
 #ifdef PETARI_EDITOR_UI
 #include <aurora/imgui.h>
@@ -170,6 +172,25 @@ bool resolvePaths(int argc, char** argv, App::Paths* paths) {
             return false;
         }
     }
+    // A restart into a new galaxy (the level editor's New Galaxy): read once, then cleared so a later
+    // restart doesn't repeat it. Test fixtures enter through PETARI_STAGE instead (set with it).
+    if (const char* open = std::getenv("PETARI_OPEN_STAGE"); open != nullptr && open[0] != '\0' && launchStage.empty()) {
+        const char* edit = std::getenv("PETARI_OPEN_EDIT");
+        const char* title = std::getenv("PETARI_OPEN_TITLE");
+        PetariNative::PlayerLaunch::openEdit = edit != nullptr && edit[0] == '1';
+        PetariNative::PlayerLaunch::openTitle = title != nullptr && title[0] != '\0' ? title : open;
+        if (!fixture) {
+            const char* file = std::getenv("PETARI_OPEN_FILE");
+            PetariNative::PlayerLaunch::openFile = file != nullptr ? std::atoi(file) : 0;
+            launchStage = open;
+            launchScenario = 1;
+        }
+        std::fprintf(stderr, "PETARI OPEN: %s (file %d, edit %d)\n", open, PetariNative::PlayerLaunch::openFile,
+                     PetariNative::PlayerLaunch::openEdit ? 1 : 0);
+    }
+    for (const char* name : {"PETARI_OPEN_STAGE", "PETARI_OPEN_FILE", "PETARI_OPEN_EDIT", "PETARI_OPEN_TITLE"}) {
+        unsetenv(name);
+    }
     if (launchScenarioGiven && launchStage.empty()) {
         std::fputs("petari: --scenario needs --stage\n", stderr);
         return false;
@@ -316,6 +337,22 @@ App::FrameStats::Phase framePhaseForPipelines() {
         }
         testWarp.clear();
     }
+#ifdef PETARI_EDITOR_UI
+    // A new galaxy's first start (PETARI_OPEN_EDIT=1, after New galaxy's restart): into Edit on the first playable
+    // frames, as a Tab tap would; the "Creating <name>..." banner until then (UX section 14).
+    static long openEditFrames = 0;
+    if (PetariNative::PlayerLaunch::openEdit) {
+        if (PetariNative::EditorSettings::active()) {
+            std::fprintf(stderr, "[editor] opened %s in Edit\n", PetariNative::PlayerLaunch::openTitle.c_str());
+            PetariNative::PlayerLaunch::openEdit = false;
+        } else {
+            PetariEditor::Ui::showOpening(PetariNative::PlayerLaunch::openTitle.c_str());
+            if (gameplay && (++openEditFrames == 10 || (openEditFrames > 10 && openEditFrames % 60 == 0 && openEditFrames < 600))) {
+                PetariNative::EditorSettings::toggle();
+            }
+        }
+    }
+#endif
     // Test driver (PETARI_CAMERA_TEST=1, with the Odyssey camera mod on), counted only
     // while the orbit is active (scripted cameras leave it alone): first a collision
     // sweep (farthest zoom, camera below Mario, one full turn: the line of sight must
@@ -658,6 +695,32 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     if (t == 599 && sClickAt == 0) std::fputs("[editor-test] sdl pick: no off-centre object on screen\n", stderr);
                 }
 #endif
+#ifdef PETARI_EDITOR_UI
+                // PETARI_EDITOR_TEST_NEWGALAXY=1: open the New Galaxy sheet (not Create: that restarts the app).
+                if (t == 196 && std::getenv("PETARI_EDITOR_TEST_NEWGALAXY") != nullptr) PetariEditor::Ui::openNewGalaxySheetForTest();
+                // PETARI_EDITOR_TEST_SHARE=1 (UX section 17): save the mod, export it with the Share sheet into
+                // PETARI_EDITOR_SHARE_DIR, then install that zip through the Install sheet (it is installed already,
+                // so the second press replaces it). The log shows each step.
+                if (std::getenv("PETARI_EDITOR_TEST_SHARE") != nullptr) {
+                    if (t == 196) PetariEditor::Ui::openSaveSheet();
+                    if (t == 200) PetariEditor::Ui::submitSaveSheet();
+                    if (t == 206) PetariEditor::Ui::openShareSheetForTest();
+                    if (t == 212) PetariEditor::Ui::submitShareSheet();
+                    if (t == 222) {
+                        std::string zip;
+                        std::error_code ec;
+                        if (const char* dir = std::getenv("PETARI_EDITOR_SHARE_DIR")) {
+                            for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+                                if (entry.path().extension() == ".zip") zip = entry.path().string();
+                            }
+                        }
+                        std::fprintf(stderr, "[editor-test] share: zip %s\n", zip.empty() ? "(none)" : zip.c_str());
+                        if (!zip.empty()) PetariEditor::Ui::openInstallSheet(zip.c_str());
+                    }
+                    if (t == 228) PetariEditor::Ui::submitInstallSheet();
+                    if (t == 234) PetariEditor::Ui::submitInstallSheet();  // "Replace it"
+                }
+#endif
                 // PETARI_EDITOR_TEST_MISSION=<n>: switch to mission n as the toolbar's chip does, then leave later.
                 static const int sMission = std::getenv("PETARI_EDITOR_TEST_MISSION") != nullptr ? std::atoi(std::getenv("PETARI_EDITOR_TEST_MISSION")) : 0;
 #ifdef PETARI_EDITOR_UI
@@ -888,6 +951,30 @@ int main(int argc, char** argv) {
                                            return static_cast< unsigned long long >(aurora_imgui_add_texture(width, height, rgba));
                                        },
                                        &aurora_imgui_update_texture);
+    // Native file panels for the editor's sheets (Share's save panel, Import's open panel): SDL3's dialogs.
+    static SDL_Window* sDialogWindow = static_cast<SDL_Window*>(info.window);
+    PetariEditor::Ui::setFileDialogHost([](bool save, const char* defaultPath, const char* filterName, const char* filterPattern,
+                                           PetariEditor::Ui::FileDialogDone done, void* user) {
+        struct Pending {
+            PetariEditor::Ui::FileDialogDone done;
+            void* user;
+            std::string name, pattern;
+            SDL_DialogFileFilter filter;
+        };
+        auto* pending = new Pending{done, user, filterName != nullptr ? filterName : "", filterPattern != nullptr ? filterPattern : "", {}};
+        pending->filter = {pending->name.c_str(), pending->pattern.c_str()};
+        auto callback = [](void* data, const char* const* files, int) {
+            auto* p = static_cast<Pending*>(data);
+            p->done(p->user, files != nullptr && files[0] != nullptr ? files[0] : "");
+            delete p;
+        };
+        const bool filtered = filterPattern != nullptr && filterPattern[0] != '\0';
+        if (save) {
+            SDL_ShowSaveFileDialog(callback, pending, sDialogWindow, filtered ? &pending->filter : nullptr, filtered ? 1 : 0, defaultPath);
+        } else {
+            SDL_ShowOpenFileDialog(callback, pending, sDialogWindow, filtered ? &pending->filter : nullptr, filtered ? 1 : 0, defaultPath, false);
+        }
+    });
     // Development: the editor's docked layout from the start (the Edit mode shows it normally).
     if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
         PetariEditor::Ui::setVisible(true);

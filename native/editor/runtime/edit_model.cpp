@@ -1121,6 +1121,22 @@ namespace {
     }
 }  // namespace
 
+int EditModel::discRowIndex(RowId id) const {
+    int zone = 0, table = 0, row = 0;
+    if ((id.v >> 63) || !unpack(id, &zone, &table, &row)) {
+        return -1;
+    }
+    const TableModel& t = mZones[zone].tables[table];
+    if (t.added[row]) {
+        return -1;
+    }
+    const int source = static_cast< int >(id.v & kField) - 1;
+    if (t.sourceToDisc.empty()) {
+        return source;
+    }
+    return source >= 0 && source < static_cast< int >(t.sourceToDisc.size()) ? t.sourceToDisc[source] : -1;
+}
+
 EditModel::PatchOut EditModel::patch() const {
     PatchOut out;
     Json::Value archives = Json::Value::object();

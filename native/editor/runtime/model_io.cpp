@@ -167,7 +167,22 @@ std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const
         const s32 entry = DVDConvertPathToEntrynum(path.c_str());
         return entry >= 0 && PetariNative::Platform::DVD::hostPathForEntry(entry).generic_string().find("/mods-cache/") != std::string::npos;
     });
-    return EditModel::load(galaxy, scenario, source, pError, unmodded);
+    std::unique_ptr< EditModel > model = EditModel::load(galaxy, scenario, source, pError, unmodded);
+    // The missions' names as players see them, from the disc's messages (the in-game Runtime
+    // replaces them with the current language's, mod galaxies included).
+    if (model) {
+        for (const char* pLanguage : {"UsEnglish", "EuEnglish", "JpJapanese"}) {
+            std::optional< Formats::Bytes > messages = mounted(std::string("/") + pLanguage + "/MessageData/Message.arc");
+            if (!messages) continue;
+            std::vector< std::string > names;
+            for (int mission = 1; mission <= model->missionCount(); mission++) {
+                names.push_back(Formats::messageText(*messages, "ScenarioName_" + galaxy + std::to_string(mission)).value_or(""));
+            }
+            model->setMissionNames(std::move(names));
+            break;
+        }
+    }
+    return model;
 }
 
 bool validModName(const std::string& name) {

@@ -24,8 +24,11 @@
 #include <JSystem/J3DGraphBase/J3DShapeDraw.hpp>
 
 #include <chrono>
-#include <cstdlib>
 #include <cmath>
+#include <cstdlib>
+#include <petari/editor/array.hpp>
+#include <petari/host_allocation.hpp>
+#include <petari/j3d_overrides.hpp>
 
 namespace {
     // A flat colour, blended over what is there; no textures, no lighting.
@@ -114,6 +117,55 @@ namespace {
         GXSetAlphaUpdate(GX_FALSE);
     }
 
+    void drawArray() {
+        namespace A = PetariEditor::Arrays;
+        namespace G = PetariEditor::Gizmo;
+        namespace D = PetariEditor::DebugDraw;
+        const auto& preview = A::view();
+        if (!preview.active)
+            return;
+        PetariNative::HostAllocationScope host;
+        D::Mesh fallback;
+        int modelsLeft = 24;
+        for (const auto& copy : preview.copies) {
+            LiveActor* actor = PetariEditor::actorForRow(copy.source);
+            J3DModel* model = actor ? MR::getJ3DModel(actor) : nullptr;
+            if (modelsLeft > 0 && model && !MR::isDead(actor) && !MR::isClipped(actor) && !MR::isHiddenModel(actor) && EditorDraw::spend(model, 1)) {
+                --modelsLeft;
+                // Transform the view, not the actor: even animated models can be drawn as frozen copies.
+                const auto rotate = [&](G::V3 v) {
+                    return copy.basis.x * G::dot(copy.originalBasis.x, v) + copy.basis.y * G::dot(copy.originalBasis.y, v) +
+                           copy.basis.z * G::dot(copy.originalBasis.z, v);
+                };
+                const auto x = rotate({1, 0, 0}), y = rotate({0, 1, 0}), z = rotate({0, 0, 1});
+                const auto t = copy.position - rotate(copy.originalPosition);
+                Mtx delta = {{x.x, y.x, z.x, t.x}, {x.y, y.y, z.y, t.y}, {x.z, y.z, z.z, t.z}};
+                Mtx saved;
+                PSMTXCopy(j3dSys.mViewMtx, saved);
+                PSMTXConcat(saved, delta, j3dSys.mViewMtx);
+                model->viewCalc();
+                setupFlat(GXColor{100, 235, 230, 110}, GX_LEQUAL);
+                const bool immediate = PetariNative::J3D::setImmediateMatrixLoads(true);
+                drawShapes(actor);
+                PetariNative::J3D::setImmediateMatrixLoads(immediate);
+                PSMTXCopy(saved, j3dSys.mViewMtx);
+                model->viewCalc();
+            } else {
+                G::V3 corners[8];
+                for (int i = 0; i < 8; ++i)
+                    corners[i] = copy.position +
+                                 (copy.basis.x * (i & 1 ? 1.f : -1.f) + copy.basis.y * (i & 2 ? 1.f : -1.f) + copy.basis.z * (i & 4 ? 1.f : -1.f)) *
+                                     (copy.radius * 0.577f);
+                for (int i = 0; i < 8; ++i)
+                    for (int bit = 1; bit <= 4; bit *= 2)
+                        if (!(i & bit))
+                            fallback.lines.push_back({D::point(corners[i]), D::point(corners[i | bit]), 0xcce6eb64, 2});
+            }
+        }
+        D::draw(fallback);
+        MR::loadViewMtx();
+    }
+
     void tint(LiveActor* actor, GXColor visible, u8 xrayAlpha) {
         GXColor xray = visible;
         xray.a = xrayAlpha;
@@ -180,6 +232,7 @@ namespace EditorDraw {
             if (spend(modelOf(actor), 10)) outline(actor, GXColor{250, 204, 56, 255}, 2.5f);
         }
         if (hover != nullptr && !hoverSelected && spend(modelOf(hover), 10)) outline(hover, GXColor{102, 219, 255, 255}, 1.5f);
+        drawArray();            // Array: budgeted render-only copies, no temporary actors.
         EditorPlaytest::draw();  // M3 play-test: recorded trail and jump peaks.
         EditorGravity::draw();  // M3 gravity: translucent fields before restoring GX.
         EditorAreas::draw();  // M3 areas: shared depth-tested volumes.

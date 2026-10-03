@@ -18,6 +18,10 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
+#include "Game/Util/StringUtil.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime.hpp>
+#endif
 
 namespace MR {
     bool isOnGroundPlayer() {
@@ -762,6 +766,15 @@ namespace MR {
     }
 
     void startPlayerEvent(const char* pName) {
+#ifdef PETARI_NATIVE
+        // A level-editor play-test: a miss returns to Edit, frozen at that moment (the play loop).
+        static const char* const kMissEvents[] = {"マリオダウン", "マリオ奈落", "マリオ炎ダウン", "ゲームオーバー", "レース負け", "ゴーストレース負け"};
+        for (const char* pMiss : kMissEvents) {
+            if (MR::isEqualString(pName, pMiss) && PetariEditor::Runtime::playerMissing(pName)) {
+                return;
+            }
+        }
+#endif
         EventSequencer* eventSequencer;
 
         eventSequencer = MR::getSceneObj< EventSequencer >(SceneObj_EventSequencer);

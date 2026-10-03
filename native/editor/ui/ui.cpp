@@ -207,6 +207,16 @@ void drawToolbar(float width) {
     bandBackground(ImVec2(0, 0), ImVec2(width, kToolbarHeight), true);
     ImGui::SetCursorPosY((kToolbarHeight - 18.0f) * 0.5f);
     galaxyText("Level Editor", 18.0f, rgba(1.0f, 1.0f, 1.0f));
+    // The title is the editor's menu: new galaxy, save, share.
+    if (ImGui::IsItemClicked()) ImGui::OpenPopup("editor-menu");
+    if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (ImGui::BeginPopup("editor-menu")) {
+        if (ImGui::MenuItem("New galaxy...", "Cmd+N")) openNewGalaxySheet();
+        if (ImGui::MenuItem("Save", "Cmd+S")) requestSave(false);
+        if (ImGui::MenuItem("Save as...", "Cmd+Shift+S")) requestSave(true);
+        if (ImGui::MenuItem("Share...", "Cmd+Shift+E")) openShareSheet();
+        ImGui::EndPopup();
+    }
     ImGui::SameLine(0.0f, 24.0f);
     // Undo / redo (Cmd+Z / Cmd+Shift+Z).
     ImGui::SetCursorPosY((kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f);
@@ -267,6 +277,14 @@ void drawToolbar(float width) {
     std::snprintf(reload, sizeof(reload), state.pendingCount > 0 ? "Reload  %d pending" : "Reload", state.pendingCount);
     const float right = width - 12.0f;
     float leftEdge = right - 96.0f - 8.0f - 230.0f;  // the Reload button's left; Save and the badge go left of it
+    // Share (UX section 17): the saved mod as a zip; Cmd+Shift+E.
+    {
+        const float w = ImGui::CalcTextSize("Share").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (ImGui::Button("Share")) openShareSheet();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pack the saved mod as a .zip to give someone (Cmd+Shift+E)");
+    }
     // Save (UX section 17): highlighted while there are unsaved edits; Cmd+S.
     {
         const char* label = state.unsaved ? "Save*###save" : "Save###save";
@@ -443,6 +461,24 @@ void drawToast() {
     list->AddText(ImVec2(min.x + 14.0f, min.y + 5.0f), rgba(1, 1, 1, 1), text.c_str());
 }
 
+std::string gOpening;  // showOpening's title, for this frame only
+
+void drawOpeningBanner() {
+    if (gOpening.empty()) return;
+    const std::string text = "Creating " + gOpening + "...";
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    ImFont* galaxy = PetariNative::HomeMenu::galaxyTextFont();
+    ImFont* font = galaxy != nullptr ? galaxy : ImGui::GetFont();
+    const float size = 30.0f;
+    const ImVec2 dim = font->CalcTextSizeA(size, 1e9f, 0.0f, text.c_str());
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const ImVec2 at((display.x - dim.x) * 0.5f, display.y * 0.42f);
+    list->AddRectFilled(ImVec2(at.x - 28.0f, at.y - 16.0f), ImVec2(at.x + dim.x + 28.0f, at.y + dim.y + 16.0f), rgba(0.02f, 0.14f, 0.24f, 0.85f), 18.0f);
+    list->AddText(font, size, ImVec2(at.x + 1.0f, at.y + 2.0f), rgba(0.0f, 0.05f, 0.12f, 0.6f), text.c_str());
+    list->AddText(font, size, at, rgba(1.0f, 1.0f, 1.0f, 1.0f), text.c_str());
+    gOpening.clear();
+}
+
 void setArea(float x, float y, float w, float h) {
     petari_present_set_content_area(x, y, w, h);
     gAreaSet = w > 0.0f && h > 0.0f;
@@ -460,6 +496,8 @@ void switchMission(int mission) {
     gSwitchSince = ImGui::GetCurrentContext() != nullptr ? ImGui::GetTime() : 0.0;
     gSwitchReloading = false;
 }
+
+void showOpening(const char* title) { gOpening = title != nullptr ? title : ""; }
 
 bool installFonts(float displayScale) {
     if (ImGui::GetCurrentContext() == nullptr || gUiFont != nullptr) {
@@ -522,6 +560,11 @@ bool drawStyledOverlay(const std::function< bool() >& draw) {
 
 void drawFrame(float windowWidth, float windowHeight) {
     updateEditMode(windowWidth, windowHeight);  // uses last frame's viewport
+    {
+        StyleScope style;
+        drawInstallSheet();  // a dropped mod zip, in or out of Edit
+        drawOpeningBanner();  // a new galaxy on its way into Edit
+    }
     gViewportValid = false;
     if (!gVisible || gFocus || !(windowWidth > 0.0f) || !(windowHeight > kToolbarHeight + kFooterHeight + 50.0f)) {
         if (gAreaSet) setArea(0, 0, 0, 0);  // the game takes the whole window again
@@ -554,6 +597,8 @@ void drawFrame(float windowWidth, float windowHeight) {
     drawGalaxyWindow(kOutliner);
     drawInspectorWindow(kInspector);
     drawSaveSheet();
+    drawShareSheet();
+    drawNewGalaxySheet();
 
     if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
                                                                         central->Size.y > 8.0f) {

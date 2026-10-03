@@ -8,6 +8,7 @@
 //      gravity (straight down). A screenshot is taken (PETARI_EDITOR_BRUSH_SHOTS=<dir>).
 //   3. Back in Edit: resize it (scale_x 3 -> 1.5: rebuilt at the new size), change its material
 //      (a new model), undo the material, then delete it (its part retired).
+//   4. Add a second brush and undo the Add: its part must go too (EP-007).
 // Logs "[editor-brush] PASS" or "[editor-brush] FAIL: <reason>".
 #include "runtime_core.hpp"
 #include "terrain_sync.hpp"
@@ -46,6 +47,8 @@ namespace {
         int playFrame = 0;
         int archives = 0;  // mounted archives before the resize
         TVec3f start;  // Mario before the test (he goes back there before the brush is deleted)
+        RowId undone;  // a second brush, added and undone
+        EditorTerrain::Part* undonePart = nullptr;
     };
     State gState;
 
@@ -211,6 +214,32 @@ void brushTestTick() {
         if (since == 25) {
             if (actorForRow(s.brush) != nullptr || !MR::isDead(s.part) || TerrainSync::triangleCount(s.brush) != 0) {
                 return finish("FAIL: deleting the brush left its part");
+            }
+            // EP-007: a brush added and then undone must not stay drawn.
+            s.undone = newRowId();
+            Command add{Command::Kind::Apply};
+            add.op.label = "Add brush to undo";
+            AddRow row;
+            row.id = s.undone;
+            row.zone = 0;
+            row.table = "jmp/placement/common/objinfo";
+            row.cells = {{columnHash("name"), Cell{CellType::StringOffset, 0, 0.0f, "EditorBrush"}},
+                         {columnHash("pos_x"), f(kX)}, {columnHash("pos_y"), f(kY)}, {columnHash("pos_z"), f(kZ)},
+                         {columnHash("scale_x"), f(0.4f)}, {columnHash("scale_y"), f(0.1f)}, {columnHash("scale_z"), f(0.4f)},
+                         {columnHash("Obj_arg0"), n(0)}};
+            add.op.adds.push_back(row);
+            enqueue(std::move(add));
+        }
+        if (since == 30) {
+            s.undonePart = part(s.undone);
+            if (s.undonePart == nullptr) {
+                return finish("FAIL: the second brush has no part");
+            }
+            enqueue(Command{Command::Kind::Undo});
+        }
+        if (since == 35) {
+            if (actorForRow(s.undone) != nullptr || !MR::isDead(s.undonePart) || TerrainSync::triangleCount(s.undone) != 0) {
+                return finish("FAIL: undoing a brush's Add left it drawn (EP-007)");
             }
             finish("PASS");
         }

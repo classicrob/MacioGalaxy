@@ -37,6 +37,10 @@ struct ModInfo {
     std::string source;        // the mods directory it was found in
     unsigned fileCount = 0;    // files below files/
     bool hasEdits = false;     // edits/*.json: a level editor patch
+    bool editor = false;       // mod.txt editor=1: made by the level editor
+    // An editor mod with stage archives of its own (a new galaxy): the patch builder's asset
+    // builders run over it too (terrain brushes in its own archives are baked at start-up).
+    bool bakes = false;
 };
 
 // "/StageData//Foo/./Bar.arc" and "stagedata\\foo\\bar.arc" -> "StageData/Foo/Bar.arc"

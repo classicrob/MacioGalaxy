@@ -524,6 +524,13 @@ void handleEvents(const AuroraEvent* event) {
                              static_cast<unsigned>(event->sdl.adevice.which),
                              event->sdl.adevice.recording ? " (recording)" : "");
             }
+#ifdef PETARI_EDITOR_UI
+            // A mod zip dropped on the window: the Install sheet (UX section 17).
+            if (event->sdl.type == SDL_EVENT_DROP_FILE && event->sdl.drop.data != nullptr) {
+                const std::string dropped = event->sdl.drop.data;
+                if (dropped.size() > 4 && dropped.compare(dropped.size() - 4, 4, ".zip") == 0) PetariEditor::Ui::openInstallSheet(dropped.c_str());
+            }
+#endif
             Events::input(event->sdl);
             break;
         default:

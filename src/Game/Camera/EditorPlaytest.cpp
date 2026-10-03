@@ -16,7 +16,7 @@ namespace {
     struct State {
         P::Trail trail;
         DebugDraw::Mesh mesh;
-        bool cleared = false, meshDirty = true;
+        bool cleared = false, missed = false, meshDirty = true;
         std::string keepResult;
         int resultFrames = 0;
     };
@@ -27,18 +27,31 @@ namespace {
     Vec3 vec(const TVec3f& v) {
         return {v.x, v.y, v.z};
     }
+    P::Motion motion() {
+        namespace O = PetariNative::Odyssey;
+        P::Motion motion = P::Motion::Air;
+        const bool odyssey = PetariNative::Mods::enabled(PetariNative::Mods::Mod::OdysseyMovement);
+        if (MR::isOnGroundPlayer())
+            motion = P::Motion::Ground;
+        else if (odyssey && O::Live::airKind == O::Air::Dive)
+            motion = P::Motion::Dive;
+        else if (odyssey && (O::Live::airKind == O::Air::CapBounce || O::Live::airKind == O::Air::DiveCapBounce ||
+                             O::Live::airKind == O::Air::GroundPoundCapBounce))
+            motion = P::Motion::CapBounce;
+        return motion;
+    }
     void event(Runtime::PlayEvent event, const char*, int) {
         PetariNative::HostAllocationScope host;
         auto& s = state();
         switch (event) {
         case Runtime::PlayEvent::Begin:
             s.trail.begin();
-            s.cleared = false;
+            s.cleared = s.missed = false;
             s.keepResult.clear();
             break;
         case Runtime::PlayEvent::Resume:
             s.trail.resume();
-            s.cleared = false;
+            s.cleared = s.missed = false;
             s.keepResult.clear();
             break;
         case Runtime::PlayEvent::ToEdit:
@@ -48,7 +61,7 @@ namespace {
             s.trail.end();
             s.mesh = {};
             s.keepResult.clear();
-            s.cleared = false;
+            s.cleared = s.missed = false;
             P::takeKeep();
             break;
         }
@@ -81,6 +94,7 @@ namespace EditorPlaytest {
         if (!registered) {
             PetariNative::HostAllocationScope host;
             Runtime::registerPlayListener(event);
+            Runtime::registerMissHandler([](const char*) { return miss(); });
             registered = true;
         }
     }
@@ -88,17 +102,7 @@ namespace EditorPlaytest {
         PetariNative::HostAllocationScope host;
         auto& s = state();
         if (s.trail.running() && mode() == Mode::Playing && playable) {
-            namespace O = PetariNative::Odyssey;
-            P::Motion motion = P::Motion::Air;
-            const bool odyssey = PetariNative::Mods::enabled(PetariNative::Mods::Mod::OdysseyMovement);
-            if (MR::isOnGroundPlayer())
-                motion = P::Motion::Ground;
-            else if (odyssey && O::Live::airKind == O::Air::Dive)
-                motion = P::Motion::Dive;
-            else if (odyssey && (O::Live::airKind == O::Air::CapBounce || O::Live::airKind == O::Air::DiveCapBounce ||
-                                 O::Live::airKind == O::Air::GroundPoundCapBounce))
-                motion = P::Motion::CapBounce;
-            s.trail.record(vec(*MR::getPlayerPos()), vec(*MR::getPlayerVelocity()), vec(*MR::getPlayerGravity()), motion);
+            s.trail.record(vec(*MR::getPlayerPos()), vec(*MR::getPlayerVelocity()), vec(*MR::getPlayerGravity()), motion());
             s.meshDirty = true;
         }
         if (s.resultFrames > 0 && --s.resultFrames == 0)
@@ -126,6 +130,7 @@ namespace EditorPlaytest {
         view.active = s.trail.active();
         view.running = s.trail.running();
         view.cleared = s.cleared;
+        view.missed = s.missed;
         view.frames = s.trail.frames();
         if (mode() == Mode::Editing) {
             for (const auto& item : PetariNative::EditorPick::selection())
@@ -147,6 +152,22 @@ namespace EditorPlaytest {
     void draw() {
         if (mode() == Mode::Editing && P::visible())
             DebugDraw::draw(state().mesh, 0.08f);
+    }
+    bool missPending() {
+        return state().missed && mode() == Mode::Playing;
+    }
+    bool miss() {
+        auto& s = state();
+        if (!s.trail.running() || mode() != Mode::Playing || !Runtime::progressIsolated())
+            return false;
+        PetariNative::HostAllocationScope host;
+        s.trail.miss(vec(*MR::getPlayerPos()), vec(*MR::getPlayerVelocity()), vec(*MR::getPlayerGravity()), motion());
+        s.missed = true;
+        s.cleared = false;
+        s.meshDirty = true;
+        P::setVisible(true);
+        const std::string result = "Missed at " + P::elapsed(s.trail.frames());
+        return Runtime::requestEditAfterMiss(result.c_str());
     }
     bool collectStar(LiveActor* star) {
         auto& s = state();

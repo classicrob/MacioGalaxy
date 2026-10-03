@@ -28,6 +28,13 @@ using ThumbnailTexture = unsigned long long (*)(unsigned width, unsigned height,
 using ThumbnailTextureUpdate = bool (*)(unsigned long long texture, unsigned width, unsigned height, const void* rgba);
 void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture, ThumbnailTextureUpdate update = nullptr);
 
+// A native file panel (NSSavePanel / NSOpenPanel, through SDL3's dialogs): the host shows it and calls `done`
+// with the chosen path ("" if cancelled), possibly on another thread. filterPattern: "zip", "gltf;glb;obj".
+using FileDialogDone = void (*)(void* user, const char* path);
+using FileDialog = void (*)(bool save, const char* defaultPath, const char* filterName, const char* filterPattern, FileDialogDone done,
+                            void* user);
+void setFileDialogHost(FileDialog dialog);
+
 // Draws the editor frame: toolbar, dock (Outliner, Inspector) and footer. Call between
 // aurora_begin_frame and aurora_end_frame, before the Home menu overlay, every frame.
 // windowWidth/Height are the ImGui display size (window points).
@@ -41,6 +48,16 @@ void switchMission(int mission);
 // defaults): <user folder>/editor/ui-settings.txt. Unset: nothing is remembered between sessions.
 void setSettingsFile(const char* path);
 
+// A mod zip dropped on the window (UX section 17, Installing): the Install sheet, in or out of Edit.
+void openInstallSheet(const char* zipPath);
+void submitInstallSheet();  // test drivers: press Install
+// Test drivers: the New Galaxy sheet (UX section 14) and its Create.
+void openNewGalaxySheetForTest();
+void submitNewGalaxySheet();
+
+// While a new galaxy opens after its restart: a "Creating <name>..." banner this frame (UX section 14).
+void showOpening(const char* title);
+
 // Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
 // false if it wasn't drawn.
 bool testTargetRect(const char* name, float* x, float* y, float* width, float* height);
@@ -49,6 +66,8 @@ void placeClassForTest(const char* className, int arg0);
 // Test drivers: open the Save sheet (as Cmd+Shift+S) and press its Save button.
 void openSaveSheet();
 void submitSaveSheet();
+void openShareSheetForTest();
+void submitShareSheet();
 
 // The central node (the game's viewport) in window points, from the last drawFrame;
 // false while hidden or in Focus mode.

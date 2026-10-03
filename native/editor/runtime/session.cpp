@@ -8,6 +8,7 @@
 #include "model_io.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
+#include "new_galaxy_session.hpp"
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/paths.hpp>
 
@@ -44,6 +45,7 @@ namespace {
     std::vector< RowUpdater > gRowUpdaters;
     bool gChecksInvalid = false;
     std::vector< PlayListener > gPlayListeners;
+    std::vector< MissHandler > gMissHandlers;
 
     // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
     // are spent by every creation, retired fields included, until the next scene build.
@@ -84,6 +86,7 @@ namespace {
         bool inPlay = false;       // a play-test run is on (Begin/Resume told, ToEdit not yet)
         bool hadRun = false;       // a run began this session (Resume continues it; with none, Resume is a Begin)
         bool scenePlayed = false;  // this scene has been played since it was built (a fresh Play rebuilds it)
+        bool missed = false;       // Edit froze a miss: the next Play or Resume starts a fresh run
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -102,6 +105,9 @@ namespace {
         }
         s.inPlay = event == PlayEvent::Begin || event == PlayEvent::Resume;
         s.hadRun = event == PlayEvent::End ? false : (s.hadRun || event == PlayEvent::Begin);
+        if (event == PlayEvent::End || event == PlayEvent::Begin) {
+            s.missed = false;
+        }
         s.scenePlayed = s.scenePlayed || s.inPlay;
     }
 
@@ -385,6 +391,15 @@ namespace {
         EditModel& m = *s.model;
         int zone = 0, table = 0;
         if (!m.locate(id, &zone, &table)) {
+            // Undoing an insertion removes the row identity entirely.
+            for (RowUpdater updater : gRowUpdaters) {
+                if (updater(id, JMapInfoIter())) {
+                    break;
+                }
+            }
+
+            retireRow(id);
+            s.pending.erase(id);
             return;
         }
         const std::string path = m.tablePath(zone, table);
@@ -591,10 +606,11 @@ namespace {
         Session& s = session();
         if (from == PlayFrom::MissionStart) {
             startReload(Session::After::PlayStart);
-        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed)) {
+        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed) || s.missed) {
             // Edits to rebuild, or a fresh run in a scene already played (UX 3: collected and
             // defeated objects, switches and Mario's state reset; only Resume keeps them).
-            startReload(from == PlayFrom::Marker ? Session::After::PlayMarker : Session::After::PlayStart);
+            startReload(from == PlayFrom::Marker || s.missed ? Session::After::PlayMarker : Session::After::PlayStart);
+            s.missed = false;
         } else {
             // Nothing needs a reload: unfreeze where we are (and put Mario on the marker).
             if (Core::uiCallbacks().leaveEdit != nullptr) {
@@ -645,11 +661,17 @@ namespace {
                     enqueue(std::move(commands[j]));
                 }
             };
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy) {  // from Edit, or from Level Select with no model
+                if (!createNewGalaxy(command.newGalaxy, s.model && status().unsaved, &error)) {
+                    Core::reportError("New galaxy: " + error);
+                }
+                continue;
+            }
             if (!s.model) {
                 Core::reportError("No galaxy is loaded for editing");
                 continue;
             }
-            std::string error;
             switch (command.kind) {
             case Command::Kind::Apply: {
                 PetariNative::HostAllocationScope host;
@@ -749,8 +771,10 @@ void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITO
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
+void newGalaxyTestTick();  // new_galaxy_test.cpp: New Galaxy across its restart (PETARI_EDITOR_NEWGALAXY_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void areasTestTick();
+void arrayTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
@@ -796,6 +820,31 @@ bool ensureModel() {
 void registerPlayListener(PlayListener listener) {
     PetariNative::HostAllocationScope host;  // the list outlives scenes
     if (std::find(gPlayListeners.begin(), gPlayListeners.end(), listener) == gPlayListeners.end()) gPlayListeners.push_back(listener);
+}
+
+void registerMissHandler(MissHandler handler) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
+    if (std::find(gMissHandlers.begin(), gMissHandlers.end(), handler) == gMissHandlers.end()) gMissHandlers.push_back(handler);
+}
+
+bool playerMissing(const char* event) {
+    if (mode() != Mode::Playing) {
+        return false;
+    }
+    for (MissHandler handler : gMissHandlers) {
+        if (handler(event)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool requestEditAfterMiss(const char* reason) {
+    if (!requestEdit(reason)) {
+        return false;
+    }
+    session().missed = true;
+    return true;
 }
 
 bool requestEdit(const char* reason) {
@@ -879,6 +928,10 @@ bool reloading() {
 void plainReloadTestTick(bool playable);  // reload_test.cpp (PETARI_EDITOR_PLAIN_RELOAD_TEST)
 
 void tick(bool playable) {
+    static const bool sNewGalaxyServices = (registerNewGalaxyServices(), true);
+    (void)sNewGalaxyServices;
+    newGalaxyTick();
+    newGalaxyTestTick();
     plainReloadTestTick(playable);
     // A plain reloadScene() completes whether or not the editor is on.
     if (session().plainReload && Hooks::sceneSerial() != session().reloadFromScene && playable) {
@@ -910,6 +963,7 @@ void tick(bool playable) {
     ensureTestTick();
     pathsTestTick();
     areasTestTick();
+    arrayTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
@@ -922,7 +976,18 @@ void tick(bool playable) {
         }
     }
     if (!s.model) {
-        Core::drainCommands();
+        // Only a new galaxy can be made without one (Level Select's New galaxy).
+        std::vector< Command > commands;
+        {
+            PetariNative::HostAllocationScope host;
+            commands = Core::drainCommands();
+        }
+        for (Command& command : commands) {
+            std::string error;
+            if (command.kind == Command::Kind::NewGalaxy && !createNewGalaxy(command.newGalaxy, false, &error)) {
+                Core::reportError("New galaxy: " + error);
+            }
+        }
         Core::runUiSeamHook();
         return;
     }
