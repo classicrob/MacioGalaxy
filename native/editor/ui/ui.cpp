@@ -1,3 +1,4 @@
+#include "areas.hpp"
 // The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
 #include <petari/editor/ui.hpp>
 
@@ -250,7 +251,9 @@ void drawToolbar(float width) {
             bool gravity = Gravity::visible();  // M3 gravity: view toggle.
             if (ImGui::Checkbox("Gravity fields (1)", &gravity)) Gravity::setVisible(gravity);
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gravity fields, flow arrows and uncovered ground");
-            // M3 areas / play-test: further toggles go here, one per line.
+            drawAreasToggle();      // M3 areas: bounds visibility.
+            drawAreasToggle(true);  // M3 areas: camera volume visibility.
+            // M3 play-test and later view toggles go here, one per line.
             ImGui::EndPopup();
         }
         ImGui::SameLine(0.0f, 16.0f);
@@ -507,6 +510,12 @@ bool viewportRect(float* x, float* y, float* width, float* height) {
     *width = gViewport.w;
     *height = gViewport.h;
     return true;
+}
+
+// M3 areas: use the editor style for viewport panels.
+bool drawStyledOverlay(const std::function< bool() >& draw) {
+    StyleScope style;
+    return draw();
 }
 
 void drawFrame(float windowWidth, float windowHeight) {

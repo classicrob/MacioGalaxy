@@ -41,6 +41,9 @@ struct Placed {
 };
 /// The placements noted since the scene began (cleared when it ends).
 const std::vector< Placed >& placed();
+// AreaObj is a NameObj, never a LiveActor. Keep its bindings separate.
+void noteArea(const void* table, int row, void* area);
+const std::vector< Placed >& areas();
 
 // Rail tables copied from the model. Owned by Runtime until this scene ends.
 struct RailTables {

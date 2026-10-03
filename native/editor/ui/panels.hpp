@@ -13,6 +13,9 @@
 
 namespace PetariEditor::Ui {
 
+// Apply the panel style to a viewport overlay drawn before the main dock.
+bool drawStyledOverlay(const std::function< bool() >& draw);
+
 // The left dock's window ("Galaxy": Outliner, Browser, Changes, History, Checks) and the Inspector.
 void drawGalaxyWindow(const char* title);
 void drawInspectorWindow(const char* title);

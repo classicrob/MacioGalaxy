@@ -1,6 +1,7 @@
 #pragma once
 
 #ifdef PETARI_NATIVE
+#include <cstdint>
 // The level editor's picking (docs/dev/level-editor/TECH.md 3.3): what is under the cursor, on the
 // game thread in the Edit nerve. Answers PetariNative::EditorPick's requests.
 class LiveActor;
@@ -23,5 +24,6 @@ namespace EditorPicking {
     LiveActor* hoverActor();
     int selectedCount();
     LiveActor* selectedAt(int index);
+    std::uint64_t selectedRowAt(int index);
 }  // namespace EditorPicking
 #endif

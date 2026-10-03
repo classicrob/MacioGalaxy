@@ -1,3 +1,4 @@
+extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsigned, const void*);
 // Native entry point: window, platform start-up, then the game's main loop
 // on this (the macOS main) thread. See docs/dev/INTEGRATION_PLAN.md.
 
@@ -881,13 +882,12 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "petari: editor panels use the built-in font (no system UI font)\n");
     }
     PetariEditor::Ui::setSettingsFile((paths.user / "editor" / "ui-settings.txt").string().c_str());
-    PetariEditor::Ui::setThumbnailHost(
-        [](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height) {
-            return petari_present_take_readback(copy, rgba, capacity, width, height);
-        },
-        [](unsigned width, unsigned height, const void* rgba) {
-            return static_cast<unsigned long long>(aurora_imgui_add_texture(width, height, rgba));
-        });
+    PetariEditor::Ui::setThumbnailHost([](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width,
+                                          unsigned* height) { return petari_present_take_readback(copy, rgba, capacity, width, height); },
+                                       [](unsigned width, unsigned height, const void* rgba) {
+                                           return static_cast< unsigned long long >(aurora_imgui_add_texture(width, height, rgba));
+                                       },
+                                       &aurora_imgui_update_texture);
     // Development: the editor's docked layout from the start (the Edit mode shows it normally).
     if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
         PetariEditor::Ui::setVisible(true);
