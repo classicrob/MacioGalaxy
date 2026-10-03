@@ -206,6 +206,23 @@ void reloadTestTick() {
         }
         std::fprintf(stderr, "[editor-reload] back in Edit: notice \"%s\", events %zu\n", status().notice.c_str(), gEvents.size());
         if (gEvents.back() != PlayEvent::ToEdit || status().notice != "Cleared in 0:01") return finish("FAIL: no ToEdit, or the notice is wrong");
+        {
+            // A fresh Play in the played scene rebuilds it (the star caught comes back).
+            Command again{Command::Kind::Play};
+            again.from = PlayFrom::Marker;
+            enqueue(std::move(again));
+        }
+        s.phase = 6;
+        s.phaseFrame = 0;
+        return;
+    case 6:
+        if (s.phaseFrame == 3 && mode() != Mode::Reloading) return finish("FAIL: a fresh Play in a played scene didn't rebuild it");
+        if (mode() != Mode::Playing) {
+            if (s.phaseFrame > 1500) return finish("FAIL: the fresh Play never started");
+            return;
+        }
+        std::fprintf(stderr, "[editor-reload] fresh Play rebuilt the scene: events %zu (last %d)\n", gEvents.size(), static_cast< int >(gEvents.back()));
+        if (gEvents.back() != PlayEvent::Begin) return finish("FAIL: the fresh Play didn't tell Begin");
         return finish("PASS");
     }
 }
