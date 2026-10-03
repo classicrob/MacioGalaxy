@@ -5,6 +5,8 @@
 #include "checks.hpp"
 #include "world.hpp"
 
+#include <petari/editor/paths.hpp>
+
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -546,6 +548,22 @@ namespace {
             return out;
         }
 
+        // CommonPath_ID of `row` to the rail `railRef` (Paths::linkPath: same zone, 2+ points).
+        void linkRail(RowId row, const Json::Value& railRef, const std::string& where) {
+            const RowId railRow = impl.resolveRef(railRef, where);
+            for (const Paths::Rail& rail : Paths::collect(model)) {
+                if (rail.row != railRow) continue;
+                std::string error;
+                const Op op = Paths::linkPath(model, row, rail, &error);
+                if (op.sets.empty()) {
+                    fail("bad-ref", where + ": " + error, "a rail links objects of its own zone: make the path with the object's \"zone\"", {}, where);
+                }
+                apply(op, where);
+                return;
+            }
+            fail("bad-ref", where + ": " + rowRef(model, railRow) + " is not a path (a jmp/path/commonpathinfo row)", "make one with the path op", {}, where);
+        }
+
         void label(RowId row, const Json::Value& op, const std::string& where) {
             if (!op.has("as")) return;
             std::string name = op["as"].asString();
@@ -577,7 +595,7 @@ namespace {
         void run(const Json::Value& op, const std::string& where) {
             const std::string kind = lower(op["op"].asString());
             if (kind == "add") {
-                checkKeys(op, with({"op", "class", "zone", "layer", "missions", "like", "preset", "as", "force"}, kEditKeys), where);
+                checkKeys(op, with({"op", "class", "zone", "layer", "missions", "like", "preset", "as", "force", "path"}, kEditKeys), where);
                 if (!op.has("class") && !op.has("like")) fail("bad-args", where + ": add needs \"class\" (or \"like\": a row to copy)", "", {}, where);
                 const Catalog::ClassInfo* info = op.has("class") ? impl.resolveClass(op["class"].asString(), !op["force"].asBool(), where + ".class") : nullptr;
                 RowId like;
@@ -623,7 +641,83 @@ namespace {
                     edits.set("args", std::move(args));
                 }
                 edit(row, edits, where);
+                if (op.has("path")) linkRail(row, op["path"], where + ".path");
                 label(row, op, where);
+            } else if (kind == "path") {
+                checkKeys(op, {"op", "zone", "points", "closed", "smooth", "on_ground", "height", "down", "as"}, where);
+                const int zone = op.has("zone") ? zoneOf(op["zone"], where + ".zone") : 0;
+                const Frame f = zoneFrame(model, zone);
+                struct P {
+                    G::V3 pos, in, out;
+                    bool handles = false;
+                };
+                std::vector< P > pts;
+                int i = 0;
+                for (const Json::Value& v : op["points"].items()) {
+                    const std::string at = where + ".points[" + std::to_string(i++) + "]";
+                    P p;
+                    if (v.isObject()) {
+                        p.pos = parseVec(v["pos"], at + ".pos");
+                        if (v.has("in") || v.has("out")) {
+                            p.in = v.has("in") ? parseVec(v["in"], at + ".in") : p.pos;
+                            p.out = v.has("out") ? parseVec(v["out"], at + ".out") : p.pos;
+                            p.handles = true;
+                        }
+                    } else {
+                        p.pos = parseVec(v, at);
+                    }
+                    if (op["on_ground"].asBool()) {
+                        const G::V3 down = op.has("down") ? G::normalized(parseVec(op["down"], where + ".down"), {0, -1, 0}) : impl.world().gravityAt(model, p.pos).down;
+                        std::optional< Hit > hit = impl.world().ray(p.pos, down, 50000.0f);
+                        if (!hit) hit = impl.world().ray(p.pos - down * 1500.0f, down, 51500.0f);
+                        if (!hit) fail("no-ground", at + ": no ground below the point", "", {}, at);
+                        const G::V3 moved = hit->point - down * static_cast< float >(op["height"].asNumber(0));
+                        p.in = p.in + (moved - p.pos);
+                        p.out = p.out + (moved - p.pos);
+                        p.pos = moved;
+                    }
+                    pts.push_back(p);
+                }
+                if (pts.size() < 2) fail("bad-args", where + ".points needs at least 2 points", "", {}, where + ".points");
+                const bool closed = op["closed"].asBool();
+                const bool smooth = op.has("smooth") ? op["smooth"].asBool() : true;
+                std::vector< Paths::Point > points;
+                for (std::size_t k = 0; k < pts.size(); k++) {
+                    P p = pts[k];
+                    if (!p.handles) {
+                        p.in = p.out = p.pos;
+                        if (smooth) {
+                            // Catmull-Rom handles: a sixth of the neighbours' span either side.
+                            const std::size_t n = pts.size();
+                            const G::V3 prev = k > 0 ? pts[k - 1].pos : (closed ? pts[n - 1].pos : p.pos);
+                            const G::V3 next = k + 1 < n ? pts[k + 1].pos : (closed ? pts[0].pos : p.pos);
+                            const G::V3 t = (next - prev) * (1.0f / 6.0f);
+                            p.in = p.pos - t;
+                            p.out = p.pos + t;
+                        }
+                    }
+                    auto local = [&](G::V3 w) {
+                        const G::V3 l = toLocal(f, w);
+                        return Vec3{l.x, l.y, l.z};
+                    };
+                    Paths::Point point;
+                    point.row = newRowIdFor(impl.nextNew++);
+                    point.position = local(p.pos);
+                    point.incoming = local(p.in);
+                    point.outgoing = local(p.out);
+                    points.push_back(point);
+                }
+                const RowId railRow = newRowIdFor(impl.nextNew++);
+                std::string error;
+                const Op railOp = Paths::addRail(model, zone, points, closed, railRow, &error);
+                if (railOp.adds.empty()) fail("op-failed", where + ": " + error, "", {}, where);
+                apply(railOp, where);
+                created.push_back(railRow);
+                label(railRow, op, where);
+            } else if (kind == "link") {
+                checkKeys(op, {"op", "ref", "refs", "select", "path"}, where);
+                if (!op.has("path")) fail("bad-args", where + ": link needs \"path\": a path ref", "", {}, where);
+                for (RowId row : impl.resolveTargets(op, where)) linkRail(row, op["path"], where + ".path");
             } else if (kind == "array") {
                 checkKeys(op, with({"op", "class", "zone", "layer", "missions", "like", "preset", "as", "force", "shape", "from", "to", "count", "spacing",
                                     "center", "radius", "start_angle", "points", "origin", "size", "peak", "closed", "rot", "face_along"},

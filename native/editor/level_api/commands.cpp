@@ -94,7 +94,7 @@ namespace {
             {"add", "Place a new object",
              "class    string  class, display name or alias (required unless like)\nzone     string  default: the galaxy's own zone (or like's)\nlayer    string  "
              "common (every mission, default) or a-p\nmissions [int]   pick the layer active in exactly these missions\nlike     ref     copy this row's settings (the "
-             "Browser's place)\npreset   string  a catalog preset's args\nas       string  a label for later refs (\"@as\")\nforce    bool    allow a class the catalog "
+             "Browser's place)\npreset   string  a catalog preset's args\npath     ref     link to this path (a Launch Star's flight)\nas       string  a label for later refs (\"@as\")\nforce    bool    allow a class the catalog "
              "doesn't know\n" + edits,
              S(R"({"type":"object","required":["op"],"properties":{"op":{"const":"add"},"class":{"type":"string"},"zone":{"type":["string","integer"]},"layer":{"type":"string"},"missions":{"type":"array","items":{"type":"integer"}},"like":{},"preset":{"type":"string"},"as":{"type":"string"},"force":{"type":"boolean"},"pos":{"type":"array"},"zone_pos":{"type":"array"},"rot":{"type":"array"},"up":{"type":"array"},"front":{"type":"array"},"turn":{"type":"number"},"scale":{},"args":{"type":"object"},"switches":{"type":"object"},"links":{"type":"object"},"fields":{"type":"object"}}})"),
              R"({"op": "add", "class": "PowerStar", "pos": [0, 1500, 0], "args": {"Star ID": 1}, "as": "star"})", true},
@@ -105,6 +105,14 @@ namespace {
              "and every add key (class, args, on_ground, height, ...)",
              S(R"({"type":"object","required":["op","shape","class"],"properties":{"op":{"const":"array"},"shape":{"enum":["line","arc","ring","grid","path"]},"class":{"type":"string"},"from":{"type":"array"},"to":{"type":"array"},"count":{"type":"integer"},"spacing":{},"peak":{"type":"number"},"center":{"type":"array"},"radius":{"type":"number"},"start_angle":{"type":"number"},"origin":{"type":"array"},"size":{"type":"array"},"points":{"type":"array"},"closed":{"type":"boolean"},"face_along":{"type":"boolean"},"as":{"type":"string"}}})"),
              R"({"op": "array", "class": "Coin", "shape": "arc", "from": [0, 1200, 0], "to": [1200, 1200, 0], "peak": 600, "count": 8, "as": "arc"})", true},
+            {"path", "Make a path (rail) from world points, smooth by default; label it to link objects to it",
+             "points    [[x,y,z] | {pos, in, out}]  2+ points, world space (in/out: explicit Bezier handles)\nzone      string  the zone it belongs to (objects link to rails of their own zone; default the galaxy's)\n"
+             "closed    bool\nsmooth    bool    Catmull-Rom handles where none are given (default true)\non_ground bool    each point onto the ground (with height, down)\nas        string  a label",
+             S(R"({"type":"object","required":["op","points"],"properties":{"op":{"const":"path"},"points":{"type":"array","minItems":2},"zone":{"type":["string","integer"]},"closed":{"type":"boolean"},"smooth":{"type":"boolean"},"on_ground":{"type":"boolean"},"height":{"type":"number"},"as":{"type":"string"}}})"),
+             R"({"op": "path", "points": [[0, 1500, 0], [2000, 3000, 0], [4000, 1500, 0]], "as": "flight"})", true},
+            {"link", "Link objects to a path (their CommonPath_ID; Paths::linkPath: same zone, 2+ points); add takes \"path\" too",
+             "ref | refs | select  the objects\npath  ref  the path's row (\"@flight\")", Json::Value::object(),
+             R"({"op": "link", "ref": "@launch", "path": "@flight"})", true},
             {"set", "Change objects: transform, args, switches, links, raw fields (move/rotate/scale/transform are aliases)",
              "ref | refs | select  the rows (select may carry \"expect\": n)\n" + edits,
              S(R"({"type":"object","required":["op"],"properties":{"op":{"enum":["set","move","rotate","scale","transform"]},"ref":{},"refs":{"type":"array"},"select":{"type":"object"}}})"),

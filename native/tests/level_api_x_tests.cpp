@@ -234,6 +234,18 @@ int main() {
     Value lonely = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"set","ref":"@oneup","switches":{"SW_APPEAR":77}}]})");
     check(lonely["checks_introduced"].items().size() >= 1, "a switch nothing writes is reported");
 
+    // Paths: a smooth 3-point rail, and a Launch Star added on it.
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"path","points":[[%.1f,%.1f,%.1f],[%.1f,%.1f,%.1f],[%.1f,%.1f,%.1f]],"as":"flight"},{"op":"add","class":"SuperSpinDriver","pos":[%.1f,%.1f,%.1f],"path":"@flight","as":"launch"}]})",
+                  sx, sy + 200, sz, sx + 1500, sy + 2500, sz, sx + 3000, sy + 200, sz, sx, sy + 200, sz);
+    Value flight = lv.call("apply", parse(buf));
+    check(ok(flight, "path"), "a path and a Launch Star on it");
+    Value launch = call(lv, "get", R"({"ref":"@launch"})");
+    Value rail = call(lv, "get", R"({"ref":"@flight"})");
+    check(launch["links"]["CommonPath_ID"].asInt(-1) == rail["fields"]["l_id"].asInt(-2) && rail["fields"]["num_pnt"].asInt() == 3, "the Launch Star flies the new path");
+    check(flight["checks_introduced"].items().size() == 0, "a linked Launch Star raises no check");
+    Value unlinked = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"add","class":"SuperSpinDriver","pos":[0,0,0]}]})");
+    check(unlinked["checks_introduced"].items().size() >= 1, "a Launch Star without a path is reported");
+
     // The journal replays into a fresh level with the same rows and labels.
     const Value journal = lv.journal();
     {
