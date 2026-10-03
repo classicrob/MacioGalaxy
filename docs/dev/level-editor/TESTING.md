@@ -152,3 +152,22 @@ selections, unsupported/empty masks and reselecting one split copy;
 Require the final `[editor-missions] PASS`, then inspect the common/repaired/split
 surfaces. Source and binary hashes are in `revision.json`; the runner stops its
 server and removes only its own fixture cache.
+
+### M4 Missions, Home entry and journal UI
+
+`native/tools/editor_m4_ui_smoke.py --app <Petari> --output build/<unique-m4-run>
+[--only journal|home|all]` uses private fixture users and the app's opt-in
+`PETARI_EDITOR_M4_UI_TEST` driver (game-button input for Home, SDL clicks for editor controls and queued ImGui text input for the name). Journal mode creates a real crash journal,
+then clicks Restore and Discard in separate copies; it checks unsaved state,
+recovery notices and removal on Discard. Home mode starts from an unlocked
+Observatory save, follows Home > Mods > Level Select > New galaxy, chooses a
+brush template and sky, and clicks Create. After the restart it renames the
+galaxy, adds and removes a mission through the panel and checks each restart.
+Inspect the marked surfaces and require `[editor-m4-ui] PASS`; a deliberate
+SDL quit after that marker need not finish the general stage-smoke sequence.
+Source and binary hashes are recorded; private caches are removed.
+
+`native_home_menu` covers editor-off carousel preservation, sentinel wraparound,
+mission-row safety and one-shot requests only after Home closes. `native_editor_ui`
+covers persistent recovery choices, duplicate-submit suppression, retry after
+errors, mission drafts/Cancel, save/discard guards and normalized settings replies.

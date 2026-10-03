@@ -1,4 +1,7 @@
 #include "editor_m4_smoke.hpp"
+#include "host.hpp"
+#include "imgui.h"
+#include "smoke.hpp"
 #include "smoke_background.hpp"
 #include <SDL3/SDL.h>
 #include <cstdio>
@@ -22,6 +25,9 @@ namespace PetariNative::App {
         }
         SDL_Event release{};
         int releaseIn = 0;
+        int buttonReleaseIn = 0;
+        Smoke::Button heldButton = Smoke::Button::Home;
+        int textKeyReleaseIn = 0;
         bool mouse(float x, float y) {
             auto* w = window();
             if (!w)
@@ -50,39 +56,35 @@ namespace PetariNative::App {
             std::fprintf(stderr, "[editor-m4-ui] click %s\n", target);
             return mouse(x + w / 2, y + h / 2);
         }
+        bool button(Smoke::Button value) {
+            Events::pressButton(static_cast< int >(value), true);
+            heldButton = value;
+            buttonReleaseIn = 3;
+            return true;
+        }
         bool homeClick(const char* label) {
             const auto view = HomeMenu::publishedView();
-            auto* w = window();
-            if (!view.visible || !w)
+            if (!view.visible)
                 return false;
-            int width, height;
-            SDL_GetWindowSize(w, &width, &height);
+            int focus = -1, target = -1;
             for (int i = 0; i < view.itemCount; ++i) {
-                if (std::strcmp(view.items[i].label, label))
-                    continue;
-                const auto r = view.items[i].rect;
-                return mouse((.5f + (r.x0 + r.x1) / 4) * width, (.5f + (r.y0 + r.y1) / 4) * height);
+                if (view.items[i].focused)
+                    focus = i;
+                if (std::strcmp(view.items[i].label, label) == 0)
+                    target = i;
             }
+            if (target < 0 || focus < 0)
+                return false;
+            if (focus == target)
+                return button(Smoke::Button::A);
+            button(focus < target ? Smoke::Button::StickDown : Smoke::Button::StickUp);
             return false;
         }
-        bool key(SDL_Scancode scan, SDL_Keycode code, SDL_Keymod mods = SDL_KMOD_NONE) {
-            auto* w = window();
-            if (!w)
-                return false;
-            SDL_Event e{};
-            e.type = SDL_EVENT_KEY_DOWN;
-            e.key.windowID = SDL_GetWindowID(w);
-            e.key.scancode = scan;
-            e.key.key = code;
-            e.key.down = true;
-            e.key.mod = mods;
-            if (!SDL_PushEvent(&e))
-                return false;
-            release = e;
-            release.type = SDL_EVENT_KEY_UP;
-            release.key.down = false;
-            release.key.mod = SDL_KMOD_NONE;
-            releaseIn = 2;
+        bool selectText() {
+            auto& io = ImGui::GetIO();
+            io.AddKeyEvent(io.ConfigMacOSXBehaviors ? ImGuiMod_Super : ImGuiMod_Ctrl, true);
+            io.AddKeyEvent(ImGuiKey_A, true);
+            textKeyReleaseIn = 2;
             return true;
         }
     }  // namespace
@@ -93,6 +95,13 @@ namespace PetariNative::App {
         static int step = 0, elapsed = 0, wait = 0;
         if (which.empty() || done)
             return;
+        if (buttonReleaseIn && --buttonReleaseIn == 0)
+            Events::pressButton(static_cast< int >(heldButton), false);
+        if (textKeyReleaseIn && --textKeyReleaseIn == 0) {
+            auto& io = ImGui::GetIO();
+            io.AddKeyEvent(ImGuiKey_A, false);
+            io.AddKeyEvent(io.ConfigMacOSXBehaviors ? ImGuiMod_Super : ImGuiMod_Ctrl, false);
+        }
         if (releaseIn && --releaseIn == 0)
             SDL_PushEvent(&release);
         if (!started && (gameplay || EditorSettings::active()))
@@ -106,8 +115,16 @@ namespace PetariNative::App {
             quit.type = SDL_EVENT_QUIT;
             SDL_PushEvent(&quit);
         };
-        if (++elapsed > 5000)
+        if (++elapsed > 5000) {
+            std::fprintf(stderr, "[editor-m4-ui] timeout at step %d, Home phase %d, Edit %d\n", step,
+                         static_cast<int>(HomeMenu::publishedView().phase), EditorSettings::active());
             return finish("FAIL: UI flow timed out");
+        }
+        static int reported = -1;
+        if (reported != step) {
+            std::fprintf(stderr, "[editor-m4-ui] %s step %d\n", which.c_str(), step);
+            reported = step;
+        }
         if (++wait < 30 || releaseIn)
             return;
         wait = 0;
@@ -185,15 +202,11 @@ namespace PetariNative::App {
                 ++step;
             else if (step == 2 && click("field:Galaxy name"))
                 ++step;
-            else if (step == 3 && key(SDL_SCANCODE_A, SDLK_A, SDL_KMOD_GUI))
+            else if (step == 3 && selectText())
                 ++step;
             else if (step == 4) {
-                SDL_Event text{};
-                text.type = SDL_EVENT_TEXT_INPUT;
-                text.text.windowID = SDL_GetWindowID(window());
-                text.text.text = "M4 Edited Galaxy";
-                if (SDL_PushEvent(&text))
-                    ++step;
+                ImGui::GetIO().AddInputCharactersUTF8("M4 Edited Galaxy");
+                ++step;
             } else if (step == 5 && click("button:Apply galaxy settings"))
                 ++step;
             else if (step == 6 && info->name == "M4 Edited Galaxy") {
@@ -210,13 +223,13 @@ namespace PetariNative::App {
         }
         if (which != "home")
             return finish("FAIL: unknown UI flow");
-        if (step == 0 && key(SDL_SCANCODE_F1, SDLK_F1))
+        if (step == 0 && button(Smoke::Button::Home))
             ++step;
         else if (step == 1 && homeClick("Mods"))
             ++step;
         else if (step == 2 && homeClick("Level Select"))
             ++step;
-        else if (step == 3 && HomeMenu::publishedView().phase == HomeMenu::Phase::Levels && key(SDL_SCANCODE_LEFT, SDLK_LEFT))
+        else if (step == 3 && HomeMenu::publishedView().phase == HomeMenu::Phase::Levels && button(Smoke::Button::StickLeft))
             ++step;
         else if (step == 4 && std::strstr(HomeMenu::publishedView().items[0].label, "New galaxy")) {
             EfbDump::mark("m4-home");

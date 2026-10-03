@@ -38,6 +38,8 @@ screen wipe, or while Mario is hurt or dying), with the same rules as
 included, and stars saved as usual. Level Select lists the galaxies below in
 the same order; it needs no mod switched on.
 
+When the **Level editor** switch is on, a **+ New galaxy…** choice follows the mod galaxies. Its **Create…** button closes Home, enters Edit and opens the New Galaxy sheet. If the current scene cannot enter Edit, it explains when to try again. With the switch off, the carousel contains only playable galaxies, as before.
+
 ## Galaxies
 
 | Dome | Galaxy | `--stage` alias | Internal name | Missions |

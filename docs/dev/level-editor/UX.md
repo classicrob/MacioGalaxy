@@ -870,7 +870,8 @@ A galaxy's missions share one world; each mission turns some groups of objects
   cannot represent the choice, Apply explains why and lists the possible mission
   combinations. Editing ScenarioData to create new layer combinations is not yet
   supported.
-- **Missions panel** (Outliner tab "Missions"): each mission's name (editable,
+- **Missions panel** (Outliner tab "Missions"): built for registered mod galaxies, with a draft galaxy name, music and English mission names, plus Add mission / Remove last. Apply writes live names and music (heard on the next Play/reload); Apply (restarts) handles count changes with Save or explicit Discard first. Cancel drops the draft. Internal names stay read-only. Objects exclusive to removed missions stay in the layout but no longer appear until those missions return.
+- Later Missions-panel fields: each mission's name (editable,
   in every language the game has, with the current language first), its star
   (which Power Star, where: a link to the star object), its start point, the
   mission type (normal, comet: speed run / purple coins / daredevil / cosmic

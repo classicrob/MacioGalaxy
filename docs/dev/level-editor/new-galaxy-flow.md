@@ -95,7 +95,7 @@ The mod is switched on in `mods.txt`. Brushes in the galaxy's own stage are bake
 
 **Level Select:**
 - The **Mod galaxies** group lists the registry's galaxies.
-- A **New galaxy...** entry opens the sheet from the Home menu (UI).
+- With the Level editor switch on, a **+ New galaxy...** carousel entry follows all mod galaxies. **Create...** closes Home and enters Edit before opening the sheet; an unavailable scene shows an explanation. Editor-off navigation and CLI warp destinations remain unchanged.
 
 **Share:** a mod with `galaxy.json` gets the note "This new galaxy plays only in Petari" (`Preview::newGalaxies`).
 
