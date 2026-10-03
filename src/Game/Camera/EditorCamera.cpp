@@ -1,4 +1,5 @@
 #ifdef PETARI_NATIVE
+#include <petari/editor/array.hpp>
 #include <petari/editor/paths_view.hpp>
 // The level editor's camera over the frozen scene (Game/Camera/EditorCamera.hpp).
 #include "Game/Camera/EditorCamera.hpp"
@@ -268,10 +269,18 @@ namespace EditorCamera {
         // Frame: the selection, or Mario while nothing is selected. F again from the same place: closer.
         if (in.frame > 0) {
             float center[3], radius = 0.0f;
-            if (EditorPicking::selectionBounds(center, &radius)) {
+            PetariEditor::Gizmo::V3 previewCenter;
+            const bool array = PetariEditor::Arrays::previewBounds(PetariEditor::Arrays::view(), &previewCenter, &radius);
+            if (array) {
+                center[0] = previewCenter.x;
+                center[1] = previewCenter.y;
+                center[2] = previewCenter.z;
+            }
+            if (array || EditorPicking::selectionBounds(center, &radius)) {
                 gState.pivot = {center[0], center[1], center[2]};
                 if (!in.worldUp) gState.upTarget = gravityUp(gState.pivot, gState.upTarget);
-                const float fit = std::fmax(radius, 50.0f) / std::tan(gState.fovy * 0.5f * kDeg) * 1.3f;
+                const float fit =
+                    std::fmax(radius, 50.0f) / std::tan(gState.fovy * 0.5f * kDeg) * 1.3f / (array ? std::clamp(MR::getAspect(), 0.1f, 1.0f) : 1.0f);
                 gState.eye = sub(gState.pivot, mul(gState.forward, fit));
             } else if (const TVec3f* mario = MR::getPlayerPos()) {
                 gState.pivot = vt(*mario);

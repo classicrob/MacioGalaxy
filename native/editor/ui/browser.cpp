@@ -201,8 +201,17 @@ bool card(const BrowserEntry& entry, bool selected, float size) {
     } else {
         drawInitials(list, entry, min, max, size);
     }
-    list->AddRect(min, max, selected ? IM_COL32(250, 204, 56, 255) : hovered ? IM_COL32(102, 219, 255, 255) : IM_COL32(102, 219, 255, 80),
-                  10.0f, 0, selected ? 2.5f : 1.5f);
+    const bool armed = gArmed != 0 && gArmed == tokenFor(entry);
+    list->AddRect(min, max, armed ? IM_COL32(250, 204, 56, 255) : selected ? IM_COL32(200, 230, 255, 200) : hovered ? IM_COL32(102, 219, 255, 255) : IM_COL32(102, 219, 255, 80),
+                  10.0f, 0, armed ? 3.0f : selected ? 2.0f : 1.5f);
+    if (armed) {
+        const char* placing = "placing";
+        const ImVec2 dim = ImGui::CalcTextSize(placing);
+        list->AddRectFilled(ImVec2(min.x + 3.0f, max.y - dim.y - 6.0f), ImVec2(max.x - 3.0f, max.y - 3.0f), IM_COL32(250, 204, 56, 220), 6.0f);
+        list->PushClipRect(ImVec2(min.x + 3.0f, max.y - dim.y - 6.0f), ImVec2(max.x - 3.0f, max.y - 3.0f), true);
+        list->AddText(ImVec2(min.x + std::max(4.0f, (size - dim.x) * 0.5f), max.y - dim.y - 4.5f), IM_COL32(60, 35, 5, 255), placing);
+        list->PopClipRect();
+    }
     if (entry.count > 0) {
         char count[16];
         std::snprintf(count, sizeof(count), "%d", entry.count);
@@ -359,7 +368,15 @@ void drawBrowser(const ModelView& model) {
     const int perRow = std::max(1, static_cast< int >((ImGui::GetContentRegionAvail().x + gap) / (size + gap)));
     for (size_t i = 0; i < shown.size(); i++) {
         if (i % perRow != 0) ImGui::SameLine(0.0f, gap);
-        if (card(*shown[i], shown[i]->key == gSelectedClass, size)) gSelectedClass = shown[i]->key;
+        const bool clickedCard = card(*shown[i], shown[i]->key == gSelectedClass, size);
+        if (i == 0) noteTestTarget("card:first");
+        if (clickedCard) {
+            // One click arms the card (friction #13, UX's card-to-arm): the next ground click places it; the same card
+            // again, or Esc, stops. The details stay below and in the tooltip.
+            gSelectedClass = shown[i]->key;
+            const std::uint64_t token = tokenFor(*shown[i]);
+            gArmed = gArmed == token ? 0 : token;
+        }
         if (ImGui::IsItemHovered()) {
             const BrowserEntry& entry = *shown[i];
             ImGui::BeginTooltip();
