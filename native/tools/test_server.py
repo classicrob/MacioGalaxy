@@ -129,17 +129,46 @@ def cmd_route(args):
     return 1 if text.startswith("error") else 0
 
 
+QUIT_WAIT_SECONDS = 10  # how long a clean quit may take before the process group is signalled
+
+
+def group_alive(pgid):
+    """True while the server's process group exists and is ours. A pid reused by someone else's process (PermissionError) is not ours
+    to signal, so it counts as gone."""
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
 def cmd_stop(args):
+    """Quit the server and make sure it is gone. Safe after a successful quit (the group is already gone, or its pid was reused):
+    never raises on a missing or foreign process."""
     pid_file = Path(args.dir) / "server.pid"
-    send(args.dir, "quit", 5)
-    time.sleep(1)
-    if pid_file.is_file():
-        try:
-            os.killpg(int(pid_file.read_text()), signal.SIGTERM)
-        except (ProcessLookupError, ValueError):
-            pass
-        pid_file.unlink(missing_ok=True)
+    reply = send(args.dir, "quit", 5)
+    pgid = None
+    try:
+        pgid = int(pid_file.read_text())
+    except (OSError, ValueError):
+        pass
+    if pgid is not None:
+        deadline = time.time() + QUIT_WAIT_SECONDS  # a clean quit exits within a moment; wait for it before signalling anything
+        while group_alive(pgid) and time.time() < deadline:
+            time.sleep(0.25)
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if not group_alive(pgid):
+                break
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, PermissionError):
+                break
+            time.sleep(min(2, QUIT_WAIT_SECONDS))
+    pid_file.unlink(missing_ok=True)
     subprocess.run(["rm", "-rf", str(Path(args.dir) / "user/cache")], check=False)  # ~1.9 GB private cache per run
+    if not reply.startswith("ok") and pgid is not None and group_alive(pgid):
+        print(f"test-server: quit got '{reply}' and the process group {pgid} is still alive", file=sys.stderr)
+        return 1
     return 0
 
 
