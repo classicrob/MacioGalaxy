@@ -4,7 +4,11 @@ namespace PetariEditor::Ui {
         ThumbnailReadback read;
         ThumbnailTexture make;
         ThumbnailTextureUpdate update;
+        FileDialog dialog;
     }  // namespace
+    void setFileDialogHost(FileDialog host) {
+        dialog = host;
+    }
     void setThumbnailHost(ThumbnailReadback reader, ThumbnailTexture maker, ThumbnailTextureUpdate updater) {
         read = reader;
         make = maker;
@@ -19,6 +23,9 @@ namespace PetariEditor::Ui {
         }
         ThumbnailTextureUpdate updateTexture() {
             return update;
+        }
+        FileDialog fileDialog() {
+            return dialog;
         }
     }  // namespace Host
 }  // namespace PetariEditor::Ui

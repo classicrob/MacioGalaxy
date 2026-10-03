@@ -15,6 +15,7 @@ extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsign
 #include <pthread/qos.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
 
 #include <cctype>
@@ -950,6 +951,30 @@ int main(int argc, char** argv) {
                                            return static_cast< unsigned long long >(aurora_imgui_add_texture(width, height, rgba));
                                        },
                                        &aurora_imgui_update_texture);
+    // Native file panels for the editor's sheets (Share's save panel, Import's open panel): SDL3's dialogs.
+    static SDL_Window* sDialogWindow = static_cast<SDL_Window*>(info.window);
+    PetariEditor::Ui::setFileDialogHost([](bool save, const char* defaultPath, const char* filterName, const char* filterPattern,
+                                           PetariEditor::Ui::FileDialogDone done, void* user) {
+        struct Pending {
+            PetariEditor::Ui::FileDialogDone done;
+            void* user;
+            std::string name, pattern;
+            SDL_DialogFileFilter filter;
+        };
+        auto* pending = new Pending{done, user, filterName != nullptr ? filterName : "", filterPattern != nullptr ? filterPattern : "", {}};
+        pending->filter = {pending->name.c_str(), pending->pattern.c_str()};
+        auto callback = [](void* data, const char* const* files, int) {
+            auto* p = static_cast<Pending*>(data);
+            p->done(p->user, files != nullptr && files[0] != nullptr ? files[0] : "");
+            delete p;
+        };
+        const bool filtered = filterPattern != nullptr && filterPattern[0] != '\0';
+        if (save) {
+            SDL_ShowSaveFileDialog(callback, pending, sDialogWindow, filtered ? &pending->filter : nullptr, filtered ? 1 : 0, defaultPath);
+        } else {
+            SDL_ShowOpenFileDialog(callback, pending, sDialogWindow, filtered ? &pending->filter : nullptr, filtered ? 1 : 0, defaultPath, false);
+        }
+    });
     // Development: the editor's docked layout from the start (the Edit mode shows it normally).
     if (const char* dock = std::getenv("PETARI_EDITOR_DOCK"); dock != nullptr && dock[0] == '1') {
         PetariEditor::Ui::setVisible(true);

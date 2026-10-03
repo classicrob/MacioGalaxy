@@ -1,6 +1,7 @@
 // The level editor's sheets (docs/dev/level-editor/UX.md section 17): Save, as a modal over the editor.
 // Save writes the session's edits as a mod through Runtime (Command::SaveMod): a patch by default (row edits
 // against the player's disc, no game data, fine to share), or Full archives for other tools.
+#include "host.hpp"
 #include "panels.hpp"
 
 #include <petari/editor/ui.hpp>
@@ -15,6 +16,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <optional>
 #include <vector>
 #include <cstdio>
@@ -225,8 +227,33 @@ struct ShareFields {
     Share::Preview preview;  // what the mod folder holds now
     std::string modName;
     std::string result;      // the last export: the zip's path, or the error
+    std::string exported;    // the zip written
     bool ok = false;
+    bool panel = false;      // a native save panel is up
 } gShare;
+
+// The save panel's answer (it may come back on another thread).
+std::mutex gDialogMutex;
+bool gDialogAnswered = false;
+std::string gDialogPath;
+void dialogDone(void*, const char* path) {
+    std::lock_guard< std::mutex > lock(gDialogMutex);
+    gDialogAnswered = true;
+    gDialogPath = path != nullptr ? path : "";
+}
+
+void exportTo(const std::string& zipPath) {
+    Share::Info info;
+    info.title = gShare.title;
+    info.author = gShare.author;
+    info.version = gShare.version;
+    info.description = gShare.description;
+    std::string error;
+    gShare.ok = shareMod(gShare.modName, info, zipPath, &error);
+    gShare.result = gShare.ok ? "Exported " + zipPath : "Couldn't export: " + error;
+    gShare.exported = gShare.ok ? zipPath : "";
+    std::fprintf(stderr, "[editor] share: %s\n", gShare.result.c_str());
+}
 
 std::filesystem::path userDirectory() {
     // <user>/editor/ui-settings.txt -> <user>
@@ -326,31 +353,41 @@ void drawShareSheet() {
         }
     }
     ImGui::Separator();
-    field("Save to", gShare.folder, sizeof(gShare.folder), "~/Downloads");
+    // Where: the native save panel (the folder field only without one: tests set PETARI_EDITOR_SHARE_DIR).
+    const FileDialog dialog = std::getenv("PETARI_EDITOR_SHARE_DIR") != nullptr ? nullptr : Host::fileDialog();
     const std::string zipName = zipFileName(gShare.title, gShare.version);
+    if (dialog == nullptr) field("Save to", gShare.folder, sizeof(gShare.folder), "~/Downloads");
     ImGui::TextColored(kDim, "%s", zipName.c_str());
+    {
+        std::lock_guard< std::mutex > lock(gDialogMutex);
+        if (gDialogAnswered) {
+            gDialogAnswered = false;
+            gShare.panel = false;
+            if (!gDialogPath.empty()) exportTo(gDialogPath);
+        }
+    }
     if (!gShare.result.empty()) {
         ImGui::PushTextWrapPos(0.0f);
         ImGui::TextColored(gShare.ok ? ImVec4(0.45f, 0.95f, 0.55f, 1.0f) : kWarn, "%s", gShare.result.c_str());
         ImGui::PopTextWrapPos();
     }
-    if (ImGui::Button("Export .zip", ImVec2(130.0f, 0.0f)) || gSubmitShare) {
+    ImGui::BeginDisabled(gShare.panel);
+    const bool exportPressed = ImGui::Button(dialog != nullptr ? "Export .zip..." : "Export .zip", ImVec2(130.0f, 0.0f)) || gSubmitShare;
+    ImGui::EndDisabled();
+    if (exportPressed) {
         gSubmitShare = false;
-        Share::Info info;
-        info.title = gShare.title;
-        info.author = gShare.author;
-        info.version = gShare.version;
-        info.description = gShare.description;
-        const std::string zipPath = (std::filesystem::path(gShare.folder) / zipName).string();
-        std::string error;
-        gShare.ok = shareMod(gShare.modName, info, zipPath, &error);
-        gShare.result = gShare.ok ? "Exported " + zipPath : "Couldn't export: " + error;
-        std::fprintf(stderr, "[editor] share: %s\n", gShare.result.c_str());
+        if (dialog != nullptr) {
+            gShare.panel = true;
+            const std::string suggested = (std::filesystem::path(gShare.folder) / zipName).string();
+            dialog(true, suggested.c_str(), "Mod zip", "zip", &dialogDone, nullptr);
+        } else {
+            exportTo((std::filesystem::path(gShare.folder) / zipName).string());
+        }
     }
     noteTestTarget("button:Export");
     ImGui::SameLine();
     if (gShare.ok && ImGui::Button("Show in Finder", ImVec2(130.0f, 0.0f))) {
-        const std::string command = "open -R \"" + (std::filesystem::path(gShare.folder) / zipName).string() + "\"";
+        const std::string command = "open -R \"" + gShare.exported + "\"";
         std::system(command.c_str());
     }
     if (gShare.ok) ImGui::SameLine();
@@ -436,8 +473,16 @@ void drawInstallSheet() {
         for (const std::string& need : p.needs) needs += (needs.empty() ? "" : ", ") + need;
         ImGui::TextColored(kWarn, "Needs: %s", needs.c_str());
     }
-    if (p.fullArchives) ImGui::TextColored(kWarn, "Replaces whole game files (made for other tools).");
-    ImGui::TextColored(kDim, "%s  ·  %d file%s", file.c_str(), p.fileCount, p.fileCount == 1 ? "" : "s");
+    // What kind of mod: level edits (a patch on the player's own game) or whole files for other tools.
+    if (p.fullArchives) {
+        ImGui::TextColored(kWarn, "Full archives: replaces %zu game file%s (made for other tools).", p.archives.size(), p.archives.size() == 1 ? "" : "s");
+    } else if (!p.galaxies.empty()) {
+        ImGui::TextColored(kDim, "Level edits (a patch on your own game): %zu archive%s in %zu galax%s.", p.archives.size(),
+                           p.archives.size() == 1 ? "" : "s", p.galaxies.size(), p.galaxies.size() == 1 ? "y" : "ies");
+    } else {
+        ImGui::TextColored(kDim, "No level edits yet.");
+    }
+    ImGui::TextColored(kDim, "%s%s", file.c_str(), p.editorMod ? "  ·  made in the level editor" : "");
     ImGui::Separator();
     if (!gInstall.installed.empty()) {
         ImGui::TextColored(ImVec4(0.45f, 0.95f, 0.55f, 1.0f), "Installed to mods/%s. It's on from the next start.", gInstall.installed.c_str());

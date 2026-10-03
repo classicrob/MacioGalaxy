@@ -28,6 +28,13 @@ using ThumbnailTexture = unsigned long long (*)(unsigned width, unsigned height,
 using ThumbnailTextureUpdate = bool (*)(unsigned long long texture, unsigned width, unsigned height, const void* rgba);
 void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture, ThumbnailTextureUpdate update = nullptr);
 
+// A native file panel (NSSavePanel / NSOpenPanel, through SDL3's dialogs): the host shows it and calls `done`
+// with the chosen path ("" if cancelled), possibly on another thread. filterPattern: "zip", "gltf;glb;obj".
+using FileDialogDone = void (*)(void* user, const char* path);
+using FileDialog = void (*)(bool save, const char* defaultPath, const char* filterName, const char* filterPattern, FileDialogDone done,
+                            void* user);
+void setFileDialogHost(FileDialog dialog);
+
 // Draws the editor frame: toolbar, dock (Outliner, Inspector) and footer. Call between
 // aurora_begin_frame and aurora_end_frame, before the Home menu overlay, every frame.
 // windowWidth/Height are the ImGui display size (window points).
