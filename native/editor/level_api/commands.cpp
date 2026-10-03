@@ -6,7 +6,7 @@ namespace PetariEditor::LevelApi {
 
 namespace {
     const char* const kRefDoc =
-        "Refs name one row: \"<Zone>:<table>:<index>\" (an original row: its table without jmp/placement/, its index on the disc, "
+        "Refs name one row: \"<Zone>:<table>:<index>\" (an original row: its table without jmp/placement/, its index in the loaded base (the disc when no mods), "
         "e.g. \"EggStarGalaxy:common/objinfo:12\"), \"new:<n>\" (a row this workspace added), \"@label\" (set with \"as\"), "
         "\"<Class>#<n>\" (the n-th row of a class, galaxy order) or a selector object {\"class\", \"zone\", \"near\": [x,y,z], "
         "\"radius\", \"mission\", \"category\", \"table\", \"text\", \"nth\"}. Refs are stable across undo, reload and restarts.";

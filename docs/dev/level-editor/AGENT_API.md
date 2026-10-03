@@ -49,7 +49,7 @@ lv.save("Coin Arc")
 ## Concepts
 
 **Workspace.** `--ws DIR` (default `$PETARI_LEVEL_WS`, else `./level-ws`) holds `level.json`: the
-disc, galaxy, mission and user directory it was opened with, and the journal. Each CLI call opens
+disc, galaxy, mission and user directory it was opened with, source identities, and the journal. A mod workspace also carries its immutable overlay files in `base/`. Copying the workspace copies that base; the extracted disc remains an external dependency. Each CLI call opens
 the galaxy, replays the journal, runs the command, and writes the journal back after a mutating
 command. `serve` keeps one process and takes JSON lines (the Python wrapper uses it).
 
@@ -175,7 +175,7 @@ serve` process per `Level`; every method raises `LevelError` (`.code`, `.hint`, 
 
 | | |
 | --- | --- |
-| `Level.init(ws, disc=, galaxy=, mission=1, user=None, user_mods=False, force=False)` / `Level.open(ws)` | create / open a workspace |
+| `Level.init(ws, disc=, galaxy=, mission=1, user=None, user_mods=False, mod=None, force=False)` / `Level.open(ws)` | create / open a workspace |
 | `lv.call(cmd, **args)` | any command; returns the reply without `ok` |
 | `lv.help(command=, op=)`, `info()`, `catalog(query, category=, placed_here=)`, `describe(cls)`, `list(cls, full=, **filters)`, `get(ref)` | discovery |
 | `with lv.batch(key=, label=, dry_run=) as b:` | ops collected and applied as one transaction at the end of the block (`b.result` is the reply) |
@@ -289,7 +289,7 @@ matches with their positions.
 | command | |
 | --- | --- |
 | `help [command] [--op NAME] [--all]` | the self-description; no disc needed |
-| `init --disc D --galaxy G [--mission N] [--user DIR] [--user-mods] [--force]` | create a workspace (CLI) |
+| `init --disc D --galaxy G [--mission N] [--user DIR] [--user-mods] [--mod PATCH_DIR] [--force]` | create a workspace (CLI) |
 | `info` | missions, zones (placed, origin), counts, history, unsaved, new problems, labels |
 | `galaxies` | galaxy names on the disc |
 | `catalog [query] [--category] [--placed-here] [--limit]` | search classes |
@@ -335,12 +335,8 @@ each class's collision once per process.
 - Headless gravity is approximate (above). The ground is the collision of rows with a `.kcl` named
   after their class; objects whose collision comes from another archive (some map parts) are not
   ground headless (`colliders` and its `no_kcl` list show what is).
-- Paths: create and link (Paths' ops); moving single points and handles is `fields` on the point
-  rows for now. Gravity rows take `args`/`fields` (no shape op); terrain brushes are unknown to the
-  headless catalog until Terrain's `registerBrushClass` lands (add them with `"force": true`).
 - Mission names come from ScenarioData (Japanese, internal); the pause-menu names need the game's messages.
-- The workspace's base is the disc (plus the user's enabled mods with `--user-mods`): saving into a
-  mod that is also enabled in the base mixes the two, as in the game.
+- Full archives contain baked brush planets. Continue from a patch to keep its original brush rows editable.
 
 ### Editing and sampling existing rails
 
@@ -397,3 +393,28 @@ with lv.batch(label="Ground coins") as b:
     b.ground_array("Coin", "line", start=[-1000, 2000, 0], end=[1000, 2000, 0],
                    count=8, height=100, down=[0, -1, 0], front=[1, 0, 0])
 ```
+
+### Continuing a saved patch
+
+```sh
+petari-level --ws build/ws/continue init --disc build/game-data/RMGE01 --galaxy EggStarGalaxy --user build/private-user --mod "build/private-user/mods/Coin Arc"
+petari-level --ws build/ws/continue info
+petari-level --ws build/ws/continue apply '[{"op":"add","class":"Coin","zone":"DiskGardenZone","pos":[0,1500,0]}]'
+petari-level --ws build/ws/continue save "Coin Arc"
+```
+
+Python accepts `Level.init(..., mod=patch_folder)`. `--mod` opens a patch folder containing `edits/<Galaxy>.json`; `--user-mods` also includes the user's enabled mods with their usual priority. An explicit `--mod` wins over those enabled mods. Neither opening nor freezing changes the enabled-mod configuration. Saving follows the editor's normal enable-on-next-start behavior.
+
+The resolved, unbaked overlay is frozen under `<workspace>/base/files/`. `level.json.base.sources` records each mod's name, original path, content hash and last hash written by this workspace. Every reopen uses those cached files and then the journal. Saving over an input writes the **full difference from the pristine disc**, including the original mod edits and the new journal. The saved patch is not applied again on the next workspace open.
+
+`info` and the `init` result include `baseline: "pristine-disc"`, `base_fingerprint`, `base`, and `source_warnings`. A source changed or removed on disk produces a `stale-source` warning while the workspace continues using its frozen files. Changes to the enabled-mod list are also reported for `--user-mods`. A save made by this workspace updates `accepted_hash` without changing the frozen base, so its own save is not a stale-source event. Checks introduced by the input mod remain visible; only the pristine disc's check keys, normalized through its row mapping, belong to the baseline.
+
+To adopt current input files, save first, then explicitly run:
+
+```sh
+petari-level --ws build/ws/continue refreeze --discard-journal
+```
+
+Or `lv.refreeze(discard_journal=True)`. This clears undo history and labels and freezes the current input anew. Without `discard_journal`, refreeze refuses a nonempty journal. It never silently rebases. If the workspace's cached files are missing or corrupt, restore the workspace or initialize it again with `--force` after preserving the journal; initialization discards that journal.
+
+For live editing, the game must start from the same base: enable the same input patch and other base mods in the test server's isolated user directory, then launch with the editor enabled. `Live.sync` compares the workspace's initial row/cell fingerprint with `editor-state.editor.base_fingerprint` before undoing or applying anything. A different base, mission, or untracked UI journal raises structured `base-mismatch`. Reloading retains the captured base identity. After saving over the input, a fresh game loads the newer saved patch; refreeze the workspace explicitly before syncing to that fresh game. A fresh server with matching base and an empty journal automatically receives the full workspace journal, even if a prior server's delivery cache exists.

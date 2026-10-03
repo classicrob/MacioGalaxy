@@ -210,7 +210,14 @@ namespace PetariEditor::LevelApi {
         for (const auto& source : base["sources"].items()) {
             const std::string path = source["path"].asString();
             known.insert(identityPath(path).string());
-            const std::string current = contentHash(path);
+            std::string current;
+            try {
+                current = contentHash(path);
+            } catch (const Failure&) {
+                current = "unreadable";
+            } catch (const std::exception&) {
+                current = "unreadable";
+            }
             const std::string expected = source["accepted_hash"].asString(source["hash"].asString());
             if (current == expected)
                 continue;

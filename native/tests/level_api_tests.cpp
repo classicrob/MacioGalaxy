@@ -73,8 +73,17 @@ double ms(std::chrono::steady_clock::time_point since) {
         auto stock = L::Level::open(options, &error);
         check(stock != nullptr, "stock for continuation: " + error.message);
         const int originalCount = call(*stock, "info")["objects"].asInt();
+        const Value stockCoin = call(*stock, "get", R"({"ref":"Coin#0"})");
+        const auto originalRow = L::parseRowRef(stock->model(), stockCoin["ref"].asString());
+        const int originalIndex = stock->model().discRowIndex(originalRow);
+        check(originalIndex >= 0, "original row has a disc index");
+        check(ok(call(*stock, "apply", R"({"ops":[{"op":"delete","ref":"Coin#0"}]})"), "delete original"), "delete original row for mapping test");
+        check(stock->model().discRowIndex(originalRow) == originalIndex, "disc index survives deletion");
+        check(ok(call(*stock, "undo"), "restore original"), "restore original row");
         const auto savedOps = call(*stock, "apply", R"({"ops":[{"op":"add","class":"Coin","zone":"DiskGardenZone","pos":[0,70000,0]},{"op":"add","class":"SuperSpinDriver","zone":"DiskGardenZone","pos":[0,71000,0]}]})");
         check(ok(savedOps, "source patch objects"), "source patch created");
+        const auto addedRow = L::parseRowRef(stock->model(), savedOps["created"].items()[0]["ref"].asString());
+        check(stock->model().discRowIndex(addedRow) == -1, "session addition has no disc index");
         check(ok(call(*stock, "save", R"({"mod":"Continue me"})"), "source save"), "source patch saved");
         stock.reset();
         options.mod = options.user / "mods" / "Continue me";
