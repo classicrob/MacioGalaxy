@@ -74,6 +74,7 @@ namespace PetariEditor::Ui {
     }
 
     ImDrawList* viewportDrawList() {
+        // Other floating panels can adopt this ordering after their viewport marks are checked.
         return gHelpVisible ? ImGui::GetBackgroundDrawList() : ImGui::GetForegroundDrawList();
     }
 
