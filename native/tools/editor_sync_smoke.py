@@ -62,10 +62,18 @@ def main():
     parser.add_argument("--frames", type=int, default=12000)
     parser.add_argument("--idle-frames", type=int, default=400)
     parser.add_argument("--only-redraw", action="store_true", help="run only the NPC re-create case")
+    parser.add_argument("--only-scratch", action="store_true", help="run only the play-test isolation case")
     args = parser.parse_args()
     args.pipeline_policy = "default"
     args.output.mkdir(parents=True, exist_ok=True)
 
+    if args.only_scratch:
+        scratch = run(args, "5-scratch", {"PETARI_EDITOR": "1", "PETARI_EDITOR_SCRATCH_TEST": "1",
+                                          "PETARI_EDITOR_SCRATCH_DUMP": str(args.output.resolve())})
+        for line in scratch["hooks"]:
+            print(f"  [editor-scratch] {line}")
+        print("PASS" if "PASS" in scratch["hooks"] and scratch["result"] == "PASS" else f"FAIL: {scratch['hooks'][-3:]}")
+        return 0 if "PASS" in scratch["hooks"] else 1
     if args.only_redraw:
         off = on = None
     else:

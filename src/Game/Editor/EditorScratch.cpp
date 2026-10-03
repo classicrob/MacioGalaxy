@@ -13,6 +13,7 @@
 #include <petari/platform/mod_galaxy.hpp>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <memory>
@@ -120,6 +121,17 @@ namespace EditorScratch {
                 first = std::min(first, i);
                 last = i;
                 count++;
+            }
+        }
+        if (const char* pDump = std::getenv("PETARI_EDITOR_SCRATCH_DUMP"); pDump != nullptr && count != 0) {
+            // A diagnostic: both binaries, to see which save data chunk didn't come back.
+            for (int k = 0; k < 2; k++) {
+                const std::string path = std::string(pDump) + (k == 0 ? "/snapshot.bin" : "/restored.bin");
+                if (FILE* pFile = std::fopen(path.c_str(), "wb")) {
+                    const std::vector< u8 >& data = k == 0 ? s.gameData : now;
+                    std::fwrite(data.data(), 1, data.size(), pFile);
+                    std::fclose(pFile);
+                }
             }
         }
         if (count == 0) {
