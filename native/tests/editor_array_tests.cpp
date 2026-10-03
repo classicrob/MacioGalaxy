@@ -96,6 +96,9 @@ namespace {
 namespace A = E::Arrays;
 namespace G = E::Gizmo;
 int main() {
+    const auto vertical = A::alignAlong({0, 1, 0}, {0, 1, 0});
+    check(G::dot(vertical.z, G::V3{0, 1, 0}) > .999f && std::fabs(G::dot(vertical.x, vertical.y)) < 1e-5f,
+          "vertical path keeps its full tangent with a finite perpendicular frame");
     const G::Basis frame = G::gravityFrame({1, 0, 0}, {0, 1, 0});
     A::Parameters p;
     p.groundSnap = false;
@@ -205,7 +208,7 @@ int main() {
     }
     check(m->undo() && m->historyCursor() == cursor, "single undo removes array");
     for (auto id : ids)
-        check(m->state(id) == E::RowState::Deleted, "every copy removed");
+        check(!m->locate(id, nullptr, nullptr), "every copy removed");
     check(m->redo() && m->historyCursor() == cursor + 1, "single redo restores array");
     check(A::makeOp(*m, copies, {ids[0]}, &error).adds.empty(), "mismatched fresh IDs rejected atomically");
     std::printf("PASS: %d array checks\n", checks);

@@ -25,6 +25,7 @@ namespace PetariEditor::Arrays {
             return distances.empty() ? 0 : distances.back();
         }
     };
+    Gizmo::Basis alignAlong(Gizmo::V3 forward, Gizmo::V3 up);
     Parameters bounded(Parameters parameters);
     Polyline railPolyline(const Paths::Rail& rail, const Mtx34& zone);
     Sample atDistance(const Polyline& line, float distance);

@@ -33,6 +33,14 @@ namespace PetariEditor::Arrays {
             return {G::dot(b.x, v), G::dot(b.y, v), G::dot(b.z, v)};
         }
     }  // namespace
+    G::Basis alignAlong(G::V3 forward, G::V3 up) {
+        const auto z = G::normalized(forward, {0, 0, 1});
+        auto x = G::cross(up, z);
+        if (G::length(x) < 1e-5f)
+            x = G::cross(std::fabs(z.y) < .9f ? G::V3{0, 1, 0} : G::V3{1, 0, 0}, z);
+        x = G::normalized(x);
+        return {x, G::cross(z, x), z};
+    }
     Parameters bounded(Parameters p) {
         p.count = std::clamp(p.count, 1, kMaxCopies);
         p.rows = std::clamp(p.rows, 1, 16);

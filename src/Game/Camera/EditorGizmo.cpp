@@ -644,7 +644,7 @@ namespace {
             return false;
         bool sourceDeleted = false;
         for (const auto& source : gArray.sources)
-            sourceDeleted |= model->state(source.row) == PetariEditor::RowState::Deleted;
+            sourceDeleted |= !model->locate(source.row, nullptr, nullptr) || model->state(source.row) == PetariEditor::RowState::Deleted;
         if (sourceDeleted) {
             finishArray(false, false);
             return false;
@@ -712,8 +712,12 @@ namespace {
                         if (p.groundSnap && !settle(copy, source)) {
                             ++missingGround;
                         }
-                        if (p.facing != A::Facing::Preserve)
-                            copy.basis = G::gravityFrame(copy.basis.y, sample.forward);
+                        if (p.groundSnap)
+                            copy.basis = G::alignUp(copy.basis, gravityUp(copy.pos, copy.basis.y));
+                        if (p.facing != A::Facing::Preserve) {
+                            copy.basis = p.pattern == A::Pattern::Path ? A::alignAlong(sample.forward, copy.basis.y) :
+                                                                         G::gravityFrame(copy.basis.y, sample.forward);
+                        }
                         float center[3], radius = 60;
                         if (source.actor)
                             EditorPicking::bounds(source.actor, center, &radius);

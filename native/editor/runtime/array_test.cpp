@@ -1,5 +1,6 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
+#include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "runtime_core.hpp"
@@ -94,6 +95,14 @@ namespace PetariEditor::Runtime {
                 return finish("FAIL: preview changed model or wrong count");
             if ((original->mPosition - originalPosition).length() > 0.01f)
                 return finish("FAIL: preview moved source actor");
+            for (const auto& copy : A::view().copies) {
+                TVec3f gravity(0, 0, 0);
+                if (MR::calcGravityVectorOrZero(nullptr, TVec3f(copy.position.x, copy.position.y, copy.position.z), &gravity, nullptr, 0)) {
+                    const auto up = G::normalized(G::V3{-gravity.x, -gravity.y, -gravity.z});
+                    if (G::dot(copy.basis.y, up) < 0.97f)
+                        return finish("FAIL: copy not aligned to its own gravity");
+                }
+            }
             std::fprintf(stderr, "[editor-array] line ghosts leave source/model untouched PASS\n");
             PetariNative::EfbDump::mark("array-line");
         }
@@ -195,7 +204,7 @@ namespace PetariEditor::Runtime {
             enqueue(Command{Command::Kind::Undo});
         if (f == 165) {
             for (size_t i = 0; i < copies.size(); ++i)
-                if (m->state(copies[i]) != RowState::Deleted || !MR::isDead(actors[i]) || EditorScene::isConnectedToDraw(actors[i]))
+                if (m->locate(copies[i], nullptr, nullptr) || !MR::isDead(actors[i]) || EditorScene::isConnectedToDraw(actors[i]))
                     return finish("FAIL: undo leaves a copy alive/drawn");
             if (m->historyCursor() != cursor)
                 return finish("FAIL: undo history");
@@ -203,7 +212,7 @@ namespace PetariEditor::Runtime {
         }
         if (f == 180) {
             for (auto row : copies)
-                if (!actorForRow(row) || m->state(row) == RowState::Deleted)
+                if (!actorForRow(row) || !m->locate(row, nullptr, nullptr))
                     return finish("FAIL: redo");
             std::fprintf(stderr, "[editor-array] undo retires all copies; redo restores stable IDs PASS\n");
             finish("PASS");
