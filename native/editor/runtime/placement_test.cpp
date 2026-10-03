@@ -22,7 +22,8 @@ namespace PetariEditor::Runtime {
         static const bool enabled = std::getenv("PETARI_EDITOR_PLACEMENT_TEST") != nullptr;
         static bool done = false;
         static int frame = -1, wait = 0, cursor = 0;
-        static RowId donor, clean, kept;
+        static RowId donor, clean, kept, launcher;
+        static int launchZone = 0, launchRail = -1;
         static std::map< std::string, int > donorLinks;
         static LiveActor* placedActor = nullptr;
         static std::uint32_t serial = 0;
@@ -127,7 +128,50 @@ namespace PetariEditor::Runtime {
             enqueue(Command{Command::Kind::Undo});
             Pick::selectRow(clean.v, Pick::Click::Replace);
         }
-        if (f == 75)
+        if (f == 75) {
+            for (int z = 0; z < m.zoneCount() && !launcher.valid(); ++z) {
+                if (!m.zonePlaced(z))
+                    continue;
+                for (int t = 0; t < m.tableCount(z) && !launcher.valid(); ++t) {
+                    m.forEachRow(z, t, [&](RowId row) {
+                        const char* name = m.objectName(row);
+                        if (!launcher.valid() && m.state(row) != RowState::Deleted && name && std::string(name) == "SuperSpinDriver" &&
+                            (m.rowMissions(row) & (1u << (m.scenario() - 1))) && value(row, "CommonPath_ID") >= 0) {
+                            launcher = row;
+                            launchZone = z;
+                            launchRail = value(row, "CommonPath_ID");
+                        }
+                    });
+                }
+            }
+            if (!launcher.valid())
+                return finish("FAIL: no active Launch Star donor");
+            Command fixture{Command::Kind::Apply};
+            fixture.op.label = "Prepare hidden Launch Star fixture";
+            fixture.op.sets.push_back({launcher, columnHash("SW_APPEAR"), {CellType::Int, 1007, 0, {}}});
+            enqueue(std::move(fixture));
+        }
+        if (f == 85) {
+            Settings::cursor(0, 0);
+            Pick::place(launcher.v);
+        }
+        if (f == 95) {
+            const auto copy = selected();
+            int zone = -1;
+            if (!copy.valid() || copy == launcher || copy == clean || !m.locate(copy, &zone, nullptr) || zone != launchZone ||
+                value(copy, "CommonPath_ID") != launchRail || value(copy, "SW_APPEAR") != -1 || value(launcher, "SW_APPEAR") != 1007)
+                return finish("FAIL: Launch Star lost required path or kept hidden switch");
+            const auto* actor = actorForRow(copy);
+            if (!actor || MR::isDead(actor) || MR::isHiddenModel(actor))
+                return finish("FAIL: independent Launch Star is hidden");
+            std::fprintf(stderr, "[editor-placement] visible Launch Star clears SW_APPEAR1007; required path and zone retained PASS\n");
+            Settings::frame();
+        }
+        if (f == 98)
+            Settings::dolly(-4);
+        if (f == 105)
+            PetariNative::EfbDump::mark("placement-launch");
+        if (f == 120)
             return finish("PASS");
     }
 }  // namespace PetariEditor::Runtime
