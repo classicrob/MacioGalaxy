@@ -192,4 +192,16 @@ std::string checkNewGalaxyName(const std::string& internalName) {
     return gNewGalaxy.check != nullptr ? gNewGalaxy.check(internalName) : std::string("new galaxies need the game running");
 }
 
+std::optional< GalaxyInfo > modGalaxyInfo() {
+    return gNewGalaxy.galaxyInfo != nullptr ? gNewGalaxy.galaxyInfo() : std::nullopt;
+}
+
+std::string checkGalaxyInfo(const GalaxyInfo& info) {
+    return gNewGalaxy.checkInfo != nullptr ? gNewGalaxy.checkInfo(info) : std::string("galaxy settings need the game running");
+}
+
+bool galaxyInfoNeedsRestart(const GalaxyInfo& info) {
+    return gNewGalaxy.infoNeedsRestart != nullptr && gNewGalaxy.infoNeedsRestart(info);
+}
+
 }  // namespace PetariEditor

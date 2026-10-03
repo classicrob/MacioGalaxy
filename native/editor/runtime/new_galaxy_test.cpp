@@ -4,7 +4,9 @@
 // are done it asks for "Smoke Hop" (FlowerPlanet with its gravity, two missions) and flips the test to
 // =verify, which the restarted process inherits (the same process image, execv). There, once the
 // stage smoke's checks are done in the new galaxy, it checks the stage, the registry's names, the
-// PETARI_OPEN_* hand-over and that the mod is on. Logs "[editor-newgalaxy] PASS" or "... FAIL: <why>".
+// PETARI_OPEN_* hand-over and that the mod is on, then the galaxy's Checks and its settings
+// (Command::SetGalaxyInfo): a rename live, then a third mission, which restarts once more
+// (=verify-info). Logs "[editor-newgalaxy] PASS" or "... FAIL: <why>".
 #include "runtime_core.hpp"
 
 #include <petari/editor/runtime.hpp>
@@ -19,6 +21,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 
 namespace PetariEditor::Runtime {
@@ -32,6 +35,7 @@ namespace {
     };
     const Case kHop{"Smoke Hop", "SmokeHopGalaxy", NewGalaxyRequest::From::OnePlanet, "FlowerGalaxy"};
     const Case kBox{"Smoke Box", "SmokeBoxGalaxy", NewGalaxyRequest::From::Brushes, "EggStarGalaxy"};
+    const char* const kRenamed = "Smoke Hop Renamed";
 
     void finish(const std::string& result) {
         std::fprintf(stderr, "[editor-newgalaxy] %s\n", result.c_str());
@@ -41,6 +45,7 @@ namespace {
     // After the restart's checks: the galaxy's Checks (galaxy_checks.cpp). None for a galaxy made
     // whole; "start in mid-air" once the start is moved 50,000 units up.
     int gChecksFrame = 0;
+    bool gSettings = false;  // then the settings (Smoke Hop only)
 
     void checksTick() {
         PetariNative::HostAllocationScope host;
@@ -89,7 +94,61 @@ namespace {
             if (keys.find("galaxy-start-midair") == std::string::npos) {
                 return finish("FAIL: a start 50,000 units up is not reported in mid-air (" + keys + ")");
             }
-            finish("PASS (checks: none when whole; then " + keys + ")");
+            if (!gSettings) {
+                return finish("PASS (checks: none when whole; then " + keys + ")");
+            }
+            std::fprintf(stderr, "[editor-newgalaxy] checks pass (none when whole; then %s); now its settings\n", keys.c_str());
+        }
+        if (!gSettings) {
+            return;
+        }
+        // The settings: a rename, other mission names and music, live.
+        static GalaxyInfo sInfo;
+        static std::uint64_t sErrors = 0;
+        if (frame == 90) {
+            const std::optional< GalaxyInfo > info = modGalaxyInfo();
+            if (!info || info->name != kHop.name || info->missions.size() != 2 || info->musicFrom != kHop.music || info->mod != kHop.internal) {
+                return finish("FAIL: modGalaxyInfo() is not the new galaxy's");
+            }
+            sInfo = *info;
+            sInfo.name = kRenamed;
+            sInfo.missions = {"First Bloom", "Second Wind"};
+            sInfo.musicFrom = "EggStarGalaxy";
+            if (galaxyInfoNeedsRestart(sInfo) || !checkGalaxyInfo(sInfo).empty()) {
+                return finish("FAIL: a rename needs a restart, or is refused: " + checkGalaxyInfo(sInfo));
+            }
+            Command command{Command::Kind::SetGalaxyInfo};
+            command.galaxyInfo = sInfo;
+            enqueue(std::move(command));
+        }
+        if (frame == 120) {
+            const ModelView* m = model();
+            const std::optional< GalaxyInfo > info = modGalaxyInfo();
+            const char16_t* pTitle = PetariNative::Platform::ModGalaxy::message("GalaxyName_SmokeHopGalaxy", "en");
+            if (!info || info->name != kRenamed || info->musicFrom != "EggStarGalaxy" || m == nullptr || std::string(m->missionName(2)) != "Second Wind" ||
+                pTitle == nullptr || std::u16string(pTitle) != u"Smoke Hop Renamed") {
+                return finish("FAIL: the rename did not apply live (" + status().lastError + ")");
+            }
+            // A third mission restarts: refused while the start's move is unsaved, then discarded.
+            sInfo.missions.push_back("Third Time");
+            if (!galaxyInfoNeedsRestart(sInfo) || !status().unsaved) {
+                return finish("FAIL: a third mission doesn't need a restart, or the move isn't unsaved");
+            }
+            sErrors = status().errorSerial;
+            Command command{Command::Kind::SetGalaxyInfo};
+            command.galaxyInfo = sInfo;
+            enqueue(std::move(command));
+        }
+        if (frame == 150) {
+            if (status().errorSerial == sErrors || status().lastError.find("unsaved") == std::string::npos) {
+                return finish("FAIL: a new mission count was not refused over unsaved edits");
+            }
+            sInfo.discardUnsaved = true;
+            setenv("PETARI_EDITOR_NEWGALAXY_TEST", "verify-info", 1);  // for the restarted process
+            Command command{Command::Kind::SetGalaxyInfo};
+            command.galaxyInfo = sInfo;
+            enqueue(std::move(command));
+            std::fprintf(stderr, "[editor-newgalaxy] renamed live; refused over unsaved edits; third mission requested\n");
         }
     }
 }  // namespace
@@ -124,6 +183,20 @@ void newGalaxyTestTick() {
     }
     if (sMode.empty() || sDone || !PetariNative::SmokePhase::stageChecksDone.load()) {
         return;
+    }
+    if (sMode == "verify-info") {
+        sDone = true;
+        PetariNative::HostAllocationScope host;
+        const char* pStage = EditorScene::stageName();
+        if (pStage == nullptr || std::strcmp(pStage, kHop.internal) != 0 || !ensureModel()) {
+            return finish("FAIL: not back in the galaxy, with a model, after the mission count changed");
+        }
+        const ModelView* m = model();
+        const std::optional< GalaxyInfo > info = modGalaxyInfo();
+        if (m->missionCount() != 3 || !info || info->missions.size() != 3 || info->name != kRenamed || std::string(m->missionName(3)) != "Third Time") {
+            return finish("FAIL: after the restart: " + std::to_string(m->missionCount()) + " missions, mission 3 \"" + m->missionName(3) + "\"");
+        }
+        return finish("PASS (created, restarted into, checks, renamed live, 3 missions across a restart)");
     }
     const bool box = sMode.find("box") != std::string::npos;
     const Case& c = box ? kBox : kHop;
@@ -173,6 +246,7 @@ void newGalaxyTestTick() {
     }
     std::fprintf(stderr, "[editor-newgalaxy] restart checks pass; now the galaxy's Checks\n");
     gChecksFrame = 0;
+    gSettings = !box;
     checksTick();  // frame 1: the model
 }
 

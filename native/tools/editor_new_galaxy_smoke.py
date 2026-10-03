@@ -6,8 +6,10 @@ One stage smoke on EggStarGalaxy mission 1 with PETARI_EDITOR=1 PETARI_EDITOR_NE
 ("Smoke Hop": FlowerPlanet with its gravity, two missions, Flower Galaxy's music). The editor writes
 it as a mod in the fixture user and restarts Petari into it: the same process (execv), so this run
 sees both halves. The restarted game enters SmokeHopGalaxy (the stage fixture's entry, set by the
-restart), runs the stage checks there and must log "[editor-newgalaxy] PASS". The smoke must pass,
-and <user>/mods/SmokeHopGalaxy must hold galaxy.json and the two archives.
+restart), runs the stage checks there, then the galaxy's Checks and settings (Command::SetGalaxyInfo:
+renamed "Smoke Hop Renamed" live, then a third mission, a second restart) and must log
+"[editor-newgalaxy] PASS". The smoke must pass, and <user>/mods/SmokeHopGalaxy must hold the two
+archives and a galaxy.json with the new name and three missions.
 
 Run 2 is a player's restart: a copy of an unlocked save past the observatory (--saves; only read)
 with run 1's galaxy mod, without the fixture, PETARI_OPEN_* set as the restart sets
@@ -74,6 +76,8 @@ def main():
     mod = user / "mods" / "SmokeHopGalaxy"
     files = [mod / "galaxy.json", mod / "files/StageData/SmokeHopGalaxy.arc", mod / "files/StageData/SmokeHopGalaxy/SmokeHopGalaxyScenario.arc"]
     missing = [str(f.relative_to(user)) for f in files if not f.is_file()]
+    if not missing and ("Smoke Hop Renamed" not in files[0].read_text() or "Third Time" not in files[0].read_text()):
+        missing.append("the settings in galaxy.json")
     if missing:
         print("  missing: " + ", ".join(missing))
     if not any(line.startswith("PASS") for line in lines) or result != "PASS" or missing:

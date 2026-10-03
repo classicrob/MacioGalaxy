@@ -459,15 +459,44 @@ NewGalaxyFiles buildNewGalaxy(const NewGalaxySpec& spec, const DiscReader& readD
 
     // The registry entry (TECH.md 5.7): names in English (the other languages fall back to it).
     const std::string music = !spec.musicFrom.empty() ? spec.musicFrom : spec.from == Template::Copy ? spec.copyOf : "EggStarGalaxy";
-    std::string json = "{\n  \"format\": 1,\n  \"galaxies\": [ {\n    \"name\": " + jsonString(G) + ",\n    \"title\": { \"en\": " +
-                       jsonString(spec.name.empty() ? G : spec.name) + " },\n    \"missions\": [";
+    out.galaxyJson = galaxyJson(G, spec.name.empty() ? G : spec.name, missions, music);
+    out.log.push_back(G + ": " + std::to_string(missions.size()) + (missions.size() == 1 ? " mission" : " missions") + ", music from " + music);
+    return out;
+}
+
+std::string galaxyJson(const std::string& internalName, const std::string& name, const std::vector< std::string >& missions, const std::string& music) {
+    std::string json = "{\n  \"format\": 1,\n  \"galaxies\": [ {\n    \"name\": " + jsonString(internalName) + ",\n    \"title\": { \"en\": " +
+                       jsonString(name) + " },\n    \"missions\": [";
     for (std::size_t m = 0; m < missions.size(); m++) {
         json += std::string(m == 0 ? " " : ", ") + "{ \"en\": " + jsonString(missions[m]) + " }";
     }
-    json += " ],\n    \"music\": " + jsonString(music) + "\n  } ]\n}\n";
-    out.galaxyJson = json;
-    out.log.push_back(G + ": " + std::to_string(missions.size()) + (missions.size() == 1 ? " mission" : " missions") + ", music from " + music);
-    return out;
+    return json + " ],\n    \"music\": " + jsonString(music) + "\n  } ]\n}\n";
+}
+
+Formats::Bytes resizeScenario(const Formats::Bytes& scenarioArc, const std::string& internalName, int count, std::string* pError) {
+    if (count < 1 || count > 8) {
+        *pError = "a galaxy holds 1 to 8 missions";
+        return {};
+    }
+    auto archive = F::Archive::parse(scenarioArc);
+    auto scenarios = archive && archive->file("scenariodata.bcsv") ? F::Table::parse(*archive->file("scenariodata.bcsv")) : std::nullopt;
+    if (!scenarios || scenarios->rowCount() == 0) {
+        *pError = internalName + "'s scenario table doesn't parse";
+        return {};
+    }
+    while (scenarios->rowCount() > count) {
+        scenarios->removeRow(scenarios->rowCount() - 1);
+    }
+    const int zoneColumn = scenarios->addColumn(F::jmapHash(internalName.c_str()), F::ColumnType::Long, integer(0));
+    while (scenarios->rowCount() < count) {
+        const int m = scenarios->rowCount() + 1;
+        const int row = scenarios->addRow(0);
+        set(*scenarios, row, "ScenarioNo", integer(m));
+        set(*scenarios, row, "PowerStarId", integer(m));
+        scenarios->set(row, zoneColumn, integer(1 << (m - 1)));
+    }
+    archive->replace("scenariodata.bcsv", scenarios->build());
+    return archive->build();
 }
 
 }  // namespace PetariEditor::Galaxy

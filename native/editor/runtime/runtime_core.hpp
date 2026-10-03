@@ -30,6 +30,9 @@ struct NewGalaxyServices {
     const NewGalaxyChoices& (*choices)() = nullptr;
     std::string (*internalName)(const std::string& name) = nullptr;
     std::string (*check)(const std::string& internalName) = nullptr;
+    std::optional< GalaxyInfo > (*galaxyInfo)() = nullptr;
+    std::string (*checkInfo)(const GalaxyInfo& info) = nullptr;
+    bool (*infoNeedsRestart)(const GalaxyInfo& info) = nullptr;
 };
 void setNewGalaxyServices(const NewGalaxyServices& services);
 

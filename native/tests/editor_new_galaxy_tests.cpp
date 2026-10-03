@@ -115,7 +115,35 @@ static void testDisc(const fs::path& disc) {
         check(PetariNative::Platform::ModGalaxy::loadText(out.galaxyJson, "Test", &error), where + "galaxy.json loads: " + error);
         const auto* pGalaxy = PetariNative::Platform::ModGalaxy::find(g.c_str());
         check(pGalaxy != nullptr, where + "the registry knows it");
+        // The Missions panel's mission count: grown to 4 (new rows with their star and layer), then 1.
+        const F::Bytes& scenarioArc = out.files.at("StageData/" + g + "/" + g + "Scenario.arc");
+        const F::Bytes grown = G::resizeScenario(scenarioArc, g, 4, &error);
+        const auto grownArchive = grown.empty() ? std::nullopt : F::Archive::parse(grown);
+        const auto grownTable = grownArchive ? F::Table::parse(*grownArchive->file("scenariodata.bcsv")) : std::nullopt;
+        check(grownTable && grownTable->rowCount() == 4, where + "4 missions after the resize: " + error);
+        if (grownTable && scenarios && c.from != G::Template::Copy) {  // (a copy keeps the source's rows)
+            const int no = grownTable->column(F::jmapHash("ScenarioNo")), star = grownTable->column(F::jmapHash("PowerStarId")),
+                      layer = grownTable->column(F::jmapHash(g.c_str()));
+            check(grownTable->get(3, no).i == 4 && grownTable->get(3, star).i == 4 && grownTable->get(3, layer).i == 8,
+                  where + "mission 4: star 4, Layer D");
+            check(grownTable->get(0, layer).i == scenarios->get(0, scenarios->column(F::jmapHash(g.c_str()))).i, where + "mission 1 kept as it was");
+            check(grownArchive->file("zonelist.bcsv") != nullptr, where + "the zone list kept");
+        }
+        const F::Bytes shrunk = G::resizeScenario(grown, g, 1, &error);
+        const auto shrunkArchive = shrunk.empty() ? std::nullopt : F::Archive::parse(shrunk);
+        const auto shrunkTable = shrunkArchive ? F::Table::parse(*shrunkArchive->file("scenariodata.bcsv")) : std::nullopt;
+        check(shrunkTable && shrunkTable->rowCount() == 1, where + "1 mission after the second resize");
+        check(G::resizeScenario(scenarioArc, g, 9, &error).empty() && !error.empty(), where + "9 missions are refused");
     }
+    // galaxyJson as the Missions panel writes it, through the registry's update.
+    PetariNative::Platform::ModGalaxy::clear();
+    std::string error;
+    PetariNative::Platform::ModGalaxy::loadText(G::galaxyJson("PipeDreamGalaxy", "Pipe Dream", {"One"}, "EggStarGalaxy"), "PipeDreamGalaxy", &error);
+    check(PetariNative::Platform::ModGalaxy::update(G::galaxyJson("PipeDreamGalaxy", "Pipe \"Dreams\"", {"One", "Two"}, "FlowerGalaxy"), "PipeDreamGalaxy", &error),
+          "the edited galaxy.json updates the registry: " + error);
+    const auto* pGalaxy = PetariNative::Platform::ModGalaxy::find("PipeDreamGalaxy");
+    check(pGalaxy != nullptr && pGalaxy->missions.size() == 2 && pGalaxy->music == "FlowerGalaxy" && pGalaxy->title.at("en") == u"Pipe \"Dreams\"",
+          "renamed, a second mission, other music");
     PetariNative::Platform::ModGalaxy::clear();
 }
 #endif

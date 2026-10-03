@@ -59,4 +59,12 @@ std::vector< std::string > planetNames(const DiscReader& readDisc);
 
 NewGalaxyFiles buildNewGalaxy(const NewGalaxySpec& spec, const DiscReader& readDisc, const DiscLister& listDisc);
 
+/// A galaxy's registry entry (<mod>/galaxy.json, TECH.md 5.7): English names, the music's galaxy.
+std::string galaxyJson(const std::string& internalName, const std::string& name, const std::vector< std::string >& missions, const std::string& music);
+
+/// `scenarioArc` (<G>Scenario.arc) with `count` missions (1..8): the first rows kept as they are,
+/// trailing ones dropped; a new mission k copies mission 1's row with Power Star ID k and, in the
+/// galaxy's own zone, its own layer (LayerA = mission 1). Empty and *pError when it doesn't parse.
+Formats::Bytes resizeScenario(const Formats::Bytes& scenarioArc, const std::string& internalName, int count, std::string* pError);
+
 }  // namespace PetariEditor::Galaxy

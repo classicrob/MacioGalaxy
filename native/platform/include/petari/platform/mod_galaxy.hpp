@@ -38,6 +38,9 @@ struct Galaxy {
 void load(const std::vector< std::filesystem::path >& modRoots, std::vector< std::string >* pLog);
 /// One galaxy.json's text (tests, and load()). False and *pError: nothing registered from it.
 bool loadText(const std::string& json, const std::string& mod, std::string* pError);
+/// The same, for galaxies this mod already registered: their names, missions and music are
+/// replaced in place (the level editor's Missions panel). Earlier message() pointers stay valid.
+bool update(const std::string& json, const std::string& mod, std::string* pError);
 void clear();
 
 /// The registered galaxy of that StageData name (exact, case-sensitive like the game's tables),

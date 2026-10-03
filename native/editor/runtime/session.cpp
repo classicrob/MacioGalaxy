@@ -744,6 +744,11 @@ namespace {
                 continue;
             }
             switch (command.kind) {
+            case Command::Kind::SetGalaxyInfo:
+                if (!setGalaxyInfo(command.galaxyInfo, *s.model, status().unsaved, &error)) {
+                    Core::reportError("Galaxy settings: " + error);
+                }
+                break;
             case Command::Kind::Apply: {
                 PetariNative::HostAllocationScope host;
                 for (const SetCell& set : command.op.sets) {

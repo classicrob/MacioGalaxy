@@ -203,6 +203,27 @@ std::string newGalaxyInternalName(const std::string& name);
 /// galaxy of the same name or save key, the 64-galaxy limit).
 std::string checkNewGalaxyName(const std::string& internalName);
 
+/// A mod galaxy's names, missions and music (the Missions panel; its galaxy.json). The internal
+/// name is fixed: the save, the files and the zones key on it.
+struct GalaxyInfo {
+    std::string internalName;             // "PipeDreamGalaxy" (read only)
+    std::string mod;                      // its mod folder (read only)
+    std::string name;                     // "Pipe Dream" (English; the other languages follow it)
+    std::vector< std::string > missions;  // names; their count is the mission count (1..8)
+    std::string musicFrom;                // one of newGalaxyChoices().galaxies
+    /// Command::SetGalaxyInfo with a new mission count restarts Petari (as NewGalaxy does): it
+    /// refuses while there are unsaved edits, unless the panel saved them first or the person
+    /// chose to discard them. Ignored when nothing restarts.
+    bool discardUnsaved = false;
+};
+/// The galaxy being edited, when it is a mod galaxy; nullopt for the disc's (or none loaded).
+std::optional< GalaxyInfo > modGalaxyInfo();
+/// "" when `info` can be applied to the galaxy being edited, else why not (a name, 1..8 missions,
+/// the music).
+std::string checkGalaxyInfo(const GalaxyInfo& info);
+/// True when applying `info` restarts Petari (the mission count changes); names and music apply live.
+bool galaxyInfoNeedsRestart(const GalaxyInfo& info);
+
 struct Command {
     enum class Kind : std::uint8_t {
         Apply,           // op -> undo stack, journal, SceneSync
@@ -217,6 +238,7 @@ struct Command {
         SaveMod,         // modName, fullArchives: a patch (default; no game data) or Full archives (TECH.md 5.1)
         SwitchScenario,  // index = the mission to edit, 1-based: a reload into it from its start, back in Edit; edits and history kept
         NewGalaxy,       // newGalaxy: write it as a mod, then restart Petari into it in Edit (status().notice says so first)
+        SetGalaxyInfo,   // galaxyInfo: the mod galaxy's names and music, live; a new mission count restarts into it in Edit
     } kind;
     Op op;
     int index = 0;
@@ -227,6 +249,7 @@ struct Command {
     std::string modName;
     bool fullArchives = false;  // SaveMod: Full archives (Whitehole, Dolphin) instead of a patch
     NewGalaxyRequest newGalaxy;
+    GalaxyInfo galaxyInfo;
 };
 
 void enqueue(Command&& command);
