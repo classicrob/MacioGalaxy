@@ -153,6 +153,9 @@ namespace EditorPlaytest {
         if (mode() == Mode::Editing && P::visible())
             DebugDraw::draw(state().mesh, 0.08f);
     }
+    bool missPending() {
+        return state().missed && mode() == Mode::Playing;
+    }
     bool miss() {
         auto& s = state();
         if (!s.trail.running() || mode() != Mode::Playing || !Runtime::progressIsolated())
