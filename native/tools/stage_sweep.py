@@ -545,6 +545,9 @@ def app_command(args, user, stage, scenario):
         "PETARI_SMOKE": "stage", "PETARI_STAGE": stage, "PETARI_SCENARIO": str(scenario),
         "PETARI_SMOKE_FRAMES": str(args.frames), "PETARI_STAGE_IDLE_FRAMES": str(args.idle_frames),
         "PETARI_TRACE_BOOT": "1",
+        # Test-only boot shortcuts (strap reminder button accepted after 30 frames, not 450; the 1.5 s stage gates off).
+        # Off by default; set PETARI_FAST_BOOT=1 in the environment of the tool to use them.
+        **({"PETARI_FAST_BOOT": "1", "PETARI_STAGE_GATE_MS": "0"} if os.environ.get("PETARI_FAST_BOOT") == "1" else {}),
         # Per-second audio reports ([audio] underruns/replays, [audio-dma] DSP holds): audio coverage.
         "PETARI_AUDIO_DIAG": "1",
         # The global shader precompile (default on when __global__.db exists)
