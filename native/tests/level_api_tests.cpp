@@ -92,6 +92,7 @@ double ms(std::chrono::steady_clock::time_point since) {
         Value info = call(*modded, "info");
         check(info["objects"].asInt() == originalCount + 2, "explicit mod is the base");
         check(info["baseline"].asString() == "pristine-disc", "continued mod baseline is pristine disc");
+        check(info["missions"].items()[0]["name"].asString() == "Dino Piranha", "continued mod info exposes the English mission name");
         check(info["source_warnings"].items().empty(), "unchanged input has no warning");
         check(!call(*modded, "checks")["checks"].items().empty(), "mod's own missing-path check stays visible");
         check(modded->base()["sources"].items().size() == 1 && !modded->base()["files"].items().empty(), "source identity and cached overlays recorded");

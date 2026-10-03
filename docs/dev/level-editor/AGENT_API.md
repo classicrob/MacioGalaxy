@@ -335,7 +335,7 @@ each class's collision once per process.
 - Headless gravity is approximate (above). The ground is the collision of rows with a `.kcl` named
   after their class; objects whose collision comes from another archive (some map parts) are not
   ground headless (`colliders` and its `no_kcl` list show what is).
-- Mission names come from ScenarioData (Japanese, internal); the pause-menu names need the game's messages.
+- Mission names use the disc's English message archive when available, with other disc languages and ScenarioData as fallbacks.
 - Full archives contain baked brush planets. Continue from a patch to keep its original brush rows editable.
 
 ### Editing and sampling existing rails
