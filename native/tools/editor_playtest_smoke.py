@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the editor play loop through an isolated background test server."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import subprocess
@@ -8,6 +9,12 @@ import sys
 import time
 
 TOOLS = Path(__file__).resolve().parent
+
+
+def progress_files(user):
+    paths = [user / "progress.json", *(user / "mods-saves").rglob("*")]
+    return {str(path.relative_to(user)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in paths if path.is_file()}
 
 
 def main():
@@ -30,6 +37,7 @@ def main():
     try:
         subprocess.run(server + ["start", "--app", str(args.app.resolve()), "--dir", str(directory),
                                 "--owner", args.owner, "--warm-current-stage"], env=env, check=True)
+        before = progress_files(directory / "user")
         trigger.write_text("start\n")
         deadline = time.monotonic() + 180
         while time.monotonic() < deadline:
@@ -40,6 +48,10 @@ def main():
                 return 1
             if any("[editor-playtest] PASS:" in line for line in result):
                 print("\n".join(result))
+                if progress_files(directory / "user") != before:
+                    print("FAIL: personal progress or mod sidecar files changed during play-test", file=sys.stderr)
+                    return 1
+                print("PASS: personal progress and mod sidecar files unchanged")
                 return 0
             time.sleep(0.5)
         print("FAIL: timed out waiting for playtest smoke", file=sys.stderr)
