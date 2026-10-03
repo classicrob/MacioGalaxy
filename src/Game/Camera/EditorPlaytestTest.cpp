@@ -197,11 +197,14 @@ namespace EditorPlaytest {
             advance(11);
         } else if (step == 11 && frame > 45 && playable) {
             livesAtMiss = MR::getPlayerLeft();
+            const auto noticeSerial = status().noticeSerial;
             MR::forceKillPlayerByAbyss();
-            if (mode() != Mode::Editing)
+            if (status().noticeSerial == noticeSerial || status().notice.find("Missed at ") != 0 || MR::isPlayerDead())
                 return fail("fall did not intercept immediately before the miss demo");
             advance(12);
-        } else if (step == 12 && frame > 5) {
+        } else if (step == 12 && frame >= 2) {
+            if (mode() != Mode::Editing)
+                return fail("accepted miss did not open Edit within two frames");
             if (!view.missed || view.running || view.samples < 30 || Hooks::sceneSerial() != runScene)
                 return fail("miss lost the trail or reloaded the scene");
             if (MR::getPlayerLeft() != livesAtMiss || status().notice.find("Missed at ") != 0)
@@ -219,11 +222,14 @@ namespace EditorPlaytest {
             if (view.missed || view.frames >= pausedFrames || Hooks::sceneSerial() == runScene)
                 return fail("Resume after death did not start a fresh playable world");
             runScene = Hooks::sceneSerial();
+            const auto noticeSerial = status().noticeSerial;
             MR::forceKillPlayerByGroundRace();
-            if (mode() != Mode::Editing)
+            if (status().noticeSerial == noticeSerial || status().notice.find("Missed at ") != 0 || MR::isPlayerDead())
                 return fail("forced death did not intercept immediately");
             advance(15);
-        } else if (step == 15 && frame > 5) {
+        } else if (step == 15 && frame >= 2) {
+            if (mode() != Mode::Editing)
+                return fail("accepted miss did not open Edit within two frames");
             if (!view.missed || view.running || Hooks::sceneSerial() != runScene || MR::getPlayerLeft() != livesAtMiss)
                 return fail("forced death lost the scene, trail or life");
             std::fprintf(stderr, "[editor-playtest] immediate forced-death interception PASS\n");
@@ -231,11 +237,14 @@ namespace EditorPlaytest {
             advance(16);
         } else if (step == 16 && mode() == Mode::Playing && playable && frame > 15) {
             runScene = Hooks::sceneSerial();
+            const auto noticeSerial = status().noticeSerial;
             MarioAccess::getPlayerActor()->forceGameOverBlackHole();
-            if (mode() != Mode::Editing)
+            if (status().noticeSerial == noticeSerial || status().notice.find("Missed at ") != 0 || MR::isPlayerDead())
                 return fail("black-hole death did not intercept before its animation");
             advance(17);
-        } else if (step == 17 && frame > 5) {
+        } else if (step == 17 && frame >= 2) {
+            if (mode() != Mode::Editing)
+                return fail("accepted miss did not open Edit within two frames");
             if (!view.missed || view.running || Hooks::sceneSerial() != runScene || MR::getPlayerLeft() != livesAtMiss)
                 return fail("black-hole miss lost scene, trail or life");
             std::fprintf(stderr,
