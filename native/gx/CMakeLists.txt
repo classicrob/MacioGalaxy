@@ -135,6 +135,37 @@ foreach(_file recording frame)
     set_source_files_properties("${_output}" TARGET_DIRECTORY aurora_gx PROPERTIES
         COMPILE_OPTIONS "-iquote${aurora_SOURCE_DIR}/lib/gfx;-iquote${aurora_SOURCE_DIR}/lib;-iquote${CMAKE_CURRENT_SOURCE_DIR}")
 endforeach()
+# EP-004: editor geometry shares Aurora's per-frame buffers with the level.
+# Compose after sync/readback so all staging allocations, EFB segment copies,
+# encoding offsets and FIFO submissions agree on the larger capacities.
+foreach(_file frame recording encoding command_processor)
+    if(_file STREQUAL "command_processor")
+        set(_relative "lib/gx/${_file}.cpp")
+        set(_input "${CMAKE_CURRENT_BINARY_DIR}/sync/${_relative}")
+        set(_quote "${aurora_SOURCE_DIR}/lib/gx")
+    else()
+        set(_relative "lib/gfx/${_file}.cpp")
+        set(_quote "${aurora_SOURCE_DIR}/lib/gfx")
+        if(_file STREQUAL "encoding")
+            set(_input "${aurora_SOURCE_DIR}/${_relative}")
+        else()
+            set(_input "${CMAKE_CURRENT_BINARY_DIR}/readback/${_file}.cpp")
+        endif()
+    endif()
+    set(_output "${CMAKE_CURRENT_BINARY_DIR}/geometry/${_file}.cpp")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_geometry.py" "${CMAKE_CURRENT_SOURCE_DIR}/geometry_budget.hpp"
+        "${aurora_SOURCE_DIR}/${_relative}")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_geometry.py"
+        "${_input}" "${_output}" COMMAND_ERROR_IS_FATAL ANY)
+    get_target_property(_sources aurora_gx SOURCES)
+    list(REMOVE_ITEM _sources "${_relative}" "${aurora_SOURCE_DIR}/${_relative}" "${_input}")
+    list(APPEND _sources "${_output}")
+    set_property(TARGET aurora_gx PROPERTY SOURCES "${_sources}")
+    set_source_files_properties("${_output}" TARGET_DIRECTORY aurora_gx PROPERTIES
+        COMPILE_OPTIONS "-iquote${_quote};-iquote${aurora_SOURCE_DIR}/lib;-iquote${CMAKE_CURRENT_SOURCE_DIR}")
+endforeach()
+
 target_sources(aurora_gx PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/efb_snapshot.cpp")
 set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/efb_snapshot.cpp" TARGET_DIRECTORY aurora_gx PROPERTIES
     COMPILE_OPTIONS "-iquote${aurora_SOURCE_DIR}/lib")
@@ -559,3 +590,13 @@ if(_petari_build_testing)
 endif()
 
 include("${CMAKE_CURRENT_SOURCE_DIR}/pipeline_owners.cmake")
+
+if(_petari_build_testing)
+    add_executable(petari_gx_geometry_budget_tests ../tests/gx_geometry_budget_tests.cpp)
+    target_include_directories(petari_gx_geometry_budget_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(petari_gx_geometry_budget_tests PRIVATE cxx_std_17)
+    target_compile_options(petari_gx_geometry_budget_tests PRIVATE -UNDEBUG)
+    add_test(NAME native_gx_geometry_budget COMMAND petari_gx_geometry_budget_tests)
+    add_test(NAME native_aurora_geometry_patch COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_SOURCE_DIR}/native/tests/aurora_geometry_patch_tests.py" "${aurora_SOURCE_DIR}")
+endif()

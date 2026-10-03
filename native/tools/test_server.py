@@ -4,6 +4,13 @@
   native/tools/test_server.py start --app <Petari> [--stage EggStarGalaxy --scenario 1] [--dir build/test-server/<name>]
   native/tools/test_server.py send  --dir <dir> status | warp <Stage> [<scenario>] | reload [start] | quit
   native/tools/test_server.py stop  --dir <dir>
+  native/tools/test_server.py input --dir <dir> [--log f.csv] --steps '[{"frames":60,"stick":[0,1],"buttons":["A"],"press":false}, ...]'
+  native/tools/test_server.py route --dir <dir> <route.csv> [--log f.csv] [--from N] [--frames N]
+
+`input` plays frame-counted steps through the game's input layer (frame-exact, independent of the OS): stick is x,y in -1..1 (y up);
+buttons are A B Z Spin Cap CamLeft CamRight Plus Minus, held for the whole step, or with "press": true for a 6-frame tap at the step's start.
+It replies with Mario's position, velocity, grounded and dead flags at the end, and --log writes one row per frame (frame,step,x,y,z,vx,vy,vz,ground).
+`route` replays a PETARI_ROUTE_RECORD csv frame by frame (move_x/y, jump, spin, crouch, camera left/right).
 
 `start` boots once (warm shader seed, PETARI_FAST_BOOT=1) through build/locked-app.sh and returns when the app answers `status`;
 the app holds one app slot until `stop`/`quit`. `send` writes a command file and waits for its reply (exit 1 on "error").
@@ -94,6 +101,34 @@ def cmd_send(args):
     return 1 if text.startswith("error") else 0
 
 
+def steps_line(steps):
+    """JSON steps -> the server's one-line form: frames,x,y,buttons ('-' for none; 'A!' for a tap)."""
+    out = []
+    for step in steps:
+        x, y = step.get("stick", [0, 0])
+        names = step.get("buttons", [])
+        text = "+".join(n + ("!" if step.get("press") else "") for n in names) or "-"
+        out.append(f"{int(step['frames'])},{float(x):g},{float(y):g},{text}")
+    return " ".join(out)
+
+
+def cmd_input(args):
+    import json
+    steps = json.loads(Path(args.steps_file).read_text() if args.steps_file else args.steps)
+    line = "input " + (f"log={Path(args.log).resolve()} " if args.log else "") + steps_line(steps)
+    text = send(args.dir, line, args.timeout)
+    print(text)
+    return 1 if text.startswith("error") else 0
+
+
+def cmd_route(args):
+    line = f"route {Path(args.csv).resolve()}" + (f" log={Path(args.log).resolve()}" if args.log else "")
+    line += (f" from={args.start}" if args.start else "") + (f" frames={args.frames}" if args.frames else "")
+    text = send(args.dir, line, args.timeout)
+    print(text)
+    return 1 if text.startswith("error") else 0
+
+
 def cmd_stop(args):
     pid_file = Path(args.dir) / "server.pid"
     send(args.dir, "quit", 5)
@@ -126,6 +161,22 @@ def main():
     p.add_argument("--dir", required=True)
     p.add_argument("--timeout", type=int, default=180)
     p.add_argument("words", nargs="+")
+    p = sub.add_parser("input")
+    p.set_defaults(fn=cmd_input)
+    p.add_argument("--dir", required=True)
+    p.add_argument("--timeout", type=int, default=600)
+    p.add_argument("--log")
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--steps", help="JSON list of {frames, stick:[x,y], buttons:[...], press:bool}")
+    group.add_argument("--steps-file")
+    p = sub.add_parser("route")
+    p.set_defaults(fn=cmd_route)
+    p.add_argument("--dir", required=True)
+    p.add_argument("--timeout", type=int, default=1800)
+    p.add_argument("--log")
+    p.add_argument("--from", dest="start", type=int, default=0)
+    p.add_argument("--frames", type=int, default=0)
+    p.add_argument("csv")
     p = sub.add_parser("stop")
     p.set_defaults(fn=cmd_stop)
     p.add_argument("--dir", required=True)
