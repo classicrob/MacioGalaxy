@@ -106,7 +106,11 @@ namespace {
             }
             if (a.has("name")) it->name = a["name"].asString();
             if (a.has("type")) it->type = argTypeFrom(a["type"].asString());
-            if (a.has("default")) it->defaultValue = a["default"].asInt(-1);
+            if (a.has("default")) {
+                // A bool default: on is 1, off is -1 (the game's bool getter reads any value but -1 as on).
+                const Json::Value& d = a["default"];
+                it->defaultValue = d.type() == Json::Value::Type::Bool ? (d.asBool() ? 1 : -1) : d.asInt(-1);
+            }
             if (a.has("unit")) it->unit = a["unit"].asString();
             if (a.has("help")) it->help = a["help"].asString();
             if (a.has("choices")) {
