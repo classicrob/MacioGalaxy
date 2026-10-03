@@ -5,7 +5,7 @@
  "partial": true,
  "coverage": {
   "EggStarGalaxy": {
-   "recorded": 495,
+   "recorded": 607,
    "total": 1183,
    "inferred": 0
   },
@@ -5436,7 +5436,7 @@
      "phase": "create",
      "crash": {
       "signal": "signal: SIGABRT (6), code 0, fault address 0x1965bd650",
-      "panic": "File isn't exist. in \"/Users/roberthaisfield/.bb/plugins/environment-personal-workspace/host-data/workspaces/thr_xi2xyxi3dz/petari-worktrees/editor-class-sweep/src/Game/System/FileRipper.cpp\" on line 112.",
+      "panic": "File isn't exist. in \"src/Game/System/FileRipper.cpp\" on line 112.",
       "top_frames": [
        "_ZN12PetariNative24prepareAllocationSymbolsEv.cold.1",
        "_ZN10FileRipper13loadToMainRAMEPKcPhbP7JKRHeapNS_14AllocDirectionE",
@@ -6515,7 +6515,7 @@
      "phase": "create",
      "crash": {
       "signal": "signal: SIGABRT (6), code 0, fault address 0x1965bd650",
-      "panic": "File isn't exist. in \"/Users/roberthaisfield/.bb/plugins/environment-personal-workspace/host-data/workspaces/thr_xi2xyxi3dz/petari-worktrees/editor-class-sweep/src/Game/System/FileRipper.cpp\" on line 112.",
+      "panic": "File isn't exist. in \"src/Game/System/FileRipper.cpp\" on line 112.",
       "top_frames": [
        "_ZN12PetariNative24prepareAllocationSymbolsEv.cold.1",
        "_ZN10FileRipper13loadToMainRAMEPKcPhbP7JKRHeapNS_14AllocDirectionE",
@@ -11453,7 +11453,7 @@
      "phase": "create",
      "crash": {
       "signal": "signal: SIGABRT (6), code 0, fault address 0x1965bd650",
-      "panic": "File isn't exist. in \"/Users/roberthaisfield/.bb/plugins/environment-personal-workspace/host-data/workspaces/thr_xi2xyxi3dz/petari-worktrees/editor-class-sweep/src/Game/System/FileRipper.cpp\" on line 112.",
+      "panic": "File isn't exist. in \"src/Game/System/FileRipper.cpp\" on line 112.",
       "top_frames": [
        "_ZN12PetariNative24prepareAllocationSymbolsEv.cold.1",
        "_ZN10FileRipper13loadToMainRAMEPKcPhbP7JKRHeapNS_14AllocDirectionE",
@@ -20646,7 +20646,7 @@
      "phase": "create",
      "crash": {
       "signal": "signal: SIGABRT (6), code 0, fault address 0x1965bd650",
-      "panic": "File isn't exist. in \"/Users/roberthaisfield/.bb/plugins/environment-personal-workspace/host-data/workspaces/thr_xi2xyxi3dz/petari-worktrees/editor-class-sweep/src/Game/System/FileRipper.cpp\" on line 112.",
+      "panic": "File isn't exist. in \"src/Game/System/FileRipper.cpp\" on line 112.",
       "top_frames": [
        "_ZN12PetariNative24prepareAllocationSymbolsEv.cold.1",
        "_ZN10FileRipper13loadToMainRAMEPKcPhbP7JKRHeapNS_14AllocDirectionE",
@@ -20664,7 +20664,7 @@
      "phase": "create",
      "crash": {
       "signal": "signal: SIGABRT (6), code 0, fault address 0x1965bd650",
-      "panic": "File isn't exist. in \"/Users/roberthaisfield/.bb/plugins/environment-personal-workspace/host-data/workspaces/thr_xi2xyxi3dz/petari-worktrees/editor-class-sweep/src/Game/System/FileRipper.cpp\" on line 112.",
+      "panic": "File isn't exist. in \"src/Game/System/FileRipper.cpp\" on line 112.",
       "top_frames": [
        "_ZN12PetariNative24prepareAllocationSymbolsEv.cold.1",
        "_ZN10FileRipper13loadToMainRAMEPKcPhbP7JKRHeapNS_14AllocDirectionE",
@@ -21274,10 +21274,31 @@
    "class": "IcicleRock",
    "creator": "createNameObj< SimpleBreakableObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "IcicleRock",
+    "IcicleRockBreak"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "IcicleRock",
+      "IcicleRockBreak"
+     ],
+     "mount_ms": 1.0,
+     "create_ms": 0.65
+    }
+   },
    "placed_on_disc": 12,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "ItemAppearStoneSpinDriver",
@@ -21310,28 +21331,93 @@
    "class": "FlipPanel",
    "creator": "createNameObj< FlipPanel >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FlipPanel",
+    "FlipPanelBloom"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.36,
+     "template_links": {
+      "ViewGroupId": 9,
+      "GroupId": 1
+     }
+    }
+   },
    "placed_on_disc": 74,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "FlipPanelObserver",
    "creator": "createNameObj< FlipPanelObserver >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x18",
+      "top_frames": [
+       "_ZN17FlipPanelObserver7exeWaitEv",
+       "_ZN5Spine6updateEv",
+       "_ZN9LiveActor8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "FlipPanelReverse",
    "creator": "createNameObj< FlipPanel >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FlipPanelReverse",
+    "FlipPanelReverseBloom"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 2,
+     "alive": 2,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "FlipPanelReverse",
+      "FlipPanelReverseBloom"
+     ],
+     "mount_ms": 1.0,
+     "create_ms": 0.77
+    }
+   },
    "placed_on_disc": 16,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "FlipPanelFrame",
@@ -21373,10 +21459,29 @@
    "class": "SpaceMineRail5m",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "SpaceMineRail5m"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "SpaceMineRail5m"
+     ],
+     "mount_ms": 0.6,
+     "create_ms": 0.32
+    }
+   },
    "placed_on_disc": 17,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "SandUpDownTowerTop",
@@ -21418,10 +21523,29 @@
    "class": "JumpStand",
    "creator": "createNameObj< JumpStand >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "JumpStand"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "JumpStand"
+     ],
+     "mount_ms": 0.4,
+     "create_ms": 0.53
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "CaretakerGarbage",
@@ -21508,10 +21632,29 @@
    "class": "DangerSignBoard",
    "creator": "createNameObj< SimpleMapObjPush >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "DangerSignBoard"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "DangerSignBoard"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.27
+    }
+   },
    "placed_on_disc": 18,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "Banekiti",
@@ -21589,10 +21732,29 @@
    "class": "ArrowBoard",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "ArrowBoard"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "ArrowBoard"
+     ],
+     "mount_ms": 31.5,
+     "create_ms": 0.33
+    }
+   },
    "placed_on_disc": 62,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "TeresaRoomGlaringLight",
@@ -21652,10 +21814,31 @@
    "class": "HipDropRock",
    "creator": "createNameObj< HipDropRock >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "HipDropRock",
+    "HipDropRockBreak"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "HipDropRock",
+      "HipDropRockBreak"
+     ],
+     "mount_ms": 36.0,
+     "create_ms": 1.21
+    }
+   },
    "placed_on_disc": 73,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "DropOfWaterCore",
@@ -21778,19 +21961,53 @@
    "class": "TreasureSpot",
    "creator": "createNameObj< TreasureSpot >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "TreasureSpot"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.14
+    }
+   },
    "placed_on_disc": 63,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "CoinFlower",
    "creator": "createNameObj< TreasureSpot >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "CoinFlower"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.13
+    }
+   },
    "placed_on_disc": 23,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "StarDustRollingStepA",
@@ -21868,10 +22085,29 @@
    "class": "WeatherVane",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "WeatherVane"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "WeatherVane"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.34
+    }
+   },
    "placed_on_disc": 20,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "RainCloud",
@@ -21949,10 +22185,29 @@
    "class": "DarknessRoomDoorA",
    "creator": "createNameObj< DarknessRoomDoor >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "DarknessRoomDoorA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "DarknessRoomDoorA"
+     ],
+     "mount_ms": 1.3,
+     "create_ms": 0.6
+    }
+   },
    "placed_on_disc": 11,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "TeresaMansionDoorA",
@@ -22129,10 +22384,29 @@
    "class": "TeresaMansionCandlestand",
    "creator": "createNameObj< Candlestand >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "TeresaMansionCandlestand"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "TeresaMansionCandlestand"
+     ],
+     "mount_ms": 0.9,
+     "create_ms": 0.85
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "TeresaMansionHoleCover",
@@ -22147,10 +22421,31 @@
    "class": "KoopaStatue",
    "creator": "createNameObj< SimpleBreakableObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "KoopaStatue",
+    "KoopaStatueBreak"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "KoopaStatue",
+      "KoopaStatueBreak"
+     ],
+     "mount_ms": 7.0,
+     "create_ms": 2.79
+    }
+   },
    "placed_on_disc": 22,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "TeresaPicture",
@@ -22174,10 +22469,31 @@
    "class": "FireBar",
    "creator": "createNameObj< FireBar >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FireBarCore",
+    "FireBarBall"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 6,
+     "drawn": 6,
+     "alive": 6,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 542,
+     "row": "synth",
+     "nonresident": [
+      "FireBarCore",
+      "FireBarBall"
+     ],
+     "mount_ms": 2.2,
+     "create_ms": 0.82
+    }
+   },
    "placed_on_disc": 89,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "BattleShipMovePartsA",
@@ -22219,10 +22535,29 @@
    "class": "TeresaRaceSpaceStickA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "TeresaRaceSpaceStickA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "TeresaRaceSpaceStickA"
+     ],
+     "mount_ms": 8.6,
+     "create_ms": 0.44
+    }
+   },
    "placed_on_disc": 71,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "TeresaRaceSpaceStickB",
@@ -22255,28 +22590,86 @@
    "class": "TeresaRacePartsB",
    "creator": "createNameObj< AnmModelBindMove >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "TeresaRacePartsB"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "TeresaRacePartsB"
+     ],
+     "mount_ms": 0.7,
+     "create_ms": 0.43
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "NeedlePlant",
    "creator": "createNameObj< NeedlePlant >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "NeedlePlant"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.21,
+     "template_links": {
+      "ViewGroupId": 3
+     }
+    }
+   },
    "placed_on_disc": 144,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "NeedlePlantFly",
    "creator": "createNameObj< NeedlePlant >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "NeedlePlantFly"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "NeedlePlantFly"
+     ],
+     "mount_ms": 0.3,
+     "create_ms": 0.41
+    }
+   },
    "placed_on_disc": 17,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "BeeWallClimbPartsA",
@@ -22354,28 +22747,85 @@
    "class": "CocoonStepB",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "CocoonStepB"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "CocoonStepB"
+     ],
+     "mount_ms": 1.8,
+     "create_ms": 0.29
+    }
+   },
    "placed_on_disc": 11,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "SpaceCannonLauncher",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "SpaceCannonLauncher"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "SpaceCannonLauncher"
+     ],
+     "mount_ms": 0.7,
+     "create_ms": 0.44
+    }
+   },
    "placed_on_disc": 25,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "TrapBaseA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "TrapBaseA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "TrapBaseA"
+     ],
+     "mount_ms": 0.7,
+     "create_ms": 0.28
+    }
+   },
    "placed_on_disc": 25,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "SweetsDecoratePartsSpoon",
@@ -22445,9 +22895,31 @@
    "creator": "createNameObj< Sandstorm >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN9Sandstorm4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 11,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "SandStreamMoveStepsA",
@@ -22471,10 +22943,31 @@
    "class": "WaterLeakPipe",
    "creator": "createNameObj< WaterLeakPipe >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "WaterLeakPipe",
+    "IceStepNoSlip"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 500,
+     "row": "synth",
+     "nonresident": [
+      "WaterLeakPipe",
+      "IceStepNoSlip"
+     ],
+     "mount_ms": 10.1,
+     "create_ms": 0.61
+    }
+   },
    "placed_on_disc": 12,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "BroadBeanMoveStepA",
@@ -22507,10 +23000,29 @@
    "class": "TeresaRacePartsBallA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "TeresaRacePartsBallA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "TeresaRacePartsBallA"
+     ],
+     "mount_ms": 2.7,
+     "create_ms": 0.72
+    }
+   },
    "placed_on_disc": 23,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "SandCapsulePressGround",
@@ -22714,19 +23226,57 @@
    "class": "UFOSandObstacleA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "UFOSandObstacleA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "UFOSandObstacleA"
+     ],
+     "mount_ms": 0.4,
+     "create_ms": 0.39
+    }
+   },
    "placed_on_disc": 11,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "UFOSandObstacleB",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "UFOSandObstacleB"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "UFOSandObstacleB"
+     ],
+     "mount_ms": 4.6,
+     "create_ms": 0.4
+    }
+   },
    "placed_on_disc": 22,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "UFOSandObstacleC",
@@ -22777,10 +23327,29 @@
    "class": "StrongBlock",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "StrongBlock"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "StrongBlock"
+     ],
+     "mount_ms": 13.0,
+     "create_ms": 0.32
+    }
+   },
    "placed_on_disc": 142,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "ChoConveyorChocoA",
@@ -22984,19 +23553,55 @@
    "class": "MysteryGravityRoomBridgeA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "MysteryGravityRoomBridgeA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.3
+    }
+   },
    "placed_on_disc": 12,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "DeadLeaves",
    "creator": "createNameObj< DeadLeaves >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "DeadLeaves"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "DeadLeaves"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.32
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "PrologueDirector",
@@ -23101,28 +23706,85 @@
    "class": "RockRoadCircleA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "RockRoadCircleA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "RockRoadCircleA"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.26
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "AssemblyBlockPartsA",
    "creator": "createNameObj< AssemblyBlock >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "AssemblyBlockPartsA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "AssemblyBlockPartsA"
+     ],
+     "mount_ms": 1.8,
+     "create_ms": 0.37
+    }
+   },
    "placed_on_disc": 81,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "AssemblyBlockPartsB",
    "creator": "createNameObj< AssemblyBlock >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "AssemblyBlockPartsB"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "AssemblyBlockPartsB"
+     ],
+     "mount_ms": 74.9,
+     "create_ms": 0.36
+    }
+   },
    "placed_on_disc": 67,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "AssemblyBlockPartsC",
@@ -23137,28 +23799,85 @@
    "class": "AssemblyBlockPartsD",
    "creator": "createNameObj< AssemblyBlock >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "AssemblyBlockPartsD"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "AssemblyBlockPartsD"
+     ],
+     "mount_ms": 1.0,
+     "create_ms": 0.6
+    }
+   },
    "placed_on_disc": 13,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "AssemblyBlockPartsE",
    "creator": "createNameObj< AssemblyBlock >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "AssemblyBlockPartsE"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "AssemblyBlockPartsE"
+     ],
+     "mount_ms": 0.6,
+     "create_ms": 0.48
+    }
+   },
    "placed_on_disc": 16,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "AssemblyBlockPartsIceB",
    "creator": "createNameObj< AssemblyBlock >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "AssemblyBlockPartsIceB"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "AssemblyBlockPartsIceB"
+     ],
+     "mount_ms": 0.4,
+     "create_ms": 0.34
+    }
+   },
    "placed_on_disc": 30,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "AssemblyBlockPartsIceC",
@@ -23191,10 +23910,31 @@
    "class": "AssemblyBlockPartsTimerA",
    "creator": "createNameObj< AssemblyBlock >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "AssemblyBlockPartsTimerA",
+    "AssemblyBlockPartsTimerABloom"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 2,
+     "alive": 2,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "AssemblyBlockPartsTimerA",
+      "AssemblyBlockPartsTimerABloom"
+     ],
+     "mount_ms": 35.3,
+     "create_ms": 0.78
+    }
+   },
    "placed_on_disc": 55,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "HellBallGuidePartsA",
@@ -23317,10 +24057,29 @@
    "class": "SurfingRaceSubGate",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "SurfingRaceSubGate"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "SurfingRaceSubGate"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.43
+    }
+   },
    "placed_on_disc": 18,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "SurfingRaceStep",
@@ -23335,10 +24094,29 @@
    "class": "SurfingRaceSignBoard",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "SurfingRaceSignBoard"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "SurfingRaceSignBoard"
+     ],
+     "mount_ms": 0.6,
+     "create_ms": 0.31
+    }
+   },
    "placed_on_disc": 36,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "SurfingRaceVictoryStand",
@@ -23596,10 +24374,29 @@
    "class": "QuarterRollGravityRoomArrow",
    "creator": "createNameObj< QuarterRollGravityRoomArrow >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "QuarterRollGravityRoomArrow"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "QuarterRollGravityRoomArrow"
+     ],
+     "mount_ms": 2.7,
+     "create_ms": 0.32
+    }
+   },
    "placed_on_disc": 11,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "NutShipFleetBridge",
@@ -23740,10 +24537,29 @@
    "class": "IceRingBumpyPartsA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "IceRingBumpyPartsA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "IceRingBumpyPartsA"
+     ],
+     "mount_ms": 1.1,
+     "create_ms": 1.05
+    }
+   },
    "placed_on_disc": 20,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "IceWaterUpDownParts",
@@ -24001,10 +24817,29 @@
    "class": "CubeBubbleExPartsA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "CubeBubbleExPartsA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "CubeBubbleExPartsA"
+     ],
+     "mount_ms": 0.6,
+     "create_ms": 0.5
+    }
+   },
    "placed_on_disc": 41,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "UFONormalB",
@@ -24172,10 +25007,31 @@
    "class": "KoopaJrNormalShipA",
    "creator": "createNameObj< SimpleMapObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "KoopaJrNormalShipA",
+    "KoopaJrNormalShipALow"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 2,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "KoopaJrNormalShipA",
+      "KoopaJrNormalShipALow"
+     ],
+     "mount_ms": 4.1,
+     "create_ms": 1.18
+    }
+   },
    "placed_on_disc": 13,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "WaterRoadCaveStepA",
@@ -24371,9 +25227,31 @@
    "creator": "createNameObj< KoopaBattleMapStair >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0xe0",
+      "top_frames": [
+       "_ZN13KoopaFunction22registerBattleMapStairEP19KoopaBattleMapStair",
+       "_ZN19KoopaBattleMapStair18initAfterPlacementEv",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv",
+       "_ZN10GameSystem21updateSceneControllerEv",
+       "_ZNK13NrvGameSystem16GameSystemNormal7executeEP5Spine",
+       "_ZN5Spine6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 33,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "KoopaBattleMapPlate",
@@ -24928,10 +25806,29 @@
    "class": "TreasureBoxEmpty",
    "creator": "createNameObj< TreasureBoxCracked >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "TreasureBox"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "TreasureBox"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.54
+    }
+   },
    "placed_on_disc": 15,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "TreasureBoxCoin",
@@ -25352,9 +26249,24 @@
    "creator": "createNameObj< AstroEffectObj >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.18
+    }
+   },
    "placed_on_disc": 73,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "AstroTorchLightBlue",
@@ -25423,10 +26335,27 @@
    "class": "VROrbit",
    "creator": "createNameObj< ProjectionMapSky >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "VROrbit"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 2034,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.28
+    }
+   },
    "placed_on_disc": 12,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "VRDarkSpace",
@@ -25630,10 +26559,27 @@
    "class": "DimensionAir",
    "creator": "createNameObj< AirFar100m >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "DimensionAir"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.1
+    }
+   },
    "placed_on_disc": 12,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "DarknessRoomAir",
@@ -25666,55 +26612,170 @@
    "class": "PowerStarHalo",
    "creator": "createNameObj< PowerStarHalo >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "PowerStarHalo"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "invisible",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 1,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 1.4
+    }
+   },
    "placed_on_disc": 28,
-   "summary": "untested"
+   "summary": "invisible"
   },
   {
    "class": "Coin",
    "creator": "MR::createDirectSetCoin",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "Coin"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.18,
+     "template_links": {
+      "ViewGroupId": 3
+     }
+    }
+   },
    "placed_on_disc": 897,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "PurpleCoin",
    "creator": "MR::createDirectSetPurpleCoin",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "PurpleCoin"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "PurpleCoin"
+     ],
+     "mount_ms": 9.0,
+     "create_ms": 2.16
+    }
+   },
    "placed_on_disc": 1538,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "RailCoin",
    "creator": "MR::createRailCoin",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN9CoinGroup4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 76,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "CircleCoinGroup",
    "creator": "MR::createCircleCoinGroup",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "dead",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 0,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.05
+    }
+   },
    "placed_on_disc": 24,
-   "summary": "untested"
+   "summary": "dead"
   },
   {
    "class": "PurpleRailCoin",
    "creator": "MR::createRailPurpleCoin",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN9CoinGroup4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "CirclePurpleCoinGroup",
@@ -25739,36 +26800,117 @@
    "creator": "createNameObj< CoinReplica >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.18,
+     "template_links": {
+      "SW_A": 1,
+      "ViewGroupId": 7
+     }
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "QuestionCoin",
    "creator": "createNameObj< QuestionCoin >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "QuestionCoin"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.22,
+     "template_links": {
+      "SW_DEAD": 101
+     }
+    }
+   },
    "placed_on_disc": 92,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "BlueChip",
    "creator": "createNameObj< BlueChip >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0xa4",
+      "top_frames": [
+       "_ZN8ChipBase18initAfterPlacementEv",
+       "_ZN8ChipBase18initAfterPlacementEv",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv",
+       "_ZN10GameSystem21updateSceneControllerEv",
+       "_ZNK13NrvGameSystem16GameSystemNormal7executeEP5Spine",
+       "_ZN5Spine6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 34,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "YellowChip",
    "creator": "createNameObj< YellowChip >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "YellowChip"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.31,
+     "template_links": {
+      "ViewGroupId": 2
+     }
+    }
+   },
    "placed_on_disc": 83,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "BlueChipGroup",
@@ -25784,63 +26926,203 @@
    "creator": "createNameObj< YellowChipGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "nonactor",
+     "phase": "done",
+     "actors": 0,
+     "drawn": 0,
+     "alive": 0,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.08,
+     "template_links": {
+      "CameraSetId": 0,
+      "SW_A": 1007
+     }
+    }
+   },
    "placed_on_disc": 17,
-   "summary": "untested"
+   "summary": "nonactor"
   },
   {
    "class": "StarPiece",
    "creator": "createNameObj< StarPiece >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "StarPiece"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 1.47,
+     "template_links": {
+      "ViewGroupId": 1
+     }
+    }
+   },
    "placed_on_disc": 1263,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "StarPieceFlow",
    "creator": "createNameObj< StarPieceGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZNK17NrvStarPieceGroup15HostTypeNrvFlow7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9LiveActor8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 28,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "StarPieceGroup",
    "creator": "createNameObj< StarPieceGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 16,
+     "drawn": 15,
+     "alive": 16,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 400,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 2.43,
+     "template_links": {
+      "SW_APPEAR": 101,
+      "CommonPath_ID": 7
+     }
+    }
+   },
    "placed_on_disc": 339,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "StarPieceFollowGroup",
    "creator": "createNameObj< StarPieceFollowGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN13SwitchWatcher8movementEv",
+       "_ZN13SwitchWatcher8movementEv",
+       "_ZN19SwitchWatcherHolder8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 14,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "StarPieceMother",
    "creator": "createNameObj< StarPieceMother >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "StarPieceMother"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 7,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "StarPieceMother"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 1.24
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "StarPieceSpot",
    "creator": "createNameObj< StarPieceSpot >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.39,
+     "template_links": {
+      "SW_APPEAR": 2,
+      "ViewGroupId": 11
+     }
+    }
+   },
    "placed_on_disc": 122,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "OceanBowl",
@@ -25873,10 +27155,28 @@
    "class": "OceanSphere",
    "creator": "createNameObj< OceanSphere >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "WaterWave",
+    "WaterCameraFilter"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.6
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "WhirlPool",
@@ -25891,37 +27191,123 @@
    "class": "WhirlPoolAccelerator",
    "creator": "createNameObj< WhirlPoolAccelerator >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "Whirlpool",
+    "WaterCameraFilter"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "Whirlpool"
+     ],
+     "mount_ms": 0.3,
+     "create_ms": 0.13
+    }
+   },
    "placed_on_disc": 15,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "FishGroupA",
    "creator": "createNameObj< FishGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN9FishGroup4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 23,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "FishGroupB",
    "creator": "createNameObj< FishGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGBUS (10), code 1, fault address 0x1e607616c",
+      "top_frames": [
+       "_ZN2MR13isEqualStringEPKcS1_",
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN9FishGroup4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "FishGroupC",
    "creator": "createNameObj< FishGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x70ad07216c",
+      "top_frames": [
+       "_ZN2MR13isEqualStringEPKcS1_",
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN9FishGroup4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "FishGroupD",
@@ -25972,37 +27358,113 @@
    "class": "FlagKoopaB",
    "creator": "createNameObj< Flag >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FlagKoopaB"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "FlagKoopaB"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.11
+    }
+   },
    "placed_on_disc": 14,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "FlagRaceA",
    "creator": "createNameObj< Flag >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FlagRaceA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "FlagRaceA"
+     ],
+     "mount_ms": 0.3,
+     "create_ms": 0.15
+    }
+   },
    "placed_on_disc": 17,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "FlagKoopaCastle",
    "creator": "createNameObj< Flag >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FlagKoopaCastle"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "FlagKoopaCastle"
+     ],
+     "mount_ms": 14.4,
+     "create_ms": 0.52
+    }
+   },
    "placed_on_disc": 23,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "FlagPeachCastleA",
    "creator": "createNameObj< Flag >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FlagPeachCastleA"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "FlagPeachCastleA"
+     ],
+     "mount_ms": 54.7,
+     "create_ms": 4.14
+    }
+   },
    "placed_on_disc": 46,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "FlagPeachCastleB",
@@ -26045,18 +27507,59 @@
    "creator": "createNameObj< SeaGullGroup >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN12SeaGullGroup4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 13,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "WaterPlant",
    "creator": "createNameObj< WaterPlant >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "WaterPlant"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "WaterPlant"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 0.26
+    }
+   },
    "placed_on_disc": 37,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "HitWallTimerSwitch",
@@ -26134,28 +27637,85 @@
    "class": "ScrewSwitchReverse",
    "creator": "createNameObj< ScrewSwitchReverse >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "ScrewSwitchReverse"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "ScrewSwitchReverse"
+     ],
+     "mount_ms": 2.2,
+     "create_ms": 0.45
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "PicketSwitch",
    "creator": "createNameObj< PicketSwitch >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "PicketSwitch"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "PicketSwitch"
+     ],
+     "mount_ms": 1.6,
+     "create_ms": 0.34
+    }
+   },
    "placed_on_disc": 11,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "PicketSwitchBig",
    "creator": "createNameObj< PicketSwitch >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "PicketSwitchBig"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 1,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "PicketSwitchBig"
+     ],
+     "mount_ms": 0.4,
+     "create_ms": 0.35
+    }
+   },
    "placed_on_disc": 19,
-   "summary": "untested"
+   "summary": "ok"
   },
   {
    "class": "ValveSwitch",
@@ -26198,18 +27758,48 @@
    "creator": "createNameObj< RandomEffectObj >",
    "area_like": true,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "cloned",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.14
+    }
+   },
    "placed_on_disc": 56,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "IcePlanetLight",
    "creator": "createNameObj< EffectObjR100F50SyncClipping >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.2
+    }
+   },
    "placed_on_disc": 30,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "IceLayerBreak",
@@ -26225,9 +27815,24 @@
    "creator": "createNameObj< EffectObj20x20x10SyncClipping >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.2
+    }
+   },
    "placed_on_disc": 175,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "LavaSparksL",
@@ -26252,9 +27857,24 @@
    "creator": "createNameObj< EffectObj50x50x10SyncClipping >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.22
+    }
+   },
    "placed_on_disc": 17,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "BirdLouseS",
@@ -26279,18 +27899,55 @@
    "creator": "createNameObj< EffectObj10x10x10SyncClipping >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.17
+    }
+   },
    "placed_on_disc": 142,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "FallingSmallRock",
    "creator": "createNameObj< FallingSmallRock >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZNK19NrvFallingSmallRock12HostTypeWait7executeEP5Spine",
+       "_ZNK19NrvFallingSmallRock12HostTypeWait7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9LiveActor8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 13,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "LavaHomeVolcanoFallingRock",
@@ -26314,10 +27971,29 @@
    "class": "FountainBig",
    "creator": "createNameObj< FountainBig >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "FountainBig"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "invisible",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 1,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "FountainBig"
+     ],
+     "mount_ms": 0.4,
+     "create_ms": 0.32
+    }
+   },
    "placed_on_disc": 19,
-   "summary": "untested"
+   "summary": "invisible"
   },
   {
    "class": "WaterfallS",
@@ -26360,18 +28036,48 @@
    "creator": "createNameObj< EffectObjR1000F50 >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.17
+    }
+   },
    "placed_on_disc": 12,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "WaterDropBottom",
    "creator": "createNameObj< EffectObjR1000F50 >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.17
+    }
+   },
    "placed_on_disc": 11,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "WaterDropMiddle",
@@ -26423,9 +28129,24 @@
    "creator": "createNameObj< RandomEffectObj >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.13
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "BattleShipExplosionRock",
@@ -26468,18 +28189,48 @@
    "creator": "createNameObj< EffectObj20x20x10SyncClipping >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.31
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "SandBreezeL",
    "creator": "createNameObj< EffectObj50x50x10SyncClipping >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.17
+    }
+   },
    "placed_on_disc": 13,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "SpringJetWater",
@@ -26513,18 +28264,62 @@
    "creator": "createNameObj< SandUpDownEffectObj >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x8",
+      "top_frames": [
+       "_ZN13SwitchWatcher8movementEv",
+       "_ZN13SwitchWatcher8movementEv",
+       "_ZN19SwitchWatcherHolder8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "UFOSandObstacleBEffect",
    "creator": "createNameObj< SandUpDownEffectObj >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x8",
+      "top_frames": [
+       "_ZN13SwitchWatcher8movementEv",
+       "_ZN13SwitchWatcher8movementEv",
+       "_ZN19SwitchWatcherHolder8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 21,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "UFOSandObstacleCEffect",
@@ -26594,9 +28389,24 @@
    "creator": "createNameObj< EffectObj50x50x10SyncClipping >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.25
+    }
+   },
    "placed_on_disc": 25,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "UFOKinokoLandingBlackSmoke",
@@ -26611,19 +28421,57 @@
    "class": "InvisibleWall10x10",
    "creator": "createNameObj< InvisiblePolygonObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "InvisibleWall10x10"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "InvisibleWall10x10"
+     ],
+     "mount_ms": 4.9,
+     "create_ms": 0.24
+    }
+   },
    "placed_on_disc": 170,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "InvisibleWall10x20",
    "creator": "createNameObj< InvisiblePolygonObj >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "InvisibleWall10x20"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "InvisibleWall10x20"
+     ],
+     "mount_ms": 1.6,
+     "create_ms": 0.14
+    }
+   },
    "placed_on_disc": 111,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "InvisibleWallJump10x10",
@@ -26656,10 +28504,29 @@
    "class": "InvisibleWallGCapture10x20",
    "creator": "createNameObj< InvisiblePolygonObjGCapture >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "InvisibleWallGCapture10x20"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "InvisibleWallGCapture10x20"
+     ],
+     "mount_ms": 0.4,
+     "create_ms": 0.12
+    }
+   },
    "placed_on_disc": 79,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "PolygonCodeRecoveryPlate",
@@ -26692,10 +28559,29 @@
    "class": "InvisibleWaterfall",
    "creator": "createNameObj< TransparentWall >",
    "area_like": false,
-   "archives": [],
-   "results": {},
+   "archives": [
+    "InvisibleWaterfall"
+   ],
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [
+      "InvisibleWaterfall"
+     ],
+     "mount_ms": 0.5,
+     "create_ms": 1.35
+    }
+   },
    "placed_on_disc": 51,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "InvisibleWaterfallTwinFallLake",
@@ -26720,9 +28606,24 @@
    "creator": "MR::createGlobalCubeGravityObj",
    "area_like": true,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.04
+    }
+   },
    "placed_on_disc": 147,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "GlobalConeGravity",
@@ -26738,18 +28639,48 @@
    "creator": "MR::createGlobalDiskGravityObj",
    "area_like": true,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.04
+    }
+   },
    "placed_on_disc": 140,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "GlobalDiskTorusGravity",
    "creator": "MR::createGlobalDiskTorusGravityObj",
    "area_like": true,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.04
+    }
+   },
    "placed_on_disc": 10,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "GlobalPlaneGravity",
@@ -26765,45 +28696,127 @@
    "creator": "MR::createGlobalPlaneInBoxGravityObj",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.03
+    }
+   },
    "placed_on_disc": 463,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "GlobalPlaneGravityInCylinder",
    "creator": "MR::createGlobalPlaneInCylinderGravityObj",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.03
+    }
+   },
    "placed_on_disc": 34,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "GlobalPointGravity",
    "creator": "MR::createGlobalPointGravityObj",
    "area_like": true,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.04
+    }
+   },
    "placed_on_disc": 178,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "GlobalSegmentGravity",
    "creator": "MR::createGlobalSegmentGravityObj",
    "area_like": true,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "ok-nomodel",
+     "phase": "done",
+     "actors": 1,
+     "drawn": 0,
+     "alive": 1,
+     "hidden": 0,
+     "clipped": 0,
+     "move": 0,
+     "row": "synth",
+     "nonresident": [],
+     "mount_ms": 0.0,
+     "create_ms": 0.04
+    }
+   },
    "placed_on_disc": 75,
-   "summary": "untested"
+   "summary": "ok-nomodel"
   },
   {
    "class": "GlobalWireGravity",
    "creator": "MR::createGlobalWireGravityObj",
    "area_like": true,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN18WireGravityCreator25settingFromJMapOtherParamERK12JMapInfoIter",
+       "_ZN14GravityCreator14createFromJMapERK12JMapInfoIter",
+       "_ZN16GlobalGravityObj4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 12,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "MiniEggStarGalaxy",
@@ -27224,9 +29237,31 @@
    "creator": "createNameObj< GroupSwitchWatcher >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x8",
+      "top_frames": [
+       "_ZN18GroupSwitchWatcher7controlEv",
+       "_ZN18GroupSwitchWatcher7controlEv",
+       "_ZN9LiveActor8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 45,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "RaceRail",
@@ -27242,18 +29277,62 @@
    "creator": "createNameObj< TimerSwitch >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x8",
+      "top_frames": [
+       "_ZN11TimerSwitch7controlEv",
+       "_ZN11TimerSwitch7controlEv",
+       "_ZN9LiveActor8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 79,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "SwitchSynchronizerReverse",
    "creator": "createNameObj< SwitchSynchronizer >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "observe",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x8",
+      "top_frames": [
+       "_ZN18SwitchSynchronizer8movementEv",
+       "_ZN18SwitchSynchronizer8movementEv",
+       "_ZN19NameObjCategoryList7executeEi",
+       "_ZN13SceneFunction19executeMovementListEv",
+       "_ZNK12NrvGameScene15GameSceneAction7executeEP5Spine",
+       "_ZN5Spine6updateEv",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 79,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "MovieStarter",
@@ -27269,9 +29348,31 @@
    "creator": "createNameObj< DemoExecutor >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN16DemoCameraKeeperC2EP12DemoExecutorRK12JMapInfoIter",
+       "_ZN12DemoExecutor4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv",
+       "_ZN25GameSystemSceneController11updateSceneEv",
+       "_ZN10GameSystem21updateSceneControllerEv",
+       "_ZNK13NrvGameSystem16GameSystemNormal7executeEP5Spine",
+       "_ZN5Spine6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 110,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "DemoSubGroup",
@@ -27323,9 +29424,31 @@
    "creator": "createNameObj< ScenarioStarter >",
    "area_like": false,
    "archives": [],
-   "results": {},
+   "results": {
+    "EggStarGalaxy": {
+     "status": "crash",
+     "phase": "create",
+     "crash": {
+      "signal": "signal: SIGSEGV (11), code 2, fault address 0x0",
+      "top_frames": [
+       "_ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRider14initBezierRailERK12JMapInfoIterPK8JMapInfo",
+       "_ZN9RailRiderC1ERK12JMapInfoIter",
+       "_ZN9LiveActor13initRailRiderERK12JMapInfoIter",
+       "_ZN15ScenarioStarter13initShootPathERK12JMapInfoIter",
+       "_ZN15ScenarioStarter4initERK12JMapInfoIter",
+       "_ZN10ClassSweep6updateEb",
+       "_ZN9GameScene6updateEv"
+      ]
+     },
+     "row": null,
+     "nonresident": [],
+     "mount_ms": null,
+     "create_ms": null
+    }
+   },
    "placed_on_disc": 85,
-   "summary": "untested"
+   "summary": "crash"
   },
   {
    "class": "FileSelector",

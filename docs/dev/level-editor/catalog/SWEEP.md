@@ -1,20 +1,22 @@
 # Class sweep (spike S2): results
 
-**PARTIAL: the sweep is still running.** Classes are measured in order of how often the disc places them, so the common ones come first; `untested` below are classes not run yet. Coverage: EggStarGalaxy 495/1183; OceanRingGalaxy 428/1183; KoopaBattleVs1Galaxy 0/1183.
+**PARTIAL: the sweep is still running.** Classes are measured in order of how often the disc places them, so the common ones come first; `untested` below are classes not run yet. Coverage: EggStarGalaxy 607/1183; OceanRingGalaxy 428/1183; KoopaBattleVs1Galaxy 0/1183.
 
 Generated 2026-10-02 by `native/tools/class_sweep.py report` from `sweep.json`. Do not edit the tables by hand.
 
 ## Method
 
-- **Driver:** `src/Game/Scene/ClassSweep.cpp` (PETARI_NATIVE, off unless `PETARI_CLASS_SWEEP_JOBS` is set), on the S1 spike hooks.
+- **Driver:** `src/Game/Scene/ClassSweep.cpp` (PETARI_NATIVE, off unless `PETARI_CLASS_SWEEP_JOBS` is set), on the editor runtime's hooks (registerRows, nativeLateConnect).
   For each class it mounts the game's archive list for the class (and waits), synthesizes a one-row ObjInfo from a row of the
   stage (the stage's own row of that class if any, else the first ObjInfo row renamed, args -1), sets every link field
   (CameraSetId, SW_*, MessageId, CastId, ViewGroupId, CommonPath_ID, ClippingGroupId, GroupId, DemoGroupId, MapParts_ID) to -1, creates
   the class 400 units in front of and 250 up from Mario, runs 24 frames, classifies, then kills what it made. Area-like creators get a 20-unit scale.
 - **Harness:** `native/tools/class_sweep.py`. Batches of 25 classes per background-smoke process through `build/locked-app.sh`.
   A crash, assert or hang is attributed to the class that was in flight (log markers BEGIN/CREATED/RESULT/KILLED), the sweep
-  resumes after it, and every failure from a multi-class batch is re-run alone in a fresh process (a class that passes alone is
-  recorded ok with a note). The resume point is `results.jsonl`.
+  resumes after it, and one in eight failures from a multi-class batch is re-run alone in a fresh process (a class that passes alone
+  is recorded ok with a note; the rest keep the stack of the class in flight). Classes run in order of how often the disc places them
+  (`placed_on_disc`). The resume point is `results.jsonl`. On the last stage, classes that failed on another stage are not run: their
+  record is copied and marked `inferred_from`.
 - **Bisect:** for failing classes, `keep` (the stage's own row's links) and then real ids harvested from the same fields of the stage's
   rows, reduced one field at a time while the class still passes.
 - **Statuses:** see `statuses` in `sweep.json`. `invisible` and `dead` are heuristics from actor flags, not pixels.
@@ -30,15 +32,15 @@ Generated 2026-10-02 by `native/tools/class_sweep.py report` from `sweep.json`. 
 
 | status | EggStarGalaxy | OceanRingGalaxy | KoopaBattleVs1Galaxy | any stage (worst) |
 | --- | --- | --- | --- | --- |
-| crash | 114 | 63 | 0 | 114 |
+| crash | 135 | 63 | 0 | 135 |
 | assert | 4 | 1 | 0 | 4 |
 | kills-player | 3 | 1 | 0 | 3 |
-| invisible | 8 | 4 | 0 | 8 |
-| dead | 34 | 26 | 0 | 34 |
-| ok-nomodel | 27 | 27 | 0 | 27 |
-| nonactor | 89 | 89 | 0 | 89 |
-| ok | 216 | 217 | 0 | 216 |
-| untested | 0 | 0 | 0 | 688 |
+| invisible | 10 | 4 | 0 | 10 |
+| dead | 35 | 26 | 0 | 35 |
+| ok-nomodel | 58 | 27 | 0 | 58 |
+| nonactor | 90 | 89 | 0 | 90 |
+| ok | 272 | 217 | 0 | 272 |
+| untested | 0 | 0 | 0 | 576 |
 
 ## Failing classes
 
@@ -167,8 +169,29 @@ Failures with empty links, worst stage first. `links` is the bisect verdict: the
 | TemplateStageGeometry | EggStarGalaxy: assert; OceanRingGalaxy: assert | _ZN12PetariNative24prepareAllocationSymbolsEv.cold.1 | - |
 | IceMerameraKing | EggStarGalaxy: crash; OceanRingGalaxy: crash | _ZN15IceMerameraKing4initERK12JMapInfoIter | - |
 | OceanSmallTurtle | EggStarGalaxy: crash; OceanRingGalaxy: crash | _ZN2MR25initDefaultPosForMercatorEP9LiveActorRK12JMapInfoIterb | - |
+| FlipPanelObserver | EggStarGalaxy: crash | _ZN17FlipPanelObserver7exeWaitEv | - |
+| SunakazeKun | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| KoopaBattleMapStair | EggStarGalaxy: crash | _ZN13KoopaFunction22registerBattleMapStairEP19KoopaBattleMapStair | - |
+| RailCoin | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| PurpleRailCoin | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| BlueChip | EggStarGalaxy: crash | _ZN8ChipBase18initAfterPlacementEv | - |
+| StarPieceFlow | EggStarGalaxy: crash | _ZNK17NrvStarPieceGroup15HostTypeNrvFlow7executeEP5Spine | - |
+| StarPieceFollowGroup | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| FishGroupA | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| FishGroupB | EggStarGalaxy: crash | _ZN2MR13isEqualStringEPKcS1_ | - |
+| FishGroupC | EggStarGalaxy: crash | _ZN2MR13isEqualStringEPKcS1_ | - |
+| SeaGullGroup | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| FallingSmallRock | EggStarGalaxy: crash | _ZNK19NrvFallingSmallRock12HostTypeWait7executeEP5Spine | - |
+| UFOSandObstacleAEffect | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| UFOSandObstacleBEffect | EggStarGalaxy: crash | _ZN13SwitchWatcher8movementEv | - |
+| GlobalWireGravity | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
+| GroupSwitchWatcher | EggStarGalaxy: crash | _ZN18GroupSwitchWatcher7controlEv | - |
+| TimerSwitch | EggStarGalaxy: crash | _ZN11TimerSwitch7controlEv | - |
+| SwitchSynchronizerReverse | EggStarGalaxy: crash | _ZN18SwitchSynchronizer8movementEv | - |
+| DemoGroup | EggStarGalaxy: crash | _ZN16DemoCameraKeeperC2EP12DemoExecutorRK12JMapInfoIter | - |
+| ScenarioStarter | EggStarGalaxy: crash | _ZN10BezierRailC2ERK12JMapInfoIterPK8JMapInfo | - |
 
 ## Classes that need archives mounted
 
-231 classes had an archive that was not resident in the stage (listed per class in `sweep.json`: `archives`, per stage `nonresident`).
+285 classes had an archive that was not resident in the stage (listed per class in `sweep.json`: `archives`, per stage `nonresident`).
 
