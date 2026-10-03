@@ -47,6 +47,8 @@ const std::vector< Placed >& placed();
 /// later load of the galaxy (Level Select, a death) also shows the edits during the session.
 void setArchiveOverride(const std::string& path, std::vector< std::uint8_t > bytes);
 void clearArchiveOverrides();
+/// Forgets one override (a generated archive replaced by a newer one).
+void removeArchiveOverride(const std::string& path);
 /// The override for a path (case-insensitive), or null.
 const std::vector< std::uint8_t >* archiveOverride(const char* pPath);
 std::vector< std::string > archiveOverridePaths();

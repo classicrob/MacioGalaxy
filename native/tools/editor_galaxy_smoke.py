@@ -43,7 +43,7 @@ def run(args, name, user, mode, stage=GALAXY, mods=MOD):
         env.pop(key, None)
     env.update(PETARI_LOCK_CLASS="functional", PETARI_MOD_FOLDERS=mods)
     if mode:
-        env.update(PETARI_STAGE_FOLLOW="1", PETARI_EDITOR_GALAXY_TEST=mode)
+        env.update(PETARI_STAGE_FOLLOW="1", PETARI_EDITOR_GALAXY_TEST=mode, PETARI_EDITOR_GALAXY_SHOTS=str(args.output.resolve()))
     full = [str(args.lock), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die", str(args.timeout)] + command
     with log.open("wb") as stream:
         status = subprocess.run(full, cwd=ROOT, env=env, stdout=stream, stderr=subprocess.STDOUT).returncode

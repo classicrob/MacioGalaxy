@@ -14,6 +14,8 @@
 #include "Game/System/GameDataFunction.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
 #include "Game/Util/MessageUtil.hpp"
+#include "Game/Util/PlayerUtil.hpp"
+#include <petari/screenshot.hpp>
 #include <petari/smoke_phase.hpp>
 
 #include <cstdio>
@@ -65,13 +67,23 @@ namespace EditorGalaxyTest {
                          ascii(MR::getGalaxyNameOnCurrentLanguage(sGalaxy)).c_str(),
                          ascii(MR::getScenarioNameOnCurrentLanguage(sGalaxy, 1)).c_str(), owned ? "owned" : "not owned");
             if (verify) {
-                sDone = true;
                 done(owned, owned ? "the star collected and saved in the earlier run is owned after a restart"
                                   : "the star is not owned after a restart (the save lost it)");
                 return;
             }
         }
         if (verify) {
+            // PETARI_EDITOR_GALAXY_SHOTS=<dir>: the galaxy once Mario has stood a second after his
+            // entrance (or six seconds in).
+            static s32 sShotFrame = 0, sGrounded = 0;
+            sGrounded = sEntered && MR::isOnGroundPlayer() ? sGrounded + 1 : 0;
+            if (const char* pDir = std::getenv("PETARI_EDITOR_GALAXY_SHOTS");
+                pDir != nullptr && sEntered && stage == sGalaxy && sShotFrame >= 0 && (++sShotFrame == 360 || sGrounded == 60)) {
+                sShotFrame = -1;
+                char path[512];
+                std::snprintf(path, sizeof(path), "%s/galaxy-%s.png", pDir, sGalaxy);
+                PetariNative::Screenshot::request(path);
+            }
             return;
         }
         if (!sOwned && sEntered && GameDataFunction::hasPowerStar(sGalaxy, 1)) {

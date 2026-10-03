@@ -6,6 +6,7 @@
 #include "runtime_core.hpp"
 #include "checks.hpp"
 #include "save_mod.hpp"
+#include "terrain_sync.hpp"
 #include <petari/editor/catalog.hpp>
 
 #include "Game/Editor/EditorScene.hpp"
@@ -119,6 +120,7 @@ namespace {
         if (!Catalog::loadWithUser(PetariNative::Platform::ModFolder::userDirectory().string(), &catalogError)) {
             Core::reportError("Catalog: " + catalogError);
         }
+        TerrainSync::registerWithEditor();
         s.checkedRevision = 0;
         // Planet classes: the names PlanetMapDataTable lists on this disc.
         if (std::optional< Formats::Bytes > raw = readDisc("/ObjectData/PlanetMapDataTable.arc")) {
@@ -189,6 +191,7 @@ namespace {
             bound++;
         }
         s.boundScene = Hooks::sceneSerial();
+        TerrainSync::sceneBound(*s.model);  // brush rows: placement made nothing for them
         std::fprintf(stderr, "[editor] bound %d rows to their actors\n", bound);
         if (Core::uiCallbacks().sceneRebuilt != nullptr) {
             Core::uiCallbacks().sceneRebuilt();
@@ -196,6 +199,7 @@ namespace {
     }
 
     void retireRow(RowId id) {
+        TerrainSync::retireBrush(id);  // nothing unless the row was a brush
         Session& s = session();
         auto it = s.actors.find(id);
         if (it != s.actors.end()) {
@@ -205,6 +209,32 @@ namespace {
             s.actors.erase(it);
         }
         Core::unbindRow(id);
+    }
+
+    // Points of the zone's path with this l_id (CommonPathInfo row n -> CommonPathPointInfo.n); -1: no such path.
+    int railPointCount(const EditModel& m, int zone, int lid) {
+        int railTable = -1;
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (endsWith(m.tablePath(zone, t), "/commonpathinfo")) railTable = t;
+        }
+        if (railTable < 0 || lid < 0) return -1;
+        int index = 0, found = -1;
+        m.forEachRow(zone, railTable, [&](RowId row) {
+            if (m.state(row) == RowState::Deleted) return;
+            const Cell* pLid = m.cell(row, columnHash("l_id"));
+            if (found < 0 && pLid != nullptr && pLid->i == lid) found = index;
+            index++;
+        });
+        if (found < 0) return -1;
+        const std::string points = "/commonpathpointinfo." + std::to_string(found);
+        for (int t = 0; t < m.tableCount(zone); t++) {
+            if (endsWith(m.tablePath(zone, t), points)) {
+                int count = 0;
+                m.forEachRow(zone, t, [&](RowId row) { count += m.state(row) != RowState::Deleted; });
+                return count;
+            }
+        }
+        return 0;
     }
 
     // Re-create a changed row's actors live (objects and map parts), or leave it for a reload.
@@ -217,6 +247,18 @@ namespace {
         }
         const std::string path = m.tablePath(zone, table);
         const int layer = m.tableLayer(zone, table);
+        if (TerrainSync::isBrush(m.objectName(id))) {
+            // Terrain brushes are shown by terrain parts (terrain_sync.cpp), not the factory.
+            const bool shown = m.state(id) != RowState::Deleted && m.zonePlaced(zone) && layer >= 0 &&
+                               (m.activeLayers(zone, m.scenario()) & (1u << layer));
+            if (shown) {
+                TerrainSync::syncBrush(m, id);
+            } else {
+                retireRow(id);
+            }
+            s.pending.erase(id);
+            return;
+        }
         const bool gravity = isGravityTable(path);
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
         if (!live) {
@@ -247,6 +289,18 @@ namespace {
             row->info.setName("ObjInfo");
             Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
         }
+        // Wire gravity divides by its point count (Obj_arg0 + 2) and walks its path: a bad row would
+        // crash or hang the constructor (or an in-place rebuild).
+        if (std::string(pName) == "GlobalWireGravity") {
+            const Cell* pPoints = m.cell(id, columnHash("Obj_arg0"));
+            const Cell* pPath = m.cell(id, columnHash("CommonPath_ID"));
+            if (pPoints == nullptr || pPoints->i < 0 || pPoints->i > 4096 || pPath == nullptr || railPointCount(m, zone, pPath->i) < 2) {
+                Hooks::unregisterRows(row->bytes.data());
+                s.pending.insert(id);
+                Core::reportError("Wire gravity needs a path of 2 or more points and 0-4096 sample points (Obj_arg0)");
+                return;
+            }
+        }
         // In place when a registered updater can (no new actor; for gravity, no new slot).
         if (LiveActor* pCurrent = actorForRow(id)) {
             for (LiveUpdater updater : gLiveUpdaters) {
@@ -255,18 +309,6 @@ namespace {
                     s.liveRows.push_back(std::move(row));
                     return;
                 }
-            }
-        }
-        // Wire gravity divides by its point count (Obj_arg0 + 2) and walks its path: a bad row would
-        // crash or hang the constructor.
-        if (std::string(pName) == "GlobalWireGravity") {
-            const Cell* pPoints = m.cell(id, columnHash("Obj_arg0"));
-            const Cell* pPath = m.cell(id, columnHash("CommonPath_ID"));
-            if (pPoints == nullptr || pPoints->i < 0 || pPoints->i > 4096 || pPath == nullptr || pPath->i < 0) {
-                Hooks::unregisterRows(row->bytes.data());
-                s.pending.insert(id);
-                Core::reportError("Wire gravity needs a path and 0-4096 sample points (Obj_arg0)");
-                return;
             }
         }
         // A new gravity field needs a free slot; at the cap the current one stays until a Reload.
@@ -493,6 +535,7 @@ namespace {
 void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
+void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 
 bool reloadScene(bool fromStart) {
@@ -545,6 +588,7 @@ void tick(bool playable) {
     syncTestTick();
     reloadTestTick();
     saveTestTick();
+    brushTestTick();
     redrawTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
