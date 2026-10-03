@@ -229,8 +229,8 @@ namespace PetariEditor::Gravity {
                 triangle.color = fieldColor(f, selected ? 9 : 6);
         for (auto& line : m.lines) {
             const bool shell = (line.color >> 24) == 0x65;
-            line.color = fieldColor(f, shell ? (selected || hovered ? 85 : 25) : (c >> 24));
-            line.width = selected ? 3.5f : hovered ? 2.5f : 1.5f;
+            line.color = fieldColor(f, shell ? (selected || hovered ? 65 : 15) : (c >> 24));
+            line.width = shell ? 1.0f : selected ? 3.0f : hovered ? 2.5f : 1.0f;
         }
         return m;
     }

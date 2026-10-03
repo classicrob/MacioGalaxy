@@ -517,6 +517,12 @@ namespace EditorGravity {
                 bool isHovered = hasHover && hovered.row && hovered.row == f.row.v;
                 if (isHovered) s.view.hoveredIdentity = f.identity;
                 auto mesh = G::geometry(f, isSelected, isHovered, hasSelectedField);
+                if (!isSelected && !isHovered) {
+                    const float anchorDistance = length(sub(s.view.probe.position,c.eye));
+                    const float fade = std::clamp(anchorDistance / std::max(1.0f,length(sub(f.center,c.eye))),0.15f,1.0f);
+                    for (auto& line : mesh.lines)
+                        line.color = (line.color & 0xffffff) | (static_cast<unsigned>((line.color >> 24)*fade) << 24);
+                }
                 if (f.row.valid())
                     s.pickLines.emplace_back(f.row, mesh.lines);
                 s.mesh.lines.insert(s.mesh.lines.end(), mesh.lines.begin(), mesh.lines.end());

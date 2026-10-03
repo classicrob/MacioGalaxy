@@ -67,21 +67,30 @@ namespace EditorGravity {
             if (step == 0) {
                 const auto fields = Gravity::view().fields;
                 if (fields.empty()) return;
-                float nearest[2] = {1e30f, 1e30f};
-                const auto* mario = MR::getPlayerPos();
-                if (!mario) return;
+                Vec3 starter;
+                int starterZone=-1;
+                forEachBoundRow([&](RowId candidate, LiveActor* actor) {
+                    if (actor && std::string(m->objectName(candidate)) == "DiskGardenPlanet") {
+                        planetRows[0]=candidate;
+                        starter={actor->mPosition.x,actor->mPosition.y,actor->mPosition.z};
+                        m->locate(candidate,&starterZone,nullptr);
+                    }
+                });
+                if (!planetRows[0].valid()) return fail("Starter planet is not loaded");
+                float nearest[2] = {1e30f,1e30f};
                 for (const auto& f : fields) {
                     if (!f.row.valid() || !f.active) continue;
-                    const int kind = f.shape == Gravity::Shape::Point ? 0 :
-                        (f.shape == Gravity::Shape::Cube || f.shape == Gravity::Shape::Disk ||
-                         (f.shape == Gravity::Shape::Parallel && f.bound == Gravity::Bound::Box)) && f.radius > 500 ? 1 : -1;
+                    int zone=-1;
+                    m->locate(f.row,&zone,nullptr);
+                    const int kind = zone == starterZone && f.shape == Gravity::Shape::Disk ? 0 :
+                        zone != starterZone && f.shape == Gravity::Shape::Cube && f.radius > 500 ? 1 : -1;
                     if (kind < 0) continue;
-                    const float dx=f.center.x-mario->x, dy=f.center.y-mario->y, dz=f.center.z-mario->z;
+                    const float dx=f.center.x-starter.x,dy=f.center.y-starter.y,dz=f.center.z-starter.z;
                     const float distance=dx*dx+dy*dy+dz*dz;
-                    if (distance < nearest[kind]) { nearest[kind]=distance; wideRows[kind]=f.row; }
+                    if (distance < nearest[kind]) {nearest[kind]=distance;wideRows[kind]=f.row;}
                 }
                 if (!wideRows[0].valid() || !wideRows[1].valid()) return fail("Wide captures need point and cube/disk fields");
-                for (int i=0; i<2; ++i) {
+                for (int i=1; i<2; ++i) {
                     Vec3 center;
                     for (const auto& f : fields) if (f.row == wideRows[i]) center=f.center;
                     float best=1e30f;
@@ -103,7 +112,7 @@ namespace EditorGravity {
             }
             if (frame == 10 || frame == 100) PetariNative::EditorSettings::frame();
             if (frame == 15 || frame == 105) {
-                PetariNative::EditorSettings::dolly(-2);
+                PetariNative::EditorSettings::dolly(1);
                 PetariNative::EditorSettings::orbit(20,15);
             }
             if (frame == 60 || frame == 150) {
