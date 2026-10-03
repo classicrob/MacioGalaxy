@@ -138,6 +138,9 @@ namespace PetariEditor::Ui {
             in.frame = true;
             A::send(in);
         }
+        if (ImGui::IsItemHovered()) {
+            helpText() = "F frames the array preview while it is open, including the source and end handle.";
+        }
         ImGui::BeginDisabled(A::view().copies.empty());
         if (ImGui::Button("Apply array")) {
             A::Input in;
