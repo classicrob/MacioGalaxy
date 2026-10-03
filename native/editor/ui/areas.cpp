@@ -16,7 +16,6 @@ namespace PetariEditor::Ui {
         bool previewEnabled = true;
         ImTextureID previewTexture = 0;
         RowId previewRow;
-        std::uint64_t textureSerial = 0;
         double nextPreview = 0;
         void cameraParameters(const ModelView& m, const A::Volume& area) {
             const auto row = A::cameraRow(m, area);
@@ -58,6 +57,13 @@ namespace PetariEditor::Ui {
                     Cell value = *cell;
                     value.f = it->second.value;
                     op.sets.push_back({row, hash, value});
+                    if (hash == columnHash("fovy")) {
+                        if (const auto* flag = m.cell(row, columnHash("flag.nofovy"))) {
+                            Cell enabled = *flag;
+                            enabled.i = 1;
+                            op.sets.push_back({row, columnHash("flag.nofovy"), enabled});
+                        }
+                    }
                     applyOp(std::move(op));
                 }
             }
@@ -154,7 +160,7 @@ namespace PetariEditor::Ui {
         }
         const auto& frame = P::view();
         if (frame.copy && Host::readback()) {
-            static std::vector< unsigned char > rgba(480 * 270 * 4);
+            static std::vector< unsigned char > rgba(512 * 288 * 4);
             unsigned w = 0, h = 0;
             int ready = Host::readback()(frame.copy, rgba.data(), static_cast< unsigned >(rgba.size()), &w, &h);
             if (ready < 0) {
@@ -167,7 +173,6 @@ namespace PetariEditor::Ui {
                 else if (Host::updateTexture())
                     Host::updateTexture()(static_cast< unsigned long long >(previewTexture), w, h, rgba.data());
                 previewRow = frame.area;
-                textureSerial = frame.serial;
                 P::acknowledge(frame.copy);
             }
         }
@@ -186,7 +191,7 @@ namespace PetariEditor::Ui {
         ImGui::SetNextWindowBgAlpha(0.95f);
         ImGui::Begin("Camera preview##area-pip", nullptr,
                      ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_AlwaysAutoResize);
-        if (previewTexture && previewRow == selected && frame.area == selected && textureSerial == frame.serial)
+        if (previewTexture && previewRow == selected && frame.area == selected)
             ImGui::Image(previewTexture, {w - 16, (w - 16) * 270 / 480});
         if (frame.area == selected)
             ImGui::TextWrapped("%s", frame.message.c_str());

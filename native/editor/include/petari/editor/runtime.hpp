@@ -51,10 +51,11 @@ void registerLiveUpdater(LiveUpdater updater);
 
 // Non-actor placements (areas). Row handlers run before any LiveActor lookup.
 using RowPreviewHandler = bool (*)(RowId row, int zoneId, const RowTransform& transform);
+// newRow is empty when the row was deleted: deactivate the placement.
 using RowUpdater = bool (*)(RowId row, const JMapInfoIter& newRow);
 void registerRowPreviewHandler(RowPreviewHandler handler);
 void registerRowUpdater(RowUpdater updater);
-// Resolve an engine placement table/ordinal to this scene's current model row.
+// Resolve an engine placement table/ordinal to its stable model row, captured when the scene was bound.
 RowId rowForPlacement(const void* table, int index);
 
 /// Recomputes the Checks on the next tick without changing their baseline (a check provider's

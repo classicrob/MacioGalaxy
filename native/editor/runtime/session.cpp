@@ -63,6 +63,7 @@ namespace {
     struct Session {
         std::unique_ptr< EditModel > model;
         std::uint32_t boundScene = 0;
+        std::map< const void*, std::map< int, RowId > > placementRows;
         std::map< RowId, std::vector< LiveActor* > > actors;  // every actor a row made, first first
         std::set< RowId > pending;                             // edits that need a reload
         std::vector< std::unique_ptr< LiveRow > > liveRows;
@@ -113,6 +114,7 @@ namespace {
         }
         s.suspectNotices.clear();
         s.actors.clear();
+        s.placementRows.clear();
         s.pending.clear();
         s.boundScene = 0;
         Core::clearBindings();
@@ -260,6 +262,7 @@ namespace {
         PetariNative::HostAllocationScope host;
         Session& s = session();
         s.actors.clear();
+        s.placementRows.clear();
         s.liveRows.clear();
         Hooks::clearRailTables();
         s.railStorage.clear();
@@ -279,6 +282,16 @@ namespace {
                 if (const void* pData = EditorScene::tableData(s.model->zoneId(zone), s.model->tablePath(zone, table))) {
                     tableOf[pData] = {zone, table};
                 }
+            }
+        }
+        for (const Hooks::Placed& placed : Hooks::areas()) {
+            const auto table = tableOf.find(placed.table);
+            if (table == tableOf.end()) {
+                continue;
+            }
+            const RowId row = s.model->rowAt(table->second.first, table->second.second, placed.row);
+            if (row.valid()) {
+                s.placementRows[placed.table][placed.row] = row;
             }
         }
         int bound = 0;
@@ -386,13 +399,15 @@ namespace {
                 for (RowUpdater updater : gRowUpdaters) {
                     if (updater(id, iter)) {
                         s.pending.erase(id);
-                        if (row)
+                        if (row) {
                             s.liveRows.push_back(std::move(row));
+                        }
                         return;
                     }
                 }
-                if (row)
+                if (row) {
                     Hooks::unregisterRows(row->bytes.data());
+                }
             }
             if (endsWith(path, "/childobjinfo")) {
                 Core::reportNotice("Child objects must be rebuilt with their parent; Reload to apply this change");
@@ -502,9 +517,11 @@ namespace {
     }
 
     bool previewRow(RowId row, int zone, const RowTransform& transform) {
-        for (RowPreviewHandler handler : gRowPreviewHandlers)
-            if (handler(row, zone, transform))
+        for (RowPreviewHandler handler : gRowPreviewHandlers) {
+            if (handler(row, zone, transform)) {
                 return true;
+            }
+        }
         if (auto* actor = actorForRow(row)) {
             pokeTransform(actor, zone, transform);
             return true;
@@ -515,8 +532,9 @@ namespace {
         Session& s = session();
         for (size_t i = 0; i < command.rows.size() && i < command.previews.size(); i++) {
             int zone = 0, table = 0;
-            if (s.model->locate(command.rows[i], &zone, &table) && previewRow(command.rows[i], s.model->zoneId(zone), command.previews[i]))
+            if (s.model->locate(command.rows[i], &zone, &table) && previewRow(command.rows[i], s.model->zoneId(zone), command.previews[i])) {
                 s.previewing.insert(command.rows[i]);
+            }
         }
     }
 
@@ -524,8 +542,9 @@ namespace {
         Session& s = session();
         for (RowId id : rows) {
             int zone = 0, table = 0;
-            if (s.previewing.count(id) && s.model->locate(id, &zone, &table))
+            if (s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
                 previewRow(id, s.model->zoneId(zone), s.model->transform(id));
+            }
             s.previewing.erase(id);
         }
     }
@@ -756,22 +775,23 @@ void registerLiveUpdater(LiveUpdater updater) {
 }
 
 void registerRowPreviewHandler(RowPreviewHandler handler) {
-    if (std::find(gRowPreviewHandlers.begin(), gRowPreviewHandlers.end(), handler) == gRowPreviewHandlers.end())
+    if (std::find(gRowPreviewHandlers.begin(), gRowPreviewHandlers.end(), handler) == gRowPreviewHandlers.end()) {
         gRowPreviewHandlers.push_back(handler);
+    }
 }
 void registerRowUpdater(RowUpdater updater) {
-    if (std::find(gRowUpdaters.begin(), gRowUpdaters.end(), updater) == gRowUpdaters.end())
+    if (std::find(gRowUpdaters.begin(), gRowUpdaters.end(), updater) == gRowUpdaters.end()) {
         gRowUpdaters.push_back(updater);
+    }
 }
 RowId rowForPlacement(const void* data, int index) {
-    const auto* m = session().model.get();
-    if (!m || !data)
+    const auto& tables = session().placementRows;
+    const auto table = tables.find(data);
+    if (table == tables.end()) {
         return {};
-    for (int z = 0; z < m->zoneCount(); ++z)
-        for (int t = 0; t < m->tableCount(z); ++t)
-            if (EditorScene::tableData(m->zoneId(z), m->tablePath(z, t)) == data)
-                return m->rowAt(z, t, index);
-    return {};
+    }
+    const auto row = table->second.find(index);
+    return row == table->second.end() ? RowId{} : row->second;
 }
 
 void invalidateChecks() {
@@ -779,10 +799,12 @@ void invalidateChecks() {
 }
 
 bool playMarker(Vec3* position) {
-    if (!session().hasMarker)
+    if (!session().hasMarker) {
         return false;
-    if (position)
+    }
+    if (position) {
         *position = session().playMarker;
+    }
     return true;
 }
 

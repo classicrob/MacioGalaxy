@@ -13,6 +13,8 @@
 #include "Game/Camera/CameraTargetMtx.hpp"
 #include "Game/Camera/DotCamParams.hpp"
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorDraw.hpp"
+#include "Game/Camera/EditorPicking.hpp"
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Editor/EditorTerrain.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -49,7 +51,7 @@ namespace EditorCameraPreview {
     namespace {
         using namespace PetariEditor;
         namespace P = CameraPreview;
-        constexpr unsigned width = 480, height = 270;
+        constexpr unsigned width = 512, height = 288;
         alignas(32) unsigned char copy[width * height * 4], scratch[width * height * 4];
         std::uint32_t scene = 0;
         std::uint64_t lastSerial = 0;
@@ -285,10 +287,45 @@ namespace EditorCameraPreview {
             return;
         }
         Mtx view, saved;
-        Vec eye{cameraPose.mPos.x, cameraPose.mPos.y, cameraPose.mPos.z};
-        Vec up{cameraPose.mUpVec.x, cameraPose.mUpVec.y, cameraPose.mUpVec.z};
-        Vec watch{cameraPose.mWatchPos.x, cameraPose.mWatchPos.y, cameraPose.mWatchPos.z};
-        C_MTXLookAt(view, &eye, &up, &watch);
+        TPos3f cameraWorld;
+        MR::getCameraDirector()->calcViewMtxFromPoseParam(&cameraWorld, &cameraPose);
+        PSMTXInverse(cameraWorld.toMtxPtr(), view);
+        std::vector< J3DModel* > models;
+        std::uint64_t cost = 0;
+        {
+            PetariNative::HostAllocationScope host;
+            const float tanY = std::tan(cameraPose.mFovy * 0.5f * Gizmo::kDeg);
+            const float tanX = tanY * static_cast< float >(width) / height;
+            for (int i = 0; i < EditorScene::liveActorCount(); ++i) {
+                auto* actor = EditorScene::actorAt(i);
+                if (!actor || MR::isDead(actor) || MR::isHiddenModel(actor)) {
+                    continue;
+                }
+                auto* model = MR::getJ3DModel(actor);
+                if (!model) {
+                    model = EditorTerrain::partModel(actor);
+                }
+                if (!model) {
+                    continue;
+                }
+                float center[3], radius;
+                EditorPicking::bounds(actor, center, &radius);
+                Vec world{center[0], center[1], center[2]}, local;
+                PSMTXMultVec(view, &world, &local);
+                const float depth = -local.z;
+                if (depth + radius < 10 || depth - radius > 1000000 || std::fabs(local.x) > depth * tanX + radius * std::sqrt(1 + tanX * tanX) ||
+                    std::fabs(local.y) > depth * tanY + radius * std::sqrt(1 + tanY * tanY)) {
+                    continue;
+                }
+                models.push_back(model);
+                cost += EditorDraw::modelCost(model);
+            }
+        }
+        if (cost > UINT32_MAX || !EditorDraw::spendBytes(static_cast< std::uint32_t >(cost))) {
+            out.message = "Showing the last still: this view exceeds the preview draw budget.";
+            publishView(std::move(out));
+            return;
+        }
         Mtx44 projection;
         C_MTXPerspective(projection, cameraPose.mFovy, static_cast< float >(width) / height, 10, 1000000);
         PSMTXCopy(j3dSys.mViewMtx, saved);
@@ -308,15 +345,7 @@ namespace EditorCameraPreview {
         GXSetProjection(projection, GX_PERSPECTIVE);
         MR::loadLightPlayer();
         GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
-        for (int i = 0; i < EditorScene::liveActorCount(); ++i) {
-            auto* actor = EditorScene::actorAt(i);
-            if (!actor || MR::isDead(actor))
-                continue;
-            auto* model = MR::getJ3DModel(actor);
-            if (!model)
-                model = EditorTerrain::partModel(actor);
-            if (!model)
-                continue;
+        for (auto* model : models) {
             model->viewCalc();
             j3dSys.setVtxPos(nullptr);
             const auto* data = model->getModelData();
@@ -328,15 +357,8 @@ namespace EditorCameraPreview {
         GXCopyTex(copy, GX_TRUE);
         GXRestoreFrameBuffer();
         PSMTXCopy(saved, j3dSys.mViewMtx);
-        for (int i = 0; i < EditorScene::liveActorCount(); ++i) {
-            auto* actor = EditorScene::actorAt(i);
-            if (!actor || MR::isDead(actor))
-                continue;
-            auto* model = MR::getJ3DModel(actor);
-            if (!model)
-                model = EditorTerrain::partModel(actor);
-            if (model)
-                model->viewCalc();
+        for (auto* model : models) {
+            model->viewCalc();
         }
         MR::loadViewMtx();
         MR::loadProjectionMtx();

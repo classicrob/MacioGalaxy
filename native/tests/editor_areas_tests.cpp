@@ -157,5 +157,6 @@ int main() {
     check(m->patch().json.find("camera/cameraparam.bcam") != std::string::npos, "camera parameters included in patch");
     check(m->undo(), "undo camera parameter edit");
     check(A::cameraRow(*m, volumes.front()).valid(), "camera parameter undo restores link");
+    check(m->changedArchives().empty(), "undone bcam edit produces no changed archive");
     std::printf("areas: %d checks passed\n", checks);
 }

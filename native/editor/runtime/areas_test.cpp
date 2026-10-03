@@ -16,6 +16,7 @@
 #include <petari/host_allocation.hpp>
 #include <petari/screenshot.hpp>
 #include <petari/smoke_phase.hpp>
+#include <vector>
 
 namespace PetariEditor::Runtime {
     void areasTestTick() {
@@ -28,6 +29,7 @@ namespace PetariEditor::Runtime {
         static std::uint32_t serial = 0;
         static int cursor = 0, pending = 0;
         static CameraTargetObj* originalTarget = nullptr;
+        static std::vector< std::pair< Hooks::Placed, RowId > > originalPlacements;
         auto finish = [&](const char* result) {
             std::fprintf(stderr, "[editor-areas] %s\n", result);
             done = true;
@@ -60,6 +62,7 @@ namespace PetariEditor::Runtime {
                 const auto row = rowForPlacement(placed.table, placed.row);
                 if (!row.valid())
                     continue;
+                originalPlacements.push_back({placed, row});
                 const auto volume = Areas::describe(*m, row);
                 if (!volume)
                     continue;
@@ -120,6 +123,11 @@ namespace PetariEditor::Runtime {
             enqueue(std::move(c));
         }
         if (f == 60) {
+            for (const auto& [placed, row] : originalPlacements) {
+                if (rowForPlacement(placed.table, placed.row) != row) {
+                    return finish("FAIL: area identity shifted after deleting a table row");
+                }
+            }
             if (area->isValid())
                 return finish("FAIL: deleted area still active");
             enqueue(Command{Command::Kind::Undo});
@@ -145,6 +153,19 @@ namespace PetariEditor::Runtime {
                 return finish("FAIL: camera edit not pending");
             std::fprintf(stderr, "[editor-areas] camera edits pending, scene unchanged PASS\n");
         }
+        if (f == 120) {
+            const auto volume = Areas::describe(*m, cameraRow);
+            const auto param = Areas::cameraRow(*m, *volume);
+            Command c{Command::Kind::Apply};
+            c.op.label = "Edit camera field of view";
+            Cell value = *m->cell(param, columnHash("fovy"));
+            value.f = 55;
+            c.op.sets.push_back({param, columnHash("fovy"), value});
+            value = *m->cell(param, columnHash("flag.nofovy"));
+            value.i = 1;
+            c.op.sets.push_back({param, columnHash("flag.nofovy"), value});
+            enqueue(std::move(c));
+        }
         if (f == 180) {
             const auto& preview = CameraPreview::view();
             if (preview.area != cameraRow || preview.serial == 0 || !std::isfinite(preview.eye.x) ||
@@ -152,6 +173,9 @@ namespace PetariEditor::Runtime {
                 return finish("FAIL: camera preview has no finite pose");
             if (MR::getCameraDirector()->mTargetHolder->mTarget != originalTarget)
                 return finish("FAIL: preview changed active camera target");
+            if (std::fabs(preview.fovy - 55) > 0.01f || status().pendingCount != pending + 2 || preview.message.find("budget") != std::string::npos) {
+                return finish("FAIL: live bcam preview did not apply edited field of view");
+            }
             PetariNative::EfbDump::mark("areas-camera-preview");
             std::fprintf(stderr, "[editor-areas] camera preview pose finite and active target restored PASS\n");
         }
@@ -159,7 +183,21 @@ namespace PetariEditor::Runtime {
             const auto file = std::string(output) + "/camera-preview.png";
             PetariNative::Screenshot::request(file.c_str());
         }
-        if (f == 230)
+        if (f == 220) {
+            enqueue(Command{Command::Kind::Reload});
+        }
+        if (f >= 230) {
+            if (mode() == Mode::Reloading || Hooks::sceneSerial() == serial) {
+                if (f > 900) {
+                    finish("FAIL: camera reload did not finish");
+                }
+                return;
+            }
+            if (mode() != Mode::Editing || status().pendingCount != 0 || m->historyCursor() != cursor + 2) {
+                return finish("FAIL: camera reload lost history or kept pending edits");
+            }
+            std::fprintf(stderr, "[editor-areas] camera reload applies pending edits and preserves history PASS\n");
             finish("PASS");
+        }
     }
 }  // namespace PetariEditor::Runtime

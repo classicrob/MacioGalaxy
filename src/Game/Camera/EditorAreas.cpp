@@ -44,7 +44,7 @@ namespace EditorAreas {
         }
         void bind() {
             PetariNative::HostAllocationScope host;
-            if (scene == Hooks::sceneSerial() && boundModel == model())
+            if (scene == Hooks::sceneSerial() && boundModel == model() && !bindings.empty())
                 return;
             scene = Hooks::sceneSerial();
             boundModel = model();
