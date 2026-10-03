@@ -39,6 +39,8 @@ namespace PetariEditor::Ui {
     }
     void drawPlaytestInspector(const std::vector< RowId >& rows) {
         const auto view = Playtest::view();
+        if (ImGui::GetTime() < feedbackUntil && !feedback.empty())
+            helpText() = feedback;
         if (!view.active || rows.empty())
             return;
         drawSection("Play-test", Playtest::elapsed(view.frames).c_str());
