@@ -143,6 +143,8 @@ struct AddRow {
         Cell value;
     };
     std::vector< Value > cells;  // override copyOf's (or the table's neutral values)
+    int at = -1;  // the row's index in its table (a path's points are in order); -1: at the end.
+                  // An Op's adds apply in order, so give ascending indices for several rows
 };
 
 /// One undo step. Applied in this order: adds, sets (which may name added rows), deletes,
