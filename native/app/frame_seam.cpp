@@ -7,11 +7,18 @@
 #include <aurora/event.h>
 
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_keyboard.h>
+#ifdef PETARI_EDITOR_UI
+#include <imgui.h>
+#include <imgui_internal.h>  // GImGui->HoveredWindow, ActiveId (the mouse trace)
+#endif
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 extern "C" uint64_t petari_gx_pipeline_manifest_failure_count();
@@ -438,6 +445,40 @@ void traceFrame(const Rect& image) {
     gTrace.slowFrames = 0;
 }
 
+#ifdef PETARI_EDITOR_UI
+// PETARI_EDITOR_MOUSE_TRACE=1: ImGui's mouse beside SDL's, when either changes (EP-001: panels ignore real
+// clicks in a visible window). One line per change; quiet when nothing moves.
+unsigned gImGuiMouseEvents = 0;  // SDL mouse events Aurora forwarded this run (counted in handleEvents)
+void traceEditorMouse() {
+    static const bool enabled = std::getenv("PETARI_EDITOR_MOUSE_TRACE") != nullptr;
+    if (!enabled || ImGui::GetCurrentContext() == nullptr) return;
+    const ImGuiIO& io = ImGui::GetIO();
+    float sx = 0.0f, sy = 0.0f, gx = 0.0f, gy = 0.0f;
+    const SDL_MouseButtonFlags sdlButtons = SDL_GetMouseState(&sx, &sy);
+    SDL_GetGlobalMouseState(&gx, &gy);
+    int wx = 0, wy = 0;
+    if (gWindow != nullptr) SDL_GetWindowPosition(gWindow, &wx, &wy);
+    SDL_Window* focus = SDL_GetKeyboardFocus();
+    SDL_Window* mouseFocus = SDL_GetMouseFocus();
+    const ImGuiWindow* hovered = GImGui->HoveredWindow;
+    char line[512];
+    std::snprintf(line, sizeof(line),
+                  "imgui pos (%.0f,%.0f) down %d%d%d display %.0fx%.0f fb %.2f capture %d hovered '%s' active %u | sdl window (%.0f,%.0f) "
+                  "buttons %u global (%.0f,%.0f) winpos (%d,%d) keyfocus %s mousefocus %s relative %d | events %u",
+                  io.MousePos.x, io.MousePos.y, io.MouseDown[0], io.MouseDown[1], io.MouseDown[2], io.DisplaySize.x, io.DisplaySize.y,
+                  io.DisplayFramebufferScale.x, io.WantCaptureMouse, hovered != nullptr ? hovered->Name : "-", GImGui->ActiveId,
+                  sx, sy, static_cast<unsigned>(sdlButtons), gx, gy, wx, wy, focus == nullptr ? "none" : focus == gWindow ? "ours" : "other",
+                  mouseFocus == nullptr ? "none" : mouseFocus == gWindow ? "ours" : "other",
+                  gWindow != nullptr ? static_cast<int>(SDL_GetWindowRelativeMouseMode(gWindow)) : -1, gImGuiMouseEvents);
+    static std::string last;
+    // Compare without the event counter (it ticks with every motion).
+    const std::string key(line, std::strstr(line, " | events") != nullptr ? std::strstr(line, " | events") - line : std::strlen(line));
+    if (key == last) return;
+    last = key;
+    std::fprintf(stderr, "[editor-mouse] %s\n", line);
+}
+#endif
+
 void handleEvents(const AuroraEvent* event) {
     for (; event != nullptr && event->type != AURORA_NONE; ++event) {
         switch (event->type) {
@@ -450,6 +491,9 @@ void handleEvents(const AuroraEvent* event) {
             }
             break;
         case AURORA_SDL_EVENT:
+#ifdef PETARI_EDITOR_UI
+            if (event->sdl.type >= SDL_EVENT_MOUSE_MOTION && event->sdl.type <= SDL_EVENT_MOUSE_WHEEL) ++gImGuiMouseEvents;
+#endif
             if (event->sdl.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
                 gTiming.unfocused = gTiming.unfocusedInFrame = true;
             } else if (event->sdl.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
@@ -650,6 +694,9 @@ extern "C" void petari_host_frame_seam(void) {
 #ifdef PETARI_EDITOR_UI
     // The level editor's panels, around the game (they set where the next frame's image goes).
     PetariEditor::Ui::drawFrame(gLastWindowWidth, gLastWindowHeight);
+#endif
+#ifdef PETARI_EDITOR_UI
+    traceEditorMouse();
 #endif
     PetariNative::HomeMenu::drawImGuiOverlay(image.x, image.y, image.width, image.height);
     const std::uint64_t endStart = Telemetry::nowNs();
