@@ -6,6 +6,7 @@
 #include "Game/Camera/EditorGravity.hpp"
 #include "Game/Camera/EditorPaths.hpp"
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/Camera/EditorPlaytest.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
@@ -179,6 +180,7 @@ namespace EditorDraw {
             if (spend(modelOf(actor), 10)) outline(actor, GXColor{250, 204, 56, 255}, 2.5f);
         }
         if (hover != nullptr && !hoverSelected && spend(modelOf(hover), 10)) outline(hover, GXColor{102, 219, 255, 255}, 1.5f);
+        EditorPlaytest::draw();  // M3 play-test: recorded trail and jump peaks.
         EditorGravity::draw();  // M3 gravity: translucent fields before restoring GX.
         EditorAreas::draw();  // M3 areas: shared depth-tested volumes.
         EditorPaths::draw();  // M3 paths: depth-tested rails and wires.

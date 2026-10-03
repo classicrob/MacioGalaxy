@@ -15,6 +15,7 @@
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
 
+#include <petari/editor/runtime.hpp>
 #include <petari/host_allocation.hpp>
 #include <petari/milestone.hpp>
 #include <petari/progress.hpp>
@@ -46,6 +47,8 @@ void observeProgressFrame() {
         else if (std::strcmp(name, "PauseMenu.Close") == 0) gPaused = false;
     }
 
+    if (PetariEditor::Runtime::progressIsolated()) return;
+
     Progress::FrameState state;
     GameSystem* pGameSystem = SingletonHolder< GameSystem >::get();
     const GameSystemSceneController* pController = pGameSystem != nullptr ? pGameSystem->mSceneController : nullptr;
@@ -74,6 +77,7 @@ void observeProgressFrame() {
 }  // namespace PetariNative::App
 
 extern "C" void petari_progress_star_get(int mission, int grand) {
+    if (PetariEditor::Runtime::progressIsolated()) return;
     PetariNative::HostAllocationScope host;
     PetariNative::Progress::starGet(mission, grand != 0);
 }

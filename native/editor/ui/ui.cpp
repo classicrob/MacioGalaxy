@@ -1,3 +1,4 @@
+#include "playtest.hpp"
 #include "areas.hpp"
 // The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
 #include <petari/editor/ui.hpp>
@@ -254,6 +255,7 @@ void drawToolbar(float width) {
             drawAreasToggle();      // M3 areas: bounds visibility.
             drawAreasToggle(true);  // M3 areas: camera volume visibility.
             // M3 play-test and later view toggles go here, one per line.
+            drawPlaytestToggle();  // M3 play-test: recorded Mario trail.
             ImGui::EndPopup();
         }
         ImGui::SameLine(0.0f, 16.0f);
@@ -347,7 +349,7 @@ void drawFooter(float width, float height) {
     const PetariNative::EditorGizmo::View gizmo = PetariNative::EditorGizmo::view();
     if (gizmo.dragging && gizmo.status[0] != '\0') {
         ImGui::TextUnformatted(gizmo.status);
-    } else {
+    } else if (!drawPlaytestFooter()) {  // M3 play-test: Keep status.
         ImGui::TextUnformatted("Tab play    M marker    Click select    W E R move/rotate/scale    End drop    F frame    Cmd+Z undo    Cmd+. focus");
     }
     // Right end: unsaved edits and the stage's memory (UX section 16, the memory meter).
