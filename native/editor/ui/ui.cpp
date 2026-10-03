@@ -1,5 +1,6 @@
 #include "playtest.hpp"
 #include "areas.hpp"
+#include "play_view.hpp"
 // The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
 #include <petari/editor/ui.hpp>
 
@@ -268,6 +269,7 @@ void drawToolbar(float width) {
             drawAreasToggle(true);  // M3 areas: camera volume visibility.
             // M3 play-test and later view toggles go here, one per line.
             drawPlaytestToggle();  // M3 play-test: recorded Mario trail.
+            drawPlayViewToggle();  // friction #14: what Play shows from the marker.
             ImGui::EndPopup();
         }
         ImGui::SameLine(0.0f, 16.0f);
