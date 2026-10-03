@@ -3,6 +3,7 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Gravity/CubeGravity.hpp"
 #include "Game/Gravity/PointGravity.hpp"
+#include "Game/Gravity/SegmentGravity.hpp"
 #include "Game/LiveActor/AllLiveActorGroup.hpp"
 #include "Game/LiveActor/HitSensor.hpp"
 #include "Game/Map/CollisionParts.hpp"
@@ -11,16 +12,35 @@
 #include "Game/Scene/SceneFunction.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/MtxUtil.hpp"
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/LiveActor/ModelObj.hpp"
+#include "Game/System/ArchiveHolder.hpp"
+#include "Game/System/FileLoader.hpp"
+#include "Game/Util/SingletonHolder.hpp"
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/host_allocation.hpp>
 #include <vector>
 
 namespace EditorTerrain {
-    Part::Part(const char* pName) : LiveActor(pName) {
+    namespace {
+        // The scene's parts (no RTTI to tell them from other actors), forgotten with the scene.
+        std::vector< const Part* > sParts;
+        u32 sPartsScene = 0;
+
+        std::vector< const Part* >& sceneParts() {
+            if (sPartsScene != PetariEditor::Hooks::sceneSerial()) {
+                sParts.clear();
+                sPartsScene = PetariEditor::Hooks::sceneSerial();
+            }
+            return sParts;
+        }
+    }  // namespace
+
+    Part::Part(const char* pName)
+        : LiveActor(pName), mBuiltScale(1.0f, 1.0f, 1.0f), mModel(nullptr), mGravity(nullptr), mGravityKind(GravityShape::Kind::None) {
         mBaseMtx.identity();
     }
 
@@ -40,8 +60,121 @@ namespace EditorTerrain {
     }
 
     void Part::calcAnim() {
-        MR::makeMtxTR(mBaseMtx.toMtxPtr(), this);
-        LiveActor::calcAnim();
+        // TR, then the stretch of a scale preview (the geometry is built at mBuiltScale). Not
+        // LiveActor::calcAnim: its collision matrix multiplies by mScale.x again.
+        TPos3f mtx;
+        MR::makeMtxTR(mtx.toMtxPtr(), this);
+        const TVec3f stretch(mScale.x / mBuiltScale.x, mScale.y / mBuiltScale.y, mScale.z / mBuiltScale.z);
+        for (int row = 0; row < 3; row++) {
+            mtx.mMtx[row][0] *= stretch.x;
+            mtx.mMtx[row][1] *= stretch.y;
+            mtx.mMtx[row][2] *= stretch.z;
+        }
+        bool moved = false;
+        for (int row = 0; row < 3; row++) {
+            for (int col = 0; col < 4; col++) {
+                moved = moved || mtx.mMtx[row][col] != mBaseMtx.mMtx[row][col];
+            }
+        }
+        if (!moved) {
+            return;
+        }
+        mBaseMtx = mtx;
+        // A brush does not move in play: reset the collision's matrices outright (frozen Edit has
+        // no movement step to carry them), and move its gravity with it.
+        if (mCollisionParts != nullptr) {
+            mCollisionParts->resetAllMtx(mBaseMtx);
+        }
+        if (mGravity != nullptr) {
+            mGravity->updateMtx(mBaseMtx);
+        }
+    }
+
+    void Part::setBuiltScale(const TVec3f& rScale) {
+        mBuiltScale.set(rScale.x != 0.0f ? rScale.x : 1.0f, rScale.y != 0.0f ? rScale.y : 1.0f, rScale.z != 0.0f ? rScale.z : 1.0f);
+        mBaseMtx.mMtx[0][0] += 1.0f;  // force the next calcAnim to rebuild
+        MR::calcAnimDirect(this);
+    }
+
+    void Part::setModel(LiveActor* pModel) {
+        if (mModel != nullptr && mModel != pModel) {
+            EditorScene::retire(mModel);
+        }
+        mModel = pModel;
+    }
+
+    bool Part::setGravity(const GravityShape& rShape) {
+        if (rShape.kind != mGravityKind && mGravity != nullptr) {
+            mGravity->mAppeared = false;  // no unregister: off until the next scene
+            mGravity = nullptr;
+        }
+        mGravityKind = rShape.kind;
+        if (rShape.kind == GravityShape::Kind::None) {
+            return true;
+        }
+        if (mGravity == nullptr) {
+            if (gravityRoom() <= 0) {
+                mGravityKind = GravityShape::Kind::None;
+                return false;
+            }
+            switch (rShape.kind) {
+            case GravityShape::Kind::Cube:
+                mGravity = new CubeGravity();
+                break;
+            case GravityShape::Kind::Point:
+                mGravity = new PointGravity();
+                break;
+            default:
+                mGravity = new SegmentGravity();
+                break;
+            }
+            mGravity->setPriority(1000);
+            MR::registerGravity(mGravity);
+        }
+        mGravity->mRange = rShape.range;
+        switch (rShape.kind) {
+        case GravityShape::Kind::Cube: {
+            CubeGravity* pCube = static_cast< CubeGravity* >(mGravity);
+            TPos3f cube;
+            cube.identity();
+            cube.mMtx[0][0] = rShape.half.x;
+            cube.mMtx[1][1] = rShape.half.y;
+            cube.mMtx[2][2] = rShape.half.z;
+            cube.setTrans(rShape.center);
+            pCube->mActiveFaces = static_cast< u8 >(rShape.activeFaces);
+            pCube->mCube = cube;
+            break;
+        }
+        case GravityShape::Kind::Point:
+            mGravity->mDistant = rShape.radius;
+            static_cast< PointGravity* >(mGravity)->setOrig(rShape.center);
+            break;
+        default: {
+            SegmentGravity* pSegment = static_cast< SegmentGravity* >(mGravity);
+            mGravity->mDistant = rShape.radius;
+            pSegment->setGravityPoint(0, rShape.a);
+            pSegment->setGravityPoint(1, rShape.b);
+            pSegment->setSideVector(TVec3f(1.0f, 0.0f, 0.0f));
+            pSegment->setValidSideDegree(360.0f);
+            pSegment->setEdgeValid(0, true);
+            pSegment->setEdgeValid(1, true);
+            pSegment->updateLocalParam();
+            break;
+        }
+        }
+        mGravity->updateMtx(mBaseMtx);
+        return true;
+    }
+
+    void Part::retire() {
+        if (mCollisionParts != nullptr) {
+            MR::invalidateCollisionParts(this);
+        }
+        if (mGravity != nullptr) {
+            mGravity->mAppeared = false;
+        }
+        setModel(nullptr);
+        EditorScene::retire(this);
     }
 
     void Part::setCollision(void* pKcl, const void* pPa) {
@@ -79,7 +212,20 @@ namespace EditorTerrain {
         MR::clearCurrentPlacementZoneId();
         EditorScene::lateConnect(executeBefore);
         pPart->setCollision(pKcl, pPa);
+        {
+            PetariNative::HostAllocationScope host;
+            sceneParts().push_back(pPart);
+        }
         return pPart;
+    }
+
+    J3DModel* partModel(const LiveActor* pActor) {
+        for (const Part* pPart : sceneParts()) {
+            if (pPart == pActor) {
+                return pPart->mModel != nullptr ? MR::getJ3DModel(pPart->mModel) : nullptr;
+            }
+        }
+        return nullptr;
     }
 
     void injectArchive(const char* pPath, const void* pBytes, u32 size) {
@@ -89,6 +235,16 @@ namespace EditorTerrain {
         PetariNative::HostAllocationScope host;
         const u8* pData = static_cast< const u8* >(pBytes);
         PetariEditor::Hooks::setArchiveOverride(pPath, std::vector< u8 >(pData, pData + size));
+    }
+
+    void releaseArchive(const char* pPath) {
+        FileLoader* pLoader = SingletonHolder< FileLoader >::get();
+        pLoader->mArchiveHolder->nativeRemove(pPath);
+        if (pLoader->isLoaded(pPath)) {
+            pLoader->removeFile(pPath);
+        }
+        PetariNative::HostAllocationScope host;
+        PetariEditor::Hooks::removeArchiveOverride(pPath);
     }
 
     LiveActor* createModel(const char* pName, const char* pModelName, MtxPtr pMtx, const char** ppError) {
@@ -108,6 +264,10 @@ namespace EditorTerrain {
         EditorScene::lateConnect(executeBefore);
         MR::invalidateClipping(pModel);
         return pModel;
+    }
+
+    s32 gravityRoom() {
+        return 128 - EditorScene::gravityCount();
     }
 
     PlanetGravity* addCubeGravity(const TVec3f& rCenter, const TVec3f& rHalf, f32 range, s32 priority) {

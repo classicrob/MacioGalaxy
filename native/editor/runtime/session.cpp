@@ -6,6 +6,7 @@
 #include "runtime_core.hpp"
 #include "checks.hpp"
 #include "save_mod.hpp"
+#include "terrain_sync.hpp"
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/paths.hpp>
 
@@ -103,6 +104,7 @@ namespace {
         if (!Catalog::loadWithUser(PetariNative::Platform::ModFolder::userDirectory().string(), &catalogError)) {
             Core::reportError("Catalog: " + catalogError);
         }
+        TerrainSync::registerWithEditor();
         s.checkedRevision = 0;
         // Planet classes: the names PlanetMapDataTable lists on this disc.
         if (std::optional< Formats::Bytes > raw = readDisc("/ObjectData/PlanetMapDataTable.arc")) {
@@ -243,6 +245,7 @@ namespace {
             bound++;
         }
         s.boundScene = Hooks::sceneSerial();
+        TerrainSync::sceneBound(*s.model);  // brush rows: placement made nothing for them
         std::fprintf(stderr, "[editor] bound %d rows to their actors\n", bound);
         if (Core::uiCallbacks().sceneRebuilt != nullptr) {
             Core::uiCallbacks().sceneRebuilt();
@@ -250,6 +253,7 @@ namespace {
     }
 
     void retireRow(RowId id) {
+        TerrainSync::retireBrush(id);  // nothing unless the row was a brush
         Session& s = session();
         auto it = s.actors.find(id);
         if (it != s.actors.end()) {
@@ -271,7 +275,20 @@ namespace {
         }
         const std::string path = m.tablePath(zone, table);
         const int layer = m.tableLayer(zone, table);
+        if (TerrainSync::isBrush(m.objectName(id))) {
+            // Terrain brushes are shown by terrain parts (terrain_sync.cpp), not the factory.
+            const bool shown = m.state(id) != RowState::Deleted && m.zonePlaced(zone) && layer >= 0 &&
+                               (m.activeLayers(zone, m.scenario()) & (1u << layer));
+            if (shown) {
+                TerrainSync::syncBrush(m, id);
+            } else {
+                retireRow(id);
+            }
+            s.pending.erase(id);
+            return;
+        }
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || endsWith(path,"/childobjinfo");
+
         if (!live) {
             s.pending.insert(id);
             return;
@@ -542,6 +559,7 @@ namespace {
 void syncTestTick();    // sync_test.cpp: the SceneSync live check (PETARI_EDITOR_SYNC_TEST)
 void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETARI_EDITOR_RELOAD_TEST)
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
+void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
@@ -583,6 +601,7 @@ void tick(bool playable) {
     syncTestTick();
     reloadTestTick();
     saveTestTick();
+    brushTestTick();
     redrawTestTick();
     pathsTestTick();
     Session& s = session();

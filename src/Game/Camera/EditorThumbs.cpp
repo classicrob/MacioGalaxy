@@ -3,6 +3,7 @@
 #include "Game/Camera/EditorThumbs.hpp"
 #include "Game/Camera/EditorCamera.hpp"
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/Editor/EditorTerrain.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DrawUtil.hpp"
@@ -104,6 +105,7 @@ namespace EditorThumbs {
         for (std::uint64_t row : rows) {
             actor = row != 0 ? PetariEditor::actorForRow(PetariEditor::RowId{row}) : nullptr;
             model = actor != nullptr ? MR::getJ3DModel(actor) : nullptr;
+            model = model != nullptr || actor == nullptr ? model : EditorTerrain::partModel(actor);  // a terrain brush
             if (model != nullptr) break;
         }
         if (model == nullptr) {

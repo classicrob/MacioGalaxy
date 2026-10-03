@@ -825,6 +825,45 @@ Design notes:
 
 ---
 
+### 6.5 M5 blockout as built (`editor/terrain-blockout`)
+
+**A brush is an ordinary placement row.** It sits in an ObjInfo table of any layer, with the reserved class `EditorBrush`:
+
+| Field | Meaning |
+| --- | --- |
+| `pos_*` | The bottom centre |
+| `dir_*` | The rotation |
+| `scale_*` | The size / 1000: box w/h/d; sphere diameter (x); cylinder diameter (x) and height (y); ramp w/h/d, rising towards +z |
+| `Obj_arg0` | Shape: box, sphere, cylinder, ramp |
+| `Obj_arg1` | Material: an index into `materialPalette()`, ten planet materials from the disc (checker, grass, soil, stone, wood, metal, ice, snow, rock, lava), each with its footstep sound |
+| `Obj_arg2` | Surface: normal, ice, sand, slippery, burns, death, snow, no wall jump |
+| `Obj_arg3` | Gravity: 0 = the stage's, 1 = fitted |
+
+Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefore need nothing new. The catalog registers the class (`TerrainSync::registerWithEditor`): Browser presets "Box/Sphere/Cylinder/Ramp brush", and the four args as named Enum args, so the Inspector shows dropdowns.
+
+**Live** (`native/editor/runtime/terrain_sync.cpp`). SceneSync routes brush rows to terrain parts instead of the game's factory, which has no such class and skips them at placement.
+- A part (`EditorTerrain::Part`) takes its collision from an in-memory KCL.
+- Its model is a `.bmd` served as an in-memory archive (`Hooks::setArchiveOverride`) and drawn by a `ModelObj` that follows the part's matrix.
+- Its fitted gravity lives in the part's own space and follows the matrix (`PlanetGravity::updateMtx`), so moving a brush moves its field.
+- A gizmo scale preview stretches the model and collision. The commit rebuilds them at the new size.
+- Cost: a box rebuilds in about 4 ms, a 1,500-triangle sphere in about 11 ms.
+- The part has no model of its own, so the Browser's thumbnail finds the brush's model through `EditorTerrain::partModel`.
+
+**Bake on save** (`petari/editor/terrain/bake.hpp`, called by `save_mod.cpp` for a Full archives save and by `petari_terrain_bake`). A patch save holds no game data, so its brush rows travel as ordinary row ops. The loader will bake them from the player's disc through Runtime's asset-builder hook (`Patch::registerAssetBuilder`, proposed). Until then, a patch mod's brushes show only with the editor on.
+- Each brush row becomes a generated planet: `ObjectData/EditorBrush<hash>.arc` (bmd, kcl, pa).
+- The row is renamed, its scale becomes 1 and its args are cleared.
+- A `GlobalCubeGravity` / `GlobalPointGravity` / `GlobalSegmentGravity` row is written in the same layer's PlanetObjInfo.
+- The planets go into `PlanetMapDataTable` (rows from an earlier bake are replaced).
+- The saved mod therefore plays without the editor, anywhere these archives load.
+
+**Limits found while building it:**
+- **Gravity: 128 fields, never unregistered.** Good Egg already uses 113. A brush keeps one field and changes it in place. A different kind retires the old one until the next reload, and creation is refused at the cap.
+- **Mounted archives: 384, unchecked.** Good Egg uses about 351. Each model rebuild serves a new archive name (resource holders are cached by name) and unmounts the previous one (`EditorTerrain::releaseArchive`), so the count stays flat. Resource holders still grow by one per rebuild (512); a reload resets them.
+- **TEX1 is trimmed** to the textures the cloned material uses: generated models average 56 KB.
+- `calcCollisionMtx` multiplies by the actor's `scale.x`. That is why the part computes its own collision matrix.
+
+**Checks.** A brush over 16,000 triangles warns (`brush-tris:<row>`, a provider in Runtime's Checks engine). Galaxy-level Checks (missions > 8, stars > 7, launch-star paths > 16, name rules) are Runtime's (5.7).
+
 ## 7. Milestones
 
 Each milestone is a playable, shippable step. Sizes are in **worker-weeks** of
@@ -1005,3 +1044,9 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
     - Builders register before `ModFolder::setPatchBuilder` in `native/app/platform_host.cpp`.
   - **Size:** Good Egg with a move, a delete, a duplicate and a new layer's table comes to 5 ops, 2.6 KB.
   - **Tests:** `native_editor_model` (round trip on the synthetic galaxy and Good Egg, re-save over the built mod, two-mod merge, another disc refused, the loader cache) and `native_mod_folder` (claiming and precedence). Live: `editor_save_smoke.py` saves Full archives, saves again as a patch over them, then starts with the mod: the loader builds the archive and the Octoomba stands 600 units up.
+- **Share and Install** (`editor/share`; UX 17; `petari/editor/share.hpp`, wrappers in `edit_api.hpp`):
+  - **Export:** `shareMod(modName, info, zipPath)` puts the sheet's name/author/version/description/needs into the mod's `mod.txt` (other lines kept) and writes `preview.png`. It then zips the folder as `<Name>/...`, leaving out host clutter.
+  - **Inspect:** `inspectModZip` gives the Install sheet its preview: title, author, version, needs, screenshot, galaxies changed (from `edits/*.json` and `galaxy.json`), archives touched, whether it's an editor mod, and whether `files/` carries game data.
+  - **Install:** `installModZip(zip, replace)` unpacks into `<user>/mods/<Name>` through a staging folder and turns the mod on.
+    - It refuses paths escaping the folder, zips that aren't one mod folder, more than 2 GB, and an installed folder of the same name unless `replace`.
+  - **Zip format:** our own (deflate via zlib, CRC-checked on read; no zip64 or encryption). The system's `unzip` accepts our zips (`native_editor_share`).

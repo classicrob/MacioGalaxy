@@ -14,8 +14,11 @@
 //   in its seam hook (picking, ground rays, gizmo frames), which publishes plain data for
 //   its panels.
 // - enqueue() may be called any time on the main thread; commands take effect at the next seam.
+#include <petari/editor/share.hpp>
+
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -273,5 +276,17 @@ struct Check {
 /// The current problems, refreshed at the seam when the model's revision changes. Errors would
 /// crash or break the game; warnings are probably unintended.
 const std::vector< Check >& checks();
+
+// ---- Sharing (UX 17) -----------------------------------------------------------------------------
+// Files only, not commands: any thread (the UI calls them from its sheets, the app from a file drop).
+
+/// The Share sheet's Export: mods/<modName> as a zip at zipPath, with `info` put in its mod.txt
+/// and preview.png first.
+bool shareMod(const std::string& modName, const Share::Info& info, const std::string& zipPath, std::string* pError);
+/// The Install sheet: what a mod zip holds.
+std::optional< Share::Preview > inspectModZip(const std::string& zipPath, std::string* pError);
+/// Install: unpacks a mod zip into the user's mods folder and turns it on for the next start.
+/// `replace` overwrites an installed mod of the same folder name. *pFolder: its folder name.
+bool installModZip(const std::string& zipPath, bool replace, std::string* pFolder, std::string* pError);
 
 }  // namespace PetariEditor
