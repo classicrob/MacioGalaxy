@@ -14,6 +14,7 @@
 #include <pthread/qos.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_events.h>
 
 #include <cctype>
 #include <cmath>
@@ -517,6 +518,54 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 if (t == 125) PetariNative::EditorPick::click(PetariNative::EditorPick::Click::Replace);
                 if (t == 140) Editor::frame();
                 if (t >= 170 && t < 190) Editor::pan(0.01f, 0.0f);  // a fifth of the view sideways
+#ifdef PETARI_EDITOR_UI
+                // PETARI_EDITOR_TEST_SDL_CLICK=1 (EP-001): real SDL clicks with no motion before them, through Aurora and
+                // ImGui's SDL backend, on the Browser tab, then on the Save sheet's Cancel. The log shows "[editor] tab
+                // Browser" and "[editor] save sheet cancelled" when they land.
+                static const bool sSdlClick = std::getenv("PETARI_EDITOR_TEST_SDL_CLICK") != nullptr;
+                if (sSdlClick) {
+                    auto click = [](const char* target, bool down) {
+                        float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+                        SDL_Window* window = SDL_GetWindows(nullptr) != nullptr ? SDL_GetWindows(nullptr)[0] : nullptr;
+                        if (!PetariEditor::Ui::testTargetRect(target, &x, &y, &w, &h) || window == nullptr) {
+                            std::fprintf(stderr, "[editor-test] sdl click: no %s\n", target);
+                            return;
+                        }
+                        SDL_Event event{};
+                        event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+                        event.button.windowID = SDL_GetWindowID(window);
+                        event.button.which = App::SmokeBackground::kTestMouseId;
+                        event.button.button = SDL_BUTTON_LEFT;
+                        event.button.down = down;
+                        event.button.clicks = 1;
+                        event.button.x = x + w * 0.5f;
+                        event.button.y = y + h * 0.5f;
+                        const bool pushed = SDL_PushEvent(&event);
+                        std::fprintf(stderr, "[editor-test] sdl click %s %s at (%.0f, %.0f) display scale %.1f: %s\n", target, down ? "down" : "up",
+                                     event.button.x, event.button.y, SDL_GetWindowDisplayScale(window), pushed ? "pushed" : SDL_GetError());
+                    };
+                    // PETARI_EDITOR_TEST_SDL_MOTION=1: a motion event to the target first, as a real mouse sends.
+                    if (t == 148 && std::getenv("PETARI_EDITOR_TEST_SDL_MOTION") != nullptr) {
+                        float x = 0.0f, y = 0.0f, w = 0.0f, h = 0.0f;
+                        SDL_Window* window = SDL_GetWindows(nullptr) != nullptr ? SDL_GetWindows(nullptr)[0] : nullptr;
+                        if (window != nullptr && PetariEditor::Ui::testTargetRect("tab:Browser", &x, &y, &w, &h)) {
+                            SDL_Event motion{};
+                            motion.type = SDL_EVENT_MOUSE_MOTION;
+                            motion.motion.windowID = SDL_GetWindowID(window);
+                            motion.motion.which = App::SmokeBackground::kTestMouseId;
+                            motion.motion.x = x + w * 0.5f;
+                            motion.motion.y = y + h * 0.5f;
+                            SDL_PushEvent(&motion);
+                            std::fputs("[editor-test] sdl motion to tab:Browser\n", stderr);
+                        }
+                    }
+                    if (t == 150) click("tab:Browser", true);
+                    if (t == 152) click("tab:Browser", false);
+                    if (t == 160) PetariEditor::Ui::openSaveSheet();
+                    if (t == 175) click("button:Cancel", true);
+                    if (t == 177) click("button:Cancel", false);
+                }
+#endif
                 // PETARI_EDITOR_TEST_MISSION=<n>: switch to mission n as the toolbar's chip does, then leave later.
                 static const int sMission = std::getenv("PETARI_EDITOR_TEST_MISSION") != nullptr ? std::atoi(std::getenv("PETARI_EDITOR_TEST_MISSION")) : 0;
 #ifdef PETARI_EDITOR_UI
