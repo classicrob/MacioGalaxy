@@ -8,6 +8,8 @@
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/Scene/TestServerInput.hpp"
+#include "Game/System/GalaxyStatusAccessor.hpp"
+#include "Game/System/ScenarioDataParser.hpp"
 #include <petari/editor/runtime.hpp>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
@@ -121,6 +123,19 @@ namespace {
             return true;
         }
         if (w[0] == "warp" && w.size() >= 2) {
+            // The move code crashes on a stage it does not know: reject unknown stages and scenarios here.
+            const ScenarioData* pData = ScenarioDataFunction::getScenarioDataParser()->getScenarioData(w[1].c_str());
+            if (pData == nullptr) {
+                reply(name, "error unknown stage: " + w[1]);
+                return true;
+            }
+            const s32 wanted = w.size() >= 3 ? std::atoi(w[2].c_str()) : 1;
+            GalaxyStatusAccessor accessor(pData);
+            const s32 scenarios = accessor.getScenarioNum() > accessor.getPowerStarNum() ? accessor.getScenarioNum() : accessor.getPowerStarNum();
+            if (wanted < 1 || wanted > scenarios) {
+                reply(name, "error " + w[1] + " has " + std::to_string(scenarios) + " scenarios; no scenario " + std::to_string(wanted));
+                return true;
+            }
             gPending = Pending{};
             std::snprintf(gPending.name, sizeof(gPending.name), "%s", name.c_str());
             std::snprintf(gPending.what, sizeof(gPending.what), "%s", line.c_str());
@@ -182,11 +197,11 @@ namespace TestServer {
                          EditorScene::stageName() != nullptr ? EditorScene::stageName() : "-");
         }
         if (TestServerInput::pending()) {
+            // One step per frame; commands (status, cancel, ...) keep dispatching while a plan runs.
             std::string inputName, inputText;
             if (TestServerInput::poll(&inputName, &inputText)) {
                 reply(inputName, inputText);
             }
-            return;
         }
         const bool playable = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isPlayerDead();
         if (gHavePending && gPending.isReload) {

@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 #include "Game/Scene/TestServerInput.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
+#include "Game/Util/DemoUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include <petari/input.hpp>
@@ -25,22 +26,21 @@
 namespace {
     using namespace PetariNative;
 
-    enum Bit : unsigned { kA = 1, kB = 2, kZ = 4, kSpin = 8, kCap = 16, kCamLeft = 32, kCamRight = 64, kPlus = 128, kMinus = 256 };
+    using TestServerInput::Step;
+    constexpr unsigned kA = TestServerInput::A, kZ = TestServerInput::Z, kSpin = TestServerInput::Spin, kCamLeft = TestServerInput::CamLeft,
+                       kCamRight = TestServerInput::CamRight;
     constexpr int kButtons = 9;
     constexpr int kTapFrames = 6;  // at least one KPAD read at 60 Hz (the smoke's own tap length)
     constexpr int kMaxSteps = 40000;
 
-    struct Step {
-        int frames;
-        float x, y;
-        unsigned held;
-        unsigned tap;
-    };
-
     Step gSteps[kMaxSteps];
     int gStepCount = 0;
     bool gRunning = false;
+    bool gNative = false;  // the running plan answers a text command (gName); else an API-managed run
     char gName[64] = {};
+    char gStartStage[64] = {};
+    int gStartScenario = 0;
+    TestServerInput::Status gLast;  // the last plan's final state (finished == true), kept until the next one
     char gLogPath[1024] = {};
     std::FILE* gLog = nullptr;
     int gStep = 0;
@@ -134,16 +134,30 @@ namespace {
         return true;
     }
 
-    std::string marioReport(long frames) {
-        char text[300];
-        if (!MR::isExistSceneObj(SceneObj_MarioHolder)) {
-            std::snprintf(text, sizeof(text), "ok frames=%ld no-player", frames);
+    void snapshot(TestServerInput::Status* s) {
+        s->hasPlayer = MR::isExistSceneObj(SceneObj_MarioHolder);
+        if (s->hasPlayer) {
+            const TVec3f* p = MR::getPlayerPos();
+            const TVec3f* v = MR::getPlayerVelocity();
+            s->pos[0] = p->x, s->pos[1] = p->y, s->pos[2] = p->z;
+            s->vel[0] = v->x, s->vel[1] = v->y, s->vel[2] = v->z;
+            s->ground = MR::isOnGroundPlayer();
+            s->dead = MR::isPlayerDead();
+        }
+        std::snprintf(s->stage, sizeof(s->stage), "%s", MR::getCurrentStageName() != nullptr ? MR::getCurrentStageName() : "");
+        s->scenario = MR::getCurrentScenarioNo();
+    }
+
+    // The text answer of a command plan: ok when every step ran, else an error that says why it stopped.
+    std::string report(const TestServerInput::Status& s) {
+        char text[360];
+        if (!s.hasPlayer) {
+            std::snprintf(text, sizeof(text), "%s frames=%ld/%ld ended=%s no-player", s.completed ? "ok" : "error", s.frame, s.total, s.reason);
             return text;
         }
-        const TVec3f* p = MR::getPlayerPos();
-        const TVec3f* v = MR::getPlayerVelocity();
-        std::snprintf(text, sizeof(text), "ok frames=%ld mario=(%.1f,%.1f,%.1f) vel=(%.2f,%.2f,%.2f) ground=%d dead=%d", frames, p->x, p->y, p->z,
-                      v->x, v->y, v->z, MR::isOnGroundPlayer() ? 1 : 0, MR::isPlayerDead() ? 1 : 0);
+        std::snprintf(text, sizeof(text), "%s frames=%ld/%ld ended=%s mario=(%.1f,%.1f,%.1f) vel=(%.2f,%.2f,%.2f) ground=%d dead=%d",
+                      s.completed ? "ok" : "error", s.frame, s.total, s.reason, s.pos[0], s.pos[1], s.pos[2], s.vel[0], s.vel[1], s.vel[2],
+                      s.ground ? 1 : 0, s.dead ? 1 : 0);
         return text;
     }
 
@@ -154,14 +168,18 @@ namespace {
         }
     }
 
-    void begin(const std::string& name, const char* logPath, long limit) {
-        std::snprintf(gName, sizeof(gName), "%s", name.c_str());
+    void begin(const char* name, const char* logPath, long limit) {
+        gNative = name != nullptr;
+        std::snprintf(gName, sizeof(gName), "%s", gNative ? name : "");
+        std::snprintf(gStartStage, sizeof(gStartStage), "%s", MR::getCurrentStageName() != nullptr ? MR::getCurrentStageName() : "");
+        gStartScenario = MR::getCurrentScenarioNo();
         gStep = gStepFrame = 0;
         gFrame = 0;
         gLimit = limit;
         gDown = 0;
         gStickX = gStickY = 0;
         gRunning = true;
+        gLast = TestServerInput::Status();
         Input::focusChanged(true);  // the smoke asserts focus before presses: the input layer ignores them while unfocused
         closeLog();
         if (logPath != nullptr && logPath[0] != '\0') {
@@ -172,6 +190,21 @@ namespace {
                 std::fprintf(stderr, "[test-server] input: cannot write %s\n", logPath);
             }
         }
+    }
+
+    // Ends the plan: release everything, remember the final state.
+    void finish(const char* reason, bool completed) {
+        releaseAll();
+        closeLog();
+        gRunning = false;
+        gLast = TestServerInput::Status();
+        gLast.finished = true;
+        gLast.completed = completed;
+        gLast.frame = gFrame;
+        gLast.total = gLimit;
+        std::snprintf(gLast.reason, sizeof(gLast.reason), "%s", reason);
+        snapshot(&gLast);
+        std::fprintf(stderr, "[test-server] input plan ended: %s after %ld/%ld frames\n", reason, gFrame, gLimit);
     }
 
     // CSV fields of one line, honouring the quoted stage name.
@@ -248,8 +281,8 @@ namespace {
             }
             Step& s = gSteps[gStepCount++];
             s.frames = 1;
-            s.x = static_cast< float >(std::atof(v[col[1]].c_str()));
-            s.y = static_cast< float >(std::atof(v[col[2]].c_str()));
+            s.stickX = static_cast< float >(std::atof(v[col[1]].c_str()));
+            s.stickY = static_cast< float >(std::atof(v[col[2]].c_str()));
             s.held = (v[col[3]] == "1" ? kA : 0u) | (v[col[4]] == "1" ? kSpin : 0u) | (v[col[5]] == "1" ? kZ : 0u) |
                      (v[col[6]] == "1" ? kCamLeft : 0u) | (v[col[7]] == "1" ? kCamRight : 0u);
             s.tap = 0;
@@ -302,8 +335,8 @@ namespace TestServerInput {
                     return Result::Done;
                 }
                 s.frames = frames;
-                s.x = std::fmax(-1.0f, std::fmin(1.0f, x));
-                s.y = std::fmax(-1.0f, std::fmin(1.0f, y));
+                s.stickX = std::fmax(-1.0f, std::fmin(1.0f, x));
+                s.stickY = std::fmax(-1.0f, std::fmin(1.0f, y));
                 gStepCount++;
             }
             if (gStepCount == 0) {
@@ -335,9 +368,60 @@ namespace TestServerInput {
         for (int i = 0; i < gStepCount; i++) {
             total += gSteps[i].frames;
         }
-        begin(name, logPath, total);
+        begin(name.c_str(), logPath, total);
         std::fprintf(stderr, "[test-server] %s: %d step(s), %ld frame(s)\n", w[0].c_str(), gStepCount, total);
         return Result::Pending;
+    }
+
+    bool startSteps(const std::vector< Step >& steps, std::string* pError, const char* pLogPath) {
+        if (gRunning) {
+            *pError = "an input plan is already running";
+            return false;
+        }
+        if (!MR::isExistSceneObj(SceneObj_MarioHolder) || MR::isPlayerDead() || MR::isDemoActive()) {
+            *pError = "not in normal play";
+            return false;
+        }
+        if (steps.empty() || steps.size() > static_cast< size_t >(kMaxSteps)) {
+            *pError = "no steps, or more than the limit";
+            return false;
+        }
+        long total = 0;
+        for (size_t i = 0; i < steps.size(); i++) {
+            if (steps[i].frames < 1) {
+                *pError = "step " + std::to_string(i) + ": frames must be >= 1";
+                return false;
+            }
+            gSteps[i] = steps[i];
+            gSteps[i].stickX = std::fmax(-1.0f, std::fmin(1.0f, steps[i].stickX));
+            gSteps[i].stickY = std::fmax(-1.0f, std::fmin(1.0f, steps[i].stickY));
+            total += steps[i].frames;
+        }
+        gStepCount = static_cast< int >(steps.size());
+        begin(nullptr, pLogPath, total);
+        return true;
+    }
+
+    Status status() {
+        Status s = gLast;
+        if (gRunning) {
+            s = Status();
+            s.active = true;
+            s.frame = gFrame;
+            s.total = gLimit;
+            snapshot(&s);
+        }
+        return s;
+    }
+
+    bool active() {
+        return gRunning;
+    }
+
+    void cancel() {
+        if (gRunning) {
+            finish("cancelled", false);
+        }
     }
 
     bool pending() {
@@ -348,32 +432,50 @@ namespace TestServerInput {
         if (!gRunning) {
             return false;
         }
-        if (gStep < gStepCount) {
+        const char* stopped = nullptr;
+        if (!MR::isExistSceneObj(SceneObj_MarioHolder)) {
+            stopped = "player-lost";
+        } else if (std::strcmp(gStartStage, MR::getCurrentStageName() != nullptr ? MR::getCurrentStageName() : "") != 0 ||
+                   gStartScenario != MR::getCurrentScenarioNo()) {
+            stopped = "stage-changed";
+        } else if (MR::isPlayerDead()) {
+            stopped = "died";
+        } else if (MR::isDemoActive()) {
+            stopped = "control-lost";
+        }
+        if (stopped == nullptr && gStep < gStepCount) {
             const Step& s = gSteps[gStep];
             unsigned want = s.held;
             if (gStepFrame < kTapFrames) {
                 want |= s.tap;
             }
-            setStick(s.x, s.y);
+            setStick(s.stickX, s.stickY);
             setButtons(want);
-            if (gLog != nullptr && MR::isExistSceneObj(SceneObj_MarioHolder)) {
+            if (gLog != nullptr) {
                 const TVec3f* p = MR::getPlayerPos();
                 const TVec3f* v = MR::getPlayerVelocity();
                 std::fprintf(gLog, "%ld,%d,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%d\n", gFrame, gStep, p->x, p->y, p->z, v->x, v->y, v->z,
                              MR::isOnGroundPlayer() ? 1 : 0);
             }
             gFrame++;
+            if (gFrame % 600 == 0) {
+                std::fprintf(stderr, "[test-server] input plan: frame %ld/%ld\n", gFrame, gLimit);
+            }
             if (++gStepFrame >= s.frames) {
                 gStep++;
                 gStepFrame = 0;
             }
             return false;
         }
-        releaseAll();
-        closeLog();
-        gRunning = false;
-        *pName = gName;
-        *pReply = marioReport(gFrame);
+        const bool wasNative = gNative;
+        char name[64];
+        std::snprintf(name, sizeof(name), "%s", gName);
+        finish(stopped != nullptr ? stopped : "done", stopped == nullptr);
+        if (!wasNative) {
+            return false;  // an API-managed run: the caller reads status()
+        }
+        *pName = name;
+        *pReply = report(gLast);
         return true;
     }
 }  // namespace TestServerInput
