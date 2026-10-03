@@ -6,6 +6,7 @@
 #include <cstddef>
 
 class J3DModel;
+class PlanetGravity;
 
 namespace PetariEditor {
 class EditModel;
@@ -37,5 +38,8 @@ void sceneBound(const EditModel& model);
 std::size_t triangleCount(RowId id);
 /// The brush's model (the Browser's thumbnail), or null.
 J3DModel* modelForRow(RowId id);
+/// The brush row whose fitted gravity is `pGravity` (the gravity view and probe), or an invalid
+/// RowId. A field a brush turned off on a change of kind maps to no row.
+RowId rowForGravity(const PlanetGravity* pGravity);
 
 }  // namespace PetariEditor::TerrainSync

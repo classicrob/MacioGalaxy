@@ -46,7 +46,7 @@ add_custom_command(OUTPUT ${_petari_catalog_cpp}
 # Terrain (TECH.md section 6): meshes and brushes, the KCL + .pa writer, the J3D model writer. Pure C++ (no game code).
 add_library(petari_editor_terrain STATIC terrain/mesh.cpp terrain/brush.cpp terrain/kcl_writer.cpp terrain/model_writer.cpp terrain/bake.cpp)
 target_include_directories(petari_editor_terrain PUBLIC include)
-target_link_libraries(petari_editor_terrain PUBLIC petari_editor_formats)
+target_link_libraries(petari_editor_terrain PUBLIC petari_editor_formats petari_editor_patch)
 target_compile_features(petari_editor_terrain PUBLIC cxx_std_17)
 # Bakes brushes into a Full-archive mod (planet archives, PlanetMapDataTable, placement rows).
 add_executable(petari_terrain_bake tools/terrain_bake.cpp)

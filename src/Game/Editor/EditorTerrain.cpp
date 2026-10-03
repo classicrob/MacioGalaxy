@@ -219,13 +219,20 @@ namespace EditorTerrain {
         return pPart;
     }
 
-    J3DModel* partModel(const LiveActor* pActor) {
-        for (const Part* pPart : sceneParts()) {
-            if (pPart == pActor) {
-                return pPart->mModel != nullptr ? MR::getJ3DModel(pPart->mModel) : nullptr;
+    namespace {
+        const Part* findPart(const LiveActor* pActor) {
+            for (const Part* pPart : sceneParts()) {
+                if (pPart == pActor) {
+                    return pPart;
+                }
             }
+            return nullptr;
         }
-        return nullptr;
+    }  // namespace
+
+    J3DModel* partModel(const LiveActor* pActor) {
+        const Part* pPart = findPart(pActor);
+        return pPart != nullptr && pPart->mModel != nullptr ? MR::getJ3DModel(pPart->mModel) : nullptr;
     }
 
     PlanetGravity* partGravity(const LiveActor* pActor) {
