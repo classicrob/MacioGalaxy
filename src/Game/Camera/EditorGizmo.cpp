@@ -438,7 +438,11 @@ namespace {
             return;
         }
         int zone = exampleZone;
-        if (triangle.mSensor != nullptr && triangle.mSensor->mHost != nullptr) {
+        // A copy that follows a path stays in its example's zone: path ids are per zone, and a Launch Star whose
+        // path isn't in its zone crashes the game when the scene is built (BezierRail on a missing rail).
+        const PetariEditor::Cell* path = model->cell(example, PetariEditor::columnHash("CommonPath_ID"));
+        const bool followsPath = path != nullptr && path->i >= 0;
+        if (!followsPath && triangle.mSensor != nullptr && triangle.mSensor->mHost != nullptr) {
             const PetariEditor::RowId host = PetariEditor::rowForActor(triangle.mSensor->mHost);
             int hostZone = 0, hostTable = 0;
             if (host.valid() && model->locate(host, &hostZone, &hostTable)) zone = hostZone;
@@ -456,16 +460,39 @@ namespace {
         add.id = PetariEditor::newRowId();
         add.zone = zone;
         add.table = model->tablePath(exampleZone, exampleTable);
+        // EP-008: the copy goes where the mission being edited sees it. An example from another mission's layer
+        // ("jmp/placement/layerb/objinfo") is placed in the zone's common layer instead (in every mission).
+        if (const int scenario = model->scenario(); scenario >= 1 && (model->rowMissions(example) & (1u << (scenario - 1))) == 0) {
+            const size_t at = add.table.find("/layer");
+            if (at != std::string::npos && at + 7 < add.table.size() && add.table[at + 7] == '/') {
+                add.table.replace(at + 1, 6, "common");
+            }
+        }
         add.copyOf = example;
         static const char* const kColumns[9] = {"pos_x", "pos_y", "pos_z", "dir_x", "dir_y", "dir_z", "scale_x", "scale_y", "scale_z"};
         const float values[9] = {t.pos.x, t.pos.y, t.pos.z, t.dirDeg.x, t.dirDeg.y, t.dirDeg.z, t.scale.x, t.scale.y, t.scale.z};
         for (int c = 0; c < 9; c++) add.cells.push_back({PetariEditor::columnHash(kColumns[c]), floatCell(values[c])});
+        // EP-008: a placed object is a new, independent one. The template's ties to its own zone and scene (switches,
+        // groups, view/clipping groups, cutscene casts, camera sets, messages) are cleared, so it can't be hidden or
+        // driven by something it doesn't belong to (a copied ViewGroupId made a new Power Star invisible). Its path
+        // stays (the copy stays in the path's zone, above). Duplicate (Cmd+D) keeps everything.
+        static const char* const kZoneTies[] = {"SW_APPEAR", "SW_DEAD", "SW_A", "SW_B", "SW_SLEEP", "SW_AWAKE", "SW_PARAM",
+                                                "GroupId", "ClippingGroupId", "ViewGroupId", "DemoGroupId", "CastId", "MessageId",
+                                                "CameraSetId", "FollowId", "ParentID"};
+        for (const char* column : kZoneTies) {
+            const std::uint32_t hash = PetariEditor::columnHash(column);
+            const PetariEditor::Cell* cell = model->cell(example, hash);
+            if (cell == nullptr || cell->i == -1) continue;
+            PetariEditor::Cell cleared = *cell;
+            cleared.i = -1;
+            add.cells.push_back({hash, cleared});
+        }
         PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
         const char* name = model->objectName(example);
         command.op.label = std::string("Placed ") + (name != nullptr ? name : "object");
         command.op.adds.push_back(add);
-        std::fprintf(stderr, "[editor] place %s in %s at (%.0f, %.0f, %.0f)\n", name != nullptr ? name : "?", model->zoneName(zone), point.x,
-                     point.y, point.z);
+        std::fprintf(stderr, "[editor] place %s in %s (%s) at (%.0f, %.0f, %.0f)\n", name != nullptr ? name : "?", model->zoneName(zone),
+                     add.table.c_str(), point.x, point.y, point.z);
         PetariEditor::enqueue(std::move(command));
         PetariNative::EditorPick::selectRow(add.id.v, PetariNative::EditorPick::Click::Replace);
     }
