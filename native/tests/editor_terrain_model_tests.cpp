@@ -25,6 +25,7 @@
 #include <JSystem/JUtility/JUTTexture.hpp>
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cctype>
 #include <cstring>
 #include <optional>
@@ -59,7 +60,8 @@ static std::uint16_t donorTextureCount(const Bytes& donor) {
 }
 
 // Loads `model` as ResourceHolder loads a .bmd, on its own heap, and checks it.
-static bool loadAndCheck(const Bytes& model, const T::Mesh& mesh, const std::string& material, std::uint16_t textures, const std::string& where) {
+static bool loadAndCheck(const Bytes& model, const T::Mesh& mesh, const std::string& material, std::uint16_t textures, const std::string& where,
+                         float tint = 1.0f) {
     Bytes image(model.size());
     if (const char* pError = PetariNative::J3D::makeHostModelImage(model.data(), static_cast< std::uint32_t >(model.size()), image.data())) {
         std::fprintf(stderr, "FAIL: %s: the native converter refused the model: %s\n", where.c_str(), pError);
@@ -92,17 +94,21 @@ static bool loadAndCheck(const Bytes& model, const T::Mesh& mesh, const std::str
         expect(pData->getVertexData().getVtxNum() == mesh.positions.size(), "vertex count");
         const f32* pPositions = static_cast< const f32* >(pData->getVertexData().getVtxPosArray());
         expect(pPositions != nullptr && pPositions[0] == mesh.positions[0].x && pPositions[2] == mesh.positions[0].z, "positions (host order)");
-        // The baked light (CLR0 per vertex): a face towards the sun is lit more than one away.
+        // The baked light (CLR0 per vertex), scaled by the donor's own vertex colour: a face
+        // towards the sun is lit more than one away, which gets the ambient.
         const GXColor* pColors = pData->getVertexData().getVtxColorArray(0);
         u8 brightest = 0, darkest = 255;
         for (std::size_t i = 0; pColors != nullptr && i < mesh.positions.size(); i++) {
             brightest = std::max(brightest, pColors[i].r);
             darkest = std::min(darkest, pColors[i].r);
         }
-        expect(pColors != nullptr && brightest > darkest + 60 && darkest >= 130, "baked vertex light (ambient + sun)");
+        const int ambient = static_cast< int >(0.55f * tint * 255.0f + 0.5f);
+        expect(pColors != nullptr && std::abs(darkest - ambient) <= 2 && (brightest > darkest || tint < 0.05f), "baked vertex light (ambient + sun, tinted)");
         // ... and is the only light: a vertex-coloured COLOR0 is not lit by the scene again.
         J3DColorChan* pChan = pMaterial != nullptr && pMaterial->getColorBlock() != nullptr ? pMaterial->getColorBlock()->getColorChan(0) : nullptr;
         expect(pChan == nullptr || pChan->getMatSrc() != GX_SRC_VTX || pChan->getEnable() == 0, "a vertex-coloured COLOR0 is unlit");
+        J3DColorChan* pAlpha = pMaterial != nullptr && pMaterial->getColorBlock() != nullptr ? pMaterial->getColorBlock()->getColorChan(1) : nullptr;
+        expect(pAlpha == nullptr || pAlpha->getEnable() == 0 || pMaterial->mMaterialMode != 1, "an opaque material's ALPHA0 is unlit (the bake is the only light)");
         const f32* pUvs = static_cast< const f32* >(pData->getVertexData().getVtxTexCoordArray(0));
         expect(pUvs != nullptr && pUvs[1] == mesh.uvs[1], "UVs (host order)");
         J3DShape* pShape = pData->getShapeNodePointer(0);
@@ -168,7 +174,7 @@ static void testDisc(const char* pDisc) {
                     ++sFailures;
                     continue;
                 }
-                sFailures += loadAndCheck(r.model, *pMesh, name, textures, where + (pMesh == &box ? " box" : " sphere")) ? 0 : 1;
+                sFailures += loadAndCheck(r.model, *pMesh, name, textures, where + (pMesh == &box ? " box" : " sphere"), clone->vertexTint.x) ? 0 : 1;
                 models++;
                 modelBytes += r.model.size();
             }
@@ -176,6 +182,21 @@ static void testDisc(const char* pDisc) {
         std::printf("donor %s: %zu materials cloned onto a box and a sphere\n", donor.archive, names.size());
     }
     check(models > 0, "no donor model on the disc");
+    // The donor's vertex colour level on the material (measured on the disc: FlowerPlanet's grass
+    // is painted at about 115/255; Bathtub's checker at 255).
+    auto tintOf = [&](const char* pArchive, const char* pModel, const char* pMaterial) {
+        std::ifstream file(std::string(pDisc) + "/ObjectData/" + pArchive + ".arc", std::ios::binary);
+        const Bytes raw((std::istreambuf_iterator< char >(file)), std::istreambuf_iterator< char >());
+        const auto archive = PetariEditor::Formats::Archive::parse(raw);
+        const Bytes* pBytes = archive ? archive->file(pModel) : nullptr;
+        std::string error;
+        const auto clone = pBytes != nullptr ? T::cloneMaterial(*pBytes, pMaterial, &error) : std::nullopt;
+        return clone ? clone->vertexTint : T::Vec3{-1, -1, -1};
+    };
+    const T::Vec3 grass = tintOf("FlowerPlanet", "flowerplanet.bdl", "gras_v"), checker = tintOf("BathtubPlanet", "bathtubplanet.bdl", "CheckMat_v");
+    check(grass.x > 0.43f && grass.x < 0.47f && grass.z > 0.43f && grass.z < 0.47f, "the grass donor's vertex tint (about 0.45)");
+    check(checker.x > 0.99f && checker.y > 0.99f, "the checker donor's vertex tint (1)");
+    std::printf("vertex tints: grass %.3f %.3f %.3f, checker %.3f\n", grass.x, grass.y, grass.z, checker.x);
     std::printf("%d generated models loaded through J3D (%zu KB on average)\n", models, models ? modelBytes / models / 1024 : 0);
 }
 
