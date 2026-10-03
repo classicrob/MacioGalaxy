@@ -789,10 +789,18 @@ camera moves.
 - Shown (selection only, by default) as a smooth curve with direction chevrons,
   its points as dots, and Bézier handles on the selected point. Closed loops
   are drawn as loops.
-- **Pen** tool (`P` with nothing to paint): click on surfaces to lay points at
-  a chosen height above the ground (the Pen's height field, default 100);
-  drag while clicking to pull handles; click the first point to close; Return
-  finishes. Points snap to the surface and to gravity as objects do.
+- **New path** in the Browser or toolbar **View** menu: click surfaces to lay
+  points; the cursor shows the local gravity direction. Return commits two or
+  more points in one undo step. Backspace removes the last draft point; Escape
+  discards the draft. The first ground hit chooses the zone. Points can then
+  be moved and their handles edited; **Closed loop** is in the path Inspector.
+- A selected **Launch Star** offers **New flight path** in the Inspector. Its
+  first point is the star's position: click the landing (or intermediate points
+  first), then Return. The new rail and the star's link are one undo step. A
+  new flight uses the star's zone, including when the landing is in another
+  zone. Existing appearance switches and mission membership are preserved.
+- A galaxy without any canonical path-table schema reports that limitation
+  when finishing; the draft stays available and can be cancelled.
 - On a path: click to select a point, drag to move, Option-click on the curve
   to insert a point, Delete to remove. Points have their own fields in the
   Inspector (speed, wait time, the per-point arguments with names).

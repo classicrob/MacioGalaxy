@@ -278,6 +278,21 @@ namespace EditorTerrainTest {
             // the one near z = 30000, the sphere near z = 40000.
             const char* pHost = pParts != nullptr && pParts->mHitSensor != nullptr ? pParts->mHitSensor->mHost->mName : "";
             const bool brush = std::strncmp(pHost, "EditorBrush", 11) == 0;
+            // A live brush part (the editor on): its matrix, once (a flipped one draws inside out).
+            static bool sLogged = false;
+            if (brush && !sLogged && pParts->mHitSensor != nullptr && EditorTerrain::partGravity(pParts->mHitSensor->mHost) != nullptr) {
+                sLogged = true;
+                const TPos3f& m = static_cast< const EditorTerrain::Part* >(pParts->mHitSensor->mHost)->mBaseMtx;
+                const f32 det = m.mMtx[0][0] * (m.mMtx[1][1] * m.mMtx[2][2] - m.mMtx[1][2] * m.mMtx[2][1]) -
+                                m.mMtx[0][1] * (m.mMtx[1][0] * m.mMtx[2][2] - m.mMtx[1][2] * m.mMtx[2][0]) +
+                                m.mMtx[0][2] * (m.mMtx[1][0] * m.mMtx[2][1] - m.mMtx[1][1] * m.mMtx[2][0]);
+                const LiveActor* pHostActor = pParts->mHitSensor->mHost;
+                std::fprintf(stderr, "[editor-terrain] live part %s: rot (%.1f, %.1f, %.1f) scale (%.2f, %.2f, %.2f); mtx rows (%.2f %.2f %.2f %.0f) (%.2f %.2f %.2f %.0f) (%.2f %.2f %.2f %.0f), det %.3f; ground normal (%.2f, %.2f, %.2f)\n",
+                             pHost, pHostActor->mRotation.x, pHostActor->mRotation.y, pHostActor->mRotation.z, pHostActor->mScale.x, pHostActor->mScale.y,
+                             pHostActor->mScale.z, m.mMtx[0][0], m.mMtx[0][1], m.mMtx[0][2], m.mMtx[0][3], m.mMtx[1][0], m.mMtx[1][1], m.mMtx[1][2],
+                             m.mMtx[1][3], m.mMtx[2][0], m.mMtx[2][1], m.mMtx[2][2], m.mMtx[2][3], det, pGround->mNormals[0].x, pGround->mNormals[0].y,
+                             pGround->mNormals[0].z);
+            }
             onBox = brush && pos.z < 35000.0f;
             onSphere = brush && pos.z >= 35000.0f;
         } else {

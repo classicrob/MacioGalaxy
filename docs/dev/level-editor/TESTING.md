@@ -84,3 +84,13 @@ collision ray, undo/redo, patch assets and full native bake. It captures the she
 Then use `--reopen-mod <first-run>/user/mods/ImportedFixture` with a new output directory to
 check editable reopening; add `--play-only` for editor-off loading as a native planet.
 Every run records source/binary hashes, keeps its logs/screenshots and removes its own cache.
+
+### Creating new paths
+
+`native/tools/editor_new_path_smoke.py --app <Petari executable> --output <unique directory>`
+uses a private Good Egg stage fixture. It drives the same path controller as the UI using
+real game ground rays: three points, cancel without a model edit, create, one-step undo/redo,
+then a fresh Launch Star with its own start/landing rail and atomic link. It saves the patch
+and captures `new-path-draft` / `new-path-created`; the source/app hashes are in `revision.txt`.
+`native_editor_paths` additionally rebuilds a saved three-point rail from its patch. The
+background test checks authoring and linking, not completion of Mario's flight.

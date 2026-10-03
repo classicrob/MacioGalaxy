@@ -35,6 +35,9 @@ namespace PetariEditor::PathsView {
         std::vector< SocketMark > sockets;
         std::vector< WireMark > wires;
         bool dragging = false;
+        bool creating = false, flight = false, groundHit = false;
+        int draftPoints = 0;
+        std::vector< Mark > draftMarks;
         std::string message;
     };
     struct Input {
@@ -43,6 +46,16 @@ namespace PetariEditor::PathsView {
         int handle = 0;
         float x = 0, y = 0;
     };
+    struct CreateInput {
+        bool begin = false, add = false, finish = false, cancel = false, remove = false, hover = false;
+        RowId rider;
+        float x = 0, y = 0;
+    };
+    void beginCreate(RowId rider = {});
+    bool creating();
+    void sendCreate(CreateInput input);
+    CreateInput takeCreate();
+    void endCreate();
     void publish(View view);
     const View& view();
     void send(Input input);
