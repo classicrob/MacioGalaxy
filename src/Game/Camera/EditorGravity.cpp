@@ -210,7 +210,8 @@ namespace {
             p.winnerIdentity = reinterpret_cast< std::uintptr_t >(info.mGravityInstance);
             auto found = std::find_if(state().view.fields.begin(), state().view.fields.end(),
                                       [&](const auto& f) { return f.identity == reinterpret_cast< std::uintptr_t >(info.mGravityInstance); });
-            if (found != state().view.fields.end()) {
+            p.name = std::string(G::shapeName(shapeOf(info.mGravityInstance))) + " gravity";
+            if (state().scene == Hooks::sceneSerial() && found != state().view.fields.end()) {
                 p.winner = found->row;
                 p.name = found->name;
             }
@@ -348,6 +349,16 @@ namespace {
     }
 }  // namespace
 namespace EditorGravity {
+    G::Probe query(Vec3 position) {
+        PetariNative::HostAllocationScope host;
+        return probe(position, false);
+    }
+    G::Probe queryGround(Vec3 origin, Vec3 direction) {
+        PetariNative::HostAllocationScope host;
+        Vec3 point, normal;
+        RowId row;
+        return groundAt(origin, unit(direction), &point, &normal, &row) ? probe(point, true) : G::Probe{};
+    }
     void update(const EditorPicking::View& camera) {
         PetariNative::HostAllocationScope host;
         static bool installed = false;
