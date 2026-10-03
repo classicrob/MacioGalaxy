@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
@@ -10,6 +11,13 @@ from petari_level import Live, LevelError
 
 
 class LiveTests(unittest.TestCase):
+    def test_start_reads_directory_after_fixture_notices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory)/"cmd").mkdir(); (Path(directory)/"reply").mkdir()
+            output = SimpleNamespace(returncode=0, stdout=f"Created fixture. Source NAND only read.\n{directory}\nready in 30 s\n", stderr="")
+            with patch("petari_level.live.subprocess.run", return_value=output):
+                self.assertEqual(Live.start("fake-app").dir, Path(directory))
+
     def test_structured_live_error_is_raised(self):
         with tempfile.TemporaryDirectory() as directory, patch("petari_level.live._send", return_value='ok {"ok":false,"error":{"code":"busy","message":"running"}}'):
             with self.assertRaises(LevelError) as caught:

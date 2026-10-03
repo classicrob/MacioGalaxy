@@ -63,7 +63,16 @@ class Live:
         out = subprocess.run(argv, capture_output=True, text=True, env=env)
         if out.returncode != 0:
             raise LevelError({"code": "live", "message": "test server did not start", "hint": out.stdout + out.stderr})
-        return cls(out.stdout.splitlines()[0].strip())
+        if directory:
+            return cls(directory)
+        for line in reversed(out.stdout.splitlines()):
+            candidate = Path(line.strip())
+            try:
+                if (candidate / "cmd").is_dir() and (candidate / "reply").is_dir():
+                    return cls(candidate)
+            except OSError:
+                continue
+        raise LevelError({"code": "live", "message": "Started server did not report its command directory.", "hint": out.stdout})
 
     def stop(self) -> None:
         subprocess.run([sys.executable, str(TOOLS / "test_server.py"), "stop", "--dir", str(self.dir)], check=False)
