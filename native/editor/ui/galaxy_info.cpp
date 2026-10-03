@@ -51,6 +51,8 @@ namespace PetariEditor::Ui {
             gGalaxy.value = gGalaxy.original = *current;
         auto& draft = gGalaxy.value;
         ImGui::PushID("galaxy-settings");
+        drawSection("Galaxy settings");
+        noteTestTarget("section:Galaxy settings");
         ImGui::TextWrapped("%s", draft.internalName.c_str());
         ImGui::TextDisabled("Mod: %s", draft.mod.c_str());
         ImGui::BeginDisabled(gGalaxy.pending);

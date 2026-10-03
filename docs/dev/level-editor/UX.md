@@ -870,7 +870,7 @@ A galaxy's missions share one world; each mission turns some groups of objects
   cannot represent the choice, Apply explains why and lists the possible mission
   combinations. Editing ScenarioData to create new layer combinations is not yet
   supported.
-- **Missions panel** (Outliner tab "Missions"): built for registered mod galaxies, with a draft galaxy name, music and English mission names, plus Add mission / Remove last. Apply writes live names and music (heard on the next Play/reload); Apply (restarts) handles count changes with Save or explicit Discard first. Cancel drops the draft. Internal names stay read-only. Objects exclusive to removed missions stay in the layout but no longer appear until those missions return.
+- **Galaxy settings** (Inspector with nothing selected): built for registered mod galaxies, with a draft galaxy name, music and English mission names, plus Add mission / Remove last. Apply writes live names and music (heard on the next Play/reload); Apply (restarts) handles count changes with Save or explicit Discard first. Cancel drops the draft. Internal names stay read-only. Objects exclusive to removed missions stay in the layout but no longer appear until those missions return.
 - Later Missions-panel fields: each mission's name (editable,
   in every language the game has, with the current language first), its star
   (which Power Star, where: a link to the star object), its start point, the
@@ -933,7 +933,7 @@ three steps and a live preview on the right (the game renders the template).
      from the name (`PipeDreamGalaxy`) and editable under Advanced.
    - Stars collected in a mod galaxy are kept in the mod's own save beside
      your save file, never in the game's save slots.
-   - Missions: how many, and their names (editable later in the Missions panel).
+   - Missions: how many, and their names (editable later in Galaxy settings).
    - Stars: one per mission by default.
 
 Everything the community does by hand today happens behind this sheet: the

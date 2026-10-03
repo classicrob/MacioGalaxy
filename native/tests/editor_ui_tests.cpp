@@ -486,9 +486,7 @@ void testGalaxyInfoInput() {
         ImGui::NewFrame();
         ImGui::SetNextWindowPos(ImVec2(20, 20));
         ImGui::SetNextWindowSize(ImVec2(400, 820));
-        ImGui::Begin("Galaxy settings test", nullptr, ImGuiWindowFlags_NoSavedSettings);
-        Ui::drawGalaxyInfoPanel();
-        ImGui::End();
+        Ui::drawInspectorWindow("Galaxy settings test");
         ImGui::Render();
     };
     auto click = [&](const char* target) {

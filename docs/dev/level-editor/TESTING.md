@@ -162,7 +162,7 @@ then clicks Restore and Discard in separate copies; it checks unsaved state,
 recovery notices and removal on Discard. Home mode starts from an unlocked
 Observatory save, follows Home > Mods > Level Select > New galaxy, chooses a
 brush template and sky, and clicks Create. After the restart it renames the
-galaxy, adds and removes a mission through the panel and checks each restart.
+galaxy, adds and removes a mission through the empty-selection Inspector and checks each restart.
 Inspect the marked surfaces and require `[editor-m4-ui] PASS`; a deliberate
 SDL quit after that marker need not finish the general stage-smoke sequence.
 Source and binary hashes are recorded; private caches are removed.

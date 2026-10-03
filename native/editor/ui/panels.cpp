@@ -1040,15 +1040,6 @@ void drawGalaxyWindow(const char* title) {
                 drawBrowser(*model);
                 ImGui::EndTabItem();
             }
-            if (modGalaxyInfo()) {  // M4: settings exist only for registered mod galaxies.
-                const bool missionsOpen = ImGui::BeginTabItem("Missions", nullptr, flags("Missions"));
-                noteTestTarget("tab:Missions");
-                if (missionsOpen) {
-                    noteTab("Missions");
-                    drawGalaxyInfoPanel();
-                    ImGui::EndTabItem();
-                }
-            }
             const int changeCount = static_cast< int >(collectChanges(*model).size());
             char changesLabel[32];
             std::snprintf(changesLabel, sizeof(changesLabel), changeCount > 0 ? "Changes %d###changes" : "Changes###changes", changeCount);
@@ -1105,7 +1096,10 @@ void drawInspectorWindow(const char* title) {
         const std::vector< Pick::Item > picked = Pick::selection();
         const std::vector< RowId > rows = selectedRows();
         if (picked.empty()) {
-            ImGui::TextDisabled("Select something to see its settings.");
+            if (modGalaxyInfo())
+                drawGalaxyInfoPanel();  // M4: an empty selection shows the mod galaxy's properties.
+            else
+                ImGui::TextDisabled("Select something to see its settings.");
         } else if (model == nullptr || rows.empty()) {
             ImGui::Text("%s", picked.front().name);
             ImGui::TextWrapped("This object is not in the galaxy's tables (another object made it), so it has no settings of its own.");

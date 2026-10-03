@@ -49,6 +49,10 @@ namespace PetariNative::App {
             releaseIn = 2;
             return true;
         }
+        bool visible(const char* target) {
+            float x, y, w, h;
+            return PetariEditor::Ui::testTargetRect(target, &x, &y, &w, &h);
+        }
         bool click(const char* target) {
             float x, y, w, h;
             if (!PetariEditor::Ui::testTargetRect(target, &x, &y, &w, &h))
@@ -179,7 +183,7 @@ namespace PetariNative::App {
             if (which == "settings-verify") {
                 if (info->missions.size() != 2 || info->name != "M4 Edited Galaxy")
                     return finish("FAIL: added mission settings");
-                if (step == 0 && click("tab:Missions"))
+                if (step == 0 && visible("section:Galaxy settings"))
                     ++step;
                 else if (step == 1) {
                     EfbDump::mark("m4-settings-added");
@@ -198,7 +202,7 @@ namespace PetariNative::App {
                     return finish("FAIL: created galaxy name");
                 EfbDump::mark("m4-created");
                 ++step;
-            } else if (step == 1 && click("tab:Missions"))
+            } else if (step == 1 && visible("section:Galaxy settings"))
                 ++step;
             else if (step == 2 && click("field:Galaxy name"))
                 ++step;
