@@ -98,6 +98,16 @@ int main() {
     for (const S::ZipEntry& e : *zipped) clutter |= e.path.find(".DS_Store") != std::string::npos;
     check(!clutter, "host clutter is left out");
     check(S::describeFolder(mods / "Coin Ring").author == "Ada", "a folder is described the same way");
+    check(preview->newGalaxies == std::vector< std::string >{"PipeDreamGalaxy"} && !preview->newGalaxyFilesOnly,
+          "a new galaxy is named (it plays only in Petari)");
+    // A new galaxy's own archives are not a replaced disc file.
+    write(mods / "Pipe/galaxy.json", "{\"galaxies\": [{\"name\": \"PipeGalaxy\"}]}");
+    write(mods / "Pipe/files/StageData/PipeGalaxy.arc", "stage");
+    write(mods / "Pipe/files/StageData/PipeGalaxy/PipeGalaxyScenario.arc", "scenario");
+    const S::Preview pipe = S::describeFolder(mods / "Pipe");
+    check(pipe.fullArchives && pipe.newGalaxyFilesOnly, "a new galaxy's own archives only");
+    write(mods / "Pipe/files/StageData/EggStarGalaxy.arc", "replaced");
+    check(!S::describeFolder(mods / "Pipe").newGalaxyFilesOnly, "plus a replaced disc archive: game data again");
 
     // Install, again (refused), replace.
     const fs::path other = root / "other-mods";

@@ -30,6 +30,11 @@ struct Preview {
     std::vector< std::string > archives;  // "StageData/SoramameZone.arc": archives the edits touch, then files/ archives
     bool editorMod = false;   // made by the level editor (mod.txt editor=1): "Open in editor" applies
     bool fullArchives = false;  // files/ replaces disc files: it carries game data (warn before sharing)
+    // New galaxies (galaxy.json): they play only in Petari (no way to add galaxies to the original
+    // game without code patches; UX "Share"). newGalaxyFilesOnly: every files/ archive is one of
+    // theirs (their own stage and scenarios, which no patch can express), not a replaced disc file.
+    std::vector< std::string > newGalaxies;
+    bool newGalaxyFilesOnly = false;
     int fileCount = 0;
 };
 

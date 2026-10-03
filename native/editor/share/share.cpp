@@ -159,7 +159,10 @@ namespace {
             } else if (path == "galaxy.json") {
                 if (std::optional< Json::Value > doc = Json::parse(text)) {
                     for (const Json::Value& g : (*doc)["galaxies"].items()) {
-                        if (!g["name"].asString().empty()) galaxies.insert(g["name"].asString());
+                        if (!g["name"].asString().empty()) {
+                            galaxies.insert(g["name"].asString());
+                            p.newGalaxies.push_back(g["name"].asString());
+                        }
                     }
                 }
             } else if (path.rfind("files/", 0) == 0) {
@@ -169,6 +172,18 @@ namespace {
             }
         }
         p.galaxies.assign(galaxies.begin(), galaxies.end());
+    // A new galaxy's own archives: StageData/<G>.arc and StageData/<G>/...
+    p.newGalaxyFilesOnly = p.fullArchives && !p.newGalaxies.empty();
+    for (const std::string& archive : archives) {
+        if (!p.fullArchives || archive.rfind("StageData/", 0) != 0) {
+            continue;
+        }
+        bool own = false;
+        for (const std::string& g : p.newGalaxies) {
+            own = own || archive == "StageData/" + g + ".arc" || archive.rfind("StageData/" + g + "/", 0) == 0;
+        }
+        p.newGalaxyFilesOnly = p.newGalaxyFilesOnly && own;
+    }
         p.archives.assign(archives.begin(), archives.end());
         return p;
     }
