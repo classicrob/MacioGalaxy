@@ -313,6 +313,8 @@ public:
     // Level Select's Go, reported once after the menu has closed: the
     // internal stage name and mission. The caller starts the warp.
     bool takeLevelRequest(const char** stage, int* mission);
+    void setEditorEnabled(bool enabled);
+    bool takeNewGalaxyRequest();
     int levelGalaxy() const { return mLevelGalaxy; }
     // The Odyssey camera page's options; changes are reported once (true) and
     // copied to *options. The caller applies and saves them.
@@ -389,6 +391,8 @@ private:
     int mLevelGalaxy = 0;   // index into LaunchStage::galaxies
     int mLevelMission = 1;
     bool mLevelPending = false;
+    bool mEditorEnabled = false;
+    bool mNewGalaxyPending = false;
     char mLevelLabels[2][80] = {};
     char mLevelMessage[96] = {};
     void refreshLevelLabels();

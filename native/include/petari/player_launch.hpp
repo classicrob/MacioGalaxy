@@ -31,4 +31,6 @@ inline std::string openTitle;
 inline char warpStage[64] = {};
 inline int warpScenario = 0;
 inline std::atomic<bool> warpPending{false};
+// M4: Home closes before the UI opens the New Galaxy sheet; never a warp destination.
+inline std::atomic<bool> newGalaxyPending{false};
 }  // namespace PetariNative::PlayerLaunch

@@ -5,6 +5,7 @@
 #include "../editor/runtime/runtime_core.hpp"
 #include "panels.hpp"
 #include "missions.hpp"
+#include "journal.hpp"
 #include "help.hpp"
 #include "imgui_internal.h"
 #include "paths.hpp"
@@ -460,6 +461,64 @@ void testMissionInput() {
     Core::setModel(nullptr);
 }
 
+void testJournalInput() {
+    namespace Ui = PetariEditor::Ui;
+    CHECK(Ui::journalQuestion(1, 100, 120) == "Restore 1 unsaved edit from just now?");
+    CHECK(Ui::journalQuestion(3, 100, 220) == "Restore 3 unsaved edits from 2 minutes ago?");
+    CHECK(Ui::journalQuestion(1, 100, 3700) == "Restore 1 unsaved edit from 1 hour ago?");
+    CHECK(Ui::journalQuestion(2, 100, 173000) == "Restore 2 unsaved edits from 2 days ago?");
+    CHECK(Ui::journalQuestion(1, 0, 120).find("earlier session") != std::string::npos);
+    CHECK(Ui::journalQuestion(1, 200, 120).find("just now") != std::string::npos);
+    FakeModel model;
+    Core::setModel(&model);
+    Core::setMode(Mode::Off);
+    auto& st = Core::mutableStatus();
+    st.journalEdits = 3;
+    st.journalTime = 100;
+    auto& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(800, 600);
+    auto draw = [&]() {
+        ImGui::NewFrame();
+        Ui::drawJournalSheet();
+        ImGui::Render();
+    };
+    auto click = [&](const char* target) {
+        float x = 0, y = 0, w = 0, h = 0;
+        CHECK(Ui::testTargetRect(target, &x, &y, &w, &h));
+        io.AddMousePosEvent(x + w / 2, y + h / 2);
+        draw();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+        draw();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+        draw();
+    };
+    draw();
+    CHECK(ImGui::GetTopMostPopupModal() == nullptr);  // No offer during normal play.
+    Core::setMode(Mode::Editing);
+    draw(); draw();
+    CHECK(ImGui::GetTopMostPopupModal() != nullptr);
+    io.AddKeyEvent(ImGuiKey_Escape, true); draw();
+    io.AddKeyEvent(ImGuiKey_Escape, false); draw();
+    CHECK(ImGui::GetTopMostPopupModal() != nullptr);  // Recovery must be answered.
+    CHECK(Core::drainCommands().empty());
+    click("button:Restore journal");
+    auto commands = Core::drainCommands();
+    CHECK(commands.size() == 1 && commands[0].kind == Command::Kind::RestoreJournal);
+    click("button:Restore journal");
+    CHECK(Core::drainCommands().empty());  // Wait for the command; no double submission.
+    Core::reportError("Restore failed for test");
+    draw(); draw();
+    click("button:Discard journal");
+    commands = Core::drainCommands();
+    CHECK(commands.size() == 1 && commands[0].kind == Command::Kind::DiscardJournal);
+    st.journalEdits = 0;
+    draw(); draw();
+    CHECK(ImGui::GetTopMostPopupModal() == nullptr);
+    st = Status{};
+    Core::setModel(nullptr);
+    Core::setMode(Mode::Off);
+}
+
 void testHelpInput() {
     namespace Ui = PetariEditor::Ui;
     auto& io = ImGui::GetIO();
@@ -583,6 +642,7 @@ int main() {
     testPathInputCapture();
     testMissionInput();
     testHelpInput();
+    testJournalInput();
     ImGui::DestroyContext();
     testPanelsLogic();
     if (gFailures != 0) {

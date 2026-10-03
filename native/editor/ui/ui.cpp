@@ -1,3 +1,5 @@
+#include "journal.hpp"
+#include "home_entry.hpp"
 #include "playtest.hpp"
 #include "help.hpp"
 #include "areas.hpp"
@@ -574,6 +576,12 @@ bool drawStyledOverlay(const std::function< bool() >& draw) {
 }
 
 void drawFrame(float windowWidth, float windowHeight) {
+    {
+        StyleScope style;
+        serviceHomeNewGalaxy();  // M4: Home requests are handled on the UI thread.
+        drawNewGalaxySheet();  // M4: also available outside the docked layout.
+        drawJournalSheet();  // M4: recovery owns input before the first Edit frame.
+    }
     updateEditMode(windowWidth, windowHeight);  // uses last frame's viewport
     {
         StyleScope style;
@@ -617,7 +625,6 @@ void drawFrame(float windowWidth, float windowHeight) {
     drawInspectorWindow(kInspector);
     drawSaveSheet();
     drawShareSheet();
-    drawNewGalaxySheet();
     drawImportSheet();  // M6 import
     drawHelpOverlay();  // Editor guide
 

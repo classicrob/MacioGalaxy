@@ -454,6 +454,9 @@ void init() {
     refreshFolderMods();
     refreshCamera();
 #endif
+#ifdef PETARI_HOME_MENU_INPUT
+    instance().setEditorEnabled(Mods::enabled(Mods::Mod::LevelEditor));
+#endif
     instance().open();
 }
 
@@ -468,6 +471,7 @@ void calc(const HBMControllerData* controllers) {
     menu.update(input);
 #ifdef PETARI_HOME_MENU_INPUT
     applyModToggles();
+    menu.setEditorEnabled(Mods::enabled(Mods::Mod::LevelEditor));
     applyFolderToggles();
     applyCameraChange();
 #endif
@@ -480,6 +484,7 @@ void calc(const HBMControllerData* controllers) {
         PlayerLaunch::warpScenario = mission;
         PlayerLaunch::warpPending.store(true);
     }
+    if (menu.takeNewGalaxyRequest()) PlayerLaunch::newGalaxyPending.store(true);  // M4: host UI request.
     if (menu.selection() != Selection::None) {
         // HomeButtonLayout hides itself this frame and stops calling draw.
         publish(View{});

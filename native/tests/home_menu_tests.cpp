@@ -1482,6 +1482,9 @@ void testLevelSelect() {
               std::strcmp(view.items[1].label, "Mission 1 of 1") == 0 && std::strcmp(view.items[2].label, "Go") == 0 &&
               std::strcmp(view.items[3].label, "Back") == 0 && std::strstr(view.message, "Terrace") != nullptr,
           "Level Select shows galaxy, mission, Go and Back");
+    menu.update(press(HM::Button::Left));
+    check(menu.levelGalaxy() == count - 1, "editor off wraps to the last real galaxy");
+    menu.update(press(HM::Button::Right));
     // Right steps through galaxies; Left wraps backward.
     int goodEgg = -1;
     for (int i = 0; i < count; i++) {
@@ -1532,6 +1535,29 @@ void testLevelSelect() {
     menu.update(press(Plus | B));
     check(menu.phase() == HM::Phase::Mods && menu.focus() == 3, "Escape returns to the Mods page");
     check(!menu.takeLevelRequest(&stage, &mission), "no request after Back");
+    menu.setEditorEnabled(true);
+    menu.update(press(A));
+    while (menu.levelGalaxy() != count) menu.update(press(HM::Button::Right));
+    check(std::strstr(menu.view().items[0].label, "New galaxy...") != nullptr &&
+              std::strcmp(menu.view().items[2].label, "Create...") == 0 &&
+              std::strstr(menu.view().message, "Mod galaxies") != nullptr,
+          "editor on adds New galaxy after the mod destinations");
+    menu.update(press(HM::Button::Right));
+    check(menu.levelGalaxy() == 0, "New galaxy wraps to the first real galaxy");
+    menu.update(press(HM::Button::Left));
+    check(menu.levelGalaxy() == count, "Left from the first galaxy reaches New galaxy");
+    menu.update(press(Down));
+    menu.update(press(A));
+    check(menu.levelMission() == 1, "New galaxy has no mission selector to index");
+    menu.update(press(Down));
+    menu.update(press(A));
+    check(!menu.takeNewGalaxyRequest(), "New galaxy waits for Home to close");
+    framesUntilSelection(menu);
+    check(!menu.takeLevelRequest(&stage, &mission), "New galaxy never creates a warp");
+    check(menu.takeNewGalaxyRequest() && !menu.takeNewGalaxyRequest(), "New galaxy reports one editor request");
+    menu.setEditorEnabled(false);
+    check(menu.levelGalaxy() == 0, "turning editor off drops the sentinel selection");
+
 }
 
 void testCameraPage() {
