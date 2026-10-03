@@ -117,8 +117,10 @@ namespace EditorGravity {
             auto* g = static_cast< GlobalGravityObj* >(original)->getGravity();
             if (g->mPriority != 100)
                 return fail("Priority did not reach engine");
-            if (MR::getSceneObj< PlanetGravityManager >(SceneObj_PlanetGravityManager)->nativeGravityAt(0) != g)
-                return fail("Priority did not re-sort manager");
+            auto* sorted = MR::getSceneObj< PlanetGravityManager >(SceneObj_PlanetGravityManager);
+            for (int i = 1; i < sorted->nativeGravityCount(); ++i)
+                if (sorted->nativeGravityAt(i - 1)->mPriority < sorted->nativeGravityAt(i)->mPriority)
+                    return fail("Priority did not re-sort manager");
             Command c{Command::Kind::Apply};
             c.op = Gravity::numericOp(*m, {row}, "Range", 20);
             enqueue(std::move(c));

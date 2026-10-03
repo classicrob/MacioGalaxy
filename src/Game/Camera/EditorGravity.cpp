@@ -266,6 +266,7 @@ namespace {
         }
     }
     bool preview(LiveActor* actor, int zone, const RowTransform& t) {
+        state().baselineSealed = true;
         if (!isGlobal(actor))
             return false;
         auto* obj = static_cast< GlobalGravityObj* >(actor);
