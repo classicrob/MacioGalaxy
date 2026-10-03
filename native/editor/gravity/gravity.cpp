@@ -117,9 +117,49 @@ namespace PetariEditor::Gravity {
         static const unsigned colors[] = {0xecc46c, 0x78df94, 0x74a9ef, 0xe4a97c, 0xe792c7, 0x94dcdc, 0x9a9df0, 0xe6dca0, 0xc0c0c0};
         return colors[static_cast< int >(s)] | ((alpha & 255) << 24);
     }
-    Mesh geometry(const Field& f, bool selected) {
+    std::uint32_t fieldColor(const Field& f, unsigned alpha) {
+        // Row identity survives edits and reloads; unowned fields receive a scene-local key.
+        std::uint64_t key = f.row.valid() ? f.row.v : f.colorKey;
+        key ^= key >> 33;
+        key *= 0xff51afd7ed558ccdULL;
+        key ^= key >> 33;
+        const float hue = (key % 3600) / 600.0f;
+        const float chroma = 0.65f, low = 0.30f;
+        const float mid = chroma * (1 - std::fabs(std::fmod(hue, 2.0f) - 1));
+        const float rgb[6][3] = {{chroma,mid,0},{mid,chroma,0},{0,chroma,mid},
+                                  {0,mid,chroma},{mid,0,chroma},{chroma,0,mid}};
+        const auto& c = rgb[static_cast<int>(hue)];
+        return static_cast<unsigned>((c[0]+low)*255) | (static_cast<unsigned>((c[1]+low)*255)<<8) |
+               (static_cast<unsigned>((c[2]+low)*255)<<16) | ((alpha & 255)<<24);
+    }
+    float rangeFade(float distance, float distant, float range) {
+        if (range < 0) return 1;
+        if (range == 0) return distance < distant ? 1 : 0;
+        const float t = std::clamp((range + distant - distance) / (range * 0.25f), 0.0f, 1.0f);
+        return t * t * (3 - 2 * t);
+    }
+    float flowFade(const Field& f, Vec3 p, float forceDistance) {
+        if (f.shape != Shape::Parallel) return rangeFade(forceDistance, f.distant, f.range);
+        const Vec3 delta{p.x-f.center.x,p.y-f.center.y,p.z-f.center.z};
+        auto dot = [](Vec3 a, Vec3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; };
+        if (f.bound == Bound::Sphere) return rangeFade(length(delta),0,f.range);
+        float edge;
+        if (f.bound == Bound::Box) {
+            edge = std::max({std::fabs(dot(delta,f.x))/std::max(0.001f,dot(f.x,f.x)),
+                             std::fabs(dot(delta,f.y))/std::max(0.001f,dot(f.y,f.y)),
+                             std::fabs(dot(delta,f.z))/std::max(0.001f,dot(f.z,f.z))});
+        } else {
+            const Vec3 up = unit(f.y);
+            const float height = dot(delta,up);
+            const Vec3 radial = add(delta,mul(up,-height));
+            edge = std::max(length(radial)/std::max(0.001f,f.radius),
+                            std::fabs(2*height/std::max(0.001f,f.height)-1));
+        }
+        return rangeFade(edge,0,1);
+    }
+    Mesh geometry(const Field& f, bool selected, bool hovered, bool recede) {
         Mesh m;
-        unsigned c = selected ? 0xff72d7ff : color(f.shape, f.active ? 160 : 55);
+        unsigned c = fieldColor(f, selected ? 255 : hovered ? 240 : !f.active ? 35 : recede ? 65 : 135);
         float r = std::max(1.0f, f.radius);
         Vec3 n = unit(f.y), x, z;
         basis(n, x, z);
@@ -181,6 +221,16 @@ namespace PetariEditor::Gravity {
                 ring(m, add(f.center, mul(n, -reach)), x, z, r, shell, true);
                 ring(m, f.center, x, z, r + reach, shell, true);
             }
+        }
+        if (!selected && !hovered)
+            m.triangles.clear();
+        else
+            for (auto& triangle : m.triangles)
+                triangle.color = fieldColor(f, selected ? 9 : 6);
+        for (auto& line : m.lines) {
+            const bool shell = (line.color >> 24) == 0x65;
+            line.color = fieldColor(f, shell ? (selected || hovered ? 65 : 15) : (c >> 24));
+            line.width = shell ? 1.0f : selected ? 3.0f : hovered ? 2.5f : 1.0f;
         }
         return m;
     }

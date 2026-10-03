@@ -3,6 +3,7 @@
 // ones, search ranks names, user files merge and broken ones are skipped. No game, no disc.
 #include "petari/editor/catalog.hpp"
 #include "petari/editor/json.hpp"
+#include "petari/editor/terrain/brush_catalog.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -95,9 +96,19 @@ void testCatalog() {
 }
 }  // namespace
 
+// The terrain brush's class, built without the runtime (headless tools register it too).
+static void testBrushClass() {
+    const C::ClassInfo info = PetariEditor::Terrain::brushClassInfo();
+    check(info.name == "EditorBrush" && info.placeable && info.args.size() == 4 && info.presets.size() == 4, "brush class: 4 args, 4 presets");
+    check(info.args.size() == 4 && info.args[3].choices.size() == 3 && info.args[3].defaultValue == 1, "brush gravity: 3 modes, fitted by default");
+    PetariEditor::Terrain::registerBrushClass();
+    check(C::find("EditorBrush") != nullptr, "brush class registered");
+}
+
 int main() {
     testJson();
     testCatalog();
+    testBrushClass();
     std::printf("editor catalog: %d checks passed (%zu classes)\n", checks, C::classes().size());
     return 0;
 }

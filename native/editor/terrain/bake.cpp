@@ -384,7 +384,7 @@ void registerPatchBuilder() {
     if (!sRegistered) {
         sRegistered = true;
         // Change the version when the baked files change, so cached builds are made again.
-        Patch::registerAssetBuilder("terrain-bake-1", &bakePatchAssets);
+        Patch::registerAssetBuilder("terrain-bake-4", &bakePatchAssets);
     }
 }
 
