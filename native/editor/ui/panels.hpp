@@ -29,6 +29,8 @@ const std::string& sessionModName();  // empty until the first save
 std::string modNameFrom(const std::string& text);
 std::string defaultModName(const char* galaxy);  // "CosmosGardenGalaxy" -> "CosmosGarden edit"
 
+// A case-insensitive "contains" (the Outliner's Find; empty matches all).
+bool matchesQuery(const std::string& text, const std::string& query);
 // Bring a Galaxy tab forward ("Checks": the toolbar's badge).
 void openTab(const char* name);
 struct CheckCounts {

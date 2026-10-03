@@ -111,18 +111,28 @@ namespace PetariEditor::Ui {
         draw->PushClipRect({x, y}, {x + width, y + height}, true);
         if (v.probe.valid) {
             ImVec2 p{x + (v.probeX + 1) * width / 2, y + (1 - v.probeY) * height / 2};
-            std::string label = v.probe.covered ? v.probe.name + " | priority " + std::to_string(v.probe.priority) : "No gravity";
-            if (v.probe.blended > 1)
-                label += " | blends " + std::to_string(v.probe.blended);
-            if (v.probe.beaten > 0)
-                label += " | beats " + std::to_string(v.probe.beaten);
-            if (!v.probe.onGround)
-                label += " (in air)";
+            const auto hover = std::find_if(v.fields.begin(), v.fields.end(), [&](const auto& f) { return f.identity == v.hoveredIdentity; });
+            const auto winner = std::find_if(v.fields.begin(), v.fields.end(), [&](const auto& f) { return f.identity == v.probe.winnerIdentity; });
+            const auto detail = hover != v.fields.end() ? hover : winner;
+            std::string label = v.probe.covered ? v.probe.name : "No gravity";
+            if (detail != v.fields.end()) {
+                char range[64];
+                if (detail->shape == Gravity::Shape::Parallel && detail->bound != Gravity::Bound::Sphere)
+                    std::snprintf(range, sizeof(range), "%s boundary", detail->bound == Gravity::Bound::Box ? "box" : "cylinder");
+                else if (detail->range < 0) std::snprintf(range, sizeof(range), "unlimited");
+                else std::snprintf(range, sizeof(range), "%.0f", detail->range);
+                label = detail->name + " | priority " + std::to_string(detail->priority) + "\nRange: " + range;
+                if (hover != v.fields.end() && hover != winner)
+                    label += "\nWinning pull: " + (v.probe.covered ? v.probe.name : "none");
+                else label += " | winning pull";
+                if (v.probe.blended > 1) label += " (blended)";
+            }
+            if (!v.probe.onGround) label += " | in air";
             ImVec2 text = ImGui::CalcTextSize(label.c_str());
             p.x = std::clamp(p.x + 16, x + 8, std::max(x + 8, x + width - text.x - 12));
             p.y = std::clamp(p.y + 18, y + 8, std::max(y + 8, y + height - text.y - 12));
             draw->AddRectFilled({p.x - 5, p.y - 4}, {p.x + text.x + 5, p.y + text.y + 4}, 0xe022272a, 4);
-            draw->AddText(p, v.probe.covered ? 0xffffffff : 0xff7777ff, label.c_str());
+            draw->AddText(p, detail != v.fields.end() ? Gravity::fieldColor(*detail, 255) : 0xff7777ff, label.c_str());
         }
         draw->AddText({x + 12, y + 12}, 0xffeee0b0, "Gravity view | 1 to hide | Option: probe in air");
         draw->PopClipRect();
