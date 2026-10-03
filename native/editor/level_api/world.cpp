@@ -276,6 +276,17 @@ std::optional< Hit > World::ray(G::V3 origin, G::V3 dir, float maxDistance, bool
     return best;
 }
 
+std::optional< Hit > World::insideOf(G::V3 point, G::V3 down) const {
+    // Inside a solid both nearest surfaces, above and below, are seen from behind. Collision meshes are not
+    // closed (a canopy or a one-sided platform has only its top), so one back face overhead is not enough.
+    const G::V3 up = down * -1.0f;
+    std::optional< Hit > above = ray(point, up, 50000.0f, false);
+    if (!above || G::dot(above->normal, up) <= 0.0f) return std::nullopt;
+    std::optional< Hit > below = ray(point, down, 50000.0f, false);
+    if (!below || G::dot(below->normal, down) <= 0.0f) return std::nullopt;
+    return above;
+}
+
 std::optional< Hit > World::nearest(G::V3 point, float maxDistance) const {
     std::optional< Hit > best;
     float bestD = maxDistance;

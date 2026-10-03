@@ -207,8 +207,20 @@ int main() {
     check(ok(ground, "ground") && ground["hit"].asBool() && ground["on_class"].asString() == "DiskGardenPlanet", "ground under the start is Disk Garden");
     check(ground["gravity"].asString().find("GlobalDiskGravity") == 0, "the disk's gravity there");
     check(std::fabs(ground["point"].items()[1].asNumber() - sy) < 40, "the ground is where Mario starts (within 40 units)");
-    // A point just inside the planet still lands on its top (back faces are skipped).
-    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true,"height":100,"as":"gc"}]})", sx, sy - 30, sz);
+    // A point inside the planet is refused (the evaluator's underside bug), naming the collider and how far to raise it.
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true}]})", sx, sy - 300, sz);
+    Value inside = lv.call("apply", parse(buf));
+    check(inside["error"]["code"].asString() == "inside-collision" && hasCandidate(inside, "DiskGardenZone:common/objinfo:11"),
+          "on_ground from inside the planet: inside-collision naming Disk Garden");
+    check(inside["error"]["message"].asString().find("units below its surface") != std::string::npos, "it says how far below the surface");
+    std::snprintf(buf, sizeof(buf), R"({"pos":[%.1f,%.1f,%.1f]})", sx, sy - 300, sz);
+    Value insideProbe = lv.call("ground", parse(buf));
+    check(insideProbe["hit"].asBool() == false && insideProbe.has("inside") && insideProbe["surface_above"].asNumber() > 200, "ground reports inside + surface_above");
+    // 50 units inside is an error too (strict: only numerical slack is forgiven).
+    std::snprintf(buf, sizeof(buf), R"({"dry_run":true,"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true}]})", sx, ground["point"].items()[1].asNumber() - 50, sz);
+    check(lv.call("apply", parse(buf))["error"]["code"].asString() == "inside-collision", "50 units inside the starter planet: inside-collision");
+    // From above, it lands on the top.
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true,"height":100,"as":"gc"}]})", sx, sy + 50, sz);
     Value grounded = lv.call("apply", parse(buf));
     check(ok(grounded, "on_ground") && grounded["placements"].items().size() == 1, "on_ground reports its placement");
     const double gy = call(lv, "get", R"({"ref":"@gc"})")["pos"].items()[1].asNumber();
@@ -248,6 +260,13 @@ int main() {
     Value launch = call(lv, "get", R"({"ref":"@launch"})");
     Value rail = call(lv, "get", R"({"ref":"@flight"})");
     check(launch["links"]["CommonPath_ID"].asInt(-1) == rail["fields"]["l_id"].asInt(-2) && rail["fields"]["num_pnt"].asInt() == 3, "the Launch Star flies the new path");
+    check(rail["points"].items().size() == 3 && std::fabs(rail["points"].items()[1]["pos"].items()[1].asNumber() - (sy + 2500)) < 1,
+          "get on a rail lists its points in world space");
+    check(rail["points"].items()[1]["in"].items()[0].asNumber() < rail["points"].items()[1]["out"].items()[0].asNumber(), "smooth handles by default");
+    check(flight["created"].items()[0]["points"].asInt() == 3 && flight["created"].items()[0].has("pos"), "a created rail summarises its points");
+    std::snprintf(buf, sizeof(buf), R"({"dry_run":true,"ops":[{"op":"array","class":"Coin","shape":"line","start":[%.1f,%.1f,%.1f],"end":[%.1f,%.1f,%.1f],"count":4,"down":[0,-1,0]}]})",
+                  sx, sy + 900, sz, sx + 600, sy + 900, sz);
+    check(lv.call("apply", parse(buf))["created"].items().size() == 4, "array start/end (from/to stay aliases)");
     bool linkProblem = false;
     for (const Value& c : flight["checks_introduced"].items()) linkProblem = linkProblem || c["key"].asString().find("link") != std::string::npos;
     check(!linkProblem, "a linked Launch Star raises no link check");

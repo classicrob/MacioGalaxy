@@ -45,20 +45,29 @@ def main():
     zone = planet.split(":")[0]                               # a Launch Star and its path share a zone
     center = lv.get(planet)["pos"]
     ahead = flat_unit([center[i] - start[i] for i in range(3)], up)
-    launch = add(start, ahead, 450)
-    landing = lv.ground(add(add(start, ahead, 3000), up, 800))["point"]   # the far side of the disk
+    launch = lv.ground(add(add(start, ahead, 450), up, 300))["point"]      # probes start above the ground
+    # The landing: flat open ground on the far side. Probe from high above (an origin inside the tree there
+    # is refused) and keep the first spot whose surface faces up.
+    side = [ahead[1] * up[2] - ahead[2] * up[1], ahead[2] * up[0] - ahead[0] * up[2], ahead[0] * up[1] - ahead[1] * up[0]]
+    landing = None
+    for k, s in [(2900, 0), (2900, 700), (2900, -700), (2600, 700), (2600, -700), (3200, 0)]:
+        probe = lv.ground(add(add(add(start, ahead, k), side, s), up, 3000))
+        if probe.get("hit") and sum(probe["normal"][i] * up[i] for i in range(3)) > 0.9:
+            landing = probe["point"]
+            break
+    assert landing is not None, "no flat landing found"
     apex = add([(launch[i] + landing[i]) / 2 for i in range(3)], up, 2600)
 
     def course(layer_ops):
         return [
-            {"op": "array", "class": "Coin", "shape": "line", "from": add(start, ahead, 120), "to": add(start, ahead, 330),
+            {"op": "array", "class": "Coin", "shape": "line", "start": add(add(start, ahead, 120), up, 300), "end": add(add(start, ahead, 330), up, 300),
              "count": 3, "on_ground": True, "height": 80, "as": "trail"},
             {"op": "path", "zone": zone, "points": [add(launch, up, 150), apex, add(landing, up, 450)], "as": "flight"},
-            {"op": "add", "class": "Launch Star", "pos": launch, "on_ground": True, "height": 150, "path": "@flight",
+            {"op": "add", "class": "Launch Star", "pos": add(launch, up, 300), "on_ground": True, "height": 150, "path": "@flight",
              "zone": zone, "as": "launch", **layer_ops},
-            {"op": "array", "class": "Coin", "shape": "arc", "from": add(launch, up, 500), "to": add(landing, up, 650),
+            {"op": "array", "class": "Coin", "shape": "arc", "start": add(launch, up, 500), "end": add(landing, up, 650),
              "peak": 2200, "count": 9, "down": [-v for v in up], "as": "arc"},
-            {"op": "add", "class": "PowerStar", "pos": landing, "on_ground": True, "height": 180, "args": {"Star ID": 1},
+            {"op": "add", "class": "PowerStar", "pos": add(landing, up, 300), "on_ground": True, "height": 180, "args": {"Star ID": 1},
              "missions": [1], "as": "star"},
         ]
 

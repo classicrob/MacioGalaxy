@@ -88,6 +88,12 @@ namespace {
         gPending.noticeSerial = E::status().noticeSerial;
     }
 
+    // "error <json>": the API's Error ({code, message, hint, candidates, where}), as every live command replies.
+    std::string errorText(const std::string& code, const std::string& message, const std::string& hint = "", const std::string& where = "") {
+        PetariNative::HostAllocationScope host;
+        return "error " + E::Json::write(E::LevelApi::Error{code, message, hint, {}, where}.toJson());
+    }
+
     bool parseFloats(const std::vector< std::string >& w, std::size_t from, float* out, int n) {
         if (w.size() < from + n) return false;
         for (int i = 0; i < n; i++) out[i] = std::strtof(w[from + i].c_str(), nullptr);
@@ -104,7 +110,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         // The edit model for the current stage without entering Edit (Runtime::ensureModel): ops then apply on the
         // next tick and SceneSync re-creates their actors in the running scene, in Play.
         if (E::model() == nullptr && !PetariEditor::Runtime::ensureModel()) {
-            reply(name, "error no edit model: " + E::status().lastError);
+            reply(name, errorText("no-model", "no edit model: " + E::status().lastError, "is a stage loaded? (status)", c));
             return true;
         }
         begin(Wait::Model, name);
@@ -122,7 +128,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         // A file with one low-level op or {"ops": [op, ...]} (petari-level export).
         const E::ModelView* m = E::model();
         if (m == nullptr) {
-            reply(name, "error no edit model (send editor-begin first)");
+            reply(name, errorText("no-model", "no edit model", "send editor-begin first", c));
             return true;
         }
         PetariNative::HostAllocationScope host;
@@ -131,7 +137,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         std::string error;
         std::optional< Value > json = E::Json::parse(text, &error);
         if (!json) {
-            reply(name, "error " + w[1] + ": " + error);
+            reply(name, errorText("bad-json", w[1] + ": " + error, "", c));
             return true;
         }
         std::vector< Value > ops;
@@ -144,7 +150,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         for (const Value& op : ops) {
             E::Op one;
             if (!E::LevelApi::opFromJson(*m, op, &one, &error)) {
-                reply(name, "error op " + std::to_string(parsed.size()) + ": " + error);
+                reply(name, errorText("bad-ref", error, "the game's model must match the workspace (same disc and mods; editor-state)", "ops[" + std::to_string(parsed.size()) + "]"));
                 return true;
             }
             parsed.push_back(std::move(one));
@@ -194,7 +200,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         // teleport x y z: Mario there now (MR::setPlayerPosAndWait, as the stage smoke's warp), without the editor.
         float p[3];
         if (!parseFloats(w, 1, p, 3) || !MR::isExistSceneObj(SceneObj_MarioHolder)) {
-            reply(name, "error usage: teleport x y z (in a stage)");
+            reply(name, errorText("bad-args", "usage: teleport x y z (in a stage)", "", c));
             return true;
         }
         MR::setPlayerPosAndWait(TVec3f(p[0], p[1], p[2]));
@@ -220,7 +226,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         PetariNative::HostAllocationScope host;
         const E::ModelView* m = E::model();
         if (m == nullptr) {
-            reply(name, "error no edit model (send editor-begin first)");
+            reply(name, errorText("no-model", "no edit model", "send editor-begin first", c));
             return true;
         }
         Value list = Value::array();
@@ -241,7 +247,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         // ground x y z [dx dy dz]: the engine's own gravity at the point and the first map polygon along it.
         float p[6] = {0, 0, 0, 0, 0, 0};
         if (!parseFloats(w, 1, p, 3)) {
-            reply(name, "error usage: " + c + " x y z [dx dy dz]");
+            reply(name, errorText("bad-args", "usage: " + c + " x y z [dx dy dz]", "", c));
             return true;
         }
         const TVec3f at(p[0], p[1], p[2]);
@@ -271,7 +277,7 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         std::error_code ec;
         fs::remove(w[1], ec);
         if (!PetariNative::Screenshot::request(w[1].c_str())) {
-            reply(name, "error a screenshot is already pending");
+            reply(name, errorText("busy", "a screenshot is already pending", "retry after it is written", c));
             return true;
         }
         begin(Wait::Shot, name);
@@ -295,18 +301,18 @@ bool tick(bool playable, const Reply& reply) {
         gPending.wait = Wait::None;
     };
     if (elapsed > 60000) {
-        done("error timeout");
+        done(errorText("timeout", "no result within 60 s", "see the server log"));
         return true;
     }
     switch (gPending.wait) {
     case Wait::Model:
         if (E::model() != nullptr) done("ok " + modelJson());
-        else if (s.errorSerial != gPending.errorSerial) done("error " + s.lastError);
+        else if (s.errorSerial != gPending.errorSerial) done(errorText("editor-error", s.lastError));
         break;
     case Wait::Drain:
         // The queue drains at the next seam; an error bumps errorSerial, a save sets a notice.
         if (s.errorSerial != gPending.errorSerial) {
-            done("error " + s.lastError);
+            done(errorText("editor-error", s.lastError));
         } else if (gPending.count < 0 ? s.noticeSerial != gPending.noticeSerial : (E::model() != nullptr && E::model()->revision() != gPending.revision)) {
             done("ok {\"notice\":\"" + (gPending.count < 0 ? s.notice : std::string()) + "\",\"editor\":" + modelJson() + "}");
         } else if (++gPending.frames > 30 && gPending.count >= 0) {
@@ -323,7 +329,7 @@ bool tick(bool playable, const Reply& reply) {
     case Wait::Play:
         gPending.frames = (playable && E::mode() == E::Mode::Playing) ? gPending.frames + 1 : 0;
         if (gPending.frames >= 30) done("ok {\"mario\":" + marioJson() + ",\"editor\":" + modelJson() + "}");
-        else if (s.errorSerial != gPending.errorSerial) done("error " + s.lastError);
+        else if (s.errorSerial != gPending.errorSerial) done(errorText("editor-error", s.lastError));
         break;
     case Wait::Shot: {
         std::error_code ec;

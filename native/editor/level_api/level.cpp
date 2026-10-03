@@ -458,6 +458,14 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
             out.set("gravity", args.has("down") ? std::string("given") : g.source);
             out.set("approximate", !args.has("down"));
             if (command == "ground") {
+                // Inside a collider: no ground answer (placement would refuse it); say where the surface is.
+                if (std::optional< Hit > inside = w.insideOf(p, down)) {
+                    out.set("hit", false);
+                    out.set("inside", rowRef(model, inside->row));
+                    out.set("surface_above", std::round(inside->distance * 10.0) / 10.0);
+                    out.set("hint", "the point is inside that collider: start at least surface_above units higher");
+                    return out;
+                }
                 std::optional< Hit > hit = w.ray(p, down, static_cast< float >(args["max"].asNumber(50000)));
                 out.set("hit", hit.has_value());
                 if (hit) {
