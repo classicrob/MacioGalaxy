@@ -299,6 +299,11 @@ void GameScene::requestEndGameOverDemo() {
 }
 
 void GameScene::requestEndMissDemo() {
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::interceptMiss()) {
+        return;  // a play-test miss: back to the level editor's Edit mode
+    }
+#endif
     if (MR::isExistSceneObj(SceneObj_CometRetryButton)) {
         setNerve(GET_NERVE(GameScene, GameSceneCometRetryAfterMiss));
     } else {

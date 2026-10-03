@@ -8,6 +8,8 @@
 // "[editor-reload] PASS" or "[editor-reload] FAIL: <reason>".
 #include "runtime_core.hpp"
 
+#include <petari/editor/runtime.hpp>
+
 #include <petari/host_allocation.hpp>
 
 #include "Game/Editor/EditorScene.hpp"
@@ -50,8 +52,14 @@ namespace {
         bool done = false;
         RowId takobo;
         TVec3f original, marker;
+        std::uint64_t notices = 0;
     };
     State gReload;
+    std::vector< PlayEvent > gEvents;
+
+    void recordPlay(PlayEvent event, const char*, int) {
+        gEvents.push_back(event);
+    }
 
     void finish(const char* pResult) {
         std::fprintf(stderr, "[editor-reload] %s\n", pResult);
@@ -76,6 +84,7 @@ void reloadTestTick() {
     if (!sOn || s.done) return;
     if (s.frame < 0) {
         if (!PetariNative::SmokePhase::stageChecksDone.load()) return;
+        registerPlayListener(&recordPlay);
         s.frame = 0;
         PetariNative::EditorSettings::toggle();  // a Tab tap: the UI enters Edit and tells Runtime
         return;
@@ -182,7 +191,21 @@ void reloadTestTick() {
             std::fprintf(stderr, "[editor-reload] Play: mode %d, Mario %.0f from the marker\n", static_cast< int >(mode()), d);
             if (mode() != Mode::Playing) return finish("FAIL: Play did not switch to Playing");
             if (d > 150.0f) return finish("FAIL: Mario is not at the play marker");
+            if (gEvents.empty() || gEvents.back() != PlayEvent::Begin) return finish("FAIL: Play didn't tell Begin");
         }
+        // A play-test star caught: back to Edit with the reason as the notice.
+        s.notices = status().noticeSerial;
+        if (!requestEdit("Cleared in 0:01")) return finish("FAIL: requestEdit refused in Play");
+        s.phase = 5;
+        s.phaseFrame = 0;
+        return;
+    case 5:
+        if (mode() != Mode::Editing) {
+            if (s.phaseFrame > 600) return finish("FAIL: requestEdit didn't return to Edit");
+            return;
+        }
+        std::fprintf(stderr, "[editor-reload] back in Edit: notice \"%s\", events %zu\n", status().notice.c_str(), gEvents.size());
+        if (gEvents.back() != PlayEvent::ToEdit || status().notice != "Cleared in 0:01") return finish("FAIL: no ToEdit, or the notice is wrong");
         return finish("PASS");
     }
 }

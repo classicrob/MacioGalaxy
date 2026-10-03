@@ -10,6 +10,8 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace PetariEditor::ModelIO {
 
@@ -25,6 +27,14 @@ std::optional< Formats::Bytes > readUnmodded(const std::string& path);
 std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const std::string& userDirectory,
                                   const std::function< void() >& registerClasses, std::string* pError, std::string* pCatalogError,
                                   const FileSource& mounted = readMounted, const FileSource& unmodded = readUnmodded);
+
+/// What the editor reads for a galaxy: `mounted`, except archives the mod loader built from patch
+/// mods (`builtFromPatch`), which are built again from the patches' row edits alone. The loader's
+/// copies also have the asset builders' output in them (terrain bakes brush rows into planets),
+/// which the editor must not see: it edits the rows the patches hold. `patches`: the enabled patch
+/// mods' edits files, lowest priority first.
+FileSource editingSource(const FileSource& mounted, const FileSource& unmodded, const std::vector< std::pair< std::string, std::string > >& patches,
+                         const std::function< bool(const std::string& path) >& builtFromPatch);
 
 /// Letters, digits, spaces, '-', '_' and '.'; 1-64 characters.
 bool validModName(const std::string& name);
