@@ -823,6 +823,10 @@ bool requestEdit(const char* reason) {
     return true;
 }
 
+bool progressIsolated() {
+    return Hooks::enabled() && session().model != nullptr;
+}
+
 bool interceptMiss() {
     Session& s = session();
     if (mode() != Mode::Playing || !s.model || !Hooks::enabled()) {

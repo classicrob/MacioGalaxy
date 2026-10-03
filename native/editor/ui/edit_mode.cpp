@@ -1,3 +1,4 @@
+#include "playtest.hpp"
 #include "areas.hpp"
 #include "array.hpp"
 #include <petari/editor/array.hpp>
@@ -354,6 +355,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
     // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
+    updatePlaytestInput();  // M3 play-test: K keeps the selected live transform.
     const Area area = cameraArea(windowWidth, windowHeight);
     const bool areasConsumed = drawStyledOverlay([&] { return drawAreasOverlay(area.x, area.y, area.w, area.h); });  // M3 areas: camera preview.
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
