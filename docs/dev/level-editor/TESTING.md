@@ -55,3 +55,17 @@ Read the build's tail; grepping for "error" alone misses an interrupted build.
 Delete a finished run's `<run>-user/cache` (keep logs and shots), or run `build/prune-run-artifacts-caches.sh` in the main checkout
 (removes run caches older than 30 min across main and all worktrees, skipping open files). `class_sweep.py` and `test_server.py stop` delete their
 own; `warm_seed.py` keeps only the newest 3 seeds.
+
+## Frame-exact input through the test server
+
+```sh
+native/tools/test_server.py input --dir <dir> [--log walk.csv] --steps '[{"frames":90,"stick":[0,1]},{"frames":8,"buttons":["A"],"press":true},{"frames":30}]'
+native/tools/test_server.py route --dir <dir> <PETARI_ROUTE_RECORD.csv> [--log f.csv] [--from N] [--frames N]
+native/tools/test_server.py send  --dir <dir> warp <Stage> [<scenario>]     # unknown stage or scenario: "error ..."
+```
+
+One step is applied per game frame (the stick as an analog pad axis, y up; buttons through their bindings), so a run does not depend on the OS or
+the machine's load. `press: true` taps for the first 6 frames of the step, else the buttons are held for the whole step. The reply is Mario's
+position, velocity, grounded and dead flags at the end (`ok ... ended=done`, or `error ... ended=stage-changed|died|control-lost|player-lost|cancelled`);
+`--log` writes one row per frame. Buttons: A B Z Spin Cap CamLeft CamRight Plus Minus. The engine is `src/Game/Scene/TestServerInput.*`; code
+callers use `TestServerInput::startSteps/status/cancel` from the game thread.
