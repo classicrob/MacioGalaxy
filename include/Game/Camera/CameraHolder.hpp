@@ -20,6 +20,9 @@ public:
     const char* getNameStrOfDefault() const;
     s32 getIndexOf(Camera*) const;
     void createCameras();
+#ifdef PETARI_NATIVE
+    Camera* createPreviewCamera(s32 index) const;
+#endif
     Camera* getCameraInner(s32) const;
 
     bool isCameraIndexType(s32 index, const char* pType) const {
