@@ -33,7 +33,7 @@ namespace PetariEditor::Ui {
             {"Delete / Backspace", "Delete selection or selected path point/wire"},
             {"Cmd+D / Cmd+Shift+D", "Duplicate / arrange an Array"},
             {"Cmd+Z / Cmd+Shift+Z", "Undo / redo"},
-            {"1 / 2 / 3 / 5", "Gravity / areas / cameras / paths and wires view"},
+            {"1 / 2 / 3 / 4 / 5", "Gravity / areas / cameras / play view / paths and wires"},
             {"Option-click a path", "Insert a path point"},
             {"Enter while laying a path", "Finish the new path"},
             {"Backspace while laying a path", "Remove the last draft point"},

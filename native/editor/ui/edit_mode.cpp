@@ -1,6 +1,7 @@
 #include "playtest.hpp"
 #include "help.hpp"
 #include "areas.hpp"
+#include "play_view.hpp"
 #include "array.hpp"
 #include <petari/editor/array.hpp>
 // Edit mode, UI side (docs/dev/level-editor/UX.md sections 3 and 5): the panels follow the game's Edit
@@ -388,10 +389,11 @@ void updateEditMode(float windowWidth, float windowHeight) {
     updatePlaytestInput();  // M3 play-test: K keeps the selected live transform.
     const Area area = cameraArea(windowWidth, windowHeight);
     const bool areasConsumed = drawStyledOverlay([&] { return drawAreasOverlay(area.x, area.y, area.w, area.h); });  // M3 areas: camera preview.
+    const bool playViewConsumed = drawStyledOverlay([&] { return drawPlayViewOverlay(area.x, area.y, area.w, area.h); });  // friction #14
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
     const bool arrayConsumed = drawArrayOverlay(area.x, area.y, area.w, area.h);  // Array: handles precede picking.
     const bool toolConsumed =
-        drawStyledOverlay([&] { return drawPathsViewport(area.x, area.y, area.w, area.h); }) || areasConsumed || arrayConsumed;  // M3 paths: handles precede picking.
+        drawStyledOverlay([&] { return drawPathsViewport(area.x, area.y, area.w, area.h); }) || areasConsumed || playViewConsumed || arrayConsumed;  // M3 paths: handles precede picking.
     cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);

@@ -53,9 +53,10 @@ namespace {
         GXSetAlphaUpdate(GX_FALSE);
     }
 
-    // EP-004: the budget for the editor's own model draws this frame (estimated index bytes). Aurora's whole
-    // frame has 2 MiB of indices; the game's scene needs most of it, so the editor keeps to a slice.
-    constexpr std::uint32_t kFrameBudget = 640 * 1024;
+    // EP-004: the budget for the editor's own model draws this frame (estimated index bytes). Aurora's frame
+    // had 2 MiB of indices, most of it the game's scene; it now has 8 MiB (native/gx/geometry_budget.hpp), so the
+    // editor's slice (outlines, thumbnails, camera previews) can be 2 MiB and still leave the scene its old room.
+    constexpr std::uint32_t kFrameBudget = 2 * 1024 * 1024;
     std::uint32_t gSpent = 0;
 
     // The model's shapes as they were posed this frame, in the colour set up before.
