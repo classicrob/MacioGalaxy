@@ -48,6 +48,8 @@ int main() {
     std::unique_ptr< E::EditModel > m = E::ModelIO::load("EggStarGalaxy", 1, (root / "user").string(), [&] { registered = true; }, &error,
                                                        &catalogError, disc, disc);
     check(m != nullptr && registered, "loads through ModelIO: " + error);
+    check(std::string(m->missionName(1)) == "Dino Piranha" && std::string(m->missionName(2)) == "A Snack of Cosmic Proportions",
+          std::string("English mission names from the disc's messages: ") + m->missionName(1));
     check(E::Catalog::find("EggStarGalaxyPlanet") != nullptr || E::Catalog::classes().size() > 1183, "the disc's planets are classes");
 
     int soramame = -1;
