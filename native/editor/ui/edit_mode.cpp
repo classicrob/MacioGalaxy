@@ -10,6 +10,7 @@
 #include <petari/editor_settings.hpp>
 
 #include "imgui.h"
+#include "imgui_internal.h"  // GetTopMostPopupModal
 
 #include <chrono>
 #include <cmath>
@@ -316,6 +317,8 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!active) {
         return;
     }
+    // A sheet (modal) owns the keys and sits above the viewport: no shortcuts, no camera input, no viewport overlays under it.
+    if (ImGui::GetTopMostPopupModal() != nullptr) return;
     // Cmd+. : Focus mode (the game fills the window; panels away).
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Period)) {
@@ -324,6 +327,9 @@ void updateEditMode(float windowWidth, float windowHeight) {
     // Cmd+Z / Cmd+Shift+Z (UX section 16), unless a text field has the keys.
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) undo();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z)) redo();
+    // Cmd+S: save the mod (the sheet the first time); Cmd+Shift+S: the sheet again (another name or format).
+    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) requestSave(false);
+    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
     // Cmd+R: Reload (rebuild the world from the layout, applying pending changes).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_R)) enqueue(Command{Command::Kind::Reload});
     const Area area = cameraArea(windowWidth, windowHeight);
