@@ -136,7 +136,12 @@ void drawSaveSheet() {
         ImGui::CloseCurrentPopup();
     }
     ImGui::SameLine();
-    if (ImGui::Button("Cancel", ImVec2(110.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+    const bool cancel = ImGui::Button("Cancel", ImVec2(110.0f, 0.0f));
+    noteTestTarget("button:Cancel");
+    if (cancel || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        std::fputs("[editor] save sheet cancelled\n", stderr);
+        ImGui::CloseCurrentPopup();
+    }
     ImGui::SameLine();
     ImGui::TextColored(kDim, "Cmd+S saves again");
     ImGui::EndPopup();

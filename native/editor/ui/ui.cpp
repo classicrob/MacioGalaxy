@@ -239,8 +239,8 @@ void drawToolbar(float width) {
         ImGui::SameLine(0.0f, 10.0f);
         bool ghosts = PetariNative::EditorGizmo::showGhosts();
         if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
-        drawPathsToggle();  // M3 paths: selection/all/none.
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
+        drawPathsToggle();  // M3 paths: selection/all/none.
         ImGui::SameLine(0.0f, 16.0f);
     }
     const float buttonHeight = 26.0f;
