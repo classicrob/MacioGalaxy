@@ -18,6 +18,9 @@
 #include "Game/Util/SingletonHolder.hpp"
 
 #include "Game/System/GameDataTemporaryInGalaxy.hpp"
+#include "Game/System/GameDataHolder.hpp"
+#include "Game/System/SpinDriverPathStorage.hpp"
+#include "Game/System/UserFile.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include <petari/platform/mod_folder.hpp>
 
@@ -48,6 +51,8 @@ namespace {
         std::vector< char > saveBytes, progressBytes;
         bool starBefore = false;
         s32 coinsBefore = 0;
+        SpinDriverPathStorageScenario* spin = nullptr;
+        std::vector< SpinDriverPathStorageOne > spinBefore;
     };
     State gScratch;
 
@@ -84,7 +89,28 @@ void scratchTestTick() {
         s.before = GameDataFunction::getStarPieceNum();
         s.livesBefore = GameDataFunction::getPlayerLeft();
         s.supplyBefore = GameDataFunction::isPlayerLeftSupply();
+        // Deliberately unsorted registrations: SPN1 would omit the zero and quantize the fraction.
+        auto* storage = GameDataFunction::nativeCurrentUserFile()->mGameDataHolder->mSpinDriverPathStorage;
+        for (auto* galaxy : storage->mGalaxyStorage) {
+            for (int i = 0; i < galaxy->mNumScenarios && !s.spin; ++i) {
+                auto& scenario = galaxy->mScenarioStorage[i];
+                if (scenario.mOneStorage.size() + 3 <= scenario.mOneStorage.capacity()) s.spin = &scenario;
+            }
+            if (s.spin) break;
+        }
+        if (!s.spin) return finish("FAIL: no room for the SPN1 fixture");
+        SpinDriverPathStorageOne zero, fraction;
+        zero.registerToUse(62, 62);
+        fraction.registerToUse(61, 61);
+        fraction.mDrawRange = .12345f;
+        s.spin->mOneStorage.push_back(zero);
+        s.spin->mOneStorage.push_back(fraction);
+        s.spinBefore.assign(s.spin->mOneStorage.begin(), s.spin->mOneStorage.end());
         if (!ensureModel() || !progressIsolated()) return finish("FAIL: no session, or progress not isolated");
+        SpinDriverPathStorageOne added;
+        added.registerToUse(60, 60);
+        s.spin->mOneStorage.push_back(added);
+        for (auto& entry : s.spin->mOneStorage) entry.mDrawRange = .875f;
         GameDataFunction::addStarPiece(100);
         GameDataFunction::addPlayerLeft(3);   // 1-Ups
         GameDataFunction::addPlayerLeft(-2);  // lives lost
@@ -107,6 +133,18 @@ void scratchTestTick() {
         return;
     }
     if (f == 3) {
+        const auto& entries = s.spin->mOneStorage;
+        if (entries.size() != int(s.spinBefore.size()) + 1) return finish("FAIL: SPN1 registration count changed");
+        for (size_t i = 0; i < s.spinBefore.size(); ++i) {
+            const auto& before = s.spinBefore[i];
+            const auto& after = entries[i];
+            if (before.mZoneId != after.mZoneId || before.mSpinDriverId != after.mSpinDriverId || before.mDrawRange != after.mDrawRange)
+                return finish("FAIL: SPN1 slot identity or exact progress changed");
+        }
+        const auto& added = entries[s.spinBefore.size()];
+        if (added.mZoneId != 60 || added.mSpinDriverId != 60 || added.mDrawRange != 0)
+            return finish("FAIL: SPN1 new registration was lost or kept play-test progress");
+        std::fprintf(stderr, "[editor-scratch] SPN1: zero/fractional progress and live indices restored; new slot retained at zero\n");
         const s32 after = GameDataFunction::getStarPieceNum();
         std::fprintf(stderr, "[editor-scratch] after the session: Star Bits %d (found %d), lives %d (found %d), isolated %d\n", after, s.before,
                      GameDataFunction::getPlayerLeft(), s.livesBefore, progressIsolated());

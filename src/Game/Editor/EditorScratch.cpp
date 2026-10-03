@@ -8,6 +8,7 @@
 #include "Game/System/GameDataPlayerStatus.hpp"
 #include "Game/System/GameDataTemporaryInGalaxy.hpp"
 #include "Game/System/SaveDataHandler.hpp"
+#include "Game/System/SpinDriverPathStorage.hpp"
 #include "Game/System/UserFile.hpp"
 #include <petari/host_allocation.hpp>
 #include <petari/platform/mod_galaxy.hpp>
@@ -21,6 +22,46 @@
 #include <vector>
 
 namespace {
+    struct SpinScenario {
+        SpinDriverPathStorageScenario* storage = nullptr;
+        std::vector< SpinDriverPathStorageOne > entries;
+    };
+
+    std::vector< SpinScenario > captureSpin(SpinDriverPathStorage* storage) {
+        std::vector< SpinScenario > result;
+        for (auto* galaxy : storage->mGalaxyStorage) {
+            for (s32 i = 0; i < galaxy->mNumScenarios; ++i) {
+                auto* scenario = &galaxy->mScenarioStorage[i];
+                result.push_back({scenario, {scenario->mOneStorage.begin(), scenario->mOneStorage.end()}});
+            }
+        }
+        return result;
+    }
+
+    void applySpin(const std::vector< SpinScenario >& records) {
+        for (const auto& record : records) {
+            // The same UserFile owns these fixed-capacity arrays throughout the session.
+            auto& entries = record.storage->mOneStorage;
+            entries.clear();
+            for (const auto& entry : record.entries) entries.push_back(entry);
+        }
+    }
+
+    void restoreSpinProgress(std::vector< SpinScenario >& current, const std::vector< SpinScenario >& baseline) {
+        for (auto& scenario : current) {
+            const auto saved = std::find_if(baseline.begin(), baseline.end(), [&](const auto& s) { return s.storage == scenario.storage; });
+            for (auto& entry : scenario.entries) {
+                // Edits may register new launch stars; retain their indices, with no earned progress.
+                entry.mDrawRange = 0.0f;
+                if (saved == baseline.end()) continue;
+                const auto old = std::find_if(saved->entries.begin(), saved->entries.end(), [&](const auto& s) {
+                    return s.mZoneId == entry.mZoneId && s.mSpinDriverId == entry.mSpinDriverId;
+                });
+                if (old != saved->entries.end()) entry.mDrawRange = old->mDrawRange;
+            }
+        }
+    }
+
     struct ModGalaxyRecord {
         std::string name;
         u8 owned = 0, visited = 0;
@@ -32,6 +73,7 @@ namespace {
         std::string name;
         std::vector< u8 > gameData;
         std::vector< ModGalaxyRecord > modGalaxies;
+        std::vector< SpinScenario > spin;
         // GameDataPlayerStatus entire: its deserialize sets 4 lives and reads the saved count into the
         // (unsaved) 1-Up supply, so the save data alone can't bring it back.
         std::unique_ptr< GameDataPlayerStatus > status;
@@ -60,6 +102,7 @@ namespace EditorScratch {
         s.gameData.assign(SaveDataHandler::getEnoughtTempBufferSize(), 0);
         pFile->makeGameDataBinary(s.gameData.data(), static_cast< u32 >(s.gameData.size()));
         s.status = std::make_unique< GameDataPlayerStatus >(*pFile->mGameDataHolder->mPlayerStatus);
+        s.spin = captureSpin(pFile->mGameDataHolder->mSpinDriverPathStorage);
         s.pFile = pFile;
         if (GameDataTemporaryInGalaxy* pRun = GameDataFunction::nativeTemporaryInGalaxy()) {
             s.haveRun = true;
@@ -101,7 +144,12 @@ namespace EditorScratch {
             pRun->mLast1upStarPieceNum = s.last1upStarPieces;
             pRun->mCoinNum = s.coins;
         }
+        auto currentSpin = captureSpin(pFile->mGameDataHolder->mSpinDriverPathStorage);
+        restoreSpinProgress(currentSpin, s.spin);
         pFile->loadFromGameDataBinary(s.name.c_str(), s.gameData.data(), static_cast< u32 >(s.gameData.size()));
+        // SPN1 omits zero ranges, quantizes others, and sorts registrations by zone. Restore the
+        // exact baseline for the binary audit; then retain live actor indices from the current run.
+        applySpin(s.spin);
         *pFile->mGameDataHolder->mPlayerStatus = *s.status;
         GameDataAllGalaxyStorage* pAll = pFile->mGameDataHolder->mAllGalaxyStorage;
         for (const ModGalaxyRecord& record : s.modGalaxies) {
@@ -115,6 +163,7 @@ namespace EditorScratch {
         // What the snapshot holds must come back exactly: anything a deserialize resets would show here.
         std::vector< u8 > now(s.gameData.size(), 0);
         pFile->makeGameDataBinary(now.data(), static_cast< u32 >(now.size()));
+        applySpin(currentSpin);
         size_t first = now.size(), last = 0, count = 0;
         for (size_t i = 0; i < now.size(); i++) {
             if (now[i] != s.gameData[i]) {
