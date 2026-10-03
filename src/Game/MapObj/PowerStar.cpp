@@ -1,3 +1,6 @@
+#ifdef PETARI_NATIVE
+#include "Game/Camera/EditorPlaytest.hpp"
+#endif
 #include "Game/MapObj/PowerStar.hpp"
 #include "Game/Camera/CameraTargetArg.hpp"
 #include "Game/LiveActor/LiveActorGroup.hpp"
@@ -819,6 +822,9 @@ void PowerStar::exeWeakToWait() {
 
 void PowerStar::exeStageClearDemo() {
     if (MR::isFirstStep(this)) {
+#ifdef PETARI_NATIVE
+        if (EditorPlaytest::collectStar(this)) return;  // M3 play-test: before progress, demo or save.
+#endif
 #ifdef PETARI_NATIVE
         petari_milestone(mIsGrandStar ? "GrandStar.Get" : "PowerStar.Get");
         petari_progress_star_get(mIsGrandStar ? 1 : mPowerStarId, mIsGrandStar ? 1 : 0);
