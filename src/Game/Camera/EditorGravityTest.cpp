@@ -61,6 +61,45 @@ namespace EditorGravity {
         auto* m = model();
         if (!m)
             return;
+        if (std::getenv("PETARI_EDITOR_GRAVITY_CAPTURE")) {
+            static RowId wideRows[2];
+            if (step == 0) {
+                const auto fields = Gravity::view().fields;
+                float nearest[2] = {1e30f, 1e30f};
+                const auto* mario = MR::getPlayerPos();
+                if (!mario) return;
+                for (const auto& f : fields) {
+                    if (!f.row.valid() || !f.active) continue;
+                    const int kind = f.shape == Gravity::Shape::Point ? 0 :
+                        (f.shape == Gravity::Shape::Cube || f.shape == Gravity::Shape::Disk) && f.radius > 500 ? 1 : -1;
+                    if (kind < 0) continue;
+                    const float dx=f.center.x-mario->x, dy=f.center.y-mario->y, dz=f.center.z-mario->z;
+                    const float distance=dx*dx+dy*dy+dz*dz;
+                    if (distance < nearest[kind]) { nearest[kind]=distance; wideRows[kind]=f.row; }
+                }
+                if (!wideRows[0].valid() || !wideRows[1].valid()) return fail("Wide captures need point and cube/disk fields");
+                Gravity::setVisible(true);
+                PetariNative::EditorPick::selectRow(wideRows[0].v, PetariNative::EditorPick::Click::Replace);
+                PetariNative::EditorSettings::setWorldUp(true);
+                PetariNative::EditorGizmo::setShowGhosts(false);
+                frame=0; step=1;
+            }
+            if (frame == 10 || frame == 100) PetariNative::EditorSettings::frame();
+            if (frame == 15 || frame == 105) {
+                PetariNative::EditorSettings::dolly(-2);
+                PetariNative::EditorSettings::orbit(20,15);
+            }
+            if (frame == 60 || frame == 150) {
+                const int which = frame == 60 ? 0 : 1;
+                PetariNative::EfbDump::mark(which == 0 ? "gravity-starter" : "gravity-nonspherical");
+                for (const auto& f : Gravity::view().fields) if (f.row == wideRows[which])
+                    std::fprintf(stderr,"[editor-gravity] wide %s row=%llu center=(%.0f,%.0f,%.0f) radius=%.0f\n",
+                        Gravity::shapeName(f.shape),static_cast<unsigned long long>(f.row.v),f.center.x,f.center.y,f.center.z,f.radius);
+            }
+            if (frame == 90) PetariNative::EditorPick::selectRow(wideRows[1].v,PetariNative::EditorPick::Click::Replace);
+            if (frame == 175) { std::fprintf(stderr,"[editor-gravity] PASS wide captures\n"); step=999; }
+            return;
+        }
         if (step == 0) {
             if (Gravity::view().fields.empty())
                 return;

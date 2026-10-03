@@ -118,11 +118,22 @@ namespace PetariEditor::Ui {
                 label += " | beats " + std::to_string(v.probe.beaten);
             if (!v.probe.onGround)
                 label += " (in air)";
+            const auto hover = std::find_if(v.fields.begin(), v.fields.end(), [&](const auto& f) { return f.identity == v.hoveredIdentity; });
+            const auto winner = std::find_if(v.fields.begin(), v.fields.end(), [&](const auto& f) { return f.identity == v.probe.winnerIdentity; });
+            const auto detail = hover != v.fields.end() ? hover : winner;
+            if (detail != v.fields.end()) {
+                char range[64];
+                if (detail->range < 0) std::snprintf(range, sizeof(range), "unlimited");
+                else std::snprintf(range, sizeof(range), "%.0f", detail->range);
+                if (hover != v.fields.end())
+                    label = detail->name + " | priority " + std::to_string(detail->priority) + " | range " + range + "\nPull: " + label;
+                else label += std::string(" | range ") + range;
+            }
             ImVec2 text = ImGui::CalcTextSize(label.c_str());
             p.x = std::clamp(p.x + 16, x + 8, std::max(x + 8, x + width - text.x - 12));
             p.y = std::clamp(p.y + 18, y + 8, std::max(y + 8, y + height - text.y - 12));
             draw->AddRectFilled({p.x - 5, p.y - 4}, {p.x + text.x + 5, p.y + text.y + 4}, 0xe022272a, 4);
-            draw->AddText(p, v.probe.covered ? 0xffffffff : 0xff7777ff, label.c_str());
+            draw->AddText(p, detail != v.fields.end() ? Gravity::fieldColor(*detail, 255) : 0xff7777ff, label.c_str());
         }
         draw->AddText({x + 12, y + 12}, 0xffeee0b0, "Gravity view | 1 to hide | Option: probe in air");
         draw->PopClipRect();

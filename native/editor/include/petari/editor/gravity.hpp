@@ -10,6 +10,7 @@ namespace PetariEditor::Gravity {
     struct Field {
         RowId row;
         std::uintptr_t identity = 0;
+        std::uint64_t colorKey = 0;
         std::string name;
         Shape shape = Shape::Unknown;
         Bound bound = Bound::Sphere;
@@ -40,6 +41,7 @@ namespace PetariEditor::Gravity {
     struct View {
         std::vector< Field > fields;
         Probe probe;
+        std::uintptr_t hoveredIdentity = 0;
         std::vector< DeadGround > deadGround;
         int registered = 0;
         float probeX = 0, probeY = 0;
@@ -48,7 +50,9 @@ namespace PetariEditor::Gravity {
     const char* placementName(Shape shape, Bound bound = Bound::Sphere);
     Shape shapeForPlacement(const char* name);
     std::uint32_t color(Shape shape, unsigned alpha = 180);
-    Mesh geometry(const Field& field, bool selected = false);
+    std::uint32_t fieldColor(const Field& field, unsigned alpha = 180);
+    float rangeFade(float distance, float distant, float range);
+    Mesh geometry(const Field& field, bool selected = false, bool hovered = false, bool recede = false);
     // A single undoable edit. Changing shape also resets shape-specific arguments to safe defaults.
     Op shapeOp(const ModelView& model, RowId row, Shape shape, Bound bound = Bound::Sphere);
     Op numericOp(const ModelView& model, const std::vector< RowId >& rows, const char* column, float value, bool integer = false);

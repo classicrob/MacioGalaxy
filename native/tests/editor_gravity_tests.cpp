@@ -107,7 +107,10 @@ int main() {
         f.points = {{0, 0, 0}, {100, 400, 200}, {500, 600, 300}};
         auto mesh = G::geometry(f);
         require(!mesh.lines.empty(), "every shape has outlines");
-        require(!mesh.triangles.empty(), "every shape has translucent faces");
+        require(mesh.triangles.empty(), "unfocused fields never wash out the scene");
+        mesh = G::geometry(f, true);
+        require(!mesh.triangles.empty(), "selected field has faint translucent faces");
+        require((mesh.triangles.front().color >> 24) <= 10, "focused fill stays faint");
         for (auto& l : mesh.lines)
             require(finite(l.a) && finite(l.b), "finite outlines");
         for (auto& t : mesh.triangles)
@@ -123,6 +126,15 @@ int main() {
         if (std::fabs(l.a.x - 150) < 0.001f)
             reach = true;
     require(reach, "point reach includes Distant");
+    point.row = {17};
+    const auto hue = G::fieldColor(point) & 0xffffff;
+    point.priority = 123; point.range = 99; point.identity = 9876;
+    require((G::fieldColor(point) & 0xffffff) == hue, "field hue survives parameter and runtime identity changes");
+    point.row = {18};
+    require((G::fieldColor(point) & 0xffffff) != hue, "distinct fields receive distinct hues");
+    require(G::rangeFade(100, 0, 100) == 0 && G::rangeFade(50, 0, 100) == 1, "finite range fades to zero at boundary");
+    require(G::rangeFade(90, 0, 100) > 0 && G::rangeFade(90, 0, 100) < 1, "range fade is gradual");
+    require(G::rangeFade(10000, 0, -1) == 1, "unlimited range never fades out");
     G::View v;
     v.registered = 115;
     require(G::makeChecks(v).empty(), "below near cap");
