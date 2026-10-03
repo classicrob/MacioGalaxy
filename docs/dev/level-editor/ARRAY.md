@@ -20,7 +20,7 @@ position and the panel reports it. Groups preserve their offsets from the primar
 Arrays are limited to 256 new objects, including every object in a selected group.
 
 The preview draws translucent copies of the source model, without moving or creating any
-actors. Missing, clipped or over-budget models use wire bounds. All draws share the editor
+actors. At most 24 copies draw models; further copies and missing, clipped or over-budget models use wire bounds. All draws share the editor
 frame budget. Apply commits one compound operation, selects the copies, and preserves their
 settings and mission layers. One undo removes the whole array. Selecting another object
 applies the current preview; Esc or Cancel discards it. Leaving Edit discards the preview.

@@ -124,10 +124,12 @@ namespace {
             return;
         PetariNative::HostAllocationScope host;
         D::Mesh fallback;
+        int modelsLeft = 24;
         for (const auto& copy : preview.copies) {
             LiveActor* actor = PetariEditor::actorForRow(copy.source);
             J3DModel* model = actor ? MR::getJ3DModel(actor) : nullptr;
-            if (model && !MR::isDead(actor) && !MR::isClipped(actor) && !MR::isHiddenModel(actor) && EditorDraw::spend(model, 1)) {
+            if (modelsLeft > 0 && model && !MR::isDead(actor) && !MR::isClipped(actor) && !MR::isHiddenModel(actor) && EditorDraw::spend(model, 1)) {
+                --modelsLeft;
                 // Transform the view, not the actor: even animated models can be drawn as frozen copies.
                 const auto rotate = [&](G::V3 v) {
                     return copy.basis.x * G::dot(copy.originalBasis.x, v) + copy.basis.y * G::dot(copy.originalBasis.y, v) +

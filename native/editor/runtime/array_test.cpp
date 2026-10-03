@@ -1,5 +1,7 @@
+#include "Game/AreaObj/AreaObj.hpp"
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
+#include "Game/Util/AreaObjUtil.hpp"
 #include "Game/Util/GravityUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
@@ -7,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <petari/editor/areas.hpp>
 #include <petari/editor/array.hpp>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/editor_pick.hpp>
@@ -30,6 +33,9 @@ namespace PetariEditor::Runtime {
         static std::vector< RowId > copies;
         static std::vector< LiveActor* > actors;
         static std::uint32_t serial = 0;
+        static AreaObjMgr* areaManager = nullptr;
+        static int areaCount = 0;
+        static AreaObj* areaCopies[2] = {};
         if (!enabled || done)
             return;
         PetariNative::HostAllocationScope host;
@@ -215,7 +221,64 @@ namespace PetariEditor::Runtime {
                 if (!actorForRow(row) || !m->locate(row, nullptr, nullptr))
                     return finish("FAIL: redo");
             std::fprintf(stderr, "[editor-array] undo retires all copies; redo restores stable IDs PASS\n");
-            finish("PASS");
         }
+        if (f == 185) {
+            RowId area;
+            for (const auto& volume : Areas::collect(*m)) {
+                if (std::string(volume.definition->name) == "DeathCube" && m->zonePlaced(volume.zone) &&
+                    (volume.missions & (1u << (m->scenario() - 1)))) {
+                    area = volume.row;
+                    break;
+                }
+            }
+            if (!area.valid())
+                return finish("FAIL: no area-copy fixture");
+            areaManager = MR::getAreaObjManager("DeathArea");
+            if (!areaManager)
+                return finish("FAIL: no death-area manager");
+            areaCount = areaManager->getNumAreaObj();
+            Pick::selectRow(area.v, Pick::Click::Replace);
+        }
+        if (f == 195) {
+            A::Parameters p;
+            p.count = 2;
+            p.groundSnap = false;
+            A::configure(p);
+            A::Input in;
+            in.begin = true;
+            A::send(in);
+        }
+        if (f == 205) {
+            A::Input in;
+            in.apply = true;
+            A::send(in);
+        }
+        if (f == 215) {
+            if (areaManager->getNumAreaObj() != areaCount + 2)
+                return finish("FAIL: area copies not created live");
+            for (int i = 0; i < 2; ++i) {
+                areaCopies[i] = areaManager->getAreaObj(areaCount + i);
+                if (!areaCopies[i]->isValid())
+                    return finish("FAIL: added area inactive");
+            }
+            enqueue(Command{Command::Kind::Undo});
+        }
+        if (f == 225) {
+            for (auto* area : areaCopies)
+                if (area->isValid())
+                    return finish("FAIL: undone area insertion still active");
+            enqueue(Command{Command::Kind::Redo});
+        }
+        if (f == 235) {
+            if (areaManager->getNumAreaObj() != areaCount + 2)
+                return finish("FAIL: area redo consumed new manager slots");
+            for (auto* area : areaCopies)
+                if (!area->isValid())
+                    return finish("FAIL: area redo did not reactivate");
+            enqueue(Command{Command::Kind::Undo});
+            std::fprintf(stderr, "[editor-array] actorless area copies deactivate on undo and reuse slots on redo PASS\n");
+        }
+        if (f == 250)
+            finish("PASS");
     }
 }  // namespace PetariEditor::Runtime
