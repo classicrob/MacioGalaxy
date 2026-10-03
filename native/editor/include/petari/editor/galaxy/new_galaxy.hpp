@@ -33,6 +33,7 @@ struct NewGalaxySpec {
     std::string copyOf;        // Copy: a disc galaxy ("EggStarGalaxy")
     std::string musicFrom;     // a disc galaxy whose music and sound banks it borrows; empty: copyOf or "EggStarGalaxy"
     std::vector< std::string > missions;  // names; their count is the mission count (1..8); empty: one, "Mission 1"
+    std::string sky;  // one of skyNames(); empty: Good Egg's (Copy: the source's own)
 };
 
 struct NewGalaxyFiles {
@@ -54,9 +55,19 @@ std::string checkInternalName(const std::string& internalName, const DiscLister&
 
 /// The disc's galaxies (StageData/<G>/<G>Scenario.arc exists), sorted.
 std::vector< std::string > discGalaxies(const DiscLister& listDisc);
+/// The skies the game can place (its Sky classes) that the disc has, sorted.
+std::vector< std::string > skyNames(const DiscLister& listDisc);
 /// The planets the game can place by name (PlanetMapDataTable), sorted.
 std::vector< std::string > planetNames(const DiscReader& readDisc);
 
 NewGalaxyFiles buildNewGalaxy(const NewGalaxySpec& spec, const DiscReader& readDisc, const DiscLister& listDisc);
+
+/// A galaxy's registry entry (<mod>/galaxy.json, TECH.md 5.7): English names, the music's galaxy.
+std::string galaxyJson(const std::string& internalName, const std::string& name, const std::vector< std::string >& missions, const std::string& music);
+
+/// `scenarioArc` (<G>Scenario.arc) with `count` missions (1..8): the first rows kept as they are,
+/// trailing ones dropped; a new mission k copies mission 1's row with Power Star ID k and, in the
+/// galaxy's own zone, its own layer (LayerA = mission 1). Empty and *pError when it doesn't parse.
+Formats::Bytes resizeScenario(const Formats::Bytes& scenarioArc, const std::string& internalName, int count, std::string* pError);
 
 }  // namespace PetariEditor::Galaxy

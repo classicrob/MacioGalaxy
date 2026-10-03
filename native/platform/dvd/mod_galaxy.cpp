@@ -299,6 +299,7 @@ namespace {
     std::mutex gMutex;
     const char* (*gLanguageProvider)() = nullptr;
     std::deque< Galaxy > gGalaxies;  // deque: message pointers stay valid as galaxies are added
+    std::deque< Galaxy > gRetired;   // texts update() replaced: message() pointers into them stay valid
 
     const std::u16string* pick(const std::map< std::string, std::u16string >& texts, const char* pLanguage) {
         auto it = pLanguage != nullptr ? texts.find(pLanguage) : texts.end();
@@ -318,7 +319,52 @@ namespace {
     }
 }  // namespace
 
+namespace {
+    bool parseText(const std::string& text, const std::string& mod, std::vector< Galaxy >* pParsed, std::string* pError);
+}
+
 bool loadText(const std::string& text, const std::string& mod, std::string* pError) {
+    std::vector< Galaxy > parsed;
+    if (!parseText(text, mod, &parsed, pError)) {
+        return false;
+    }
+    std::lock_guard< std::mutex > lock(gMutex);
+    for (Galaxy& galaxy : parsed) {
+        if (findLocked(galaxy.name.c_str()) == nullptr) {
+            gGalaxies.push_back(std::move(galaxy));
+        }
+    }
+    return true;
+}
+
+bool update(const std::string& text, const std::string& mod, std::string* pError) {
+    std::vector< Galaxy > parsed;
+    if (!parseText(text, mod, &parsed, pError)) {
+        return false;
+    }
+    std::lock_guard< std::mutex > lock(gMutex);
+    for (Galaxy& galaxy : parsed) {
+        Galaxy* pOld = findLocked(galaxy.name.c_str());
+        if (pOld == nullptr) {
+            gGalaxies.push_back(std::move(galaxy));
+        } else if (pOld->mod == mod) {
+            // The old texts move out node by node (no copies), so what message() handed out stays alive.
+            Galaxy retired;
+            retired.title = std::move(pOld->title);
+            retired.shortTitle = std::move(pOld->shortTitle);
+            retired.missions = std::move(pOld->missions);
+            gRetired.push_back(std::move(retired));
+            pOld->title = std::move(galaxy.title);
+            pOld->shortTitle = std::move(galaxy.shortTitle);
+            pOld->missions = std::move(galaxy.missions);
+            pOld->music = std::move(galaxy.music);
+        }
+    }
+    return true;
+}
+
+namespace {
+bool parseText(const std::string& text, const std::string& mod, std::vector< Galaxy >* pParsed, std::string* pError) {
     Json root;
     if (!Parser(text).parse(root) || root.kind != Json::Object) {
         *pError = "not valid JSON";
@@ -334,7 +380,6 @@ bool loadText(const std::string& text, const std::string& mod, std::string* pErr
         *pError = "\"galaxies\" must be a non-empty list";
         return false;
     }
-    std::vector< Galaxy > parsed;
     for (const Json& entry : pList->a) {
         Galaxy galaxy;
         galaxy.mod = mod;
@@ -363,16 +408,11 @@ bool loadText(const std::string& text, const std::string& mod, std::string* pErr
         if (const Json* pMusic = entry.get("music"); pMusic != nullptr && pMusic->kind == Json::String) {
             galaxy.music = pMusic->s;
         }
-        parsed.push_back(std::move(galaxy));
-    }
-    std::lock_guard< std::mutex > lock(gMutex);
-    for (Galaxy& galaxy : parsed) {
-        if (findLocked(galaxy.name.c_str()) == nullptr) {
-            gGalaxies.push_back(std::move(galaxy));
-        }
+        pParsed->push_back(std::move(galaxy));
     }
     return true;
 }
+}  // namespace
 
 void load(const std::vector< std::filesystem::path >& modRoots, std::vector< std::string >* pLog) {
     for (const std::filesystem::path& root : modRoots) {
@@ -404,6 +444,7 @@ void load(const std::vector< std::filesystem::path >& modRoots, std::vector< std
 void clear() {
     std::lock_guard< std::mutex > lock(gMutex);
     gGalaxies.clear();
+    gRetired.clear();
 }
 
 const Galaxy* find(const char* pName) {

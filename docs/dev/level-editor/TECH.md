@@ -699,8 +699,10 @@ The Checks run on the EditModel at every op (cheap, incremental) and block savin
 - music and banks "borrowed from"
 - an optional preview image
 
-The editor's new-galaxy flow (UX section 14) writes it with the Scenario
-archive and the skeleton stage archives from templates (5.3).
+The editor's new-galaxy flow (UX section 14) writes it with the Scenario archive and the galaxy's
+own stage archive from a template, as a switched-on mod (`mods/<G>`, `mod.txt editor=1`), then
+restarts into it. Names and music change live afterwards (`ModGalaxy::update`); a new mission count
+restarts. The design as built is [new-galaxy-flow.md](new-galaxy-flow.md).
 
 **Portability.** A new galaxy needs Petari's registry, because the real game has
 no data-driven way to add one. On a Wii or in Dolphin, the equivalent is an

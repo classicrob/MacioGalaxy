@@ -48,6 +48,18 @@ static void testParse() {
     check(G::loadText(R"({"format":1,"galaxies":[{"name":"ModTestGalaxy","title":"Dup"}]})", "Late", &error) &&
               G::find("ModTestGalaxy")->mod == "GalaxyTest",
           "a name already registered by an earlier mod is kept");
+    // The level editor's Missions panel: the mod's own galaxy changes in place; old texts stay readable.
+    const char16_t* pMission = G::message("ScenarioName_ModTestGalaxy1", "en");
+    check(G::update(R"({"format":1,"galaxies":[{"name":"ModTestGalaxy","title":"Renamed","missions":["Uno","Dos","Tres"],"music":"FlowerGalaxy"}]})",
+                    "GalaxyTest", &error),
+          "update loads");
+    check(u(G::message("GalaxyName_ModTestGalaxy", "en")) == u"Renamed" && u(G::message("ScenarioName_ModTestGalaxy3", "en")) == u"Tres" &&
+              std::string(G::musicFrom("ModTestGalaxy")) == "FlowerGalaxy",
+          "update replaces the names, missions and music");
+    check(u(pBefore) == u"Blockout Test Galaxy" && u(pMission) == u"The Checkered Box", "message pointers from before the update stay valid");
+    check(G::update(R"({"format":1,"galaxies":[{"name":"ModTestGalaxy","title":"Stolen"}]})", "Late", &error) &&
+              u(G::message("GalaxyName_ModTestGalaxy", "en")) == u"Renamed",
+          "another mod's update leaves the galaxy alone");
     G::reject("OtherGalaxy", "test");
     check(G::find("OtherGalaxy") == nullptr && G::message("GalaxyName_OtherGalaxy", "en") == nullptr && G::all().size() == 1,
           "a rejected galaxy is gone");

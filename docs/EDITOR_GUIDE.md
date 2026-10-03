@@ -59,7 +59,7 @@ Open **Checks** before saving: click a problem to find it and use a suggested fi
 
 **Share** packs the saved mod as a zip with name, author, version and description. Save your latest changes first. To install, drop the zip onto Petari, review the sheet and confirm; replacing an installed version asks again. Enable the mod on the Mods page and restart when requested. Share only assets you have permission to distribute; keep Full archives private.
 
-**Cmd+N / Level Editor → New galaxy…** starts from Empty space, One planet, Brush skeleton or Copy a galaxy. Choose music, a name and 1–8 named missions. Save or discard current edits before Create. Petari restarts into the new galaxy in Edit; it is also listed under **Mod galaxies** in Level Select. New galaxies currently play in Petari. Their progress uses the mod's own save.
+**Cmd+N / Level Editor → New galaxy…** starts from Empty space, One planet, Brush skeleton or Copy a galaxy. Choose a sky, music, a name and 1–8 named missions. Save or discard current edits before Create. Petari restarts into the new galaxy in Edit; it is also listed under **Mod galaxies** in Level Select, which has a **New galaxy…** entry too. Each mission starts with its Power Star (except in Empty space); Checks lists what is still missing, such as a star or ground under Mario's start. In a new galaxy, the **Missions** panel renames the galaxy and its missions and changes its music straight away (the music plays from the next reload). Adding or removing a mission saves or discards your edits first and restarts into the galaxy. New galaxies play only in Petari. Their progress uses the mod's own save.
 
 ## Shortcut reference
 

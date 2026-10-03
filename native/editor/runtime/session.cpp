@@ -199,6 +199,18 @@ namespace {
         std::filesystem::rename(temp, path, ec);
     }
 
+    // A restart that discards the session's edits (a new galaxy, a new mission count): their journal
+    // goes too, and nothing more is written before the restart.
+    void dropJournalForRestart() {
+        Session& s = session();
+        if (!s.model) return;
+        PetariNative::HostAllocationScope host;
+        std::error_code ec;
+        std::filesystem::remove(journalPath(s.model->galaxy()), ec);
+        std::filesystem::remove_all(journalPath(s.model->galaxy()).replace_extension(".files"), ec);
+        s.journalHeld = true;
+    }
+
     void offerJournal() {
         Session& s = session();
         Status& st = Core::mutableStatus();
@@ -817,6 +829,8 @@ namespace {
             if (command.kind == Command::Kind::NewGalaxy) {  // from Edit, or from Level Select with no model
                 if (!createNewGalaxy(command.newGalaxy, s.model && status().unsaved, &error)) {
                     Core::reportError("New galaxy: " + error);
+                } else if (command.newGalaxy.discardUnsaved) {
+                    dropJournalForRestart();
                 }
                 continue;
             }
@@ -825,6 +839,15 @@ namespace {
                 continue;
             }
             switch (command.kind) {
+            case Command::Kind::SetGalaxyInfo: {
+                const bool restart = galaxyInfoNeedsRestart(command.galaxyInfo);
+                if (!setGalaxyInfo(command.galaxyInfo, *s.model, status().unsaved, &error)) {
+                    Core::reportError("Galaxy settings: " + error);
+                } else if (restart && command.galaxyInfo.discardUnsaved) {
+                    dropJournalForRestart();
+                }
+                break;
+            }
             case Command::Kind::Apply: {
                 PetariNative::HostAllocationScope host;
                 for (const SetCell& set : command.op.sets) {
