@@ -4,6 +4,8 @@
 #include "Game/MapObj/PowerStar.hpp"
 #include "Game/MapObj/PowerStarHolder.hpp"
 #include "Game/NPC/EventDirector.hpp"
+#include "Game/Player/MarioAccess.hpp"
+#include "Game/Player/MarioActor.hpp"
 #include "Game/Util.hpp"
 #include <cmath>
 #include <cstdio>
@@ -224,9 +226,20 @@ namespace EditorPlaytest {
         } else if (step == 15 && frame > 5) {
             if (!view.missed || view.running || Hooks::sceneSerial() != runScene || MR::getPlayerLeft() != livesAtMiss)
                 return fail("forced death lost the scene, trail or life");
-            std::fprintf(
-                stderr,
-                "[editor-playtest] PASS: trail, peaks, Keep/undo, star interception, fresh-world reset, immediate fall/death, missed-run retry\n");
+            std::fprintf(stderr, "[editor-playtest] immediate forced-death interception PASS\n");
+            play(PlayFrom::Resume);
+            advance(16);
+        } else if (step == 16 && mode() == Mode::Playing && playable && frame > 15) {
+            runScene = Hooks::sceneSerial();
+            MarioAccess::getPlayerActor()->forceGameOverBlackHole();
+            if (mode() != Mode::Editing)
+                return fail("black-hole death did not intercept before its animation");
+            advance(17);
+        } else if (step == 17 && frame > 5) {
+            if (!view.missed || view.running || Hooks::sceneSerial() != runScene || MR::getPlayerLeft() != livesAtMiss)
+                return fail("black-hole miss lost scene, trail or life");
+            std::fprintf(stderr,
+                         "[editor-playtest] PASS: trail, peaks, Keep/undo, star, fresh world, immediate fall/death/black-hole, missed-run retry\n");
             step = 999;
         }
     }
