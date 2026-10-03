@@ -1,0 +1,430 @@
+# Agent level authoring: petari-level
+
+`petari-level` builds and edits Super Mario Galaxy levels from the command line, as JSON in and
+JSON out. `native/tools/petari_level` wraps it in Python. It is meant for agents and scripting
+humans. Computer use stays the test of whether a human can use the editor.
+
+It is the in-game editor's own core, linked without the game or a renderer:
+
+| | the API uses |
+| --- | --- |
+| loading | `ModelIO::load`: the disc mounted through `petari_platform_dvd`, with the user's enabled mods if asked |
+| state, ops, undo | `EditModel` (`apply`, `undo`, `redo`, row ids, `patch()`) |
+| paths and switch nets | `Paths` (`addRail`, `linkPath`, its switch checks) |
+| names, args, links | the object `Catalog`: curated names, enum labels, required links, presets |
+| problems | `computeChecks`, with the shipped galaxy's own problems as the baseline (as the in-game Checks) |
+| output | `ModelIO::saveToDirectory`: a patch mod (`edits/<Galaxy>.json`, no game data) or Full archives; then on, as the Save sheet does |
+
+So an edit made here has the same semantics, validation and output as the same edit made in the
+game. stage_edit.py is superseded.
+
+## Quick start
+
+```sh
+X=build/macos-gx/native/editor/level_api/petari-level
+$X help                                                    # every command and op, error codes, refs
+$X --ws build/ws/egg init --disc build/game-data/RMGE01 --galaxy EggStarGalaxy
+$X --ws build/ws/egg catalog "launch star"
+$X --ws build/ws/egg class "Power Star"                    # args by name, enum choices, links
+$X --ws build/ws/egg list --class Coin --near 0,0,0 --radius 3000
+$X --ws build/ws/egg apply '[{"op":"add","class":"Coin","pos":[0,1500,0],"on_ground":true,"height":120,"as":"c1"}]'
+$X --ws build/ws/egg checks
+$X --ws build/ws/egg save "My Good Egg"                    # <ws>/user/mods/My Good Egg/edits/EggStarGalaxy.json
+```
+
+Python:
+
+```python
+import sys; sys.path.insert(0, "native/tools")
+from petari_level import Level
+
+lv = Level.init("build/ws/egg", disc="build/game-data/RMGE01", galaxy="EggStarGalaxy", force=True)
+with lv.batch(key="arc", label="Coin arc") as b:
+    b.array("Coin", "arc", start=[0, 1200, 0], end=[1500, 1200, 0], peak=600, count=8)
+    b.add("PowerStar", [1800, 1500, 0], on_ground=True, height=200, args={"Star ID": 2}, label="star")
+print(lv.checks())
+lv.save("Coin Arc")
+```
+
+## Concepts
+
+**Workspace.** `--ws DIR` (default `$PETARI_LEVEL_WS`, else `./level-ws`) holds `level.json`: the
+disc, galaxy, mission and user directory it was opened with, source identities, and the journal. A mod workspace also carries its immutable overlay files in `base/`. Copying the workspace copies that base; the extracted disc remains an external dependency. Each CLI call opens
+the galaxy, replays the journal, runs the command, and writes the journal back after a mutating
+command. `serve` keeps one process and takes JSON lines (the Python wrapper uses it).
+
+**Journal.** Each applied batch is one entry: one `EditModel` op, so one undo step. Entries are
+low-level ops in JSON (`export` prints them) with stable refs, so they replay after a restart and a
+running game accepts them unchanged (live mode).
+
+**Rails.** `get` on a path row (`jmp/path/commonpathinfo`) lists its points in world space
+(`points: [{ref, pos, in, out}]`, `closed`, `rail_id`, the `CommonPath_ID` objects use); summaries
+give the point count and the first point as `pos`. Point rows have their own refs.
+
+**Refs** name one row and stay valid across undo, reload and restarts:
+
+| form | meaning |
+| --- | --- |
+| `EggStarGalaxy:common/objinfo:12` | an original row: zone, table (without `jmp/placement/`), its index on the disc |
+| `new:3` | the 3rd row this workspace added |
+| `@star` | a label given with `"as": "star"` (add, duplicate, array, label) |
+| `PowerStar#0` | the n-th row of a class, galaxy order |
+| `{"class": "Coin", "near": [0,0,0]}` | a selector: class, zone, category, mission, table, state, text, near, radius, nth |
+
+A selector must match exactly one row (else `ambiguous-ref` with candidates), unless an op takes
+several (`select`, which may carry `"expect": n` as a guard).
+
+**Coordinates.** `pos` and `rot` are world space; `rot` is degrees in the game's convention
+(Rz·Ry·Rx, the BCSV `dir_*`). Rows store zone space; the API converts with the zone's placement in
+the current mission. `zone_pos` / `zone_rot` read and write the row's own values. `up`/`front`
+orient by direction instead of angles; `turn` spins about the object's own up.
+
+**Args by name.** `args` takes the catalog's names (`"Star ID": 2`), enum labels
+(`"Shadow type": "Surface circle"`), `true`/`false` for bools (written 1 / -1: the game's bool
+getter treats anything but -1 as on), `null` for the class default (-1), or raw `Obj_arg0..7`.
+Reading an object shows the same names; `null` means "the class's default".
+
+**Switches and links.** `switches: {"SW_APPEAR": 12}`; `"new"` picks the lowest switch (0-127) no
+row in the zone uses; `"@goomba.SW_DEAD"` takes another row's switch (in the same batch too), so
+"defeat the Goomba, then the 1-Up appears" is two adds. Zone switches only connect rows of one zone
+(refused otherwise). `links: {"CommonPath_ID": 0}`. `fields` sets any column by name.
+
+## Batches: transactional, idempotent
+
+`apply` takes `{"ops": [...], "key": "...", "label": "...", "dry_run": false}` (or a bare array).
+
+- **One transaction, one undo step.** Ops run in order against the model (so later ops see earlier
+  ones: add, then duplicate the new row by its label). At the end the net change is merged into one
+  op (adds with every cell, sets, deletes), the steps are backed out, and the merged op is applied:
+  one history entry, as a gizmo drag is one entry in the game.
+- **All or nothing.** The first failing op rolls everything back (labels too) and the error says
+  which op and key (`where: "ops[2].args.Star IDD"`).
+- **Idempotent retries.** A batch with a `key` that is already applied (and not undone) is skipped
+  with `"skipped": true`. Agents should give every batch a key.
+- **Dry run.** `dry_run: true` validates and reports `created`, `changed`, `deleted`, `placements`
+  and `checks_introduced` without committing.
+- **What changed.** The reply lists created objects (ref, class, world pos), changed and deleted
+  refs, `placements` (where `on_ground` landed and on what), and `checks_introduced` /
+  `checks_resolved`, so the agent knows at once if it broke something.
+
+### Ops
+
+`help --op NAME` prints each op's keys, schema and an example.
+
+| op | does |
+| --- | --- |
+| `add` | place a class (`class` or `like` a row to copy, as the Browser does), in `zone`, `layer` or the layer active in exactly `missions`, with `preset` and every edit key |
+| `set` (`move`, `rotate`, `scale`, `transform`) | change `ref` / `refs` / `select` rows |
+| `duplicate` | copy a row (every field), then edit the copy |
+| `delete`, `revert` | delete rows; put rows back to the disc |
+| `array` | many adds along a `line`/`arc` (`start`, `end`; `from`/`to` also accepted), `ring`, `grid` or `path` (polyline) |
+| `path` | a rail from world points (`Paths::addRail`): smooth Catmull-Rom handles unless given, `closed`, `on_ground`; label it |
+| `link` | objects' `CommonPath_ID` to a path (`Paths::linkPath`: same zone); `add` takes `"path": "@flight"` too, and then faces a Launch or Sling Star along the path's first segment (as the `launch-star-facing` check's fix; `face_path: false` or an explicit `rot`/`up`/`front` opts out) |
+| `fix` | apply a check's automatic fix: `{"op": "fix", "check": "<key from checks>"}` |
+| `label` | name an existing row |
+| `raw` | a low-level op (the journal's format) |
+
+Edit keys (add, set, duplicate, array): `pos`, `zone_pos`, `by`, `rot`, `zone_rot`, `up`, `front`,
+`turn`, `scale`, `args`, `switches`, `links`, `fields`, `on_ground`, `height`, `down`, `align`.
+
+## Power Stars: give each a Star ID of its own
+
+A Power Star's Star ID (`args: {"Star ID": n}`) must be unused in every mission the star appears in.
+A placed star that reuses its mission's Star ID (say mission 1's own star 1) looks fine while editing,
+because editing re-creates it, but after a save and restart only one of the two survives: the
+original wins the game's bookkeeping. The `duplicate-star:<mission>:<id>` check reports it; treat it
+as an error. The working choice is another valid Star ID of the galaxy that the mission doesn't use
+(Good Egg mission 1: ID 2). The trade-off: collecting it counts as that star, and the result screen
+names that star's mission. A galaxy's valid IDs are its missions' (`info` lists them).
+
+## Placing on the ground
+
+`on_ground: true` drops the point onto the ground below it along gravity; `height: N` keeps it N
+units above, along gravity; the object is stood up against gravity (`align`, on by default with
+`on_ground`). `ground {pos}` and `gravity {pos}` answer the same questions without editing, and
+`colliders` lists what counts as ground. Without `zone`, an `on_ground` add goes in the zone that owns
+the ground it lands on, as the Browser places.
+
+Headless, the ground is the collision of every row placed in the current mission: each class's
+`ObjectData/<class>.arc` `.kcl` (read with the same prism reconstruction as `KCollisionServer::getPos`)
+and terrain brushes (the terrain library's own brush mesh), transformed by the row and its zone.
+
+Headless gravity is **approximate**: the mission's gravity rows with the shapes
+`GravityCreator.cpp` builds from a row (500 units per unit of scale): point (its `Distant` sphere),
+cube (a box standing on the row's origin), disk and disk-torus (radius from the largest scale,
+one- or two-sided from `Obj_arg0`), segment (1000 x scale_y along the row's up), plane (a `Range`
+sphere), plane in box and plane in cylinder; `Range`/`Distant`/`Inverse` as `GravityUtil.cpp` reads
+them (negative keeps the default). The highest `Priority` wins, then the nearest (the engine blends
+equal priorities); cones and wires are taken as their centre; with no field, toward the nearest
+collision surface. Replies say
+which field was used (`"gravity": "GlobalPointGravity EggStarGalaxy:common/planetobjinfo:4"`). Give
+`down: [x,y,z]` to override, or use live mode for the engine's own answer.
+
+A point **inside** a collider is refused with `inside-collision`: the message names the collider and
+how far below its surface the point is, so raise it by that much. Only numerical slack (5 units) is
+forgiven. Start ray origins above the ground: e.g. a point carried along a slope needs a lift
+against gravity first (`pos` + up x 300). (Casting from inside a planet would
+otherwise land on whatever lies below it.) `ground` answers `"inside": <ref>, "surface_above": N`
+for such a point instead of a hit.
+
+Arrays snap each copy on their own: an `arc` of coins with `on_ground` hugs the planet; without it
+the arc is a parabola between `from` and `to` whose middle is `peak` above the line, along -gravity.
+
+## Verification
+
+- `checks`: the in-game Checks, new problems only (`--all` adds the shipped ones, marked).
+  Each has a stable `key`, `severity`, `message`, the rows, and `fix` when `{"op": "fix"}` can
+  repair it.
+- `diff`: rows added or changed against the disc, with `[disc, now]` cells.
+- Live mode (below): the same ops in the running game, reload, screenshot, teleport Mario, trace him.
+
+## Python
+
+`native/tools/petari_level` (`import petari_level`; put `native/tools` on `sys.path`). One `petari-level
+serve` process per `Level`; every method raises `LevelError` (`.code`, `.hint`, `.candidates`, `.where`).
+
+| | |
+| --- | --- |
+| `Level.init(ws, disc=, galaxy=, mission=1, user=None, user_mods=False, mod=None, force=False)` / `Level.open(ws)` | create / open a workspace |
+| `lv.call(cmd, **args)` | any command; returns the reply without `ok` |
+| `lv.help(command=, op=)`, `info()`, `catalog(query, category=, placed_here=)`, `describe(cls)`, `list(cls, full=, **filters)`, `get(ref)` | discovery |
+| `with lv.batch(key=, label=, dry_run=) as b:` | ops collected and applied as one transaction at the end of the block (`b.result` is the reply) |
+| `b.add(cls, pos, label=, **edit)` -> `"@label"` | `edit` = any add key: `zone`, `missions`, `args`, `switches`, `on_ground`, `height`, `up`, `path`, ... |
+| `b.array(cls, shape, label=, **keys)` -> `"@label"` | the JSON op's keys: `start`, `end`, `count`, `spacing`, `peak`, `center`, `radius`, `origin`, `size`, `points`, ... |
+| `b.path(points, label=, **keys)` -> `"@label"`, `b.link(ref, path)` | rails and links |
+| `b.set(ref, **edit)`, `b.move(ref, pos, by=)`, `b.duplicate(ref, label=, **edit)`, `b.delete(ref, select=)`, `b.fix(key)`, `b.label(ref, name)`, `b.op(dict)` | the other ops |
+| `lv.apply(ops, key=, label=, dry_run=)`, `add(...)`, `set(...)`, `delete(ref)` | one-shot batches |
+| `undo(steps)`, `redo(steps)`, `history()`, `checks(all=)`, `diff()`, `ground(pos, down=)`, `gravity(pos)`, `colliders()`, `save(mod, full=)`, `export(start, stop)` | the rest |
+
+Labels returned by the builders are usable by later ops in the same batch (`path=flight`,
+`"@goomba.SW_DEAD"`). `Live` (below) drives a running game.
+
+## Live mode
+
+The test server (`native/tools/test_server.py`, `PETARI_TEST_SERVER`) takes these commands from
+`src/Game/Scene/TestServerEditor.cpp` (start it with `PETARI_EDITOR=1` for the editing ones):
+
+| command | |
+| --- | --- |
+| `editor-begin` | load the editor's model for the running stage (no Edit nerve needed); ops then apply and SceneSync re-creates their actors |
+| `editor-apply FILE` | low-level ops (`export`'s format, one op or `{"ops": [...]}`) queued as editor commands, each one undo step in the game |
+| `editor-undo [n]`, `editor-redo [n]`, `editor-reload`, `editor-save MOD [--full]` | the editor's own commands |
+| `editor-play [x y z [up] [front]]` | Play from a marker there: Mario teleported, upright for up |
+| `editor-state`, `editor-checks` | model revision, history, mode; the game's Checks with refs |
+| `ground x y z [dx dy dz]`, `gravity x y z` | the engine's own gravity and first map polygon (exact) |
+| `mario`, `teleport x y z`, `wait N` | Mario's position, gravity, ground, death; move him; let N frames run |
+| `screenshot PNG` | the next presented frame, without the editor's overlay |
+
+Replies are `ok <json>` / `error <json>` (the same Error object as the CLI: code, message, hint, where). `petari_level.Live` wraps them: `Live.start(app=...)`,
+`live.begin()`, `live.sync(level)` (brings the game to the workspace's journal: undoes what diverged,
+applies what is new; refs resolve in the game because they are stable), `live.reload()`,
+`live.play(pos, up)`, `live.warp(pos)`, `live.trace(frames)`, `live.ground(pos)`,
+`live.screenshot(path)`. `examples/live_verify.py` runs example 1 that way.
+
+### Replay and frame-held controls
+
+`petari-level help --live verify-route` and `help --live inputs-start` describe the
+request shapes without opening a disc. The live server adds `verify-route FILE`,
+`verify-route-status`, `verify-route-cancel`, `inputs-start FILE`, `inputs-status`
+and `inputs-cancel`. FILE is a JSON request; the Python wrapper writes it atomically.
+
+```python
+from petari_level import Live
+live = Live("build/test-server/course")  # attach to an enabled private server
+verdict = live.run_route("build/course.csv", require_star=True, timeout=600)
+assert verdict["passed"], verdict["reason"]
+delivery = live.run_inputs([
+    {"frames": 30, "stick": [0, 1]},
+    {"frames": 6, "buttons": ["jump", "forward"]},
+    {"frames": 60},
+])
+assert delivery["completed"] and delivery["frame"] == delivery["total"]
+```
+
+A route verdict has `active`, `finished`, `passed`, `reason` and `frame`. `passed`
+is the traversal verdict; `frame` is the number of replay frames used. Asset or
+shader-manifest failures introduced during that run also fail the verdict.
+Screenshots, `wait`, `ground`, `gravity` and state queries remain available during
+playback; scene edits and control changes require cancellation first.
+
+To replay your own play recording, enable recording before launching your private
+app or server, play the course, then split its stage visits:
+
+```sh
+PETARI_ROUTE_RECORD="$PWD/build/course-recording.csv" python3 native/tools/test_server.py start --app "$APP" --dir build/test-server/record
+# Play the course in this app, then stop the server before reading the recording.
+python3 native/tools/test_server.py stop --dir build/test-server/record
+python3 native/tools/recording_segments.py build/course-recording.csv build/course-segments
+```
+
+Inspect `build/course-segments/manifest.json` for the matching stage and mission,
+start a server with the same saved patch and mission, then run:
+
+```python
+verdict = live.run_route("build/course-segments/00-EggStarGalaxy-s1.csv", require_star=True)
+assert verdict["passed"], verdict["reason"]
+```
+
+Waypoint CSV is world `x,y,z,action` (Walk, Hop, Jump, Spin, Kick, Launch, Warp),
+as produced by `recording_segments.py` from a play recording. The game's replay
+driver steers through these points. A pass with `require_star=True` needs actual
+Star.Get followed by a playable observatory return. With False, it needs the
+endpoint and 30 grounded, controllable frames. Failure reports its reason;
+timeout cancels controls. This verifies the recorded traversal. The native
+test-server `route` command instead replays the full recording's per-frame inputs.
+
+Held steps use the shared frame-exact input engine. Buttons are forward/back/left/right,
+jump, action, spin, crouch, cappy, camera_left/right, plus and minus. Analog `stick`
+is `[right, forward]` in -1..1 and cannot accompany direction names. Cappy needs its
+enabled mod and binding. Completion reports input delivery plus Mario's position,
+velocity, ground and death state; it does not establish beatability. Death, lost
+control or a scene change releases the controls and reports an early end.
+`start_route`/`route_status`/`cancel_route` and `start_inputs`/`inputs_status`/`cancel_inputs`
+allow asynchronous use. Cancel playback before editing or starting another plan.
+
+For a visible existing private save, launch this binary with `PETARI_TEST_SERVER`
+set, `--stage good-egg --scenario 1`, and load its file normally. Leave
+`PETARI_SMOKE` unset and omit `--test-fixture`; no fixture marker is needed.
+
+## Errors
+
+Every reply is `{"ok": true, ...}` or `{"ok": false, "error": {"code", "message", "hint",
+"candidates", "where"}}`; the CLI exits 1 on an error, 2 on a usage error. `help` lists the codes.
+Candidates are what to try: the nearest class names for a typo (`Gooomba` -> `Kuribo (Goomba)`),
+a class's arg names, enum labels, allowed keys (`position` -> `pos`), zones, labels, the selector's
+matches with their positions.
+
+## Commands
+
+| command | |
+| --- | --- |
+| `help [command] [--op NAME] [--all]` | the self-description; no disc needed |
+| `init --disc D --galaxy G [--mission N] [--user DIR] [--user-mods] [--mod PATCH_DIR] [--force]` | create a workspace (CLI) |
+| `info` | missions, zones (placed, origin), counts, history, unsaved, new problems, labels |
+| `galaxies` | galaxy names on the disc |
+| `catalog [query] [--category] [--placed-here] [--limit]` | search classes |
+| `class NAME` | one class in full, with examples placed here |
+| `list [filters] [--full] [--limit] [--offset]` | objects |
+| `get REF` / `get --refs [...]` | objects in full: args by name, switches, links, every field |
+| `apply FILE\|-\|JSON` | a batch |
+| `undo [--steps N]`, `redo`, `history` | the journal |
+| `checks [--all]`, `diff` | verification |
+| `ground --pos`, `gravity --pos`, `colliders` | placement queries |
+| `save MOD [--full]` | write `<user>/mods/MOD` and turn it on for the next start |
+| `export [--from] [--to]` | the journal's low-level ops |
+| `serve` | JSON lines on stdin: `{"id": 1, "cmd": "list", "args": {...}}` (CLI) |
+
+`--key value` flags parse as JSON when they can (`--mission 2`, `--near [0,0,0]`), `x,y,z` as a
+vector, else as text; a `{...}` argument merges into the args.
+
+## Examples
+
+- `examples/launch_star_course.py`: Good Egg mission 1 (Disk Garden's mission-1 layer): a coin
+  trail to a Launch Star on a new path arcing over the planet, an arc of coins along the flight, a
+  Power Star where it lands; first a dry-run probe of the same course in the common layer, which the
+  Checks refuse (mission 2 would have 17 Launch Stars; the game keeps 16 paths).
+- `examples/sling_star_course.py`: Good Egg mission 1, from Mario's start: a coin trail on the
+  planet, a Sling Star, a coin column above it and a Power Star at the top (12 objects, one batch).
+- `examples/goomba_switch_garden.py`: on Soramame: a ring of coins, a Goomba whose defeat (a "new"
+  switch) makes a 1-Up appear (`"@goomba.SW_DEAD"`), a grid of Star Bits, and a dry-run probe of a
+  mistake showing the checks an agent gets back.
+- `examples/live_verify.py --course sling|launch`: a course in a running game (sync, reload, exact
+  ground vs headless, screenshots; the Sling Star course also drops Mario on the Sling Star and
+  traces his height).
+
+## Performance
+
+Good Egg (18 zones, 1,724 rows), CPU time: opening the galaxy (catalog, disc mount, model, the
+baseline checks) about 0.3 s; a Checks pass about 0.06 s; a batch about two Checks passes plus the
+ops. A CLI call therefore costs about 0.3-0.4 s of CPU (wall time was 1-5 s while the machine was
+loaded by other workers); `serve` and the Python wrapper pay the open once. The headless world loads
+each class's collision once per process.
+
+## Limits (known)
+
+- Headless gravity is approximate (above). The ground is the collision of rows with a `.kcl` named
+  after their class; objects whose collision comes from another archive (some map parts) are not
+  ground headless (`colliders` and its `no_kcl` list show what is).
+- Mission names use the disc's English message archive when available, with other disc languages and ScenarioData as fallbacks.
+- Full archives contain baked brush planets. Continue from a patch to keep its original brush rows editable.
+
+### Editing and sampling existing rails
+
+`get` on a rail lists stable point refs and world `pos`, `in`, and `out` coordinates. `get` on one of those refs reports `kind: "path-point"` and the parent `path`. Move a point with `move-point` (both handles move with it), or one absolute handle with `move-handle`, `handle: "in" | "out"`. Give exactly one of world `pos`, world delta `by`, or `zone_pos`.
+
+```json
+{"ops":[{"op":"insert-point","path":"@flight","segment":0,"t":0.5,"as":"mid"},{"op":"move-point","ref":"@mid","by":[0,100,0]},{"op":"move-handle","ref":"@mid","handle":"out","by":[100,0,0]}]}
+```
+
+`insert-point` splits the zero-based segment with the editor's de Casteljau helper, preserving the curve (`t` in 0.01..0.99). `delete-point` retains at least two points. Mixed edits remain one undo transaction, including their point-table ordering.
+
+`array` accepts `along: "@flight"` with `spacing` or `count`; omit `points` and `closed`, which come from the rail. It samples each Bezier segment 256 times and walks the resulting world-space polyline by distance. Spacing stays K units across segment boundaries; an open end is included only when it falls at a spacing interval. Closed rails do not repeat the first placement. Sampling is approximate, limited to 500 copies. Python exposes `Batch.move_point`, `move_handle`, `insert_point`, `delete_point`, and `along`.
+
+```python
+with lv.batch(label="Rail coins") as b:
+    b.along("Coin", "@flight", spacing=200, label="route_coins")
+```
+
+Low-level journal adds include `at` (the ordered table insertion index; absent means append). Float cells outside the standard transform columns carry `{ "type": "float", "value": ... }`, so integer-valued path coordinates retain their type when replay creates a new point table.
+
+### Coordinate and diagnostic replies
+
+Each zone in `info` includes `world_matrix`: a full-precision 4x4 row-major matrix. Multiply it by the column vector `[zone_x, zone_y, zone_z, 1]` to obtain world coordinates. The bottom row is `[0,0,0,1]`; `origin` and `rot` remain available for quick inspection.
+
+Pass `existing_checks: true` to any loaded-level command to include the currently present baseline checks in an `existing_checks` array. The default remains compact; new problems still appear in the usual checks fields. The option must be boolean, and is validated before mutation.
+
+Mutation and dry-run replies report new switch reservations in `allocated_switches`, each `{ref, zone, field, id}`. Separate `"new"` requests reserve distinct free IDs even within one row. Connect another socket to the returned ID or to `"@label.SW_A"` when it should share that switch.
+
+### Gravity fields and brushes
+
+`gravity-shape` takes field refs, `shape` (Point, Cube, Cone, Disk, Torus, Parallel, Segment or Wire), and optional Parallel `bound` (Sphere, Box, Cylinder). It calls `Gravity::shapeOp`, including its safe argument resets. Wire requires a linked rail with at least two points; failure rolls back the batch.
+
+`gravity-values` takes refs and `values` containing `Range`, `Distant`, `Priority`, `Inverse`, or `Obj_arg0..7`, through `Gravity::numericOp`. Priority, Inverse and args are integers; Inverse also accepts booleans. Negative Range becomes -1; negative Distant/Priority becomes 0. Catalog-named args remain available through `set.args`. Ordinary add/transform operations create and place fields.
+
+Brushes use the shared loader's registered `EditorBrush` catalog class, presets and four named enums (Shape, Material, Surface, Gravity); inspect `class EditorBrush` for choices. Exact class `EditorBrush` stays editable in patch saves. Full saves bake it into planet assets. Headless KCL loading uses the terrain library's canonical `readKcl`; headless gravity remains approximate for complex shapes, while `Live.gravity` uses the engine.
+
+```python
+with lv.batch(label="Gravity and platform") as b:
+    field = b.add("GlobalPointGravity", [0, 3000, 0], label="field")
+    b.gravity_shape(field, "Parallel", bound="Box")
+    b.gravity_values(field, Range=3000, Priority=2, Inverse=False)
+    b.add("EditorBrush", [0, 2000, 0], scale=[0.5, 0.1, 0.5],
+          args={"Shape": "Box", "Gravity": "Down only"}, label="platform")
+```
+
+### Ground arrays and heading
+
+`ground_array` takes the same shapes and add keys as `array`, and always snaps to ground. Both it and `array` with `on_ground: true` probe **all** candidate points against the pre-array world before creating any copy. Earlier copies, including overlapping brushes, cannot become the ground for later copies. If any ray fails or starts inside collision, the batch creates nothing. `height` is clearance along the opposite of gravity; per-copy `placements` identify the ground collider and hit.
+
+`front` is a world-space heading hint. With ground alignment, it is projected onto the plane perpendicular to gravity, preserving the intended heading. `face_along` derives the hint from the next grounded point. Explicit `up` overrides gravity alignment; `align: false` keeps normal transform semantics. Python exposes `Batch.ground_array`.
+
+```python
+with lv.batch(label="Ground coins") as b:
+    b.ground_array("Coin", "line", start=[-1000, 2000, 0], end=[1000, 2000, 0],
+                   count=8, height=100, down=[0, -1, 0], front=[1, 0, 0])
+```
+
+### Continuing a saved patch
+
+```sh
+petari-level --ws build/ws/continue init --disc build/game-data/RMGE01 --galaxy EggStarGalaxy --user build/private-user --mod "build/private-user/mods/Coin Arc"
+petari-level --ws build/ws/continue info
+petari-level --ws build/ws/continue apply '[{"op":"add","class":"Coin","zone":"DiskGardenZone","pos":[0,1500,0]}]'
+petari-level --ws build/ws/continue save "Coin Arc"
+```
+
+Python accepts `Level.init(..., mod=patch_folder)`. `--mod` opens a patch folder containing `edits/<Galaxy>.json`; `--user-mods` also includes the user's enabled mods with their usual priority. An explicit `--mod` wins over those enabled mods. Neither opening nor freezing changes the enabled-mod configuration. Saving follows the editor's normal enable-on-next-start behavior.
+
+The resolved, unbaked overlay is frozen under `<workspace>/base/files/`. `level.json.base.sources` records each mod's name, original path, content hash and last hash written by this workspace. Every reopen uses those cached files and then the journal. Saving over an input writes the **full difference from the pristine disc**, including the original mod edits and the new journal. The saved patch is not applied again on the next workspace open.
+
+`info` and the `init` result include `baseline: "pristine-disc"`, `base_fingerprint`, `base`, and `source_warnings`. A source changed or removed on disk produces a `stale-source` warning while the workspace continues using its frozen files. Changes to the enabled-mod list are also reported for `--user-mods`. A save made by this workspace updates `accepted_hash` without changing the frozen base, so its own save is not a stale-source event. Checks introduced by the input mod remain visible; only the pristine disc's check keys, normalized through its row mapping, belong to the baseline.
+
+To adopt current input files, save first, then explicitly run:
+
+```sh
+petari-level --ws build/ws/continue refreeze --discard-journal
+```
+
+Or `lv.refreeze(discard_journal=True)`. This clears undo history and labels and freezes the current input anew. Without `discard_journal`, refreeze refuses a nonempty journal. It never silently rebases. If the workspace's cached files are missing or corrupt, restore the workspace or initialize it again with `--force` after preserving the journal; initialization discards that journal.
+
+For live editing, the game must start from the same base: enable the same input patch and other base mods in the test server's isolated user directory, then launch with the editor enabled. `Live.sync` compares the workspace's initial row/cell fingerprint with `editor-state.editor.base_fingerprint` before undoing or applying anything. A different base, mission, or untracked UI journal raises structured `base-mismatch`. Reloading retains the captured base identity. An in-game mission switch (`SwitchScenario`) captures the base for the new mission; `Live.sync` then refuses until the workspace matches that mission and base. After saving over the input, a fresh game loads the newer saved patch; refreeze the workspace explicitly before syncing to that fresh game. A fresh server with matching base and an empty journal automatically receives the full workspace journal, even if a prior server's delivery cache exists.

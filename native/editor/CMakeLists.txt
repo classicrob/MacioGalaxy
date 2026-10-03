@@ -75,8 +75,6 @@ if(TARGET petari_platform_dvd)
 endif()
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
-# The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
-# game code (src/Game/Editor), so only the app and the link check link it.
 # Loading for editing and saving as a mod, without the game (runtime/model_io.hpp): the Runtime and
 # headless tools (petari-level) share it. Needs the native DVD layer (the disc and the mod overlay).
 if(TARGET petari_platform_dvd)
@@ -87,6 +85,13 @@ if(TARGET petari_platform_dvd)
         petari_native_config)
 endif()
 
+# The agent level-authoring API and its CLI, petari-level (headless).
+if(TARGET petari_editor_save)
+    add_subdirectory(level_api)
+endif()
+
+# The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
+# game code (src/Game/Editor), so only the app and the link check link it.
 add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/new_galaxy_session.cpp runtime/new_galaxy_test.cpp runtime/terrain_sync.cpp runtime/import_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
     runtime/redraw_test.cpp runtime/ensure_test.cpp runtime/scratch_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp runtime/new_path_test.cpp runtime/areas_test.cpp runtime/array_test.cpp runtime/import_test.cpp runtime/placement_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
