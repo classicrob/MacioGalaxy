@@ -654,6 +654,31 @@ def bisect_stage(args, stage, scenario):
 
 # --- report --------------------------------------------------------------------------------------------------
 
+FAIL_STATUSES = ("crash", "assert", "oom", "exception", "hang", "kills-player")
+SUSPECT_STATUSES = ("nan", "invisible", "dead")
+
+
+def live_recreate_verdict(results):
+    """What the editor should do when it recreates this class live (from a placed row), from the per-stage results.
+
+    unsafe     the process crashed, asserted, hung, ran out of heap or killed Mario creating it with empty links on some stage
+               (and no bisect run showed it safe with the row's own links): do not recreate live, fall back to the reload path
+    suspect    created but nan / invisible / dead on some stage: allowed, but tell the user it may not show or behave
+    safe       ok, ok-nomodel or nonactor on every measured stage
+    unmeasured nothing recorded yet (partial sweep)
+    needs_links (separate field): the link fields the class needs, when the bisect found them."""
+    statuses = [r["status"] for r in results.values()]
+    if not statuses:
+        return "unmeasured"
+    if any(s in FAIL_STATUSES for s in statuses):
+        # Safe with its own row's links (bisect `keep` passed on every stage that failed)?
+        failed = [r for r in results.values() if r["status"] in FAIL_STATUSES]
+        if all(r.get("links", {}).get("result") == "required" and r["links"].get("source") == "drop-keep" for r in failed):
+            return "safe"
+        return "unsafe"
+    return "suspect" if any(s in SUSPECT_STATUSES for s in statuses) else "safe"
+
+
 SEVERITY = ["crash", "assert", "oom", "exception", "hang", "kills-player", "nan", "invisible", "dead", "ok-nomodel", "nonactor", "ok"]
 
 
@@ -707,6 +732,12 @@ def build_catalog(args, stages):
             entry["results"][stage] = res
         statuses = [r["status"] for r in entry["results"].values()]
         entry["summary"] = next((s for s in SEVERITY if s in statuses), "untested")
+        entry["live_recreate"] = live_recreate_verdict(entry["results"])
+        required = {}
+        for r in entry["results"].values():
+            if r.get("links", {}).get("result") == "required":
+                required.update(r["links"]["fields"])
+        entry["needs_links"] = required or None
         entries.append(entry)
     coverage = {s: {"recorded": sum(1 for e in entries if s in e["results"]), "total": len(entries),
                     "inferred": sum(1 for e in entries if e["results"].get(s, {}).get("inferred_from"))} for s, _, _ in stages}
@@ -714,6 +745,9 @@ def build_catalog(args, stages):
             "partial": any(c["recorded"] < c["total"] for c in coverage.values()), "coverage": coverage,
             "order": "most placed on the disc first (placed_on_disc)",
             "stages": [{"stage": s, "scenario": n, "why": w} for s, n, w in stages], "link_fields": LINK_FIELDS,
+            "live_recreate": {"safe": "recreate live", "suspect": "recreate live, tell the user it may not show or behave",
+                              "unsafe": "do not recreate live: fall back to the reload path (pending)",
+                              "unmeasured": "not measured yet: treat as unsafe until it is"},
             "statuses": {"ok": "created, alive and drawn after the observation window",
                          "ok-nomodel": "created and alive, has no model (logic actor)",
                          "nonactor": "created without any LiveActor (areas, managers, ...)",

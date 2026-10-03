@@ -124,6 +124,20 @@ class BisectSearch(unittest.TestCase):
         self.assertEqual(verdict["fields"], {})
 
 
+class Verdict(unittest.TestCase):
+    def test_live_recreate(self):
+        v = cs.live_recreate_verdict
+        self.assertEqual(v({}), "unmeasured")
+        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "nonactor"}}), "safe")
+        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "invisible"}}), "suspect")
+        self.assertEqual(v({"a": {"status": "ok"}, "b": {"status": "crash"}}), "unsafe")
+        # crashes with empty links but is fine with its own row's links: a live recreate (clone of the row) is safe
+        keep = {"status": "crash", "links": {"result": "required", "source": "drop-keep", "fields": {"CommonPath_ID": 7}}}
+        self.assertEqual(v({"a": keep}), "safe")
+        provisioned = {"status": "crash", "links": {"result": "required", "source": "drop-provision", "fields": {"SW_A": 1}}}
+        self.assertEqual(v({"a": provisioned}), "unsafe")
+
+
 class Scrub(unittest.TestCase):
     def test_absolute_paths_and_thread_ids_do_not_reach_the_report(self):
         home = "/Users/someone/.bb/plugins/env/host-data/workspaces/thr_abcdef1234/petari-worktrees/editor-class-sweep"
