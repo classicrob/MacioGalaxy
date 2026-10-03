@@ -19,10 +19,16 @@ class LiveTests(unittest.TestCase):
                 self.assertEqual(Live.start("fake-app").dir, Path(directory).resolve())
 
     def test_structured_live_error_is_raised(self):
-        with tempfile.TemporaryDirectory() as directory, patch("petari_level.live._send", return_value='ok {"ok":false,"error":{"code":"busy","message":"running"}}'):
+        with tempfile.TemporaryDirectory() as directory, patch("petari_level.live._send", return_value='error {"code":"busy","message":"running","hint":"cancel","where":"inputs"}'):
             with self.assertRaises(LevelError) as caught:
                 Live(directory).send("inputs-start request.json")
             self.assertEqual(caught.exception.code, "busy")
+
+    def test_legacy_live_error_is_raised(self):
+        with tempfile.TemporaryDirectory() as directory, patch("petari_level.live._send", return_value="error old server refused"):
+            with self.assertRaises(LevelError) as caught:
+                Live(directory).send("inputs-start request.json")
+            self.assertEqual(caught.exception.code, "live")
 
     def test_route_payload_handles_spaces_and_preserves_star_verdict(self):
         with tempfile.TemporaryDirectory(prefix="petari live ") as directory:

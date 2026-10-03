@@ -111,8 +111,11 @@ namespace {
             std::fflush(stderr);
             _exit(0);
         }
-        if (TestServerReplay::run(name, w, playable, reply)) return true;
-        if (TestServerReplay::controlsActive() && w[0] != "mario" && w[0] != "editor-state" && w[0] != "editor-checks") {
+        if (TestServerReplay::run(name, w, playable, reply)) {
+            return true;
+        }
+        if (TestServerReplay::controlsActive() && w[0] != "mario" && w[0] != "editor-state" && w[0] != "editor-checks" &&
+            w[0] != "screenshot" && w[0] != "wait" && w[0] != "ground" && w[0] != "gravity") {
             reply(name, "error playback is active; cancel it before another command changes the scene or controls");
             return true;
         }
@@ -201,8 +204,8 @@ namespace TestServer {
             }
         }
         const char* smoke = std::getenv("PETARI_SMOKE");
-        const bool stageSmoke = smoke && std::strcmp(smoke, "stage") == 0;
-        if (!gEnabled || (stageSmoke && !PetariNative::SmokePhase::stageChecksDone.load())) {
+        const bool smokeEnabled = smoke && smoke[0] != '\0';
+        if (!gEnabled || (smokeEnabled && !PetariNative::SmokePhase::stageChecksDone.load())) {
             return;  // not before the stage smoke is idling: it would end the run on a stage change in an earlier phase
         }
         static int sBeat = 0;

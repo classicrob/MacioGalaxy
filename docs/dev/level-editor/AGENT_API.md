@@ -231,6 +231,30 @@ delivery = live.run_inputs([
 assert delivery["completed"] and delivery["frame"] == delivery["total"]
 ```
 
+A route verdict has `active`, `finished`, `passed`, `reason` and `frame`. `passed`
+is the traversal verdict; `frame` is the number of replay frames used. Asset or
+shader-manifest failures introduced during that run also fail the verdict.
+Screenshots, `wait`, `ground`, `gravity` and state queries remain available during
+playback; scene edits and control changes require cancellation first.
+
+To replay your own play recording, enable recording before launching your private
+app or server, play the course, then split its stage visits:
+
+```sh
+PETARI_ROUTE_RECORD="$PWD/build/course-recording.csv" python3 native/tools/test_server.py start --app "$APP" --dir build/test-server/record
+# Play the course in this app, then stop the server before reading the recording.
+python3 native/tools/test_server.py stop --dir build/test-server/record
+python3 native/tools/recording_segments.py build/course-recording.csv build/course-segments
+```
+
+Inspect `build/course-segments/manifest.json` for the matching stage and mission,
+start a server with the same saved patch and mission, then run:
+
+```python
+verdict = live.run_route("build/course-segments/00-EggStarGalaxy-s1.csv", require_star=True)
+assert verdict["passed"], verdict["reason"]
+```
+
 Waypoint CSV is world `x,y,z,action` (Walk, Hop, Jump, Spin, Kick, Launch, Warp),
 as produced by `recording_segments.py` from a play recording. The game's replay
 driver steers through these points. A pass with `require_star=True` needs actual

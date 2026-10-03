@@ -239,6 +239,9 @@ Smoke::SoakDriver* gSoak = nullptr;
 Smoke::DomesDriver* gDomes = nullptr;
 Smoke::ReplayDriver* gReplay = nullptr;
 Smoke::ReplayDriver* gAgentReplay = nullptr;
+uint64_t gAgentMissingLayout = 0;
+uint64_t gAgentMissingSound = 0;
+uint64_t gAgentManifestFailures = 0;
 Smoke::MovementDriver* gMovement = nullptr;
 
 unsigned long environmentNumber(const char* name, unsigned long fallback) {
@@ -650,42 +653,63 @@ void reportFrameStats() {
 }  // namespace Seam
 
 namespace AgentReplay {
-bool start(const std::string& route, const std::string& stage, int scenario,
-           unsigned long frames, bool requireStar, std::string* error) {
-    HostAllocationScope host;
-    if (gAgentReplay && gAgentReplay->result()==Smoke::Result::Running) {
-        *error="a recorded route is already running"; return false;
+    bool start(const std::string& route, const std::string& stage, int scenario, unsigned long frames, bool requireStar, std::string* error) {
+        HostAllocationScope host;
+        if (gAgentReplay && gAgentReplay->result() == Smoke::Result::Running) {
+            *error = "a recorded route is already running";
+            return false;
+        }
+        std::ifstream in(route);
+        std::ostringstream text;
+        text << in.rdbuf();
+        Smoke::ReplayConfig config;
+        config.stage = stage;
+        config.scenario = scenario;
+        config.routePath = route;
+        config.route = Smoke::parseReplayRoute(text.str());
+        config.requireStar = requireStar;
+        config.startInStage = true;
+        if (!in || config.route.size() < 2 || frames < 60 || frames > 1080000) {
+            *error = "route needs a readable CSV with at least 2 waypoints and frame limit 60..1080000";
+            return false;
+        }
+        delete gAgentReplay;
+        gAgentMissingLayout = petari_layout_missing_reference_count();
+        gAgentMissingSound = petari_sound_missing_reference_count();
+        gAgentManifestFailures = petari_gx_pipeline_manifest_failure_count();
+        gAgentReplay = new Smoke::ReplayDriver(frames, config);
+        return true;
     }
-    std::ifstream in(route); std::ostringstream text; text << in.rdbuf();
-    Smoke::ReplayConfig config; config.stage=stage; config.scenario=scenario;
-    config.routePath=route; config.route=Smoke::parseReplayRoute(text.str()); config.requireStar=requireStar; config.startInStage=true;
-    if (!in || config.route.size()<2 || frames<60 || frames>1080000) {
-        *error="route needs a readable CSV with at least 2 waypoints and frame limit 60..1080000"; return false;
+    bool active() {
+        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Running;
     }
-    delete gAgentReplay; gAgentReplay=new Smoke::ReplayDriver(frames,config); return true;
-}
-bool active() {return gAgentReplay && gAgentReplay->result()==Smoke::Result::Running;}
-bool finished() {return gAgentReplay && gAgentReplay->result()!=Smoke::Result::Running;}
-bool passed() {
-    return gAgentReplay && gAgentReplay->result()==Smoke::Result::Pass && petari_layout_missing_reference_count()==0 &&
-        petari_sound_missing_reference_count()==0 && petari_gx_pipeline_manifest_failure_count()==0;
-}
-std::string reason() {
-    HostAllocationScope host;
-    if(!gAgentReplay) return "no route";
-    auto result=gAgentReplay->reason();
-    if(gAgentReplay->result()==Smoke::Result::Pass && !passed())
-        result+="; missing game assets or shader manifest failures (see server log)";
-    return result;
-}
-unsigned long frame() {return gAgentReplay ? gAgentReplay->frame():0;}
-void cancel() {
-    HostAllocationScope host;
-    for (Smoke::Button button:{Smoke::Button::A,Smoke::Button::B,Smoke::Button::StickUp,Smoke::Button::StickDown,
-         Smoke::Button::StickLeft,Smoke::Button::StickRight,Smoke::Button::Spin,Smoke::Button::Plus,Smoke::Button::Minus})
-        Events::pressButton(static_cast<int>(button),false);
-    delete gAgentReplay; gAgentReplay=nullptr;
-}
+    bool finished() {
+        return gAgentReplay && gAgentReplay->result() != Smoke::Result::Running;
+    }
+    bool passed() {
+        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Pass && petari_layout_missing_reference_count() == gAgentMissingLayout &&
+               petari_sound_missing_reference_count() == gAgentMissingSound && petari_gx_pipeline_manifest_failure_count() == gAgentManifestFailures;
+    }
+    std::string reason() {
+        HostAllocationScope host;
+        if (!gAgentReplay)
+            return "no route";
+        auto result = gAgentReplay->reason();
+        if (gAgentReplay->result() == Smoke::Result::Pass && !passed())
+            result += "; missing game assets or shader manifest failures (see server log)";
+        return result;
+    }
+    unsigned long frame() {
+        return gAgentReplay ? gAgentReplay->frame() : 0;
+    }
+    void cancel() {
+        HostAllocationScope host;
+        for (Smoke::Button button : {Smoke::Button::A, Smoke::Button::B, Smoke::Button::StickUp, Smoke::Button::StickDown, Smoke::Button::StickLeft,
+                                     Smoke::Button::StickRight, Smoke::Button::Spin, Smoke::Button::Plus, Smoke::Button::Minus})
+            Events::pressButton(static_cast< int >(button), false);
+        delete gAgentReplay;
+        gAgentReplay = nullptr;
+    }
 }  // namespace AgentReplay
 
 }  // namespace PetariNative::App

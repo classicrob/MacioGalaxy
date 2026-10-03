@@ -10,7 +10,7 @@
     live.screenshot("build/shots/arc.png")
     live.stop()
 
-Replies are the test server's "ok <json>" lines, parsed; "error ..." raises LevelError (code "live").
+Replies are the test server's "ok <json>" lines, parsed; "error <json Error>" raises LevelError (legacy text errors use code "live").
 """
 from __future__ import annotations
 
@@ -80,6 +80,12 @@ class Live:
     def send(self, command: str, timeout: float = 120) -> Any:
         text = _send(self.dir, command, timeout)
         if text.startswith("error"):
+            try:
+                error = json.loads(text[6:])
+            except ValueError:
+                error = None
+            if isinstance(error, dict) and "code" in error and "message" in error:
+                raise LevelError(error)
             raise LevelError({"code": "live", "message": text[6:], "where": command.split()[0]})
         body = text[3:] if text.startswith("ok ") else ""
         try:
