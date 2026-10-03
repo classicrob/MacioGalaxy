@@ -4,6 +4,8 @@
 #include "Game/LiveActor/AllLiveActorGroup.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/Scene/TestServerEditor.hpp"
+#include "Game/Scene/TestServerReplay.hpp"
+#include <petari/agent_replay.hpp>
 #include "Game/Util/DemoUtil.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
@@ -109,6 +111,11 @@ namespace {
             std::fflush(stderr);
             _exit(0);
         }
+        if (TestServerReplay::run(name, w, playable, reply)) return true;
+        if (TestServerReplay::controlsActive() && w[0] != "mario" && w[0] != "editor-state" && w[0] != "editor-checks") {
+            reply(name, "error playback is active; cancel it before another command changes the scene or controls");
+            return true;
+        }
         // The live-editing and verification commands (TestServerEditor.cpp) also run in Edit mode.
         if (TestServerEditor::run(name, w, playable, reply)) {
             return true;
@@ -193,7 +200,9 @@ namespace TestServer {
                 std::fprintf(stderr, "[test-server] listening on %s\n", pDir);
             }
         }
-        if (!gEnabled || !PetariNative::SmokePhase::stageChecksDone.load()) {
+        const char* smoke = std::getenv("PETARI_SMOKE");
+        const bool stageSmoke = smoke && std::strcmp(smoke, "stage") == 0;
+        if (!gEnabled || (stageSmoke && !PetariNative::SmokePhase::stageChecksDone.load())) {
             return;  // not before the stage smoke is idling: it would end the run on a stage change in an earlier phase
         }
         static int sBeat = 0;

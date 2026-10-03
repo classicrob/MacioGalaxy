@@ -64,6 +64,12 @@ double ms(std::chrono::steady_clock::time_point since) {
 }  // namespace
 
 int main() {
+    const Value liveHelp = L::Level::help(parse(R"({"live":"verify-route"})"));
+    check(liveHelp["ok"].asBool() && liveHelp["live_command"]["schema"]["required"].items().size()==1,
+          "live replay help exposes its request schema without opening a disc");
+    const Value inputHelp = L::Level::help(parse(R"({"live":"inputs-start"})"));
+    check(inputHelp["ok"].asBool() && inputHelp["live_command"]["schema"]["type"].asString()=="array",
+          "frame-held input plan is discoverable");
     const fs::path disc = fs::path(PETARI_TEST_DISC_FILES).parent_path();
     if (!fs::exists(disc / "files" / "StageData" / "EggStarGalaxy" / "EggStarGalaxyScenario.arc")) {
         std::printf("petari_level: no disc at %s, skipped\n", disc.string().c_str());

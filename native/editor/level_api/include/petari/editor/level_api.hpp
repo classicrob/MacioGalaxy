@@ -86,6 +86,8 @@ private:
 const std::vector< CommandSpec >& commands();
 /// The batch op kinds ("add", "move", ...) with their docs and schemas.
 const std::vector< CommandSpec >& opKinds();
+/// Live verification commands (test server only); `help --live NAME` needs no disc.
+const std::vector< CommandSpec >& liveCommands();
 /// Error codes and what each means.
 const std::vector< std::pair< std::string, std::string > >& errorCodes();
 

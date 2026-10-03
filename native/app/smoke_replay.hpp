@@ -30,6 +30,8 @@ struct ReplayConfig {
     int scenario = 0;
     std::string routePath;
     std::vector<DomeWaypoint> route;
+    bool requireStar = true;  // false: verify a route/jump by reaching its end and landing
+    bool startInStage = false;
 };
 
 // PETARI_SMOKE=replay with PETARI_STAGE, PETARI_SCENARIO and PETARI_REPLAY_ROUTE
@@ -49,7 +51,7 @@ public:
     unsigned long frame() const { return mFrame; }
     const char* phase() const;
     const std::vector<std::string>& log() const { return mLog; }
-    bool wantsPlayer() const { return mPhase != Phase::Boot || mBoot.wantsPlayer(); }
+    bool wantsPlayer() const { return mConfig.startInStage || mPhase != Phase::Boot || mBoot.wantsPlayer(); }
     size_t waypoint() const { return mWaypoint; }
 
 private:

@@ -168,8 +168,34 @@ const std::vector< std::pair< std::string, std::string > >& errorCodes() {
         {"nothing-to-undo", "the journal is at its start"},
         {"nothing-to-redo", "the journal is at its end"},
         {"internal", "a bug: please report the command and args"},
+        {"not-playable", "live playback needs controllable Mario in normal Play"},
+        {"busy", "another replay or input plan owns the controls; cancel it first"},
+        {"bad-file", "a live playback request file could not be read"},
+        {"bad-json", "a live playback request is not valid JSON"},
+        {"route", "the recorded waypoint route could not be started"},
+        {"inputs", "the frame-held input engine refused the plan"},
+        {"timeout", "live verification timed out; the wrapper cancelled controls"},
     };
     return sCodes;
+}
+
+const std::vector< CommandSpec >& liveCommands() {
+    auto schema = [](const char* text) { return *Json::parse(text); };
+    static const std::vector<CommandSpec> specs = {
+        {"verify-route", "Replay a waypoint route; verdict requires Star.Get and playable observatory return",
+         "file string world x,y,z,action CSV\nframes integer 60..1080000 (default 18000)\nrequire_star bool (default true); false verifies endpoint and landing",
+         schema(R"({"type":"object","required":["file"],"additionalProperties":false,"properties":{"file":{"type":"string"},"frames":{"type":"integer","minimum":60,"maximum":1080000},"require_star":{"type":"boolean"}}})"),
+         R"({"file":"build/course.csv","require_star":true})", false},
+        {"verify-route-status", "Replay active/finished/passed/reason/frame", "", schema(R"({"type":"object"})"), "{}", false},
+        {"verify-route-cancel", "Release controls and cancel the waypoint replay", "", schema(R"({"type":"object"})"), "{}", false},
+        {"inputs-start", "Frame-exact held controls through the shared input engine",
+         "array of {frames,buttons?,stick?}; controls jump/action/spin/crouch/cappy/camera_left/camera_right/plus/minus and forward/back/left/right\nstick [right,forward], axes -1..1; cannot combine with direction names\n1..10000 steps, total at most1080000 frames",
+         schema(R"({"type":"array","minItems":1,"maxItems":10000,"items":{"type":"object","required":["frames"],"additionalProperties":false,"properties":{"frames":{"type":"integer","minimum":1,"maximum":1080000},"buttons":{"type":"array","items":{"type":"string"}},"stick":{"type":"array","minItems":2,"maxItems":2,"items":{"type":"number","minimum":-1,"maximum":1}}}}})"),
+         R"([{"frames":30,"stick":[0,1]},{"frames":6,"buttons":["jump"]},{"frames":60}])", false},
+        {"inputs-status", "Exact frame delivery and final Mario position/velocity/ground/dead state", "", schema(R"({"type":"object"})"), "{}", false},
+        {"inputs-cancel", "Release all controls and cancel the input plan", "", schema(R"({"type":"object"})"), "{}", false},
+    };
+    return specs;
 }
 
 Json::Value helpJson(const Json::Value& args) {
@@ -207,6 +233,10 @@ Json::Value helpJson(const Json::Value& args) {
         fail(std::string(pWhat) == "op" ? "bad-op" : "unknown-command", std::string("no ") + pWhat + " '" + name + "'", "", names);
     };
     Json::Value out = Json::Value::object();
+    if (args.has("live")) {
+        out.set("live_command", specJson(find(liveCommands(), args["live"].asString(), "live command"), true));
+        return out;
+    }
     if (args.has("command")) {
         out.set("command", specJson(find(commands(), args["command"].asString(), "command"), true));
         return out;
@@ -223,6 +253,9 @@ Json::Value helpJson(const Json::Value& args) {
     Json::Value ops = Json::Value::array();
     for (const CommandSpec& s : opKinds()) ops.push(specJson(s, all));
     out.set("ops", std::move(ops));
+    Json::Value live = Json::Value::array();
+    for (const CommandSpec& s : liveCommands()) live.push(specJson(s, all));
+    out.set("live_commands", std::move(live));
     out.set("refs", kRefDoc);
     out.set("results", "every reply is {\"ok\": true, ...} or {\"ok\": false, \"error\": {code, message, hint, candidates, where}}");
     Json::Value codes = Json::Value::object();

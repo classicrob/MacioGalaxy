@@ -74,7 +74,10 @@ class Live:
             raise LevelError({"code": "live", "message": text[6:], "where": command.split()[0]})
         body = text[3:] if text.startswith("ok ") else ""
         try:
-            return json.loads(body)
+            result = json.loads(body)
+            if isinstance(result, dict) and result.get("ok") is False:
+                raise LevelError(result["error"])
+            return result
         except ValueError:
             return {"text": body}
 
@@ -169,3 +172,89 @@ class Live:
     def screenshot(self, path: str | os.PathLike) -> dict:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         return self.send(f"screenshot {Path(path).resolve()}")
+
+
+    def _start_plan(self, command: str, payload: Any) -> dict:
+        path = self.dir / f"playback-{time.time_ns()}.json"
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, allow_nan=False))
+        tmp.rename(path)
+        try:
+            return self.send(f"{command} {path}")
+        finally:
+            path.unlink(missing_ok=True)
+
+    def route_status(self) -> dict:
+        """Current waypoint replay verdict: active, finished, passed, reason, frame."""
+        return self.send("verify-route-status")
+
+    def cancel_route(self) -> dict:
+        """Release the replay's controls and cancel it."""
+        return self.send("verify-route-cancel")
+
+    def start_route(self, route: str | os.PathLike, *, require_star: bool = True, frames: int = 18000) -> dict:
+        """Start the game's waypoint replay driver in normal Play.
+
+        CSV rows are world x,y,z,action (Walk/Jump/Launch/etc.), as PETARI_ROUTE_RECORD
+        produces. require_star=True requires Star.Get and a playable observatory
+        return; False requires reaching the route end and landing for 30 frames.
+        """
+        return self._start_plan("verify-route", {"file": str(Path(route).resolve()),
+                                "frames": frames, "require_star": require_star})
+
+    def run_route(self, route: str | os.PathLike, *, require_star: bool = True,
+                  frames: int = 18000, timeout: float = 600) -> dict:
+        """Replay and return its beatability verdict; timeout releases controls.
+
+        A pass verifies this recorded traversal, not every possible player route.
+        A failed traversal returns passed=False with the driver's reason.
+        """
+        self.start_route(route, require_star=require_star, frames=frames)
+        deadline = time.monotonic() + timeout
+        try:
+            while time.monotonic() < deadline:
+                result = self.route_status()
+                if result["finished"] or not result["active"]:
+                    if not result["finished"]:
+                        result.update(finished=True, passed=False, reason="route cancelled")
+                    return result
+                time.sleep(0.25)
+            raise LevelError({"code": "timeout", "message": "Replay timed out; controls released."})
+        except BaseException:
+            self.cancel_route()
+            raise
+
+    def inputs_status(self) -> dict:
+        """Exact frame delivery plus Mario's final position, velocity and ground/dead state."""
+        return self.send("inputs-status")
+
+    def cancel_inputs(self) -> dict:
+        return self.send("inputs-cancel")
+
+    def start_inputs(self, steps: Sequence[dict]) -> dict:
+        """Start exact game-frame steps: frames, optional buttons and stick [right,forward].
+
+        Buttons: forward/back/left/right, jump, action, spin, crouch, cappy,
+        camera_left/right, plus, minus. Stick axes are -1..1; direction names
+        cannot accompany stick. Cappy requires its enabled mod and binding.
+        """
+        return self._start_plan("inputs-start", list(steps))
+
+    def run_inputs(self, steps: Sequence[dict], *, timeout: float = 120) -> dict:
+        """Wait for exact input delivery, not a beatability verdict; timeout cancels.
+
+        Engine completion is completed=True, frame==total. Death, demo, scene
+        change or lost player ends early and releases every control.
+        """
+        self.start_inputs(steps)
+        deadline = time.monotonic() + timeout
+        try:
+            while time.monotonic() < deadline:
+                result = self.inputs_status()
+                if result["finished"] or not result["active"]:
+                    return result
+                time.sleep(0.1)
+            raise LevelError({"code": "timeout", "message": "Inputs timed out; controls released."})
+        except BaseException:
+            self.cancel_inputs()
+            raise

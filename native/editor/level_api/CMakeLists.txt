@@ -9,6 +9,7 @@ add_executable(petari-level cli.cpp)
 target_link_libraries(petari-level PRIVATE petari_level_api)
 
 if(BUILD_TESTING)
+    add_test(NAME native_level_live_python COMMAND ${Python3_EXECUTABLE} ${PETARI_REPO_ROOT}/native/tests/level_live_tests.py)
     add_executable(petari_level_api_tests ${PETARI_REPO_ROOT}/native/tests/level_api_tests.cpp)
     target_compile_definitions(petari_level_api_tests PRIVATE PETARI_TEST_DISC_FILES="${PETARI_REPO_ROOT}/build/game-data/RMGE01/files")
     target_include_directories(petari_level_api_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../runtime)

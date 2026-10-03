@@ -1,0 +1,65 @@
+"""Live wrapper transport, cancellation and verdict handling without starting a game."""
+import json
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
+from petari_level import Live, LevelError
+
+
+class LiveTests(unittest.TestCase):
+    def test_structured_live_error_is_raised(self):
+        with tempfile.TemporaryDirectory() as directory, patch("petari_level.live._send", return_value='ok {"ok":false,"error":{"code":"busy","message":"running"}}'):
+            with self.assertRaises(LevelError) as caught:
+                Live(directory).send("inputs-start request.json")
+            self.assertEqual(caught.exception.code, "busy")
+
+    def test_route_payload_handles_spaces_and_preserves_star_verdict(self):
+        with tempfile.TemporaryDirectory(prefix="petari live ") as directory:
+            live = Live(directory)
+            def send(command, timeout=120):
+                if command.startswith("verify-route "):
+                    request = json.loads(Path(command[len("verify-route "):]).read_text())
+                    self.assertTrue(request["require_star"])
+                    self.assertEqual(request["frames"], 18000)
+                    return {"active":True}
+                return {"active":False,"finished":True,"passed":True,"reason":"star and return","frame":3145}
+            live.send = send
+            result = live.run_route("course with spaces.csv")
+            self.assertTrue(result["passed"])
+            self.assertEqual(result["frame"], 3145)
+            self.assertFalse(list(Path(directory).glob("playback-*")))
+
+    def test_external_route_cancel_is_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Live(directory)
+            live.send = lambda *args, **kwargs: {"active":False,"finished":False,"passed":False}
+            result = live.run_route("course.csv")
+            self.assertFalse(result["passed"])
+            self.assertEqual(result["reason"], "route cancelled")
+
+    def test_input_timeout_cancels_controls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Live(directory)
+            commands = []
+            def send(command, **kwargs):
+                commands.append(command)
+                return {"active":True}
+            live.send = send
+            with self.assertRaises(LevelError) as caught:
+                live.run_inputs([{"frames":30,"stick":[0,1]}], timeout=-1)
+            self.assertEqual(caught.exception.code, "timeout")
+            self.assertEqual(commands[-1], "inputs-cancel")
+
+    def test_nan_is_rejected_before_request_publication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live = Live(directory)
+            with self.assertRaises(ValueError):
+                live.start_inputs([{"frames":3,"stick":[float("nan"),0]}])
+            self.assertFalse(list(Path(directory).glob("*.json")))
+
+
+if __name__ == "__main__":
+    unittest.main()
