@@ -99,6 +99,23 @@ namespace PetariEditor::Ui {
                 reactionPopup = true;
             }
         }
+        void wireLegend() {
+            ImGui::TextDisabled("Wire colours follow their socket kinds");
+            if (ImGui::BeginTable("wire-legend", 3, ImGuiTableFlags_SizingStretchSame)) {
+                const char* fields[] = {"SW_APPEAR", "SW_DEAD", "SW_A", "SW_B", "SW_SLEEP", "other"};
+                const char* labels[] = {"Appear", "Dead", "A", "B", "Sleep", "Other"};
+                for (int i = 0; i < 6; ++i) {
+                    ImGui::TableNextColumn();
+                    const auto at = ImGui::GetCursorScreenPos();
+                    ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(at.x + 5, at.y + ImGui::GetTextLineHeight() / 2), 4,
+                                                                P::switchColor(std::string(fields[i])));
+                    ImGui::Dummy(ImVec2(12, ImGui::GetTextLineHeight()));
+                    ImGui::SameLine(0, 2);
+                    ImGui::TextUnformatted(labels[i]);
+                }
+                ImGui::EndTable();
+            }
+        }
         void socketButton(const ModelView& m, RowId row, const char* field, bool output) {
             ImGui::PushID(field);
             ImGui::PushID(output ? 1 : 0);
@@ -108,9 +125,9 @@ namespace PetariEditor::Ui {
             ImGui::InvisibleButton("socket", ImVec2(20, 20));
             const ImVec2 center(at.x + 10, at.y + 10);
             auto* list = ImGui::GetWindowDrawList();
-            list->AddCircle(center, 6, P::switchColor(id), 16, 2);
+            list->AddCircle(center, 6, P::switchColor(std::string(field)), 16, 2);
             if (output)
-                list->AddCircleFilled(center, 3, P::switchColor(id));
+                list->AddCircleFilled(center, 3, P::switchColor(std::string(field)));
             if (ImGui::IsItemActivated())
                 startLink(row, field, center, output);
             if (ImGui::IsItemHovered()) {
@@ -163,8 +180,16 @@ namespace PetariEditor::Ui {
         return false;
     }
     void drawPathsInspector(const ModelView& m, const std::vector< RowId >& rows) {
-        if (rows.size() != 1)
+        if (rows.size() != 1) {
+            for (RowId row : rows) {
+                if (!P::sockets(m, row).empty()) {
+                    drawSection("Switch wires", "");
+                    wireLegend();
+                    break;
+                }
+            }
             return;
+        }
         const RowId row = rows.front();
         const auto rails = P::collect(m);
         for (const auto& rail : rails) {
@@ -218,6 +243,8 @@ namespace PetariEditor::Ui {
         if (sockets.empty() && !path)
             return;
         drawSection("Links", "drag sockets");
+        if (!sockets.empty())
+            wireLegend();
         for (const auto& s : sockets)
             socketButton(m, row, s.field.c_str(), s.role == Catalog::SwitchRole::Write);
         if (path)
@@ -310,18 +337,59 @@ namespace PetariEditor::Ui {
                 consumed = true;
             }
         }
-        for (const auto& wire : view.wires) {
-            const auto center = at(wire.x, wire.y);
-            const std::string label = "Switch " + std::to_string(wire.from.id) + (wire.from.id >= 1000 ? " (galaxy-wide)" : "");
-            list->AddText(center, P::switchColor(wire.from.id), label.c_str());
-            if (!link.active && !drag.active && inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !hit && !curveRail.valid()) {
-                for (const auto& c : wire.segments)
-                    if (distance(io.MousePos, at(c.x0, c.y0), at(c.x1, c.y1)) < 7) {
-                        chosenWireRow = wire.to.row;
-                        chosenWireField = wire.to.field;
-                        consumed = true;
-                        break;
+        if (std::none_of(view.wires.begin(), view.wires.end(),
+                         [&](const V::WireMark& wire) { return wire.to.row == chosenWireRow && wire.to.field == chosenWireField; })) {
+            chosenWireRow = {};
+            chosenWireField.clear();
+        }
+        const V::WireMark* hoveredWire = nullptr;
+        float wireDistance = 9;
+        if (!link.active && !drag.active && inside && !hit && !io.KeyAlt) {
+            for (const auto& wire : view.wires) {
+                for (const auto& c : wire.segments) {
+                    const float d = distance(io.MousePos, at(c.x0, c.y0), at(c.x1, c.y1));
+                    if (d < wireDistance) {
+                        wireDistance = d;
+                        hoveredWire = &wire;
                     }
+                }
+            }
+        }
+        if (hoveredWire && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            chosenWireRow = hoveredWire->to.row;
+            chosenWireField = hoveredWire->to.field;
+            consumed = true;
+        } else if (inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !link.active && !drag.active) {
+            chosenWireRow = {};
+            chosenWireField.clear();
+        }
+        if (!io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+            chosenWireRow = {};
+        V::focusWires(hoveredWire ? hoveredWire->to.row : RowId{}, hoveredWire ? hoveredWire->to.field : "", chosenWireRow, chosenWireField);
+        for (const auto& wire : view.wires) {
+            const bool emphasized = &wire == hoveredWire || (wire.to.row == chosenWireRow && wire.to.field == chosenWireField);
+            auto dot = [&](float px, float py, const std::string& field) {
+                const auto center = at(px, py);
+                const float radius = emphasized ? 6 : 5;
+                list->AddCircleFilled(center, radius + 2, IM_COL32(17, 25, 34, 245));
+                list->AddCircleFilled(center, radius, P::switchColor(field));
+                list->AddCircle(center, radius, IM_COL32(255, 255, 255, 230), 20, 1);
+            };
+            if (wire.fromVisible)
+                dot(wire.fromX, wire.fromY, wire.from.field);
+            if (wire.toVisible)
+                dot(wire.toX, wire.toY, wire.to.field);
+            if (emphasized && wire.midpointVisible) {
+                const std::string label =
+                    wire.from.field + " -> " + wire.to.field + "  #" + std::to_string(wire.from.id) + (wire.from.id >= 1000 ? " (galaxy)" : "");
+                const auto size = ImGui::CalcTextSize(label.c_str());
+                auto center = at(wire.x, wire.y);
+                const ImVec2 origin(std::clamp(center.x - size.x / 2 - 7, x + 4, std::max(x + 4, x + width - size.x - 18)),
+                                    std::clamp(center.y - size.y - 17, y + 4, std::max(y + 4, y + height - size.y - 14)));
+                const ImVec2 end(origin.x + size.x + 14, origin.y + size.y + 10);
+                list->AddRectFilled(origin, end, IM_COL32(17, 25, 34, 245), 5);
+                list->AddRect(origin, end, P::switchColor(wire.to.field), 5);
+                list->AddText(ImVec2(origin.x + 7, origin.y + 5), IM_COL32(245, 248, 255, 255), label.c_str());
             }
         }
         if (!link.active && !drag.active && inside && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !consumed) {

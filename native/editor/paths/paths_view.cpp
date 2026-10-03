@@ -6,6 +6,8 @@ namespace PetariEditor::PathsView {
         Input pending;
         Visibility shown = Visibility::Selection;
         bool pathLink = false;
+        RowId hoveredWire, selectedWire;
+        std::string hoveredField, selectedField;
     }  // namespace
     void publish(View value) {
         snapshot = std::move(value);
@@ -20,6 +22,15 @@ namespace PetariEditor::PathsView {
         Input out = pending;
         pending = {};
         return out;
+    }
+    void focusWires(RowId hovered, std::string hoverField, RowId selected, std::string selectionField) {
+        hoveredWire = hovered;
+        hoveredField = std::move(hoverField);
+        selectedWire = selected;
+        selectedField = std::move(selectionField);
+    }
+    bool wireFocused(const Paths::Socket& socket) {
+        return (socket.row == hoveredWire && socket.field == hoveredField) || (socket.row == selectedWire && socket.field == selectedField);
     }
     void setVisibility(Visibility value) {
         shown = value;
