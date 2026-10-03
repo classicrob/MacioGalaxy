@@ -387,6 +387,11 @@ void drawBrowser(const ModelView& model) {
                 ImGui::TextUnformatted(entry.description.c_str());
                 ImGui::PopTextWrapPos();
             }
+            // Friction #8: how big it is and how it sits on the ground under the cursor.
+            if (const auto* info = Catalog::find(entry.className.c_str()); info && info->hasCollisionBox) {
+                ImGui::TextDisabled("%s · %s", collisionSize(*info, entry.presetScale).c_str(),
+                                    collisionAnchor(*info, entry.presetScale[0]).c_str());
+            }
             ImGui::EndTooltip();
         }
     }
@@ -406,6 +411,11 @@ void drawBrowser(const ModelView& model) {
         }
         if (!selected->description.empty()) ImGui::TextWrapped("%s", selected->description.c_str());
         ImGui::TextDisabled("%s  ·  %d in this galaxy", selected->category.c_str(), selected->count);
+        if (const auto* info = Catalog::find(selected->className.c_str()); info && info->hasCollisionBox) {
+            ImGui::TextDisabled("%s  ·  %s", collisionSize(*info, selected->presetScale).c_str(),
+                                collisionAnchor(*info, selected->presetScale[0]).c_str());  // friction #8
+            noteTestTarget("text:card collision");
+        }
         if (selected->examples.empty() || !selected->presetArgs.empty()) {
             // A new one from the catalog (EP-005): its table, defaults and preset; nothing to copy.
             ImGui::TextDisabled(selected->presetArgs.empty() ? "Not in this galaxy yet: Place adds a new one with the catalog's settings."

@@ -227,6 +227,25 @@ void testPanelsLogic() {
         CHECK(Ui::countChecks({}).errors == 0 && Ui::orderChecks({}).empty());
     }
 
+    // Friction #8: collision size and anchor in words, at scale_x (the game's one collision scale).
+    {
+        PetariEditor::Catalog::ClassInfo block;
+        CHECK(Ui::collisionSize(block, {1, 1, 1}).empty() && Ui::collisionAnchor(block, 1).empty());
+        block.hasCollisionBox = true;
+        block.collisionBox = {-74.5f, 0.5f, -74.5f, 74.5f, 149.5f, 74.5f};  // StrongBlock: a 150 cube on its point
+        CHECK(Ui::collisionSize(block, {1, 1, 1}) == "Collision 149 x 149 x 149");
+        CHECK(Ui::collisionSize(block, {3, 1, 3}) == "Collision ~447 x 447 x 447");  // uneven: collides at X
+        CHECK(Ui::collisionAnchor(block, 1) == "stands on its point" && Ui::collisionAnchor(block, 3) == "stands on its point");
+        CHECK(Ui::collisionTop(block, 3) == "top 448 above its point");
+        PetariEditor::Catalog::ClassInfo ball = block;
+        ball.collisionBox = {-50, -50, -50, 50, 50, 50};
+        CHECK(Ui::collisionAnchor(ball, 1) == "centred on its point");
+        ball.collisionBox = {-50, -80, -50, 50, 20, 50};
+        CHECK(Ui::collisionAnchor(ball, 1) == "reaches 80 below its point");
+        ball.collisionBox = {-5, 20, -5, 5, 30, 5};
+        CHECK(Ui::collisionAnchor(ball, 1) == "floats 20 above its point" && Ui::collisionSize(ball, {1, 1, 1}) == "Collision 10 x 10 x 10");
+    }
+
     // Named settings in words: enum labels (including a named -1), on/off, numbers with units, "default".
     {
         PetariEditor::Catalog::Arg walk;

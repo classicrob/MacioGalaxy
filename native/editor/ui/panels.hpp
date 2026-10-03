@@ -80,6 +80,14 @@ std::string cellText(const Cell& cell);
 // A named setting's value in words: the enum's label, "on"/"off", or the number with its unit; -1 is "default"
 // unless the enum names it.
 std::string argValueText(const Catalog::Arg& arg, std::int32_t value);
+// Friction #8: a class's collision box (Catalog collisionBox) at a row's scale. The game collides at one scale on
+// every axis, scale_x (approximate when the scales differ). Empty when the box is unknown.
+//   collisionSize: "Collision 150 x 150 x 150" ("Collision ~450 x 450 x 450" when uneven)
+//   collisionAnchor: "stands on its point", "centred on its point", "reaches 40 below its point", "floats 20 above its point"
+//   collisionTop: "top 149.5 above its point" (height of the box's top over the point, along the object's up)
+std::string collisionSize(const Catalog::ClassInfo& info, const std::array< float, 3 >& scale);
+std::string collisionAnchor(const Catalog::ClassInfo& info, float scaleX);
+std::string collisionTop(const Catalog::ClassInfo& info, float scaleX);
 // The field's label: its known name, else its hash as 0x%08x.
 std::string columnLabel(const Column& column);
 

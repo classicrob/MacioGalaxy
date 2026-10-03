@@ -836,6 +836,41 @@ std::string missionLabel(const ModelView& model, int mission) {
     return name != nullptr && name[0] != '\0' ? std::string(name) : "Mission " + std::to_string(mission);
 }
 
+namespace {
+// A length for people: whole units, or one decimal under 10.
+std::string lengthText(float value) {
+    char text[32];
+    std::snprintf(text, sizeof(text), std::fabs(value) < 9.95f ? "%.1f" : "%.0f", value);
+    return text;
+}
+}  // namespace
+
+std::string collisionSize(const Catalog::ClassInfo& info, const std::array< float, 3 >& scale) {
+    if (!info.hasCollisionBox) return {};
+    const auto& box = info.collisionBox;
+    const bool uneven = std::fabs(scale[0] - scale[1]) > 1e-3f || std::fabs(scale[0] - scale[2]) > 1e-3f;
+    const float s = std::fabs(scale[0]);
+    return std::string("Collision ") + (uneven ? "~" : "") + lengthText((box[3] - box[0]) * s) + " x " + lengthText((box[4] - box[1]) * s) +
+           " x " + lengthText((box[5] - box[2]) * s);
+}
+
+std::string collisionAnchor(const Catalog::ClassInfo& info, float scaleX) {
+    if (!info.hasCollisionBox) return {};
+    const float s = std::fabs(scaleX);
+    const float bottom = info.collisionBox[1] * s, top = info.collisionBox[4] * s;
+    const float tolerance = std::max(2.0f * s, (top - bottom) * 0.02f);
+    if (std::fabs(bottom) <= tolerance) return "stands on its point";
+    if (bottom > 0) return "floats " + lengthText(bottom) + " above its point";
+    if (std::fabs(bottom + top) <= (top - bottom) * 0.1f) return "centred on its point";
+    return "reaches " + lengthText(-bottom) + " below its point";
+}
+
+std::string collisionTop(const Catalog::ClassInfo& info, float scaleX) {
+    if (!info.hasCollisionBox) return {};
+    const float top = info.collisionBox[4] * std::fabs(scaleX);
+    return top >= 0 ? "top " + lengthText(top) + " above its point" : "top " + lengthText(-top) + " below its point";
+}
+
 std::string argValueText(const Catalog::Arg& arg, std::int32_t value) {
     for (const Catalog::EnumChoice& choice : arg.choices) {
         if (choice.value == value) return choice.label;
@@ -1120,6 +1155,20 @@ void drawInspectorWindow(const char* title) {
                 transformRow(*model, rows, "Position", "pos_", 1.0f);
                 transformRow(*model, rows, "Rotation", "dir_", 0.5f);
                 transformRow(*model, rows, "Scale", "scale_", 0.01f);
+                // Friction #8: the collision's size and where it sits on the point (the viewport draws its box).
+                const char* className = rows.size() == 1 ? model->objectName(primary) : nullptr;
+                if (const auto* info = className ? Catalog::find(className) : nullptr; info && info->hasCollisionBox) {
+                    const RowTransform t = model->transform(primary);
+                    const std::array< float, 3 > scale{t.scale.x, t.scale.y, t.scale.z};
+                    ImGui::TextColored(kDim, "%s", collisionSize(*info, scale).c_str());
+                    if (ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("%s", collisionSize(*info, scale).find('~') != std::string::npos ?
+                                                    "The scales differ, but the game collides at the X scale on every axis." :
+                                                    "The box the object's collision fills (drawn in the viewport).");
+                    }
+                    ImGui::TextColored(kDim, "%s · %s", collisionAnchor(*info, t.scale.x).c_str(), collisionTop(*info, t.scale.x).c_str());
+                    noteTestTarget("text:collision");
+                }
             }
             drawArrayInspector(*model, rows);    // Array: one preview and one compound commit.
             drawPlaytestInspector(rows);  // M3 play-test: Keep and its disabled reason.

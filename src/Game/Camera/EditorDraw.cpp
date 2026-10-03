@@ -10,6 +10,7 @@
 #include "Game/LiveActor/LiveActor.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
+#include "Game/Util/MtxUtil.hpp"
 #include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include <JSystem/J3DGraphAnimator/J3DModel.hpp>
@@ -27,6 +28,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <petari/editor/array.hpp>
+#include <petari/editor/catalog.hpp>
+#include <petari/editor/debug_draw.hpp>
+#include <petari/editor/edit_api.hpp>
 #include <petari/host_allocation.hpp>
 #include <petari/j3d_overrides.hpp>
 
@@ -175,6 +179,37 @@ namespace {
         setupFlat(visible, GX_LEQUAL);
         drawShapes(actor);
     }
+    // Friction #8: the single selection's collision box (Catalog collisionBox, from the disc's KCL) as a wire box at
+    // the object's transform. The game collides at one scale on every axis: scale_x, as the playtester saw.
+    void drawCollisionBox() {
+        if (EditorPicking::selectedCount() != 1) return;
+        LiveActor* actor = EditorPicking::selectedAt(0);
+        const auto* m = PetariEditor::model();
+        if (actor == nullptr || m == nullptr) return;
+        const char* name = m->objectName(PetariEditor::RowId{EditorPicking::selectedRowAt(0)});
+        const auto* info = name != nullptr ? PetariEditor::Catalog::find(name) : nullptr;
+        if (info == nullptr || !info->hasCollisionBox) return;
+        Mtx mtx;
+        MR::makeMtxTR(mtx, actor);
+        const float s = std::fabs(actor->mScale.x);
+        const auto& box = info->collisionBox;
+        PetariEditor::Vec3 corners[8];
+        for (int i = 0; i < 8; i++) {
+            Vec local{box[i & 1 ? 3 : 0] * s, box[i & 2 ? 4 : 1] * s, box[i & 4 ? 5 : 2] * s}, world;
+            PSMTXMultVec(mtx, &local, &world);
+            corners[i] = {world.x, world.y, world.z};
+        }
+        static PetariEditor::DebugDraw::Mesh mesh;
+        {
+            PetariNative::HostAllocationScope host;
+            mesh.lines.clear();
+            constexpr std::uint32_t kMint = 0xffb0f07c;  // ABGR
+            for (int i = 0; i < 8; i++)
+                for (int axis = 1; axis < 8; axis <<= 1)
+                    if (!(i & axis)) mesh.lines.push_back({corners[i], corners[i | axis], kMint, 1.5f});
+        }
+        PetariEditor::DebugDraw::draw(mesh, 0.25f);  // hidden edges faint, so the part inside the ground still reads
+    }
 }  // namespace
 
 namespace EditorDraw {
@@ -238,6 +273,7 @@ namespace EditorDraw {
         EditorGravity::draw();  // M3 gravity: translucent fields before restoring GX.
         EditorAreas::draw();  // M3 areas: shared depth-tested volumes.
         EditorPaths::draw();  // M3 paths: depth-tested rails and wires.
+        drawCollisionBox();     // friction #8: the selection's collision box.
         // Leave the state as the game's own draw passes expect it.
         GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
         GXSetAlphaUpdate(GX_FALSE);
