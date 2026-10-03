@@ -325,7 +325,7 @@ void testPathInputCapture() {
 void testMissionInput() {
     namespace Ui = PetariEditor::Ui;
     struct MissionModel : FakeModel {
-        bool splitLayers = true, mixedRows = false;
+        bool splitLayers = true, mixedRows = false, matchingRows = false;
         std::uint64_t version = 1;
         MissionModel() {
             cols.push_back({columnHash("l_id"), "l_id", CellType::Int});
@@ -340,10 +340,14 @@ void testMissionInput() {
         std::uint32_t activeLayers(int, int mission) const override {
             return splitLayers ? (mission == 1 ? 3u : 5u) : 7u;
         }
-        std::uint32_t rowMissions(RowId row) const override { return mixedRows && row == RowId{3} ? 1u : 3u; }
+        std::uint32_t rowMissions(RowId row) const override {
+            if (matchingRows) return row == RowId{3} ? 2u : 1u;
+            return mixedRows && row == RowId{3} ? 1u : 3u;
+        }
         bool locate(RowId row, int* zone, int* table) const override {
             if (!FakeModel::locate(row, zone, table)) return false;
-            if (table && mixedRows && row == RowId{3}) *table = 1;
+            if (table && matchingRows) *table = row == RowId{3} ? 2 : 1;
+            else if (table && mixedRows && row == RowId{3}) *table = 1;
             return true;
         }
         int tableCount(int) const override { return 3; }
@@ -352,7 +356,7 @@ void testMissionInput() {
         }
         void forEachRow(int zone, int table, const std::function<void(RowId)>& fn) const override {
             FakeModel::forEachRow(zone, table, [&](RowId row) {
-                const int rowTable = mixedRows && row == RowId{3} ? 1 : 0;
+                const int rowTable = matchingRows ? (row == RowId{3} ? 2 : 1) : mixedRows && row == RowId{3} ? 1 : 0;
                 if (table == rowTable) fn(row);
             });
         }
@@ -420,6 +424,19 @@ void testMissionInput() {
     click("button:Apply missions");
     CHECK(Core::drainCommands().empty());
     CHECK(Ui::helpText().find("at least one mission") != std::string::npos);
+    model.matchingRows = true;
+    model.rows[2].now = model.rows[0].now;  // Same object split between layer A and layer B.
+    ++model.version;
+    selection = {RowId{1}};
+    draw();
+    click("mission-chip:2");  // Logical membership includes the unselected sibling; turn mission 2 off.
+    click("button:Apply missions");
+    commands = Core::drainCommands();
+    CHECK(commands.size() == 1);
+    if (commands.size() == 1) {
+        CHECK(commands[0].op.adds.empty());
+        CHECK(commands[0].op.deletes == std::vector<RowId>{RowId{3}});
+    }
     PetariNative::EditorPick::takeSelectRows();
     Core::setModel(nullptr);
 }

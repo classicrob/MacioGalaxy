@@ -122,9 +122,16 @@ namespace PetariEditor::Runtime {
         }
         if (f == 60) {
             auto* actor = actorForRow(moved);
-            if (m.historyCursor() != cursor + 1 || m.rowMissions(moved) != repairMask || m.locate(common, nullptr, nullptr) || !sameCells(moved) ||
-                capacityError() || !actor || MR::isDead(actor) || !MR::isDead(oldActor) || EditorScene::isConnectedToDraw(oldActor))
+            if (m.historyCursor() != cursor + 1 || m.rowMissions(moved) != repairMask || m.state(common) != RowState::Deleted || !sameCells(moved) ||
+                capacityError() || !actor || MR::isDead(actor) || !MR::isDead(oldActor) || EditorScene::isConnectedToDraw(oldActor)) {
+                std::fprintf(
+                    stderr,
+                    "[editor-missions] repair detail history=%d/%d mask=%u/%u oldState=%d cells=%d cap=%d actor=%p alive=%d oldDead=%d oldDraw=%d\n",
+                    m.historyCursor(), cursor + 1, m.rowMissions(moved), repairMask, static_cast< int >(m.state(common)), sameCells(moved),
+                    capacityError(), static_cast< void* >(actor), actor && !MR::isDead(actor), MR::isDead(oldActor),
+                    EditorScene::isConnectedToDraw(oldActor));
                 return finish("FAIL: mission repair move did not preserve cells/identity, retire old actor, or clear capacity");
+            }
             if (Hooks::sceneSerial() != serial)
                 return finish("FAIL: mission edit reloaded the scene");
             std::fprintf(stderr, "[editor-missions] one-step move preserves all cells and l_id; old actor retired; mission 2 error cleared PASS\n");
@@ -189,7 +196,7 @@ namespace PetariEditor::Runtime {
         if (f == 175) {
             int remaining = 0;
             for (const auto row : split)
-                remaining += m.locate(row, nullptr, nullptr);
+                remaining += m.locate(row, nullptr, nullptr) && m.state(row) != RowState::Deleted;
             if (remaining != 1 || m.historyCursor() != cursor + 3 || !sameCells(moved) || m.rowMissions(moved) != repairMask || capacityError())
                 return finish("FAIL: selecting one split row did not coalesce its matching sibling");
             enqueue(Command{Command::Kind::Undo});
