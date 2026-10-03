@@ -859,6 +859,7 @@ int main(int argc, char** argv) {
     if (!PetariEditor::Ui::installFonts(SDL_GetWindowDisplayScale(static_cast<SDL_Window*>(info.window)))) {
         std::fprintf(stderr, "petari: editor panels use the built-in font (no system UI font)\n");
     }
+    PetariEditor::Ui::setSettingsFile((paths.user / "editor" / "ui-settings.txt").string().c_str());
     PetariEditor::Ui::setThumbnailHost(
         [](const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height) {
             return petari_present_take_readback(copy, rgba, capacity, width, height);
