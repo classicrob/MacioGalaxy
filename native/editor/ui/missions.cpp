@@ -5,6 +5,7 @@
 #include <petari/editor_pick.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 
 namespace PetariEditor::Ui {
@@ -13,7 +14,8 @@ namespace PetariEditor::Ui {
             const ModelView* model = nullptr;
             std::uint64_t revision = 0;
             std::vector< RowId > rows;
-            std::uint32_t mask = 0, original = 0;
+            std::uint32_t mask = 0, original = 0, touched = 0;
+            std::array< size_t, 32 > members{};
             bool changed = false, mixed = false;
             std::string error;
         } gDraft;
@@ -32,6 +34,8 @@ namespace PetariEditor::Ui {
             for (const auto row : rows) {
                 const auto mask = model.rowMissions(row);
                 gDraft.mask |= mask;
+                for (int bit = 0; bit < count; ++bit)
+                    gDraft.members[bit] += (mask & (1u << bit)) != 0;
                 gDraft.mixed |= mask != first;
             }
             gDraft.original = gDraft.mask;
@@ -43,29 +47,42 @@ namespace PetariEditor::Ui {
         for (int mission = 1; mission <= count; ++mission) {
             const std::uint32_t bit = 1u << (mission - 1);
             const bool included = (gDraft.mask & bit) != 0;
+            const bool partial = gDraft.members[mission - 1] > 0 && gDraft.members[mission - 1] < rows.size();
+            const bool showPartial = partial && !(gDraft.touched & bit);
             const float chipWidth = ImGui::CalcTextSize(std::to_string(mission).c_str()).x + ImGui::GetStyle().FramePadding.x * 2;
             if (mission > 1 && used + chipWidth + 4 <= width)
                 ImGui::SameLine(0, 4);
             else
                 used = 0;
             used += chipWidth + 4;
-            ImGui::PushStyleColor(ImGuiCol_Button, included ? ImVec4(.98f, .80f, .22f, .80f) : ImVec4(1, 1, 1, .06f));
-            ImGui::PushStyleColor(ImGuiCol_Text, included ? ImVec4(.30f, .17f, .02f, 1) : ImVec4(.65f, .78f, .83f, 1));
+            ImGui::PushStyleColor(ImGuiCol_Button, showPartial ? ImVec4(.98f, .80f, .22f, .30f) :
+                                                   included    ? ImVec4(.98f, .80f, .22f, .80f) :
+                                                                 ImVec4(1, 1, 1, .06f));
+            ImGui::PushStyleColor(ImGuiCol_Text, included && !showPartial ? ImVec4(.30f, .17f, .02f, 1) : ImVec4(.65f, .78f, .83f, 1));
             char label[32];
             std::snprintf(label, sizeof(label), "%d##mission", mission);
             ImGui::PushID(mission);
             if (ImGui::SmallButton(label)) {
                 gDraft.mask ^= bit;
+                gDraft.touched |= bit;
                 gDraft.changed = gDraft.mask != gDraft.original || gDraft.mixed;
                 gDraft.error.clear();
             }
             ImGui::PopStyleColor(2);
+            if (((gDraft.mask ^ gDraft.original) & bit) || (partial && (gDraft.touched & bit)))
+                ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), IM_COL32(250, 204, 56, 255),
+                                                    ImGui::GetStyle().FrameRounding, 0, 1.0f);
             char target[40];
             std::snprintf(target, sizeof(target), "mission-chip:%d", mission);
             noteTestTarget(target);
             if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("%s: %s. Apply commits the whole membership change.", missionLabel(model, mission).c_str(),
-                                  included ? "included" : "excluded");
+                if (rows.size() > 1)
+                    ImGui::SetTooltip("%s: currently in %zu of %zu selected objects.\nApply will %s this mission for all selected objects.",
+                                      missionLabel(model, mission).c_str(), gDraft.members[mission - 1], rows.size(),
+                                      included ? "include" : "exclude");
+                else
+                    ImGui::SetTooltip("%s: %s. Apply commits the whole membership change.", missionLabel(model, mission).c_str(),
+                                      included ? "included" : "excluded");
                 helpText() = "Choose the missions, then Apply. This changes only the selected objects and is one undo step.";
             }
             ImGui::PopID();
@@ -95,7 +112,7 @@ namespace PetariEditor::Ui {
         if (ImGui::IsItemHovered())
             helpText() = "Move these objects to the current mission in one undo step. Other missions keep their existing objects.";
         ImGui::EndDisabled();
-        ImGui::BeginDisabled(!gDraft.changed);
+        ImGui::BeginDisabled(!gDraft.changed && !gDraft.mixed);
         const std::string applyLabel = rows.size() > 1 ? "Apply to " + std::to_string(rows.size()) + " selected objects" : "Apply";
         if (ImGui::SmallButton(applyLabel.c_str()))
             commit(gDraft.mask);
@@ -103,6 +120,7 @@ namespace PetariEditor::Ui {
         ImGui::SameLine();
         if (ImGui::SmallButton("Cancel")) {
             gDraft.mask = gDraft.original;
+            gDraft.touched = 0;
             gDraft.changed = false;
             gDraft.error.clear();
         }

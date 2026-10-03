@@ -323,7 +323,7 @@ void testPathInputCapture() {
 void testMissionInput() {
     namespace Ui = PetariEditor::Ui;
     struct MissionModel : FakeModel {
-        bool splitLayers = true;
+        bool splitLayers = true, mixedRows = false;
         std::uint64_t version = 1;
         MissionModel() {
             cols.push_back({columnHash("l_id"), "l_id", CellType::Int});
@@ -338,25 +338,34 @@ void testMissionInput() {
         std::uint32_t activeLayers(int, int mission) const override {
             return splitLayers ? (mission == 1 ? 3u : 5u) : 7u;
         }
-        std::uint32_t rowMissions(RowId) const override { return 3; }
+        std::uint32_t rowMissions(RowId row) const override { return mixedRows && row == RowId{3} ? 1u : 3u; }
+        bool locate(RowId row, int* zone, int* table) const override {
+            if (!FakeModel::locate(row, zone, table)) return false;
+            if (table && mixedRows && row == RowId{3}) *table = 1;
+            return true;
+        }
         int tableCount(int) const override { return 3; }
         const char* tablePath(int, int table) const override {
             return table == 0 ? "jmp/placement/common/objinfo" : table == 1 ? "jmp/placement/layera/objinfo" : "jmp/placement/layerb/objinfo";
         }
         void forEachRow(int zone, int table, const std::function<void(RowId)>& fn) const override {
-            if (table == 0) FakeModel::forEachRow(zone, table, fn);
+            FakeModel::forEachRow(zone, table, [&](RowId row) {
+                const int rowTable = mixedRows && row == RowId{3} ? 1 : 0;
+                if (table == rowTable) fn(row);
+            });
         }
     } model;
     Core::setModel(&model);
     Core::drainCommands();
     auto& io = ImGui::GetIO();
     io.DisplaySize = ImVec2(800, 600);
+    std::vector<RowId> selection{RowId{1}};
     auto draw = [&]() {
         ImGui::NewFrame();
         ImGui::SetNextWindowPos(ImVec2(20, 20));
         ImGui::SetNextWindowSize(ImVec2(360, 420));
         ImGui::Begin("Mission test", nullptr, ImGuiWindowFlags_NoSavedSettings);
-        Ui::drawMissionsInspector(model, {RowId{1}});
+        Ui::drawMissionsInspector(model, selection);
         ImGui::End();
         ImGui::Render();
     };
@@ -396,6 +405,14 @@ void testMissionInput() {
     click("button:Only this mission");
     CHECK(Core::drainCommands().empty());  // An impossible mask is explained without changing rows.
     CHECK(Ui::helpText().find("TestGalaxy") != std::string::npos);
+    model.splitLayers = model.mixedRows = true;
+    ++model.version;
+    selection = {RowId{1}, RowId{3}};
+    draw();
+    click("button:Cancel missions");
+    CHECK(Core::drainCommands().empty());
+    click("button:Apply missions");
+    CHECK(Core::drainCommands().size() == 1);  // A mixed union can be applied without toggling a chip.
     PetariNative::EditorPick::takeSelectRows();
     Core::setModel(nullptr);
 }
