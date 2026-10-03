@@ -304,7 +304,6 @@ void testChecks() {
     const E::Check* path = find(checks, "dangling-path:");
     check(path && path->severity == E::Severity::Error && path->rows.front() == kuribo && !path->fix.sets.empty(),
           "a path that doesn't exist, with an unlink fix");
-    check(find(checks, "switch-alone:") != nullptr, "a switch only one row uses");
     check(find(checks, "duplicate-lid:") != nullptr, "duplicate link ids");
     check(checks.front().severity == E::Severity::Error, "errors first");
     check(m->apply(path->fix, &error) && !find(E::computeChecks(*m), "dangling-path:"), "the fix clears it");

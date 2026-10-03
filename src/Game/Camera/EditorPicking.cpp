@@ -11,7 +11,9 @@
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/MapUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
+#include <petari/editor/debug_draw.hpp>
 #include <petari/editor/edit_api.hpp>
+#include <petari/editor/paths.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/host_allocation.hpp>
 
@@ -160,14 +162,15 @@ namespace {
         return name.empty() ? "Object" : name;
     }
 
-    Pick::Item item(LiveActor* actor, V center, float radius, const EditorPicking::View& view) {
+    Pick::Item item(LiveActor* actor, V center, float radius, const EditorPicking::View& view, PetariEditor::RowId row = {}) {
         Pick::Item out;
         out.actor = reinterpret_cast< std::uintptr_t >(actor);
-        const PetariEditor::RowId row = PetariEditor::rowForActor(actor);
+        if (!row.valid())
+            row = PetariEditor::rowForActor(actor);
         out.row = row.v;
         const char* name = nullptr;
         if (row.valid() && PetariEditor::model() != nullptr) name = PetariEditor::model()->objectName(row);
-        const std::string fallback = name == nullptr ? className(actor) : std::string();
+        const std::string fallback = name == nullptr ? (actor ? className(actor) : "Path point") : std::string();
         std::snprintf(out.name, sizeof(out.name), "%s", name != nullptr ? name : fallback.c_str());
         out.center[0] = center.x;
         out.center[1] = center.y;
@@ -206,6 +209,41 @@ namespace {
         }
         return hit;
     }
+    // M3: actorless table rows (paths, points, fields) remain first-class selections.
+    bool selectableRow(PetariEditor::RowId row) {
+        const auto* m = PetariEditor::model();
+        return m && row.valid() && m->locate(row, nullptr, nullptr) && m->state(row) != PetariEditor::RowState::Deleted;
+    }
+    Hit describeRow(PetariEditor::RowId row) {
+        namespace D = PetariEditor::DebugDraw;
+        const auto* m = PetariEditor::model();
+        Hit hit;
+        hit.radius = 35;
+        int zone = 0;
+        if (!m || !m->locate(row, &zone, nullptr))
+            return hit;
+        const auto matrix = m->zoneWorldMatrix(zone);
+        auto center = D::transform(matrix, m->transform(row).pos);
+        if (const auto* x = m->cell(row, PetariEditor::columnHash("pnt0_x"))) {
+            const auto* y = m->cell(row, PetariEditor::columnHash("pnt0_y"));
+            const auto* z = m->cell(row, PetariEditor::columnHash("pnt0_z"));
+            center = D::transform(matrix, {x->f, y ? y->f : 0, z ? z->f : 0});
+        } else {
+            for (const auto& rail : PetariEditor::Paths::collect(*m))
+                if (rail.row == row && !rail.points.empty()) {
+                    auto lo = rail.points.front().position, hi = lo;
+                    for (const auto& p : rail.points) {
+                        lo = {std::min(lo.x, p.position.x), std::min(lo.y, p.position.y), std::min(lo.z, p.position.z)};
+                        hi = {std::max(hi.x, p.position.x), std::max(hi.y, p.position.y), std::max(hi.z, p.position.z)};
+                    }
+                    center = D::transform(matrix, {(lo.x + hi.x) / 2, (lo.y + hi.y) / 2, (lo.z + hi.z) / 2});
+                    hit.radius = std::max(35.0f, PetariEditor::Gizmo::length(D::vector(hi) - D::vector(lo)) * 0.5f);
+                }
+        }
+        hit.center = {center.x, center.y, center.z};
+        return hit;
+    }
+
 }  // namespace
 
 namespace EditorPicking {
@@ -224,8 +262,8 @@ namespace EditorPicking {
             selectedRows().clear();
             for (PetariEditor::RowId row : kept) {
                 LiveActor* actor = PetariEditor::actorForRow(row);
-                if (pickable(actor)) {
-                    selection.push_back(actor);
+                if (pickable(actor) || selectableRow(row)) {
+                    selection.push_back(pickable(actor) ? actor : nullptr);
                     selectedRows().push_back(row);
                 }
             }
@@ -239,7 +277,9 @@ namespace EditorPicking {
                 LiveActor* again = PetariEditor::actorForRow(rows[i]);
                 if (pickable(again)) selection[i] = again;
             }
-            if (pickable(selection[i])) {
+            if (pickable(selection[i]) || selectableRow(rows[i])) {
+                if (!pickable(selection[i]))
+                    selection[i] = nullptr;
                 i++;
             } else {
                 selection.erase(selection.begin() + static_cast< long >(i));
@@ -294,13 +334,22 @@ namespace EditorPicking {
         while (!sPending->empty()) {
             const Pick::RowRequest request = sPending->front();
             LiveActor* actor = PetariEditor::actorForRow(PetariEditor::RowId{request.row});
-            if (!pickable(actor)) {
+            if (!pickable(actor) && !selectableRow(PetariEditor::RowId{request.row})) {
                 if (--sPendingFrames <= 0) sPending->clear();  // never appeared (a refused op)
                 break;
             }
-            if (request.mode == Pick::Click::Replace) selection.clear();
-            if (std::find(selection.begin(), selection.end(), actor) == selection.end()) selection.push_back(actor);
-            syncRows(selection);
+            if (request.mode == Pick::Click::Replace) {
+                selection.clear();
+                rows.clear();
+            }
+            const auto at = std::find(rows.begin(), rows.end(), PetariEditor::RowId{request.row});
+            if (at == rows.end()) {
+                selection.push_back(pickable(actor) ? actor : nullptr);
+                rows.push_back({request.row});
+            } else if (request.mode == Pick::Click::Toggle) {
+                selection.erase(selection.begin() + (at - rows.begin()));
+                rows.erase(at);
+            }
             sPending->erase(sPending->begin());
         }
 
@@ -315,23 +364,29 @@ namespace EditorPicking {
             const bool already = at != selection.end();
             if (click == Pick::Click::Replace) {
                 selection.clear();
-                if (under.actor != nullptr) selection.push_back(under.actor);
+                rows.clear();
+                if (under.actor != nullptr) {
+                    selection.push_back(under.actor);
+                    rows.push_back(PetariEditor::rowForActor(under.actor));
+                }
             } else if (under.actor != nullptr) {
                 if (click == Pick::Click::Toggle && already) {
+                    rows.erase(rows.begin() + (at - selection.begin()));
                     selection.erase(at);
                 } else if (!already) {
                     selection.push_back(under.actor);
+                    rows.push_back(PetariEditor::rowForActor(under.actor));
                 }
             }
-            syncRows(selection);
             std::fprintf(stderr, "[editor] select: %d object(s)%s\n", static_cast< int >(selection.size()),
                          under.actor != nullptr ? "" : " (nothing under the cursor)");
         }
 
         std::vector< Pick::Item > published;
-        for (LiveActor* actor : selection) {
-            const Hit h = describe(actor);
-            published.push_back(item(actor, h.center, h.radius, view));
+        for (std::size_t i = 0; i < selection.size(); ++i) {
+            LiveActor* actor = selection[i];
+            const Hit h = actor ? describe(actor) : describeRow(rows[i]);
+            published.push_back(item(actor, h.center, h.radius, view, rows[i]));
         }
         if (wantHover && under.actor != nullptr) {
             const Pick::Item hover = item(under.actor, under.center, under.radius, view);
@@ -344,9 +399,11 @@ namespace EditorPicking {
     bool selectionBounds(float center[3], float* radius) {
         if (gSelected == nullptr || gSelected->empty()) return false;
         V lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
-        for (LiveActor* actor : *gSelected) {
-            if (!pickable(actor)) continue;
-            const Hit h = describe(actor);
+        for (std::size_t i = 0; i < gSelected->size(); ++i) {
+            LiveActor* actor = (*gSelected)[i];
+            if (!pickable(actor) && (i >= selectedRows().size() || !selectableRow(selectedRows()[i])))
+                continue;
+            const Hit h = pickable(actor) ? describe(actor) : describeRow(selectedRows()[i]);
             lo = {std::fmin(lo.x, h.center.x - h.radius), std::fmin(lo.y, h.center.y - h.radius), std::fmin(lo.z, h.center.z - h.radius)};
             hi = {std::fmax(hi.x, h.center.x + h.radius), std::fmax(hi.y, h.center.y + h.radius), std::fmax(hi.z, h.center.z + h.radius)};
         }

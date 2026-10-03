@@ -2,6 +2,8 @@
 #include "model_io.hpp"
 
 #include <petari/editor/catalog.hpp>
+#include <petari/editor/check_providers.hpp>
+#include <petari/editor/paths.hpp>
 #include <petari/editor/terrain/bake.hpp>
 #include <petari/platform/dvd.hpp>
 #include <revolution/dvd.h>
@@ -16,6 +18,12 @@ namespace PetariEditor::ModelIO {
 namespace fs = std::filesystem;
 
 namespace {
+    // The paths module's checks (switch nets, links), for every session in-game or headless.
+    void pathChecks(const ModelView& model, std::vector< Check >& out) {
+        std::vector< Check > checks = Paths::computeChecks(model);
+        out.insert(out.end(), checks.begin(), checks.end());
+    }
+
     // Written next to the target, then renamed over it, so a crash never leaves half a file.
     bool writeAtomically(const fs::path& path, const Formats::Bytes& bytes, std::string* pError) {
         std::error_code ec;
@@ -80,6 +88,7 @@ std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const
     if (registerClasses) {
         registerClasses();
     }
+    registerCheckProvider(&pathChecks);  // before the first computeChecks: part of the baseline
     // Planet classes: the names PlanetMapDataTable lists on this disc.
     if (std::optional< Formats::Bytes > raw = mounted("/ObjectData/PlanetMapDataTable.arc")) {
         if (std::optional< Formats::Archive > archive = Formats::Archive::parse(*raw)) {
