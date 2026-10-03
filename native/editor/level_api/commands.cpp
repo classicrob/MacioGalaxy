@@ -121,7 +121,7 @@ namespace {
              "like's)\nlayer    string  "
              "common (every mission, default) or a-p\nmissions [int]   pick the layer active in exactly these missions\nlike     ref     copy "
              "this row's settings (the "
-             "Browser's place)\npreset   string  a catalog preset's args\npath     ref     link to this path (a Launch Star's flight)\nas       "
+             "Browser's place)\npreset   string  a catalog preset's args\npath     ref     link to this path (a Launch Star's flight); the star then faces along it\nface_path bool   with path: face along its first segment (default: yes unless rot/up/front/turn is given)\nas       "
              "string  a label for later refs (\"@as\")\nforce    bool    allow a class the catalog "
              "doesn't know\n" +
                  edits,
@@ -173,7 +173,7 @@ namespace {
              S(R"({"type":"object","required":["op"],"properties":{"op":{"const":"delete-point"},"ref":{},"refs":{"type":"array"},"select":{"type":"object"}}})"),
              R"({"op":"delete-point","ref":"@mid"})", true},
             {"link", "Link objects to a path (their CommonPath_ID; Paths::linkPath: same zone, 2+ points); add takes \"path\" too",
-             "ref | refs | select  the objects\npath  ref  the path's row (\"@flight\")", Json::Value::object(),
+             "ref | refs | select  the objects\npath  ref  the path's row (\"@flight\")\nface_path  bool  also turn Launch/Sling Stars to face along it (default false here)", Json::Value::object(),
              R"({"op": "link", "ref": "@launch", "path": "@flight"})", true},
             {"set", "Change objects: transform, args, switches, links, raw fields (move/rotate/scale/transform are aliases)",
              "ref | refs | select  the rows (select may carry \"expect\": n)\n" + edits,

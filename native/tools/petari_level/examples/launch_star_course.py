@@ -20,6 +20,19 @@ from petari_level import Level  # noqa: E402
 ROOT = Path(__file__).resolve().parents[4]
 
 
+# This course is another way to mission 1's star (Star ID 1), so the duplicate-star warning for mission 1 is
+# expected (collecting either star counts as star 1). Any other problem is a real one.
+EXPECTED = ("duplicate-star:1:1",)
+
+
+def report_checks(lv):
+    checks = lv.checks()["checks"]
+    expected = [c for c in checks if c["key"].startswith(EXPECTED)]
+    unexpected = [c for c in checks if not c["key"].startswith(EXPECTED)]
+    print(json.dumps({"expected_warnings": [c["message"] for c in expected], "problems": unexpected}, indent=1))
+    return not unexpected
+
+
 def add(a, b, k=1.0):
     return [a[i] + b[i] * k for i in range(3)]
 
@@ -76,10 +89,11 @@ def main():
     result = lv.apply(course({"missions": [1]}), key="launch-course", label="Launch Star course")
     print(json.dumps({"created": [(o["ref"], o.get("label"), o["class"]) for o in result["created"]],
                       "checks_introduced": result["checks_introduced"]}, indent=1))
-    print(json.dumps(lv.checks(), indent=1))
+    clean = report_checks(lv)
     if args.save:
         print(json.dumps(lv.save("Launch Star Course"), indent=1))
     lv.close()
+    sys.exit(0 if clean else 1)
 
 
 if __name__ == "__main__":
