@@ -181,6 +181,11 @@ namespace EditorTerrain {
         if (mCollisionParts != nullptr) {
             MR::invalidateCollisionParts(this);
         }
+        // M6 import: visual-only parts have no collision.
+        if (pKcl == nullptr) {
+            mCollisionParts = nullptr;
+            return;
+        }
         // The new parts belong to the zone the part was placed in (CollisionParts::init reads the
         // current placement zone).
         MR::setCurrentPlacementZoneId(0);

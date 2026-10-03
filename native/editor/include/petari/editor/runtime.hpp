@@ -8,6 +8,10 @@
 class LiveActor;
 class JMapInfoIter;
 
+namespace PetariEditor {
+    class EditModel;
+}
+
 namespace PetariEditor::Runtime {
 
 /// GameScene::update, every frame, before the scene's nerves (CPU baton held). Loads the
@@ -36,6 +40,17 @@ bool playMarker(Vec3* position);
 /// thread. False: the editor is off, no stage is loaded, or the model couldn't load
 /// (status().lastError says why).
 bool ensureModel();
+
+// Generated geometry uses editor-owned parts instead of the game's placement factory.
+// beginScene forgets pointers to the previous scene; sync is called for active placement rows.
+// retire must tolerate unknown RowIds (undoing an add removes its identity from the model).
+struct GeneratedRowProvider {
+    bool (*owns)(const char* objectName) = nullptr;
+    void (*sync)(const EditModel& model, RowId row) = nullptr;
+    void (*retire)(RowId row) = nullptr;
+    void (*beginScene)() = nullptr;
+};
+void registerGeneratedRowProvider(GeneratedRowProvider provider);
 
 // ---- SceneSync extensions (M3: gravity, paths). Register once at start-up; game thread. ----------
 

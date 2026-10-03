@@ -84,6 +84,7 @@ struct ClassInfo {
     std::string liveRecreate;  // Own-row sweep: safe, suspect, unsafe; empty = not classified.
     bool keepable = false;     // the placed transform is the actor's (UX "Keep"); false for rail riders, children
     bool hasCollision = false;
+    bool bakesScale = false;  // generated geometry rebuilds collision at the row's full XYZ scale
     std::vector< std::string > archives;  // archives it loads (ObjectData/<name>.arc)
     std::string thumbnailArchive;  // the model to render for its thumbnail
     std::string thumbnailJoint;    // optional joint to frame
