@@ -72,6 +72,7 @@ namespace {
         return actor && typeOf(actor).find("GlobalGravityObj") != std::string::npos;
     }
     G::Shape shapeOf(PlanetGravity* g) {
+        PetariNative::HostAllocationScope host;
         std::string name = typeOf(g);
         if (name.find("DiskTorusGravity") != std::string::npos)
             return G::Shape::Torus;
@@ -236,6 +237,8 @@ namespace {
         return true;
     }
     void checksProvider(const ModelView&, std::vector< Check >& out) {
+        if (state().scene != Hooks::sceneSerial())
+            return;
         auto c = G::makeChecks(state().view);
         out.insert(out.end(), c.begin(), c.end());
     }
@@ -271,6 +274,7 @@ namespace {
         return true;
     }
     std::string bindingConfig(RowId row) {
+        PetariNative::HostAllocationScope host;
         if (!model())
             return {};
         int zone = 0, table = 0;

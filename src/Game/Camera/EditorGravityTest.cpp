@@ -3,6 +3,7 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Gravity.hpp"
 #include "Game/Util.hpp"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -14,6 +15,7 @@
 #include <petari/screenshot.hpp>
 #include <petari/smoke_phase.hpp>
 #include <string>
+#include <vector>
 
 namespace EditorGravity {
     void testTick(bool playable) {
@@ -23,6 +25,8 @@ namespace EditorGravity {
         static RowId row;
         static LiveActor* original = nullptr;
         static Vec3 before;
+        static std::vector< bool > active;
+        static LiveActor* atCap = nullptr;
         if (!test || step == 999)
             return;
         PetariNative::HostAllocationScope host;
@@ -70,6 +74,8 @@ namespace EditorGravity {
             frame = 0;
             return;
         }
+        if (step == 1 && frame == 10)
+            PetariNative::EditorSettings::frame();
         if (step == 1 && frame == 15) {
             Command c{Command::Kind::Preview};
             c.rows = {row};
@@ -82,7 +88,7 @@ namespace EditorGravity {
             bool moved = false;
             for (const auto& f : Gravity::view().fields)
                 if (f.row == row)
-                    moved = std::fabs(f.center.x - before.x) > 50 || std::fabs(f.center.z - before.z) > 50;
+                    moved = std::fabs(f.center.x - before.x) > 50 || std::fabs(f.center.y - before.y) > 50 || std::fabs(f.center.z - before.z) > 50;
             if (!moved)
                 return fail("Gizmo preview did not move the actual field");
             Command c{Command::Kind::EndPreview};
@@ -154,7 +160,64 @@ namespace EditorGravity {
             if (const char* shot = std::getenv("PETARI_EDITOR_GRAVITY_SHOT"))
                 PetariNative::Screenshot::request(shot);
         }
-        if (step == 1 && frame == 195) {
+        if (step == 1 && frame == 180) {
+            auto* mgr = MR::getSceneObj< PlanetGravityManager >(SceneObj_PlanetGravityManager);
+            for (int i = 0; i < mgr->nativeGravityCount(); i++) {
+                auto* g = mgr->nativeGravityAt(i);
+                active.push_back(g->mActivated);
+                g->mActivated = false;
+            }
+        }
+        if (step == 1 && frame == 240) {
+            if (Gravity::view().deadGround.empty())
+                return fail("Uncovered ground was not marked red");
+            const auto& problems = checks();
+            if (std::none_of(problems.begin(), problems.end(), [](const auto& c) { return c.key.rfind("gravity-ground:", 0) == 0; }))
+                return fail("Uncovered ground did not reach Checks");
+            if (const char* shot = std::getenv("PETARI_EDITOR_GRAVITY_SHOT")) {
+                std::string dead = std::string(shot) + ".dead.png";
+                PetariNative::Screenshot::request(dead.c_str());
+            }
+            std::fprintf(stderr, "[editor-gravity] uncovered ground: %zu red samples, Checks verified\n", Gravity::view().deadGround.size());
+        }
+        if (step == 1 && frame == 245) {
+            auto* mgr = MR::getSceneObj< PlanetGravityManager >(SceneObj_PlanetGravityManager);
+            for (size_t i = 0; i < active.size(); i++)
+                mgr->nativeGravityAt(static_cast< int >(i))->mActivated = active[i];
+        }
+        if (step == 1 && frame == 265) {
+            int zone = 0, table = 0;
+            m->locate(row, &zone, &table);
+            Command c{Command::Kind::Apply};
+            c.op.label = "Fill gravity cap for live test";
+            for (int n = EditorScene::gravityCount(); n < 128; n++) {
+                AddRow add;
+                add.id = newRowId();
+                add.zone = zone;
+                add.table = m->tablePath(zone, table);
+                add.copyOf = row;
+                c.op.adds.push_back(std::move(add));
+            }
+            enqueue(std::move(c));
+        }
+        if (step == 1 && frame == 290) {
+            if (EditorScene::gravityCount() != 128)
+                return fail("Fixture failed to reach gravity cap");
+            const auto& problems = checks();
+            if (std::none_of(problems.begin(), problems.end(),
+                             [](const auto& c) { return c.key == "gravity-capacity" && c.severity == Severity::Error; }))
+                return fail("Full gravity cap did not reach Checks");
+            atCap = actorForRow(row);
+            Command c{Command::Kind::Apply};
+            c.op = Gravity::shapeOp(*m, row, Gravity::Shape::Cube);
+            enqueue(std::move(c));
+        }
+        if (step == 1 && frame == 310) {
+            if (actorForRow(row) != atCap || EditorScene::gravityCount() != 128 || !status().dirty)
+                return fail("Cap did not retain current field and defer recreation");
+            if (!static_cast< GlobalGravityObj* >(atCap)->getGravity()->mAppeared)
+                return fail("Cap retired the field before deciding to defer");
+            std::fprintf(stderr, "[editor-gravity] full-cap replacement retained current field and awaits Reload\n");
             std::fprintf(stderr, "[editor-gravity] PASS\n");
             step = 999;
         }
