@@ -132,7 +132,7 @@ void testDisc() {
         std::printf("editor formats: no extracted disc; disc checks skipped\n");
         return;
     }
-    int archives = 0, tables = 0;
+    int archives = 0, tables = 0, cameras = 0;
     for (const auto& entry : fs::directory_iterator(stageData)) {
         if (entry.path().extension() != ".arc") continue;
         const F::Bytes raw = readFile(entry.path());
@@ -141,7 +141,9 @@ void testDisc() {
         const F::Bytes plain = F::isYaz0(raw) ? *F::yaz0Decode(raw) : raw;
         check(archive->build() == plain, "rebuilds identically " + entry.path().filename().string());
         for (const std::string& path : archive->files()) {
-            if (path.rfind("jmp/", 0) != 0) continue;
+            const bool camera = fs::path(path).extension() == ".bcam";
+            if (path.rfind("jmp/", 0) != 0 && !camera) continue;
+            if (camera) ++cameras;
             const F::Bytes* bytes = archive->file(path);
             std::optional< F::Table > table = F::Table::parse(*bytes);
             check(table.has_value(), "table parses " + entry.path().filename().string() + ":" + path);
@@ -151,7 +153,8 @@ void testDisc() {
         ++archives;
     }
     check(archives > 200, "every disc stage archive seen");
-    std::printf("editor formats: %d disc archives, %d tables rebuilt identically\n", archives, tables);
+    check(cameras > 100, "disc camera tables included in byte-for-byte rebuild");
+    std::printf("editor formats: %d disc archives, %d tables (%d bcam) rebuilt identically\n", archives, tables, cameras);
 }
 }  // namespace
 

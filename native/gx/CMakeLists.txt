@@ -174,7 +174,8 @@ set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/efb_snapshot.cpp" TARGE
 set(_imgui_source "${aurora_SOURCE_DIR}/lib/imgui.cpp")
 set(_imgui_output "${CMAKE_CURRENT_BINARY_DIR}/pipeline-imgui.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_pipeline_imgui.py" "${_imgui_source}")
+    "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_pipeline_imgui.py"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_imgui_texture.py" "${_imgui_source}")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_pipeline_imgui.py"
     "${_imgui_source}" "${_imgui_output}" COMMAND_ERROR_IS_FATAL ANY)
 get_target_property(_sources aurora_core SOURCES)

@@ -1,3 +1,4 @@
+#include "host.hpp"
 // The level editor's Browser (UX section 7), first version: every class placed in this galaxy (and the
 // catalog's classes once it is filled), searchable, by category, with examples and Place.
 #include "panels.hpp"
@@ -86,8 +87,7 @@ struct Thumbnail {
     int retryAt = 0;             // gFrame: an empty drawing is tried again (pipelines compile on first use)
 };
 std::map< std::string, Thumbnail > gThumbnails;
-ThumbnailReadback gReadback = nullptr;
-ThumbnailTexture gMakeTexture = nullptr;
+
 std::vector< unsigned char > gRgba;
 constexpr int kThumbnailsInFlight = 3;
 constexpr int kThumbnailTimeout = 90;  // frames
@@ -95,7 +95,8 @@ constexpr int kThumbnailAttempts = 3;
 int gFrame = 0;
 
 void serviceThumbnails() {
-    if (gReadback == nullptr) return;
+    if (Host::readback() == nullptr)
+        return;
     gFrame++;
     char name[64];
     const void* copy = nullptr;
@@ -108,10 +109,10 @@ void serviceThumbnails() {
         if (thumb.texture != 0 || thumb.failed) continue;
         if (thumb.copy != nullptr) {
             unsigned width = 0, height = 0;
-            int result = gReadback(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
+            int result = Host::readback()(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
             if (result < 0) {
                 gRgba.resize(static_cast< size_t >(width) * height * 4);
-                result = gReadback(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
+                result = Host::readback()(thumb.copy, gRgba.data(), static_cast< unsigned >(gRgba.size()), &width, &height);
             }
             if (result == 1) {
                 thumb.copy = nullptr;
@@ -125,7 +126,7 @@ void serviceThumbnails() {
                 }
                 thumb.uv0 = ImVec2(uv[0], uv[1]);
                 thumb.uv1 = ImVec2(uv[2], uv[3]);
-                thumb.texture = static_cast< ImTextureID >(gMakeTexture(width, height, gRgba.data()));
+                thumb.texture = static_cast< ImTextureID >(Host::makeTexture()(width, height, gRgba.data()));
                 continue;
             }
         }
@@ -135,7 +136,8 @@ void serviceThumbnails() {
 
 // Asks for a card's thumbnail when it is on screen and few are in flight.
 void wantThumbnail(const BrowserEntry& entry) {
-    if (gReadback == nullptr || entry.examples.empty()) return;
+    if (Host::readback() == nullptr || entry.examples.empty())
+        return;
     auto existing = gThumbnails.find(entry.className);
     const bool retry = existing != gThumbnails.end() && existing->second.failed && existing->second.retryAt != 0 && gFrame >= existing->second.retryAt;
     if (existing != gThumbnails.end() && !retry) return;
@@ -478,11 +480,6 @@ void placeClassForTest(const char* className, int arg0) {
     entry.className = className;
     entry.presetArgs = {{0, arg0}};
     placeToken(tokenFor(entry));
-}
-
-void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture) {
-    gReadback = readback;
-    gMakeTexture = texture;
 }
 
 }  // namespace PetariEditor::Ui

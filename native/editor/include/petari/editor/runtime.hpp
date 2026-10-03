@@ -26,6 +26,8 @@ void tick(bool playable);
 bool reloadScene(bool fromStart);
 /// True from reloadScene() (or the editor's Reload) until the new scene is playable.
 bool reloading();
+/// Current editor play marker, in world space.
+bool playMarker(Vec3* position);
 
 /// Loads the edit model for the current stage and mission and binds the scene, without entering
 /// Edit, and keeps it loaded (across reloads and stage changes) for the rest of the run: model()
@@ -48,6 +50,15 @@ void registerPreviewHandler(PreviewHandler handler);
 /// bound); false: re-create it.
 using LiveUpdater = bool (*)(RowId row, LiveActor* pCurrent, const JMapInfoIter& newRow);
 void registerLiveUpdater(LiveUpdater updater);
+
+// Non-actor placements (areas). Row handlers run before any LiveActor lookup.
+using RowPreviewHandler = bool (*)(RowId row, int zoneId, const RowTransform& transform);
+// newRow is empty when the row was deleted: deactivate the placement.
+using RowUpdater = bool (*)(RowId row, const JMapInfoIter& newRow);
+void registerRowPreviewHandler(RowPreviewHandler handler);
+void registerRowUpdater(RowUpdater updater);
+// Resolve an engine placement table/ordinal to its stable model row, captured when the scene was bound.
+RowId rowForPlacement(const void* table, int index);
 
 // ---- The play-test loop (UX 3, TECH 2.7). Game thread. -------------------------------------------
 

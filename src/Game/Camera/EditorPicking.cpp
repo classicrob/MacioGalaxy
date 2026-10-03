@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's picking (Game/Camera/EditorPicking.hpp).
 #include "Game/Camera/EditorPicking.hpp"
+#include "Game/Camera/EditorAreas.hpp"
 #include "Game/Camera/EditorGravity.hpp"
 #include "Game/LiveActor/ClippingActorHolder.hpp"
 #include "Game/LiveActor/ClippingActorInfo.hpp"
@@ -114,6 +115,10 @@ namespace {
         const float groundT = hitGround ? dot(sub(groundPoint, eye), ray) : 1e30f;
         float gravityT = 0;
         const auto gravityRow = EditorGravity::pick({eye.x, eye.y, eye.z}, {ray.x, ray.y, ray.z}, &gravityT);  // M3 gravity: clickable outlines.
+        float areaT = 0;
+        const auto areaRow = EditorAreas::pick({eye.x, eye.y, eye.z}, {ray.x, ray.y, ray.z}, &areaT);  // M3 areas: outlines only.
+        if (areaRow.valid() && areaT <= groundT + 50.0f && (!gravityRow.valid() || areaT < gravityT))
+            return describeRow(areaRow);
         if (gravityRow.valid() && gravityT <= groundT + 50.0f) {
             if (auto* actor = PetariEditor::actorForRow(gravityRow)) return describe(actor);
             return describeRow(gravityRow);
@@ -233,6 +238,8 @@ namespace {
         hit.row = row;
         hit.radius = 35;
         float gravityCenter[3], gravityRadius;
+        if (EditorAreas::bounds(row, gravityCenter, &gravityRadius))  // M3 areas: actorless bounds.
+            return {nullptr, {gravityCenter[0], gravityCenter[1], gravityCenter[2]}, gravityRadius, row};
         if (EditorGravity::bounds(row, gravityCenter, &gravityRadius))
             return {nullptr, {gravityCenter[0], gravityCenter[1], gravityCenter[2]}, gravityRadius, row};
         int zone = 0;
@@ -456,6 +463,10 @@ namespace EditorPicking {
 
     LiveActor* selectedAt(int index) {
         return pickable((*gSelected)[index]) ? (*gSelected)[index] : nullptr;
+    }
+
+    std::uint64_t selectedRowAt(int index) {
+        return index >= 0 && index < static_cast< int >(selectedRows().size()) ? selectedRows()[index].v : 0;
     }
 
     void reset() {
