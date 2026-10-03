@@ -84,7 +84,18 @@ void drawSaveSheet() {
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(460.0f, 0.0f));
-    if (!ImGui::BeginPopupModal("Save mod", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize)) return;
+    // Opaque, like the Home menu's panels (nothing of the scene behind the text), with a cyan rim; the scene
+    // around it dimmed.
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.02f, 0.20f, 0.31f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.40f, 0.86f, 1.0f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.06f, 0.12f, 0.72f));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.5f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 14.0f));
+    const bool open = ImGui::BeginPopupModal("Save mod", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(3);
+    if (!open) return;
     ImGui::TextUnformatted("Name");
     ImGui::SameLine(90.0f);
     ImGui::SetNextItemWidth(-1.0f);
