@@ -403,8 +403,10 @@ namespace EditorGravity {
             return;
         }
         if (s.scene != Hooks::sceneSerial() || s.revision != (model() ? model()->revision() : 0)) {
-            if (s.scene != Hooks::sceneSerial())
+            if (s.scene != Hooks::sceneSerial()) {
                 s.bindingConfig.clear();
+                s.checkSignature.clear();
+            }
             s.scene = Hooks::sceneSerial();
             s.revision = model() ? model()->revision() : 0;
             s.view.deadGround.clear();
