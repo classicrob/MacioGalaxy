@@ -138,6 +138,19 @@ class Live:
         words = " ".join(f"{v:.2f}" for v in [*pos, *up, *front])
         return self.send(f"editor-play {words}")
 
+    def warp(self, pos: Sequence[float]) -> dict:
+        """Mario to pos right now (no editor involved); returns Mario two frames later."""
+        return self.send("warp " + " ".join(f"{v:.2f}" for v in pos))
+
+    def trace(self, frames: int, every: int = 6) -> list:
+        """Mario's positions while the game runs `frames` frames (one sample per `every`)."""
+        out = []
+        for _ in range(max(1, frames // every)):
+            m = self.wait(every).get("mario", {})
+            if m.get("present"):
+                out.append(m)
+        return out
+
     def mario(self) -> dict:
         return self.send("mario")
 

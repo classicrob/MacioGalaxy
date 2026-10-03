@@ -80,7 +80,9 @@ getter treats anything but -1 as on), `null` for the class default (-1), or raw 
 Reading an object shows the same names; `null` means "the class's default".
 
 **Switches and links.** `switches: {"SW_APPEAR": 12}`; `"new"` picks the lowest switch (0-127) no
-row in the zone uses. `links: {"CommonPath_ID": 0}`. `fields` sets any column by name.
+row in the zone uses; `"@goomba.SW_DEAD"` takes another row's switch (in the same batch too), so
+"defeat the Goomba, then the 1-Up appears" is two adds. Zone switches only connect rows of one zone
+(refused otherwise). `links: {"CommonPath_ID": 0}`. `fields` sets any column by name.
 
 ## Batches: transactional, idempotent
 
@@ -123,16 +125,21 @@ Edit keys (add, set, duplicate, array): `pos`, `zone_pos`, `by`, `rot`, `zone_ro
 `on_ground: true` drops the point onto the ground below it along gravity; `height: N` keeps it N
 units above, along gravity; the object is stood up against gravity (`align`, on by default with
 `on_ground`). `ground {pos}` and `gravity {pos}` answer the same questions without editing, and
-`colliders` lists what counts as ground.
+`colliders` lists what counts as ground. Without `zone`, an `on_ground` add goes in the zone that owns
+the ground it lands on, as the Browser places.
 
 Headless, the ground is the collision of every row placed in the current mission: each class's
 `ObjectData/<class>.arc` `.kcl` (read with the same prism reconstruction as `KCollisionServer::getPos`)
 and terrain brushes (the terrain library's own brush mesh), transformed by the row and its zone.
 
-Headless gravity is **approximate**: the gravity rows of the mission (point: toward the centre;
-cube: toward the nearest point of a scale x 500 half-size box; plane/parallel: the row's -Y;
-segment, disk, cone and torus as their centre), filtered by `Range` and `Distant`, highest
-`Priority` first, then nearest; with no field, toward the nearest collision surface. Replies say
+Headless gravity is **approximate**: the mission's gravity rows with the shapes
+`GravityCreator.cpp` builds from a row (500 units per unit of scale): point (its `Distant` sphere),
+cube (a box standing on the row's origin), disk and disk-torus (radius from the largest scale,
+one- or two-sided from `Obj_arg0`), segment (1000 x scale_y along the row's up), plane (a `Range`
+sphere), plane in box and plane in cylinder; `Range`/`Distant`/`Inverse` as `GravityUtil.cpp` reads
+them (negative keeps the default). The highest `Priority` wins, then the nearest (the engine blends
+equal priorities); cones and wires are taken as their centre; with no field, toward the nearest
+collision surface. Replies say
 which field was used (`"gravity": "GlobalPointGravity EggStarGalaxy:common/planetobjinfo:4"`). Give
 `down: [x,y,z]` to override, or use live mode for the engine's own answer.
 
@@ -145,7 +152,29 @@ the arc is a parabola between `from` and `to` whose middle is `peak` above the l
   Each has a stable `key`, `severity`, `message`, the rows, and `fix` when `{"op": "fix"}` can
   repair it.
 - `diff`: rows added or changed against the disc, with `[disc, now]` cells.
-- Live mode (below): reload the running game, screenshot it, warp Mario, run a route.
+- Live mode (below): the same ops in the running game, reload, screenshot, warp Mario, trace him.
+
+## Live mode
+
+The test server (`native/tools/test_server.py`, `PETARI_TEST_SERVER`) takes these commands from
+`src/Game/Scene/TestServerEditor.cpp` (start it with `PETARI_EDITOR=1` for the editing ones):
+
+| command | |
+| --- | --- |
+| `editor-begin` | load the editor's model for the running stage (no Edit nerve needed); ops then apply and SceneSync re-creates their actors |
+| `editor-apply FILE` | low-level ops (`export`'s format, one op or `{"ops": [...]}`) queued as editor commands, each one undo step in the game |
+| `editor-undo [n]`, `editor-redo [n]`, `editor-reload`, `editor-save MOD [--full]` | the editor's own commands |
+| `editor-play [x y z [up] [front]]` | Play from a marker there: Mario teleported, upright for up |
+| `editor-state`, `editor-checks` | model revision, history, mode; the game's Checks with refs |
+| `ground x y z [dx dy dz]`, `gravity x y z` | the engine's own gravity and first map polygon (exact) |
+| `mario`, `warp x y z`, `wait N` | Mario's position, gravity, ground, death; move him; let N frames run |
+| `screenshot PNG` | the next presented frame, without the editor's overlay |
+
+Replies are `ok <json>` / `error <text>`. `level_api_x.Live` wraps them: `Live.start(app=...)`,
+`live.begin()`, `live.sync(level)` (brings the game to the workspace's journal: undoes what diverged,
+applies what is new; refs resolve in the game because they are stable), `live.reload()`,
+`live.play(pos, up)`, `live.warp(pos)`, `live.trace(frames)`, `live.ground(pos)`,
+`live.screenshot(path)`. `examples/live_verify.py` runs example 1 that way.
 
 ## Errors
 
@@ -178,10 +207,23 @@ matches with their positions.
 `--key value` flags parse as JSON when they can (`--mission 2`, `--near [0,0,0]`), `x,y,z` as a
 vector, else as text; a `{...}` argument merges into the args.
 
+## Examples
+
+- `examples/sling_star_course.py`: Good Egg mission 1, from Mario's start: a coin trail on the
+  planet, a Sling Star, a coin column above it and a Power Star at the top (12 objects, one batch).
+- `examples/goomba_switch_garden.py`: on Soramame: a ring of coins, a Goomba whose defeat (a "new"
+  switch) makes a 1-Up appear (`"@goomba.SW_DEAD"`), a grid of Star Bits, and a dry-run probe of a
+  mistake showing the checks an agent gets back.
+- `examples/live_verify.py`: example 1 in a running game (sync, reload, exact ground vs headless,
+  screenshots, Mario dropped on the Sling Star and traced).
+
 ## Performance
 
-Measured on Good Egg (two zones, about 1,400 rows): see the PR. The CLI reloads the galaxy and replays
-the journal on each call; `serve` (and the Python wrapper) load once.
+Good Egg (18 zones, 1,724 rows), CPU time: opening the galaxy (catalog, disc mount, model, the
+baseline checks) about 0.3 s; a Checks pass about 0.06 s; a batch about two Checks passes plus the
+ops. A CLI call therefore costs about 0.3-0.4 s of CPU (wall time was 1-5 s while the machine was
+loaded by other workers); `serve` and the Python wrapper pay the open once. The headless world loads
+each class's collision once per process.
 
 ## Limits (known)
 
@@ -190,6 +232,8 @@ the journal on each call; `serve` (and the Python wrapper) load once.
   ground headless (`colliders` and its `no_kcl` list show what is).
 - No path, gravity-shape or brush-specific ops yet beyond raw fields: paths use their tables' rows
   by ref and `fields`; gravity rows take `args`/`fields`; brushes take their named args.
-- Mission names come from ScenarioData (the game's message names need the game).
+- Mission names come from ScenarioData (Japanese, internal); the pause-menu names need the game's messages.
+- Route playback (a recorded input route) is not wired to the test server yet: verification uses
+  warp + trace (positions over frames) instead.
 - The workspace's base is the disc (plus the user's enabled mods with `--user-mods`): saving into a
   mod that is also enabled in the base mixes the two, as in the game.

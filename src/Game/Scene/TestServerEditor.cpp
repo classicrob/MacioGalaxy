@@ -187,6 +187,18 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         begin(Wait::Play, name);
         return true;
     }
+    if (c == "warp") {
+        // warp x y z: Mario there now (MR::setPlayerPosAndWait, as the stage smoke's warp), without the editor.
+        float p[3];
+        if (!parseFloats(w, 1, p, 3) || !MR::isExistSceneObj(SceneObj_MarioHolder)) {
+            reply(name, "error usage: warp x y z (in a stage)");
+            return true;
+        }
+        MR::setPlayerPosAndWait(TVec3f(p[0], p[1], p[2]));
+        begin(Wait::Frames, name);
+        gPending.frames = 2;
+        return true;
+    }
     if (c == "editor-save" && w.size() >= 2) {
         E::Command save{E::Command::Kind::SaveMod};
         for (std::size_t i = 1; i < w.size(); i++) {

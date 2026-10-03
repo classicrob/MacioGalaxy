@@ -586,7 +586,16 @@ namespace {
                     like = impl.resolveRef(op["like"], where + ".like");
                     model.locate(like, &likeZone, &likeTable);
                 }
-                const int zone = op.has("zone") ? zoneOf(op["zone"], where + ".zone") : (like.valid() ? likeZone : 0);
+                int zone = op.has("zone") ? zoneOf(op["zone"], where + ".zone") : (like.valid() ? likeZone : 0);
+                if (!op.has("zone") && op["on_ground"].asBool() && op.has("pos")) {
+                    // As the Browser places: in the zone that owns the ground below (if it is placed).
+                    const G::V3 p = parseVec(op["pos"], where + ".pos");
+                    const G::V3 down = op.has("down") ? G::normalized(parseVec(op["down"], where + ".down"), {0, -1, 0}) : impl.world().gravityAt(model, p).down;
+                    std::optional< Hit > hit = impl.world().ray(p, down, 50000.0f);
+                    if (!hit) hit = impl.world().ray(p - down * 1500.0f, down, 51500.0f);
+                    int hitZone = 0, hitTable = 0;
+                    if (hit && model.locate(hit->row, &hitZone, &hitTable)) zone = hitZone;
+                }
                 std::string table;
                 if (like.valid() && !op.has("layer") && !op.has("missions") && !op.has("class")) {
                     table = model.tablePath(likeZone, likeTable);
