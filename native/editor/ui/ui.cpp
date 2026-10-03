@@ -238,14 +238,21 @@ void drawToolbar(float width) {
             }
         }
         ImGui::SameLine(0.0f, 10.0f);
-        bool ghosts = PetariNative::EditorGizmo::showGhosts();
-        if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
-        drawPathsToggle();  // M3 paths: selection/all/none.
-        ImGui::SameLine(0.0f, 10.0f);
-        bool gravity = Gravity::visible();  // M3 gravity: view toggle.
-        if (ImGui::Checkbox("Gravity", &gravity)) Gravity::setVisible(gravity);
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show gravity fields, flow arrows and uncovered ground (1)");
+        // View (one menu, so the toolbar fits a 1280-point window): what the viewport shows besides the scene.
+        if (ImGui::Button("View")) ImGui::OpenPopup("view-menu");
+        noteTestTarget("button:View");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ghosts, links, gravity... (what the viewport shows)");
+        if (ImGui::BeginPopup("view-menu")) {
+            bool ghosts = PetariNative::EditorGizmo::showGhosts();
+            if (ImGui::Checkbox("Other missions' objects (ghosts)", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
+            ImGui::TextUnformatted("Paths and switch wires (5)");
+            drawPathsToggle();  // M3 paths: selection/all/none.
+            bool gravity = Gravity::visible();  // M3 gravity: view toggle.
+            if (ImGui::Checkbox("Gravity fields (1)", &gravity)) Gravity::setVisible(gravity);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gravity fields, flow arrows and uncovered ground");
+            // M3 areas / play-test: further toggles go here, one per line.
+            ImGui::EndPopup();
+        }
         ImGui::SameLine(0.0f, 16.0f);
     }
     const float buttonHeight = 26.0f;
