@@ -38,6 +38,7 @@ struct PlaceClass {
     int argCount = 0;
     int argIndex[8] = {};
     std::int32_t argValue[8] = {};
+    float scale[3] = {1.0f, 1.0f, 1.0f};  // the placed row's scale (a preset's size; a brush's 1 = 1000 units)
 };
 void placeClass(const PlaceClass& request);
 void duplicate();  // Cmd+D: copies of the selection, a step ahead along its gravity frame's front

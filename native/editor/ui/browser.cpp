@@ -455,6 +455,7 @@ bool thumbnailCrop(const unsigned char* rgba, unsigned width, unsigned height, f
 }
 
 void placeToken(std::uint64_t token) {
+    frameNextSelection();  // the new object comes into view (the lead: a fresh brush must be seen whole)
     if (!isClassToken(token)) {
         Pick::place(token);
         return;
@@ -470,6 +471,13 @@ void placeToken(std::uint64_t token) {
         request.argCount++;
     }
     Pick::placeClass(request);
+}
+
+void placeClassForTest(const char* className, int arg0) {
+    BrowserEntry entry;
+    entry.className = className;
+    entry.presetArgs = {{0, arg0}};
+    placeToken(tokenFor(entry));
 }
 
 void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture) {
