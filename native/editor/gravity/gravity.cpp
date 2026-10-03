@@ -138,6 +138,25 @@ namespace PetariEditor::Gravity {
         const float t = std::clamp((range + distant - distance) / (range * 0.25f), 0.0f, 1.0f);
         return t * t * (3 - 2 * t);
     }
+    float flowFade(const Field& f, Vec3 p, float forceDistance) {
+        if (f.shape != Shape::Parallel) return rangeFade(forceDistance, f.distant, f.range);
+        const Vec3 delta{p.x-f.center.x,p.y-f.center.y,p.z-f.center.z};
+        auto dot = [](Vec3 a, Vec3 b) { return a.x*b.x+a.y*b.y+a.z*b.z; };
+        if (f.bound == Bound::Sphere) return rangeFade(length(delta),0,f.range);
+        float edge;
+        if (f.bound == Bound::Box) {
+            edge = std::max({std::fabs(dot(delta,f.x))/std::max(0.001f,dot(f.x,f.x)),
+                             std::fabs(dot(delta,f.y))/std::max(0.001f,dot(f.y,f.y)),
+                             std::fabs(dot(delta,f.z))/std::max(0.001f,dot(f.z,f.z))});
+        } else {
+            const Vec3 up = unit(f.y);
+            const float height = dot(delta,up);
+            const Vec3 radial = add(delta,mul(up,-height));
+            edge = std::max(length(radial)/std::max(0.001f,f.radius),
+                            std::fabs(2*height/std::max(0.001f,f.height)-1));
+        }
+        return rangeFade(edge,0,1);
+    }
     Mesh geometry(const Field& f, bool selected, bool hovered, bool recede) {
         Mesh m;
         unsigned c = fieldColor(f, selected ? 255 : hovered ? 240 : !f.active ? 35 : recede ? 65 : 135);

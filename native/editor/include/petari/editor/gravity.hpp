@@ -52,6 +52,7 @@ namespace PetariEditor::Gravity {
     std::uint32_t color(Shape shape, unsigned alpha = 180);
     std::uint32_t fieldColor(const Field& field, unsigned alpha = 180);
     float rangeFade(float distance, float distant, float range);
+    float flowFade(const Field& field, Vec3 position, float forceDistance);
     Mesh geometry(const Field& field, bool selected = false, bool hovered = false, bool recede = false);
     // A single undoable edit. Changing shape also resets shape-specific arguments to safe defaults.
     Op shapeOp(const ModelView& model, RowId row, Shape shape, Bound bound = Bound::Sphere);

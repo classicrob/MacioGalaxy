@@ -545,7 +545,7 @@ namespace EditorGravity {
                 TVec3f own;
                 float distance = 0;
                 if (!gravity->calcOwnGravityVector(&own, &distance, tv(point))) return;
-                const float fade = G::rangeFade(distance, gravity->mDistant, gravity->mRange);
+                const float fade = G::flowFade(*winner, point, distance);
                 const bool focused = selectedField(*winner) || winner->identity == s.view.hoveredIdentity;
                 const unsigned alpha = static_cast<unsigned>((focused ? 230 : hasSelectedField ? 105 : 175) * fade);
                 if (alpha < 12) return;

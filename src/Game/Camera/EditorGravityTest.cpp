@@ -11,6 +11,7 @@
 #include <filesystem>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/editor/paths.hpp>
+#include <petari/editor/paths_view.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/editor_settings.hpp>
 #include <petari/host_allocation.hpp>
@@ -62,7 +63,7 @@ namespace EditorGravity {
         if (!m)
             return;
         if (std::getenv("PETARI_EDITOR_GRAVITY_CAPTURE")) {
-            static RowId wideRows[2];
+            static RowId wideRows[2], planetRows[2];
             if (step == 0) {
                 const auto fields = Gravity::view().fields;
                 if (fields.empty()) return;
@@ -80,8 +81,22 @@ namespace EditorGravity {
                     if (distance < nearest[kind]) { nearest[kind]=distance; wideRows[kind]=f.row; }
                 }
                 if (!wideRows[0].valid() || !wideRows[1].valid()) return fail("Wide captures need point and cube/disk fields");
+                for (int i=0; i<2; ++i) {
+                    Vec3 center;
+                    for (const auto& f : fields) if (f.row == wideRows[i]) center=f.center;
+                    float best=1e30f;
+                    forEachBoundRow([&](RowId candidate, LiveActor* actor) {
+                        if (!actor || std::string(m->objectName(candidate)).find("Planet") == std::string::npos) return;
+                        const float dx=actor->mPosition.x-center.x,dy=actor->mPosition.y-center.y,dz=actor->mPosition.z-center.z;
+                        const float d=dx*dx+dy*dy+dz*dz;
+                        if (d<best) {best=d;planetRows[i]=candidate;}
+                    });
+                    if (!planetRows[i].valid()) planetRows[i]=wideRows[i];
+                    std::fprintf(stderr,"[editor-gravity] framing %s\n",m->objectName(planetRows[i]));
+                }
+                PathsView::setVisibility(PathsView::Visibility::None);
                 Gravity::setVisible(true);
-                PetariNative::EditorPick::selectRow(wideRows[0].v, PetariNative::EditorPick::Click::Replace);
+                PetariNative::EditorPick::selectRow(planetRows[0].v, PetariNative::EditorPick::Click::Replace);
                 PetariNative::EditorSettings::setWorldUp(true);
                 PetariNative::EditorGizmo::setShowGhosts(false);
                 frame=0; step=1;
@@ -98,7 +113,8 @@ namespace EditorGravity {
                     std::fprintf(stderr,"[editor-gravity] wide %s row=%llu center=(%.0f,%.0f,%.0f) radius=%.0f\n",
                         Gravity::shapeName(f.shape),static_cast<unsigned long long>(f.row.v),f.center.x,f.center.y,f.center.z,f.radius);
             }
-            if (frame == 90) PetariNative::EditorPick::selectRow(wideRows[1].v,PetariNative::EditorPick::Click::Replace);
+            if (frame == 20 || frame == 110) PetariNative::EditorPick::selectRow(wideRows[frame == 20 ? 0 : 1].v,PetariNative::EditorPick::Click::Replace);
+            if (frame == 90) PetariNative::EditorPick::selectRow(planetRows[1].v,PetariNative::EditorPick::Click::Replace);
             if (frame == 175) { std::fprintf(stderr,"[editor-gravity] PASS wide captures\n"); step=999; }
             return;
         }
