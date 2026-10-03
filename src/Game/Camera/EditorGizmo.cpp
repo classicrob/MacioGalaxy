@@ -10,6 +10,7 @@
 #include "Game/Util/MapUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
+#include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor/gizmo_math.hpp>
 #include <petari/editor_pick.hpp>
@@ -465,6 +466,74 @@ namespace {
         PetariNative::EditorPick::selectRow(add.id.v, PetariNative::EditorPick::Click::Replace);
     }
 
+    // A class with no example in the galaxy (EP-005: the catalog's classes, Terrain's brush presets): a new row in
+    // the catalog's table for it, in the zone under the cursor, from the table's neutral values, the args'
+    // defaults and the request's args (Runtime fills l_id).
+    void placeClass(const Camera& cam, float cx, float cy, const PetariNative::EditorPick::PlaceClass& request) {
+        const PetariEditor::ModelView* model = PetariEditor::model();
+        const PetariEditor::Catalog::ClassInfo* info = PetariEditor::Catalog::find(request.name);
+        if (model == nullptr || info == nullptr) {
+            std::fprintf(stderr, "[editor] place %s: not in the catalog\n", request.name);
+            return;
+        }
+        TVec3f point;
+        Triangle triangle;
+        if (!MR::getFirstPolyOnLineToMap(&point, &triangle, tv(cam.eye), tv(cam.ray(cx, cy) * kRayLength))) {
+            std::fprintf(stderr, "[editor] place: no ground under the cursor\n");
+            return;
+        }
+        int zone = 0;  // the galaxy's main zone, unless the ground belongs to an object of another
+        if (triangle.mSensor != nullptr && triangle.mSensor->mHost != nullptr) {
+            const PetariEditor::RowId host = PetariEditor::rowForActor(triangle.mSensor->mHost);
+            int hostZone = 0, hostTable = 0;
+            if (host.valid() && model->locate(host, &hostZone, &hostTable)) zone = hostZone;
+        }
+        Item item;
+        item.zone = zone;
+        item.pos = v(point);
+        item.basis = G::gravityFrame(gravityUp(item.pos, {0, 1, 0}), cam.forward * -1.0f);  // facing the camera
+        item.scale = {1, 1, 1};
+        const PetariEditor::RowTransform t = toRow(item);
+
+        PetariEditor::AddRow add;
+        add.id = PetariEditor::newRowId();
+        add.zone = zone;
+        add.table = PetariEditor::Catalog::tablePath(*info, "common");
+        PetariEditor::Cell name;
+        name.type = PetariEditor::CellType::String;
+        name.s = info->name;
+        add.cells.push_back({PetariEditor::columnHash("name"), name});
+        static const char* const kColumns[9] = {"pos_x", "pos_y", "pos_z", "dir_x", "dir_y", "dir_z", "scale_x", "scale_y", "scale_z"};
+        const float values[9] = {t.pos.x, t.pos.y, t.pos.z, t.dirDeg.x, t.dirDeg.y, t.dirDeg.z, t.scale.x, t.scale.y, t.scale.z};
+        for (int c = 0; c < 9; c++) add.cells.push_back({PetariEditor::columnHash(kColumns[c]), floatCell(values[c])});
+        // Args: the catalog's defaults (what the class does with -1, written out), then the request's.
+        auto setArg = [&](int index, std::int32_t value) {
+            char column[16];
+            std::snprintf(column, sizeof(column), "Obj_arg%d", index);
+            const std::uint32_t hash = PetariEditor::columnHash(column);
+            PetariEditor::Cell cell;
+            cell.i = value;
+            for (auto& existing : add.cells) {
+                if (existing.column == hash) {
+                    existing.value = cell;
+                    return;
+                }
+            }
+            add.cells.push_back({hash, cell});
+        };
+        for (const auto& arg : info->args) {
+            if (arg.defaultValue != -1) setArg(arg.index, arg.defaultValue);
+        }
+        for (int i = 0; i < request.argCount && i < 8; i++) setArg(request.argIndex[i], request.argValue[i]);
+        PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
+        command.op.label = "Placed " + (info->displayName.empty() ? info->name : info->displayName);
+        command.op.adds.push_back(add);
+        std::fprintf(stderr, "[editor] place %s (new, %s) in %s at (%.0f, %.0f, %.0f)\n", info->name.c_str(), add.table.c_str(),
+                     model->zoneName(zone), point.x, point.y, point.z);
+        PetariEditor::enqueue(std::move(command));
+        PetariNative::EditorPick::selectRow(add.id.v, PetariNative::EditorPick::Click::Replace);
+    }
+
     // Cmd+D (UX section 6): a copy of each selected object one step ahead along its gravity frame's front,
     // settled on the ground there; one op; the copies become the selection.
     void duplicate() {
@@ -548,6 +617,9 @@ namespace EditorGizmo {
         }
         if (const std::uint64_t example = PetariNative::EditorPick::takePlace(); example != 0) {
             place(cam, view.cursorX, view.cursorY, PetariEditor::RowId{example});
+        }
+        if (PetariNative::EditorPick::PlaceClass request; PetariNative::EditorPick::takePlaceClass(&request)) {
+            placeClass(cam, view.cursorX, view.cursorY, request);
         }
         if (PetariNative::EditorPick::takePlaceMarker()) {
             V3 ground;

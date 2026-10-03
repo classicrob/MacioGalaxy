@@ -819,7 +819,9 @@ void tick(bool playable) {
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
-    if ((mode() != Mode::Off || s.keepModel) && mode() != Mode::Reloading && pStage != nullptr) {
+    // Terrain brushes are shown by the editor, so a scene with brush rows loads the model outside
+    // Edit too (Hooks::noteBrushRow, from placement).
+    if ((mode() != Mode::Off || s.keepModel || Hooks::sceneHasBrushRows()) && mode() != Mode::Reloading && pStage != nullptr) {
         PetariNative::HostAllocationScope host;
         if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
             loadModel(pStage, EditorScene::scenario());

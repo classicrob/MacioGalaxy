@@ -32,6 +32,7 @@ extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgb
 #include <petari/unlocked_save.hpp>
 #include <petari/pipeline_startup.hpp>
 #include <petari/mods.hpp>
+#include <petari/editor/terrain/bake.hpp>
 #include <petari/platform/mod_folder.hpp>
 #include <petari/platform/mod_galaxy.hpp>
 #include <petari/progress.hpp>
@@ -439,6 +440,17 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     std::fputs("[editor-test] LevelEditor tap (play)\n", stderr);
                     Editor::toggle();
                 }
+                // PETARI_EDITOR_TEST_PLACE_CLASS=<class>: place a new one of a class with no example (EP-005), as the Browser's
+                // Place does for a catalog-only card; Obj_arg0 = 0 (a brush's box preset).
+                if (t == 147 && std::getenv("PETARI_EDITOR_TEST_PLACE_CLASS") != nullptr) {
+                    Editor::cursor(0.0f, -0.3f);
+                    Pick::PlaceClass request;
+                    std::snprintf(request.name, sizeof(request.name), "%s", std::getenv("PETARI_EDITOR_TEST_PLACE_CLASS"));
+                    request.argCount = 1;
+                    request.argIndex[0] = 0;
+                    request.argValue[0] = 0;
+                    Pick::placeClass(request);
+                }
                 // PETARI_EDITOR_TEST_PLACE=1: place a copy of the selection on the ground at the view's centre (the
                 // Browser's Place path).
                 // ...then duplicate the placed copy (Cmd+D) and delete the duplicate (Delete).
@@ -715,6 +727,20 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "petari: background storage: %s\n", error.c_str());
         return 1;
     }
+    // mods.txt before the disc is mounted: the level editor's switch decides how patch mods are built.
+    if (!PetariNative::Mods::load(paths.user / "mods.txt", &error)) {
+        std::fprintf(stderr, "petari: mods: %s\n", error.c_str());
+        return 1;
+    }
+    // Terrain brushes in patch mods (docs/dev/level-editor/TECH.md 6.5): the mod loader bakes them into
+    // planets, unless the level editor is on, which keeps them as rows to edit (shown live; the save
+    // bakes or patches them).
+    {
+        const char* editorEnv = std::getenv("PETARI_EDITOR");
+        if (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::LevelEditor) && !(editorEnv != nullptr && editorEnv[0] == '1')) {
+            PetariEditor::Terrain::registerPatchBuilder();
+        }
+    }
     if (!App::Host::preparePlatform(paths, &error)) {
         std::fprintf(stderr, "petari: %s\n", error.c_str());
         return 1;
@@ -728,10 +754,6 @@ int main(int argc, char** argv) {
     // file is reported and left alone; progress is then not recorded this run.
     if (!PetariNative::Progress::load(paths.user / "progress.json", &error)) {
         std::fprintf(stderr, "petari: progress: %s (not recording progress this run)\n", error.c_str());
-    }
-    if (!PetariNative::Mods::load(paths.user / "mods.txt", &error)) {
-        std::fprintf(stderr, "petari: mods: %s\n", error.c_str());
-        return 1;
     }
     if (!PetariNative::CameraSettings::load(paths.user / "camera.txt", &error)) {
         std::fprintf(stderr, "petari: camera: %s\n", error.c_str());
