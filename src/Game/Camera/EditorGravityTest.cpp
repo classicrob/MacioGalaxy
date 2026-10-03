@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <petari/editor/runtime_hooks.hpp>
+#include <petari/editor/paths.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/editor_settings.hpp>
 #include <petari/host_allocation.hpp>
@@ -28,6 +29,10 @@ namespace EditorGravity {
         static Vec3 before;
         static std::vector< bool > active;
         static LiveActor* atCap = nullptr;
+        static RowId railRow;
+        static Paths::Rail testRail;
+        static Vec3 wireStart;
+        static LiveActor* wireActor = nullptr;
         if (!test || step == 999)
             return;
         PetariNative::HostAllocationScope host;
@@ -161,7 +166,67 @@ namespace EditorGravity {
             if (const char* shot = std::getenv("PETARI_EDITOR_GRAVITY_SHOT"))
                 PetariNative::Screenshot::request(shot);
         }
-        if (step == 1 && frame == 180) {
+        const Gravity::Shape shapes[] = {Gravity::Shape::Cube, Gravity::Shape::Cone, Gravity::Shape::Torus,
+                                         Gravity::Shape::Parallel, Gravity::Shape::Segment, Gravity::Shape::Wire};
+        if (step == 1 && frame >= 170 && frame <= 270 && (frame - 170) % 20 == 0) {
+            Command c{Command::Kind::Apply};
+            c.op = Gravity::shapeOp(*m, row, shapes[(frame - 170) / 20]);
+            if (c.op.sets.empty()) return fail("Shape conversion produced no operation");
+            enqueue(std::move(c));
+        }
+        if (step == 1 && frame >= 180 && frame <= 280 && (frame - 180) % 20 == 0) {
+            const int index = (frame - 180) / 20;
+            bool found = false;
+            for (const auto& f : Gravity::view().fields)
+                if (f.row == row && f.shape == shapes[index]) found = true;
+            if (!found) return fail("Shape family did not reach live engine snapshot");
+            if (EditorScene::gravityCount() != count + 2 + index)
+                return fail("Shape family conversion did not consume exactly one slot");
+        }
+        if (step == 1 && frame == 240) {
+            int zone = 0, table = 0;
+            m->locate(row, &zone, &table);
+            const auto pos = m->transform(row).pos;
+            Vec3 end{pos.x + 600, pos.y + 100, pos.z};
+            railRow = newRowId();
+            Command c{Command::Kind::Apply};
+            c.op = Paths::addRail(*m, zone, {{newRowId(), pos, pos, pos}, {newRowId(), end, end, end}}, false, railRow, nullptr);
+            if (c.op.adds.empty()) return fail("Could not add wire fixture rail");
+            enqueue(std::move(c));
+        }
+        if (step == 1 && frame == 265) {
+            for (const auto& rail : Paths::collect(*m))
+                if (rail.row == railRow) testRail = rail;
+            if (testRail.points.size() != 2) return fail("Wire fixture rail not visible in model");
+            Command c{Command::Kind::Apply};
+            c.op = Paths::linkPath(*m, row, testRail, nullptr);
+            enqueue(std::move(c));
+        }
+        if (step == 1 && frame == 285) {
+            wireActor = actorForRow(row);
+            bool found = false;
+            for (const auto& f : Gravity::view().fields)
+                if (f.row == row && !f.points.empty()) { wireStart = f.points.front(); found = true; }
+            if (!found) return fail("Wire has no engine sample points");
+            auto point = testRail.points.front();
+            auto pos = point.position;
+            pos.x += 200;
+            Command c{Command::Kind::Apply};
+            c.op = Paths::movePoint(point, pos);
+            enqueue(std::move(c));
+        }
+        if (step == 1 && frame == 300) {
+            bool moved = false;
+            for (const auto& f : Gravity::view().fields)
+                if (f.row == row && !f.points.empty()) {
+                    const auto p = f.points.front();
+                    moved = std::fabs(p.x - wireStart.x) + std::fabs(p.y - wireStart.y) + std::fabs(p.z - wireStart.z) > 50;
+                }
+            if (!moved || actorForRow(row) != wireActor || EditorScene::gravityCount() != count + 7)
+                return fail("Wire rail edit did not update in place without spending a slot");
+            std::fprintf(stderr, "[editor-gravity] all eight shape families and live wire path edits verified\n");
+        }
+        if (step == 1 && frame == 380) {
             auto* mgr = MR::getSceneObj< PlanetGravityManager >(SceneObj_PlanetGravityManager);
             for (int i = 0; i < mgr->nativeGravityCount(); i++) {
                 auto* g = mgr->nativeGravityAt(i);
@@ -169,7 +234,7 @@ namespace EditorGravity {
                 g->mActivated = false;
             }
         }
-        if (step == 1 && frame == 240) {
+        if (step == 1 && frame == 440) {
             if (Gravity::view().deadGround.empty())
                 return fail("Uncovered ground was not marked red");
             const auto& problems = checks();
@@ -181,12 +246,12 @@ namespace EditorGravity {
             }
             std::fprintf(stderr, "[editor-gravity] uncovered ground: %zu red samples, Checks verified\n", Gravity::view().deadGround.size());
         }
-        if (step == 1 && frame == 245) {
+        if (step == 1 && frame == 445) {
             auto* mgr = MR::getSceneObj< PlanetGravityManager >(SceneObj_PlanetGravityManager);
             for (size_t i = 0; i < active.size(); i++)
                 mgr->nativeGravityAt(static_cast< int >(i))->mActivated = active[i];
         }
-        if (step == 1 && frame == 265) {
+        if (step == 1 && frame == 465) {
             int zone = 0, table = 0;
             m->locate(row, &zone, &table);
             Command c{Command::Kind::Apply};
@@ -201,7 +266,7 @@ namespace EditorGravity {
             }
             enqueue(std::move(c));
         }
-        if (step == 1 && frame == 290) {
+        if (step == 1 && frame == 490) {
             if (EditorScene::gravityCount() != 128)
                 return fail("Fixture failed to reach gravity cap");
             const auto& problems = checks();
@@ -213,7 +278,7 @@ namespace EditorGravity {
             c.op = Gravity::shapeOp(*m, row, Gravity::Shape::Cube);
             enqueue(std::move(c));
         }
-        if (step == 1 && frame == 310) {
+        if (step == 1 && frame == 510) {
             if (actorForRow(row) != atCap || EditorScene::gravityCount() != 128 || !status().dirty)
                 return fail("Cap did not retain current field and defer recreation");
             if (!static_cast< GlobalGravityObj* >(atCap)->getGravity()->mAppeared)
