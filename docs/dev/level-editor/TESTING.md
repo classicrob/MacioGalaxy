@@ -94,3 +94,24 @@ then a fresh Launch Star with its own start/landing rail and atomic link. It sav
 and captures `new-path-draft` / `new-path-created`; the source/app hashes are in `revision.txt`.
 `native_editor_paths` additionally rebuilds a saved three-point rail from its patch. The
 background test checks authoring and linking, not completion of Mario's flight.
+
+### Array direction and framing
+
+The existing `editor_array_smoke.py` now includes a three-copy line at spacing 850: Right
+follows the local gravity frame and its end handle stays inside the viewport. Up preserves
+elevation and aligns the copy forward axes along gravity; neither preview changes the model.
+The run then continues through all five layouts, apply, undo/redo and area slot reuse.
+`array-axis` captures the visual picker and framed preview. `native_editor_array` covers all
+six local directions and preview bounds including original objects, copies and the handle.
+
+### Clean Browser donor placement
+
+`native/tools/editor_placement_smoke.py --app <Petari binary> --output <private output>`
+uses a private Good Egg fixture and the Browser's placement request. It sets
+SW_APPEAR/SW_SLEEP on a 1-Up donor, places a clean copy, checks its live model,
+undo/redo, and explicit Keep links. A Launch Star donor with SW_APPEAR1007 checks
+that optional wiring clears while its required path and zone remain. This tests
+the placement request and game adapter; it does not simulate clicking the Browser.
+The runner records source and binary hashes, captures both new objects, stops its
+server and removes its fixture cache. `native_editor_placement` covers catalog
+metadata, typed link resets, donor preservation, and destination-layer visibility.

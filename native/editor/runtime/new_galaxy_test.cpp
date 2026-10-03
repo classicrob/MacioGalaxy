@@ -43,6 +43,25 @@ void newGalaxyTestTick() {
         return std::string(p != nullptr ? p : "");
     }();
     static bool sDone = false;
+    if (sMode == "edit-check" && !sDone) {
+        // A player's restart (no fixture, no stage checks): once in the galaxy, the editor must be
+        // in Edit by itself (PlayerLaunch::openEdit, the UI's entry) within ten seconds.
+        static int sFrames = 0;
+        const char* pStage = EditorScene::stageName();
+        if (pStage == nullptr || std::strcmp(pStage, kHop.internal) != 0) {
+            return;
+        }
+        if (mode() == Mode::Editing) {
+            sDone = true;
+            std::fprintf(stderr, "[editor-newgalaxy] PASS: in Edit in %s after %d frames, by itself\n", pStage, sFrames);
+            return;
+        }
+        if (++sFrames >= 600) {
+            sDone = true;
+            std::fprintf(stderr, "[editor-newgalaxy] FAIL: not in Edit 600 frames into %s after the restart\n", pStage);
+        }
+        return;
+    }
     if (sMode.empty() || sDone || !PetariNative::SmokePhase::stageChecksDone.load()) {
         return;
     }
@@ -86,8 +105,8 @@ void newGalaxyTestTick() {
     if (pGalaxy == nullptr || pGalaxy->music != c.music) {
         return finish("FAIL: the registry has no entry (or the wrong music) for the new galaxy");
     }
-    if (!PetariNative::PlayerLaunch::openEdit || PetariNative::PlayerLaunch::openTitle != kName) {
-        return finish("FAIL: PETARI_OPEN_EDIT / PETARI_OPEN_TITLE did not reach the restarted game");
+    if (PetariNative::PlayerLaunch::openTitle != kName) {  // (openEdit is the player's run: edit-check)
+        return finish("FAIL: PETARI_OPEN_TITLE did not reach the restarted game");
     }
     if (std::getenv("PETARI_OPEN_STAGE") != nullptr) {
         return finish("FAIL: PETARI_OPEN_STAGE was not cleared (a later restart would repeat it)");

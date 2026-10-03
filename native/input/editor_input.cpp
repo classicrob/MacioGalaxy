@@ -27,6 +27,7 @@ std::atomic<float> gOrbitYaw{0}, gOrbitPitch{0}, gLookYaw{0}, gLookPitch{0}, gPa
 std::atomic<float> gMoveRight{0}, gMoveForward{0}, gMoveUp{0}, gSpeed{1}, gCursorX{0}, gCursorY{0};
 std::atomic<bool> gWorldUp{false};
 std::atomic<int> gPlayFrom{0};
+std::atomic<bool> gTyping{false}, gDeferredToggle{false};
 
 void request() {
     gRequestTime.store(nowNs(), std::memory_order_relaxed);
@@ -47,6 +48,11 @@ void resetCamera() {
 
 bool enabled() { return Mods::enabled(Mods::Mod::LevelEditor); }
 bool active() { return gActive.load(std::memory_order_acquire); }
+void setTyping(bool typing) { gTyping.store(typing, std::memory_order_relaxed); }
+bool typing() { return gTyping.load(std::memory_order_relaxed); }
+void deferToggle() { gDeferredToggle.store(true, std::memory_order_relaxed); }
+bool takeDeferredToggle() { return gDeferredToggle.exchange(false, std::memory_order_relaxed); }
+
 bool capturing() {
     return active() || (gRequested.load(std::memory_order_acquire) &&
                         nowNs() - gRequestTime.load(std::memory_order_relaxed) < 300'000'000LL);

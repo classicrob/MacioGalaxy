@@ -38,12 +38,14 @@ namespace {
         F::Bytes empty(16, 0);
         empty[11] = 16;  // dataOffset = 16, no fields, no rows
         F::Table t = *F::Table::parse(empty);
-        for (const Col& c : cols)
+        for (const Col& c : cols) {
             t.addColumn(F::jmapHash(c.name), c.type, c.type == F::ColumnType::StringOffset ? str("") : i32(0));
+        }
         for (const auto& row : rows) {
             const int r = t.addRow();
-            for (size_t c = 0; c < row.size(); c++)
+            for (size_t c = 0; c < row.size(); c++) {
                 t.set(r, static_cast< int >(c), row[c]);
+            }
         }
         return t.build();
     }
@@ -80,12 +82,14 @@ namespace {
 
     E::RowId findRow(const E::EditModel& m, int zone, const char* table, const char* name) {
         for (int t = 0; t < m.tableCount(zone); t++) {
-            if (std::string(m.tablePath(zone, t)) != table)
+            if (std::string(m.tablePath(zone, t)) != table) {
                 continue;
+            }
             E::RowId found;
             m.forEachRow(zone, t, [&](E::RowId id) {
-                if (!found.valid() && std::string(m.objectName(id)) == name)
+                if (!found.valid() && std::string(m.objectName(id)) == name) {
                     found = id;
+                }
             });
             return found;
         }
@@ -107,6 +111,31 @@ int main() {
     auto points = A::layout(p, {10, 20, 30}, frame);
     check(points.size() == 6 && G::length(points[0].position - G::V3{10, 145, 30}) < 0.01f, "line follows arbitrary gravity frame");
     check(G::length(points.back().position - G::V3{10, 770, 30}) < 0.01f, "line copies exclude source");
+    const G::V3 directions[] = {frame.z, frame.z * -1.f, frame.x, frame.x * -1.f, frame.y, frame.y * -1.f};
+    for (int i = 0; i < 6; ++i) {
+        p.direction = static_cast< A::Direction >(i);
+        const auto axisPoints = A::layout(p, {10, 20, 30}, frame);
+        check(G::length(axisPoints.back().position - G::V3{10, 20, 30} - directions[i] * 750.f) < .01f &&
+                  G::dot(axisPoints.back().forward, directions[i]) > .999f,
+              "visual direction follows local gravity axis " + std::to_string(i));
+    }
+    p.direction = A::Direction::Forward;
+    A::View preview;
+    preview.active = preview.hasHandle = true;
+    preview.origin = {10, 20, 30};
+    preview.handle = {10000, 20, 30};
+    A::Copy copy;
+    copy.originalPosition = preview.origin;
+    copy.position = {8000, 20, 30};
+    copy.radius = 100;
+    preview.copies.push_back(copy);
+    G::V3 center;
+    float radius = 0;
+    check(A::previewBounds(preview, &center, &radius) && G::length(preview.handle - center) < radius &&
+              G::length(copy.originalPosition - center) + copy.radius <= radius + 1 && G::length(copy.position - center) + copy.radius <= radius + 1,
+          "frame bounds include source, model extents and offscreen handle");
+    preview.active = false;
+    check(!A::previewBounds(preview, &center, &radius), "inactive array leaves normal framing alone");
     p.pattern = A::Pattern::Ring;
     p.radius = 300;
     p.facing = A::Facing::Outward;
@@ -135,8 +164,9 @@ int main() {
     p.pattern = A::Pattern::Path;
     p.count = 6;
     points = A::layout(p, {}, {}, &path);
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < 6; ++i) {
         check(std::fabs(points[i].position.x - i * 200.f) < 0.01f, "nonuniform Bezier parameter uses arc length");
+    }
     rail.points[0].outgoing = {0, 0, 900};
     rail.points[1].incoming = {1000, 0, 900};
     path = A::railPolyline(rail, identity);
@@ -212,8 +242,9 @@ int main() {
         check(std::fabs(t.dirDeg.y + 60) < 0.01f, "world heading converted to child zone");
     }
     check(m->undo() && m->historyCursor() == cursor, "single undo removes array");
-    for (auto id : ids)
+    for (auto id : ids) {
         check(!m->locate(id, nullptr, nullptr), "every copy removed");
+    }
     check(m->redo() && m->historyCursor() == cursor + 1, "single redo restores array");
     check(A::makeOp(*m, copies, {ids[0]}, &error).adds.empty(), "mismatched fresh IDs rejected atomically");
     std::printf("PASS: %d array checks\n", checks);

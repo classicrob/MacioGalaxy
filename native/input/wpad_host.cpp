@@ -727,7 +727,14 @@ bool editorInput(Binding input, bool down, bool repeat) {
                 gEditorTapArmed = true;
             } else if (gEditorTapArmed) {
                 gEditorTapArmed = false;
-                if (std::chrono::steady_clock::now() - gEditorTapStart < kEditorTap) EditorSettings::toggle();
+                if (std::chrono::steady_clock::now() - gEditorTapStart < kEditorTap) {
+                    // While a field is being typed in, the UI commits it first and toggles after.
+                    if (EditorSettings::active() && EditorSettings::typing()) {
+                        EditorSettings::deferToggle();
+                    } else {
+                        EditorSettings::toggle();
+                    }
+                }
             }
         } else if (down) {
             gEditorTapArmed = false;  // something else pressed: a hold (tilt and move), not a tap

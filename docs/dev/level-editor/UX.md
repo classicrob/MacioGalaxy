@@ -511,7 +511,12 @@ Hold **Cmd** while dragging to suspend all snapping for that drag.
   a line or curve of coins along the planet.
 - **Array** (`Cmd+Shift+D`, or the Inspector's Arrange section): pattern the
   selection with live preview and on-canvas handles:
-  - **Line**: count or spacing; drag the end handle and the count updates.
+  - **Line**: count or spacing; colored **Forward/Back**, **Right/Left**, and
+    **Up/Down** direction buttons follow the source heading and local gravity.
+    Up/Down turns ground snapping off to keep the copies at their chosen elevation.
+    Drag the end handle and the count updates. Changing the settings reframes
+    an offscreen handle after the edit; **F** or **Frame preview** fits the source,
+    copies and handle together. Camera framing waits until a handle drag ends.
   - **Ring**: around a centre (the play marker, the pivot, or a picked object),
     lying on the surface; radius handle; "face outward / inward / along".
   - **Grid**: rows × columns on the surface.
@@ -591,6 +596,12 @@ cursor with **Space**.
 
 ### Placing
 
+- Copies from Browser examples keep settings and scale, but clear optional switch,
+  group, camera and other catalog links so the new object can stand on its own.
+  **Keep links**, in the example details, preserves the wiring. Required links
+  (such as a Launch Star's flight path) always stay; linked copies stay in the
+  donor's zone. A destination layer inactive in the edited mission falls back
+  to Common. Duplicates and arrays keep their links.
 - **Drag a card into the viewport**: the object follows the cursor on the
   ground, upright for gravity, with a ghost preview, and lands where you
   release. Esc while dragging cancels.

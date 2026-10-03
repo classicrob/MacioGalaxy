@@ -35,7 +35,7 @@ def main():
                PETARI_FAST_BOOT='1', PETARI_PIPELINE_GLOBAL_PRECOMPILE='0', PETARI_LOCK_CLASS='functional',
                PETARI_MODS='LevelEditor', PETARI_EDITOR_ARRAY_TEST=str(output),
                PETARI_SURFACE_DUMP=str(output / 'surfaces'),
-               PETARI_SURFACE_DUMP_LABELS='array-line,array-ring,array-applied',
+               PETARI_SURFACE_DUMP_LABELS='array-line,array-axis,array-ring,array-applied',
                PETARI_SURFACE_DUMP_EVERY='5', PETARI_SURFACE_DUMP_SPAN='15')
     if args.source_class:
         env['PETARI_EDITOR_ARRAY_CLASS'] = args.source_class

@@ -36,10 +36,48 @@ namespace PetariEditor::Arrays {
     G::Basis alignAlong(G::V3 forward, G::V3 up) {
         const auto z = G::normalized(forward, {0, 0, 1});
         auto x = G::cross(up, z);
-        if (G::length(x) < 1e-5f)
+        if (G::length(x) < 1e-5f) {
             x = G::cross(std::fabs(z.y) < .9f ? G::V3{0, 1, 0} : G::V3{1, 0, 0}, z);
+        }
         x = G::normalized(x);
         return {x, G::cross(z, x), z};
+    }
+    G::V3 lineDirection(Direction direction, const G::Basis& frame) {
+        switch (direction) {
+        case Direction::Back:
+            return frame.z * -1.f;
+        case Direction::Right:
+            return frame.x;
+        case Direction::Left:
+            return frame.x * -1.f;
+        case Direction::Up:
+            return frame.y;
+        case Direction::Down:
+            return frame.y * -1.f;
+        default:
+            return frame.z;
+        }
+    }
+    bool previewBounds(const View& view, G::V3* center, float* radius) {
+        if (!view.active || view.copies.empty()) {
+            return false;
+        }
+        G::V3 lo{1e30f, 1e30f, 1e30f}, hi{-1e30f, -1e30f, -1e30f};
+        auto include = [&](G::V3 point, float r) {
+            lo = {std::min(lo.x, point.x - r), std::min(lo.y, point.y - r), std::min(lo.z, point.z - r)};
+            hi = {std::max(hi.x, point.x + r), std::max(hi.y, point.y + r), std::max(hi.z, point.z + r)};
+        };
+        include(view.origin, 24);
+        if (view.hasHandle) {
+            include(view.handle, 24);
+        }
+        for (const auto& copy : view.copies) {
+            include(copy.originalPosition, copy.radius);
+            include(copy.position, copy.radius);
+        }
+        *center = (lo + hi) * 0.5f;
+        *radius = G::length(hi - lo) * 0.5f;
+        return true;
     }
     Parameters bounded(Parameters p) {
         p.count = std::clamp(p.count, 1, kMaxCopies);
@@ -54,8 +92,9 @@ namespace PetariEditor::Arrays {
     Polyline railPolyline(const Paths::Rail& rail, const Mtx34& zone) {
         Polyline line;
         line.closed = rail.closed;
-        if (rail.points.empty())
+        if (rail.points.empty()) {
             return line;
+        }
         const auto world = [&](Vec3 p) { return DebugDraw::vector(DebugDraw::transform(zone, p)); };
         line.points.push_back(world(rail.points.front().position));
         line.distances.push_back(0);
@@ -68,8 +107,9 @@ namespace PetariEditor::Arrays {
         return line;
     }
     Sample atDistance(const Polyline& line, float distance) {
-        if (line.points.size() < 2 || line.length() < 1e-5f)
+        if (line.points.size() < 2 || line.length() < 1e-5f) {
             return {line.points.empty() ? G::V3{} : line.points.front(), {0, 0, 1}};
+        }
         distance = std::clamp(finite(distance, 0), 0.f, line.length());
         auto it = std::upper_bound(line.distances.begin(), line.distances.end(), distance);
         const size_t i = std::clamp< size_t >(it - line.distances.begin(), 1, line.points.size() - 1);
@@ -81,19 +121,22 @@ namespace PetariEditor::Arrays {
         const auto p = bounded(parameters);
         std::vector< Sample > result;
         if (p.pattern == Pattern::Path) {
-            if (!rail || rail->length() < 1e-4f || p.startDistance > rail->length())
+            if (!rail || rail->length() < 1e-4f || p.startDistance > rail->length()) {
                 return result;
+            }
             const float remaining = rail->length() - p.startDistance;
-            if (remaining < 1e-4f)
+            if (remaining < 1e-4f) {
                 return {atDistance(*rail, rail->length())};
+            }
             const bool fullLoop = rail->closed && p.startDistance == 0;
             const int count =
                 p.pathSpacing ? std::min(kMaxCopies, 1 + static_cast< int >(std::min(255.f, std::floor(remaining / p.spacing)))) : p.count;
             const float step = p.pathSpacing ? p.spacing : remaining / std::max(1, fullLoop ? count : count - 1);
             for (int i = 0; i < count; ++i) {
                 const float distance = p.startDistance + step * i;
-                if (fullLoop && i > 0 && distance >= rail->length() - 1e-4f)
+                if (fullLoop && i > 0 && distance >= rail->length() - 1e-4f) {
                     break;
+                }
                 result.push_back(atDistance(*rail, distance));
             }
             return result;
@@ -101,9 +144,10 @@ namespace PetariEditor::Arrays {
         const int count = p.pattern == Pattern::Grid ? p.rows * p.columns : p.count;
         for (int i = 0; i < count; ++i) {
             G::V3 offset, forward = frame.z;
-            if (p.pattern == Pattern::Line)
-                offset = frame.z * (p.spacing * (i + 1));
-            else if (p.pattern == Pattern::Grid) {
+            if (p.pattern == Pattern::Line) {
+                forward = lineDirection(p.direction, frame);
+                offset = forward * (p.spacing * (i + 1));
+            } else if (p.pattern == Pattern::Grid) {
                 // Start one step ahead so no copy coincides with the source.
                 offset = frame.x * (p.spacing * (i % p.columns)) + frame.z * (p.spacing * (1 + i / p.columns));
             } else {
@@ -111,10 +155,12 @@ namespace PetariEditor::Arrays {
                 const auto outward = frame.x * std::cos(angle) + frame.z * std::sin(angle);
                 offset = outward * p.radius;
                 forward = frame.x * (-std::sin(angle)) + frame.z * std::cos(angle);
-                if (p.facing == Facing::Outward)
+                if (p.facing == Facing::Outward) {
                     forward = outward;
-                if (p.facing == Facing::Inward)
+                }
+                if (p.facing == Facing::Inward) {
                     forward = outward * -1.f;
+                }
             }
             result.push_back({origin + offset, forward});
         }
@@ -123,21 +169,25 @@ namespace PetariEditor::Arrays {
     Op makeOp(const ModelView& model, const std::vector< Copy >& copies, const std::vector< RowId >& ids, std::string* error) {
         Op op;
         auto fail = [&](const char* message) {
-            if (error)
+            if (error) {
                 *error = message;
+            }
             return Op{};
         };
-        if (copies.empty() || copies.size() > kMaxCopies || ids.size() != copies.size())
+        if (copies.empty() || copies.size() > kMaxCopies || ids.size() != copies.size()) {
             return fail("Choose between 1 and 256 copies.");
+        }
         op.label = "Arrayed " + std::to_string(copies.size()) + " objects";
         std::vector< RowId > used;
         for (size_t i = 0; i < copies.size(); ++i) {
             const auto& c = copies[i];
             int zone, table;
-            if (!model.locate(c.source, &zone, &table) || !model.hasTransform(c.source) || model.state(c.source) == RowState::Deleted)
+            if (!model.locate(c.source, &zone, &table) || !model.hasTransform(c.source) || model.state(c.source) == RowState::Deleted) {
                 return fail("The source object is no longer available.");
-            if (!ids[i].valid() || model.locate(ids[i], nullptr, nullptr) || std::find(used.begin(), used.end(), ids[i]) != used.end())
+            }
+            if (!ids[i].valid() || model.locate(ids[i], nullptr, nullptr) || std::find(used.begin(), used.end(), ids[i]) != used.end()) {
                 return fail("Each copy needs a fresh row ID.");
+            }
             used.push_back(ids[i]);
             const auto z = model.zoneWorldMatrix(zone);
             const auto b = zoneBasis(z);
@@ -151,8 +201,9 @@ namespace PetariEditor::Arrays {
             add.table = model.tablePath(zone, table);
             add.copyOf = c.source;
             for (int j = 0; j < 6; ++j) {
-                if (!std::isfinite(values[j]))
+                if (!std::isfinite(values[j])) {
                     return fail("An array transform is not finite.");
+                }
                 Cell value;
                 value.type = CellType::Float;
                 value.f = values[j];
@@ -160,8 +211,9 @@ namespace PetariEditor::Arrays {
             }
             op.adds.push_back(std::move(add));
         }
-        if (error)
+        if (error) {
             error->clear();
+        }
         return op;
     }
     std::uint64_t revision() {
