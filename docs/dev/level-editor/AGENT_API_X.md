@@ -167,7 +167,7 @@ The test server (`native/tools/test_server.py`, `PETARI_TEST_SERVER`) takes thes
 | `editor-play [x y z [up] [front]]` | Play from a marker there: Mario teleported, upright for up |
 | `editor-state`, `editor-checks` | model revision, history, mode; the game's Checks with refs |
 | `ground x y z [dx dy dz]`, `gravity x y z` | the engine's own gravity and first map polygon (exact) |
-| `mario`, `warp x y z`, `wait N` | Mario's position, gravity, ground, death; move him; let N frames run |
+| `mario`, `teleport x y z`, `wait N` | Mario's position, gravity, ground, death; move him; let N frames run |
 | `screenshot PNG` | the next presented frame, without the editor's overlay |
 
 Replies are `ok <json>` / `error <text>`. `level_api_x.Live` wraps them: `Live.start(app=...)`,

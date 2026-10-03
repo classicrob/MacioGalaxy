@@ -7,7 +7,7 @@
 
 // The test server's live-editing commands (src/Game/Scene/TestServerEditor.cpp; docs/dev/level-editor/AGENT_API_X.md):
 // editor-begin, editor-state, editor-apply <op.json>, editor-undo/redo [n], editor-reload, editor-play [x y z [up] [front]],
-// editor-save <mod> [--full], editor-checks, mario, warp x y z, ground/gravity x y z [dx dy dz], screenshot <png>, wait <frames>.
+// editor-save <mod> [--full], editor-checks, mario, teleport x y z, ground/gravity x y z [dx dy dz], screenshot <png>, wait <frames>.
 namespace TestServerEditor {
     using Reply = std::function< void(const std::string& name, const std::string& text) >;
     // A command (words[0] is its name): false when it is not one of these. Some reply later, from tick().

@@ -140,7 +140,7 @@ class Live:
 
     def warp(self, pos: Sequence[float]) -> dict:
         """Mario to pos right now (no editor involved); returns Mario two frames later."""
-        return self.send("warp " + " ".join(f"{v:.2f}" for v in pos))
+        return self.send("teleport " + " ".join(f"{v:.2f}" for v in pos))
 
     def trace(self, frames: int, every: int = 6) -> list:
         """Mario's positions while the game runs `frames` frames (one sample per `every`)."""
