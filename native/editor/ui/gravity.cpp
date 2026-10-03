@@ -1,3 +1,4 @@
+#include "help.hpp"
 #include "gravity.hpp"
 #include "imgui.h"
 #include "panels.hpp"
@@ -107,7 +108,7 @@ namespace PetariEditor::Ui {
         if (!Gravity::visible())
             return false;
         auto v = Gravity::view();
-        auto* draw = ImGui::GetForegroundDrawList();
+        auto* draw = viewportDrawList();
         draw->PushClipRect({x, y}, {x + width, y + height}, true);
         if (v.probe.valid) {
             ImVec2 p{x + (v.probeX + 1) * width / 2, y + (1 - v.probeY) * height / 2};

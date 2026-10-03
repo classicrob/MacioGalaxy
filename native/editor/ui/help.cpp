@@ -73,6 +73,10 @@ namespace PetariEditor::Ui {
         return false;
     }
 
+    ImDrawList* viewportDrawList() {
+        return gHelpVisible ? ImGui::GetBackgroundDrawList() : ImGui::GetForegroundDrawList();
+    }
+
     void drawHelpOverlay() {
         if (!gHelpVisible || ImGui::GetTopMostPopupModal() != nullptr) {
             return;

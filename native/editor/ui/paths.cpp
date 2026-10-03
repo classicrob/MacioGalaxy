@@ -1,3 +1,4 @@
+#include "help.hpp"
 #include "paths.hpp"
 #include "imgui.h"
 #include "panels.hpp"
@@ -386,7 +387,7 @@ namespace PetariEditor::Ui {
                 request.remove = ImGui::IsKeyPressed(ImGuiKey_Backspace, false) || ImGui::IsKeyPressed(ImGuiKey_Delete, false);
             }
             V::sendCreate(request);
-            auto* list = ImGui::GetForegroundDrawList();
+            auto* list = viewportDrawList();
             list->PushClipRect(ImVec2(x, y), ImVec2(x + width, y + height), true);
             for (const auto& point : view.draftMarks) {
                 const auto screen = at(point.x, point.y);
@@ -412,7 +413,7 @@ namespace PetariEditor::Ui {
         const bool inside = io.MousePos.x >= x && io.MousePos.y >= y && io.MousePos.x < x + width && io.MousePos.y < y + height &&
                             (!io.WantCaptureMouse || link.active || drag.active);
         bool consumed = link.active || drag.active || captureClick;
-        auto* list = ImGui::GetForegroundDrawList();
+        auto* list = viewportDrawList();
         list->PushClipRect(ImVec2(x, y), ImVec2(x + width, y + height), true);
         const V::Mark* hit = nullptr;
         float nearest = 10;
@@ -687,7 +688,7 @@ namespace PetariEditor::Ui {
         }
         const auto& view = V::view();
         auto at = [&](float a, float b) { return ImVec2(x + (a + 1) * width * 0.5f, y + (1 - b) * height * 0.5f); };
-        auto* list = ImGui::GetForegroundDrawList();
+        auto* list = viewportDrawList();
         list->PushClipRect(ImVec2(x, y), ImVec2(x + width, y + height), true);
         for (const auto& wire : view.wires) {
             const bool emphasized = V::wireFocused(wire.to);

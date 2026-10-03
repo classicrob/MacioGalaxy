@@ -346,6 +346,7 @@ void testHelpInput() {
     key(ImGuiKey_Slash, false);
     key(ImGuiKey_Slash, true);
     CHECK(Ui::helpVisible());
+    CHECK(Ui::viewportDrawList() == ImGui::GetBackgroundDrawList());
     const auto* window = ImGui::FindWindowByName("Keys and tips###editor-help");
     CHECK(window && !(window->Flags & ImGuiWindowFlags_Modal));
     CHECK(window && window->Pos.x >= 0 && window->Pos.y >= 0);
@@ -353,6 +354,7 @@ void testHelpInput() {
     key(ImGuiKey_Slash, false);
     CHECK(key(ImGuiKey_Escape, true));  // Closing help consumes Esc before selection/tools see it.
     CHECK(!Ui::helpVisible());
+    CHECK(Ui::viewportDrawList() == ImGui::GetForegroundDrawList());
     key(ImGuiKey_Escape, false);
     key(ImGuiKey_Slash, true);
     CHECK(Ui::helpVisible());
