@@ -69,3 +69,28 @@ the machine's load. `press: true` taps for the first 6 frames of the step, else 
 position, velocity, grounded and dead flags at the end (`ok ... ended=done`, or `error ... ended=stage-changed|died|control-lost|player-lost|cancelled`);
 `--log` writes one row per frame. Buttons: A B Z Spin Cap CamLeft CamRight Plus Minus. The engine is `src/Game/Scene/TestServerInput.*`; code
 callers use `TestServerInput::startSteps/status/cancel` from the game thread.
+
+
+## Static model imports
+
+`native_editor_import` generates its own CC0 OBJ, textured glTF/GLB and image fixtures.
+It checks orientation, UV transforms, compressed buffers, GX encoders, actual J3D loading,
+collision simplification/splitting, neutral asset round trips, reusable multi-material
+placement, native planet baking and idempotent patch builds. No downloaded model is needed.
+
+`native/tools/editor_import_smoke.py --app <binary> --output <unique-run>` creates a private
+stage fixture and CC0 checker cube, opens the import sheet, places it, checks the game's
+collision ray, undo/redo, patch assets and full native bake. It captures the sheet and model.
+Then use `--reopen-mod <first-run>/user/mods/ImportedFixture` with a new output directory to
+check editable reopening; add `--play-only` for editor-off loading as a native planet.
+Every run records source/binary hashes, keeps its logs/screenshots and removes its own cache.
+
+### Creating new paths
+
+`native/tools/editor_new_path_smoke.py --app <Petari executable> --output <unique directory>`
+uses a private Good Egg stage fixture. It drives the same path controller as the UI using
+real game ground rays: three points, cancel without a model edit, create, one-step undo/redo,
+then a fresh Launch Star with its own start/landing rail and atomic link. It saves the patch
+and captures `new-path-draft` / `new-path-created`; the source/app hashes are in `revision.txt`.
+`native_editor_paths` additionally rebuilds a saved three-point rail from its patch. The
+background test checks authoring and linking, not completion of Mario's flight.

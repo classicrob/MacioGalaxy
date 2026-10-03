@@ -131,7 +131,7 @@ void cameraInput(const Area& area, bool toolConsumed) {
     // Placing (the Browser, UX section 7): a card dropped on the viewport, or a click while Place is armed,
     // puts a copy of its example on the ground under the cursor (instead of selecting).
     bool placed = false;
-    if (inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+    if (!toolConsumed && inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         if (const ImGuiPayload* payload = ImGui::GetDragDropPayload(); payload != nullptr && payload->IsDataType(kPlacePayload)) {
             placeToken(*static_cast<const std::uint64_t*>(payload->Data));
             placed = true;
@@ -175,7 +175,7 @@ void cameraInput(const Area& area, bool toolConsumed) {
     // What a Tab tap plays: Shift resumes the frozen moment, Option plays from the mission start
     // (Cmd+Tab and Cmd+Shift+Tab are macOS's app switcher and never reach the game).
     Settings::setPlayFrom(io.KeyShift ? 1 : io.KeyAlt ? 2 : 0);
-    if (!io.WantTextInput && gDrag != Drag::Look) {
+    if (!io.WantTextInput && gDrag != Drag::Look && !toolConsumed) {
         // Q W E R: select, move, rotate, scale (while flying, those keys fly).
         if (ImGui::IsKeyPressed(ImGuiKey_Q, false)) Gizmo::setMode(Gizmo::Mode::Select);
         if (ImGui::IsKeyPressed(ImGuiKey_W, false)) Gizmo::setMode(Gizmo::Mode::Move);
@@ -351,7 +351,18 @@ void updateEditMode(float windowWidth, float windowHeight) {
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Z)) undo();
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z)) redo();
     // Cmd+S: save the mod (the sheet the first time); Cmd+Shift+S: the sheet again (another name or format).
-    if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) requestSave(false);
+    // Even from a focused field (not a text key): the field's edit is ended first, so its value commits, and the save
+    // follows a couple of frames later.
+    static int sSaveIn = 0;
+    if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_S)) {
+        if (io.WantTextInput) {
+            ImGui::ClearActiveID();
+            sSaveIn = 3;
+        } else {
+            requestSave(false);
+        }
+    }
+    if (sSaveIn > 0 && --sSaveIn == 0) requestSave(false);
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_S)) requestSave(true);
     // Cmd+N: New galaxy (UX section 14).
     if (!io.WantTextInput && ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_N)) openNewGalaxySheet();
@@ -365,7 +376,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
     const bool arrayConsumed = drawArrayOverlay(area.x, area.y, area.w, area.h);  // Array: handles precede picking.
     const bool toolConsumed =
-        drawPathsViewport(area.x, area.y, area.w, area.h) || areasConsumed || arrayConsumed;  // M3 paths: handles precede picking.
+        drawStyledOverlay([&] { return drawPathsViewport(area.x, area.y, area.w, area.h); }) || areasConsumed || arrayConsumed;  // M3 paths: handles precede picking.
     cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);

@@ -1,4 +1,7 @@
 #include "Game/LiveActor/HitSensor.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime.hpp>
+#endif
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioAnimator.hpp"
 #include "Game/Player/MarioFpView.hpp"
@@ -21,6 +24,12 @@ void MarioActor::forceKill(u32 type) {
     if (!isEnableNerveChange()) {
         return;
     }
+
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::playerMissing("マリオダウン")) {
+        return;
+    }
+#endif
 
     _A6E = 0;
 
@@ -86,6 +95,11 @@ void MarioActor::forceKill(u32 type) {
 }
 
 void MarioActor::exeGameOver() {
+#ifdef PETARI_NATIVE
+    if (MR::isFirstStep(this) && PetariEditor::Runtime::playerMissing("マリオダウン")) {
+        return;
+    }
+#endif
     mVelocity.zero();
     calcHeadPos();
     updateRealMtx();
@@ -135,6 +149,11 @@ void MarioActor::exeGameOver() {
 }
 
 void MarioActor::exeGameOverAbyss() {
+#ifdef PETARI_NATIVE
+    if (MR::isFirstStep(this) && PetariEditor::Runtime::playerMissing("マリオ奈落")) {
+        return;
+    }
+#endif
     mVelocity = getLastMove() * 0.99f + mCamDirZ * 35.0f * 0.01f;
     mLastMove = mVelocity;
 
@@ -161,6 +180,11 @@ void MarioActor::exeGameOverAbyss() {
 }
 
 void MarioActor::exeGameOverFire() {
+#ifdef PETARI_NATIVE
+    if (MR::isFirstStep(this) && PetariEditor::Runtime::playerMissing("マリオ炎ダウン")) {
+        return;
+    }
+#endif
     mVelocity.zero();
     calcHeadPos();
     updateRealMtx();
@@ -188,6 +212,11 @@ void MarioActor::exeGameOverFire() {
 }
 
 void MarioActor::exeGameOverSink() {
+#ifdef PETARI_NATIVE
+    if (MR::isFirstStep(this) && PetariEditor::Runtime::playerMissing("マリオダウン")) {
+        return;
+    }
+#endif
     mVelocity.zero();
     calcHeadPos();
     updateRealMtx();
@@ -238,6 +267,11 @@ void MarioActor::exeGameOverSink() {
 }
 
 void MarioActor::exeGameOverNonStop() {
+#ifdef PETARI_NATIVE
+    if (MR::isFirstStep(this) && PetariEditor::Runtime::playerMissing("マリオ炎ダウン")) {
+        return;
+    }
+#endif
     if (!MR::isFirstStep(this)) {
         return;
     }

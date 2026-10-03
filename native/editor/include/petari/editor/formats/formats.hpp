@@ -63,6 +63,11 @@ private:
 std::string sjisToUtf8(const std::string& sjis);
 std::string utf8ToSjis(const std::string& utf8);
 
+/// A message's text (UTF-8, tags such as colours and icons dropped) from a message archive
+/// (<Language>/MessageData/Message.arc: messageid.tbl names each message's index in message.bmg).
+/// nullopt: no such message, or not a message archive.
+std::optional< std::string > messageText(const Bytes& messageArchive, const std::string& messageId);
+
 /// The game's field-name hash (JGadget::getHashCode).
 std::uint32_t jmapHash(const char* pName);
 

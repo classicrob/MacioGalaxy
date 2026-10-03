@@ -8,6 +8,10 @@
 class LiveActor;
 class JMapInfoIter;
 
+namespace PetariEditor {
+    class EditModel;
+}
+
 namespace PetariEditor::Runtime {
 
 /// GameScene::update, every frame, before the scene's nerves (CPU baton held). Loads the
@@ -36,6 +40,17 @@ bool playMarker(Vec3* position);
 /// thread. False: the editor is off, no stage is loaded, or the model couldn't load
 /// (status().lastError says why).
 bool ensureModel();
+
+// Generated geometry uses editor-owned parts instead of the game's placement factory.
+// beginScene forgets pointers to the previous scene; sync is called for active placement rows.
+// retire must tolerate unknown RowIds (undoing an add removes its identity from the model).
+struct GeneratedRowProvider {
+    bool (*owns)(const char* objectName) = nullptr;
+    void (*sync)(const EditModel& model, RowId row) = nullptr;
+    void (*retire)(RowId row) = nullptr;
+    void (*beginScene)() = nullptr;
+};
+void registerGeneratedRowProvider(GeneratedRowProvider provider);
 
 // ---- SceneSync extensions (M3: gravity, paths). Register once at start-up; game thread. ----------
 
@@ -79,6 +94,17 @@ bool requestEdit(const char* reason);
 /// in-memory progress is restored at End, and other progress writers (progress.json, the mod
 /// galaxies' sidecars) skip their writes while this is true. Any thread.
 bool progressIsolated();
+/// Mario starts a miss (MR::startPlayerEvent with a miss event: down, abyss, fire, game over, a
+/// race lost). Handlers (the play loop's adapter) are asked in order; true: handled, the game's
+/// miss event isn't started (the adapter froze the moment with requestEditAfterMiss).
+using MissHandler = bool (*)(const char* event);
+void registerMissHandler(MissHandler handler);
+/// MR::startPlayerEvent: false lets the event run (no handler took it, or not in a play-test).
+bool playerMissing(const char* event);
+/// Back to Edit now, frozen at the moment of the miss (the scene isn't rebuilt): `reason` is the
+/// notice ("Missed at 0:12"). The next Play or Resume is a fresh run (the scene rebuilt from the
+/// marker). False outside Play.
+bool requestEditAfterMiss(const char* reason);
 /// GameScene::requestEndMissDemo: during a play-test a miss returns to Edit (an editor reload; no
 /// lives lost) instead of the game's restart. False (the game's own path) outside Play.
 bool interceptMiss();

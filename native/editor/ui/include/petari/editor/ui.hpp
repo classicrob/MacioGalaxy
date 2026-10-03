@@ -49,6 +49,8 @@ void switchMission(int mission);
 void setSettingsFile(const char* path);
 
 // A mod zip dropped on the window (UX section 17, Installing): the Install sheet, in or out of Edit.
+void openImportSheet(const char* path = "");
+void drawImportSheet();
 void openInstallSheet(const char* zipPath);
 void submitInstallSheet();  // test drivers: press Install
 // Test drivers: the New Galaxy sheet (UX section 14) and its Create.

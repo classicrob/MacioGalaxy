@@ -36,6 +36,7 @@ extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgb
 #include <petari/pipeline_startup.hpp>
 #include <petari/mods.hpp>
 #include <petari/editor/terrain/bake.hpp>
+#include <petari/editor/import_assets.hpp>
 #include <petari/platform/mod_folder.hpp>
 #include <petari/platform/mod_galaxy.hpp>
 #include <petari/progress.hpp>
@@ -495,6 +496,23 @@ App::FrameStats::Phase framePhaseForPipelines() {
                     const std::vector<Pick::Item> selected = Pick::selection();
                     sPlaceExample = !selected.empty() ? selected.front().row : 0;
                 }
+                // PETARI_EDITOR_TEST_PLACE_OFFMISSION=1 (EP-008): the example is a row from another mission's layer.
+                if (t == 141 && std::getenv("PETARI_EDITOR_TEST_PLACE_OFFMISSION") != nullptr) {
+                    if (const PetariEditor::ModelView* model = PetariEditor::model()) {
+                        const std::uint32_t bit = 1u << (model->scenario() - 1);
+                        for (int zone = 0; zone < model->zoneCount() && sPlaceExample == 0; zone++) {
+                            for (int table = 0; table < model->tableCount(zone) && sPlaceExample == 0; table++) {
+                                if (std::strstr(model->tablePath(zone, table), "placement/layer") == nullptr) continue;
+                                if (std::strstr(model->tablePath(zone, table), "/objinfo") == nullptr) continue;
+                                model->forEachRow(zone, table, [&](PetariEditor::RowId row) {
+                                    if (sPlaceExample == 0 && (model->rowMissions(row) & bit) == 0) sPlaceExample = row.v;
+                                });
+                            }
+                        }
+                        std::fprintf(stderr, "[editor-test] place: off-mission example %s\n",
+                                     sPlaceExample != 0 && model->objectName(PetariEditor::RowId{sPlaceExample}) ? model->objectName(PetariEditor::RowId{sPlaceExample}) : "(none)");
+                    }
+                }
                 if (sPlaceExample != 0) {
                     if (t == 142) {
                         Editor::cursor(0.0f, -0.3f);
@@ -803,6 +821,7 @@ int main(int argc, char** argv) {
         const char* editorEnv = std::getenv("PETARI_EDITOR");
         if (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::LevelEditor) && !(editorEnv != nullptr && editorEnv[0] == '1')) {
             PetariEditor::Terrain::registerPatchBuilder();
+            PetariEditor::Imports::registerPatchBuilder();  // M6 import: neutral assets become native planets.
         }
     }
     if (!App::Host::preparePlatform(paths, &error)) {
