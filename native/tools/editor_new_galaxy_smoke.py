@@ -93,8 +93,10 @@ def main():
     command2 = [part for part in command if part not in ("--test-fixture", "stage")]
     command2[command2.index("--user") + 1] = str(user2)
     env2 = dict(env)
-    for key in ("PETARI_STAGE", "PETARI_SCENARIO", "PETARI_EDITOR_NEWGALAXY_TEST"):
+    for key in ("PETARI_STAGE", "PETARI_SCENARIO"):
         env2.pop(key, None)
+    env2["PETARI_EDITOR_NEWGALAXY_TEST"] = "edit-check"  # the editor enters Edit by itself there
+    env2["PETARI_MODS"] = "LevelEditor"  # on, as for whoever made the galaxy in the editor
     env2.update(PETARI_SMOKE="observe", PETARI_SMOKE_FRAMES="3000", PETARI_OPEN_STAGE="SmokeHopGalaxy", PETARI_OPEN_FILE="1",
                 PETARI_OPEN_EDIT="1", PETARI_OPEN_TITLE="Smoke Hop")
     log2 = args.output / "player-open.log"
@@ -105,8 +107,9 @@ def main():
     result2 = (re.findall(r"PETARI SMOKE RESULT: (\w+)", text2) or [None])[-1]
     opened = "FileSelector.OpenFile" in text2
     arrived = re.search(r"observe: now in Game/SmokeHopGalaxy", text2) is not None
-    print(f"player open: exit {status2}, smoke {result2}; file opened by itself {opened}, in the galaxy {arrived}")
-    if result2 != "PASS" or not opened or not arrived:
+    editing = re.findall(r"\[editor-newgalaxy\] (.*)", text2)
+    print(f"player open: exit {status2}, smoke {result2}; file opened by itself {opened}, in the galaxy {arrived}; {editing}")
+    if result2 != "PASS" or not opened or not arrived or not any(line.startswith("PASS") for line in editing):
         print("FAIL")
         return 1
 
