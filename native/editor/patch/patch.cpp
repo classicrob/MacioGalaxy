@@ -236,6 +236,15 @@ namespace {
         return text.str();
     }
 
+    struct AssetBuilderEntry {
+        std::string version;
+        AssetBuilder builder;
+    };
+    std::vector< AssetBuilderEntry >& assetBuilders() {
+        static std::vector< AssetBuilderEntry > sBuilders;
+        return sBuilders;
+    }
+
     std::optional< Bytes > readFile(const fs::path& path) {
         std::ifstream in(path, std::ios::binary);
         if (!in) return std::nullopt;
@@ -332,6 +341,10 @@ std::vector< Built > build(const std::vector< Source >& patches, const DiscReade
     return out;
 }
 
+void registerAssetBuilder(const std::string& version, AssetBuilder builder) {
+    assetBuilders().push_back({version, std::move(builder)});
+}
+
 std::vector< std::pair< std::string, fs::path > > buildForLoader(const std::vector< fs::path >& roots, const fs::path& discFiles,
                                                                const fs::path& cacheDirectory, std::vector< std::string >* pLog) {
     std::vector< Source > sources;
@@ -348,6 +361,19 @@ std::vector< std::pair< std::string, fs::path > > buildForLoader(const std::vect
             key = fnv(key, source.mod.data(), source.mod.size() + 1);
             key = fnv(key, source.text.data(), source.text.size());
             sources.push_back(std::move(source));
+        }
+    }
+    for (const AssetBuilderEntry& b : assetBuilders()) key = fnv(key, b.version.data(), b.version.size() + 1);
+    for (const fs::path& root : roots) {
+        std::error_code ec;
+        for (fs::recursive_directory_iterator it(root / "assets", ec), end; !ec && it != end; it.increment(ec)) {
+            if (!it->is_regular_file(ec)) continue;
+            const std::string name = it->path().lexically_relative(root).generic_string();
+            const std::uintmax_t size = it->file_size(ec);
+            const auto time = it->last_write_time(ec).time_since_epoch().count();
+            key = fnv(key, name.data(), name.size());
+            key = fnv(key, &size, sizeof(size));
+            key = fnv(key, &time, sizeof(time));
         }
     }
     std::vector< std::pair< std::string, fs::path > > out;
@@ -384,9 +410,37 @@ std::vector< std::pair< std::string, fs::path > > buildForLoader(const std::vect
         log("patch mods: " + std::to_string(out.size()) + " archive(s) from the cache " + cache.filename().string());
         return out;
     }
-    std::vector< std::string > buildLog;
-    std::vector< Built > built = build(sources, [&](const std::string& path) { return readFile(discFiles / path); }, &buildLog);
-    for (const std::string& line : buildLog) log(line);
+    // The row edits, then the generated files. A mod a builder rejects is left out and the rest
+    // is built again without it, so a broken mod never serves half its files.
+    const DiscReader readDisc = [&](const std::string& path) { return readFile(discFiles / path); };
+    std::vector< fs::path > active = roots;
+    std::vector< Built > built;
+    while (true) {
+        std::vector< Source > activeSources;
+        for (const Source& s : sources) {
+            for (const fs::path& root : active) {
+                if (root.filename().string() == s.mod) activeSources.push_back(s);
+            }
+        }
+        std::vector< std::string > buildLog;
+        built = build(activeSources, readDisc, &buildLog);
+        for (const std::string& line : buildLog) log(line);
+        std::string failed;
+        for (const fs::path& root : active) {
+            for (const AssetBuilderEntry& b : assetBuilders()) {
+                std::string error;
+                if (!b.builder(root, readDisc, &built, pLog, &error)) {
+                    log("mod " + root.filename().string() + ": not applied: " + error);
+                    failed = root.filename().string();
+                    break;
+                }
+            }
+            if (!failed.empty()) break;
+        }
+        if (failed.empty()) break;
+        active.erase(std::remove_if(active.begin(), active.end(), [&](const fs::path& r) { return r.filename().string() == failed; }),
+                     active.end());
+    }
     // Older builds are of patches or a disc that changed: replace them.
     for (fs::directory_iterator it(cacheDirectory, ec), end; !ec && it != end; it.increment(ec)) {
         if (it->is_directory() && it->path() != cache) fs::remove_all(it->path(), ec);
