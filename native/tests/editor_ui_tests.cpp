@@ -763,11 +763,11 @@ int main() {
     testPathInputCapture();
     testMissionInput();
     testHelpInput();
-    testChoiceLabels();
     testGalaxyInfoInput();
     testJournalInput();
     ImGui::DestroyContext();
     testPanelsLogic();
+    testChoiceLabels();
     if (gFailures != 0) {
         std::fprintf(stderr, "editor_ui_tests: %d failure(s)\n", gFailures);
         return 1;
