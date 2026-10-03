@@ -751,6 +751,7 @@ void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDI
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void areasTestTick();
+void arrayTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
@@ -906,6 +907,7 @@ void tick(bool playable) {
     ensureTestTick();
     pathsTestTick();
     areasTestTick();
+    arrayTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)

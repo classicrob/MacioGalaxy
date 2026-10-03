@@ -10,6 +10,7 @@
 #include "Game/Util/MapUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
+#include <petari/editor/array.hpp>
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor/gizmo_math.hpp>
@@ -329,13 +330,15 @@ namespace {
 
     // Slides each object over the ground under its new place, keeping its height and standing it up
     // for the gravity there (UX section 6 "Moving on a planet").
-    void settle(Item& item, const Item& start) {
+    bool settle(Item& item, const Item& start) {
         const V3 up = gravityUp(item.pos, start.basis.y);
         V3 ground;
-        if (hitGround(item.pos + up * 2000.0f, up * -(4000.0f + kDropProbe), start.actor, &ground)) {
+        const bool found = hitGround(item.pos + up * 2000.0f, up * -(4000.0f + kDropProbe), start.actor, &ground);
+        if (found) {
             item.pos = ground + up * start.height;
         }
         item.basis = G::alignUp(start.basis, up);
+        return found;
     }
 
     void applyDrag(const Camera& cam, float cx, float cy, bool snap, std::vector< Item >& items) {
@@ -577,6 +580,169 @@ namespace {
         }
     }
 
+    namespace A = PetariEditor::Arrays;
+    struct ArrayState {
+        bool active = false, dragging = false;
+        std::vector< Item > sources;
+        std::vector< A::Copy > copies;
+        V3 origin, handle;
+        G::Basis frame;
+        std::uint64_t settingsRevision = ~0ull, modelRevision = ~0ull;
+        float pathLength = 0;
+        std::string message;
+    } gArray;
+
+    void finishArray(bool apply, bool selectCopies) {
+        if (apply && !gArray.copies.empty()) {
+            std::vector< PetariEditor::RowId > ids;
+            for (size_t i = 0; i < gArray.copies.size(); ++i)
+                ids.push_back(PetariEditor::newRowId());
+            std::string error;
+            auto op = A::makeOp(*PetariEditor::model(), gArray.copies, ids, &error);
+            if (!op.adds.empty()) {
+                if (gArray.sources.size() == 1) {
+                    const char* name = PetariEditor::model()->objectName(gArray.sources[0].row);
+                    const auto* info = name ? PetariEditor::Catalog::find(name) : nullptr;
+                    op.label = "Arrayed " + std::to_string(ids.size()) + " " +
+                               (info && !info->displayName.empty() ? info->displayName :
+                                name                               ? name :
+                                                                     "objects");
+                }
+                PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
+                command.op = std::move(op);
+                PetariEditor::enqueue(std::move(command));
+                if (selectCopies) {
+                    for (size_t i = 0; i < ids.size(); ++i)
+                        PetariNative::EditorPick::selectRow(ids[i].v,
+                                                            i == 0 ? PetariNative::EditorPick::Click::Replace : PetariNative::EditorPick::Click::Add);
+                }
+            }
+        }
+        gArray = {};
+        A::publish({});
+    }
+
+    bool updateArray(const Camera& cam, const EditorPicking::View& view) {
+        const auto input = A::take();
+        const auto* model = PetariEditor::model();
+        if (!model || input.cancel) {
+            finishArray(false, false);
+            return false;
+        }
+        if (input.begin && !gDrag.active) {
+            gArray = {};
+            gArray.sources = gather();
+            if (gArray.sources.empty()) {
+                A::View out;
+                out.message = "Select an object with a position first.";
+                A::publish(std::move(out));
+                return false;
+            }
+            gArray.active = true;
+        }
+        if (!gArray.active)
+            return false;
+        bool sourceDeleted = false;
+        for (const auto& source : gArray.sources)
+            sourceDeleted |= model->state(source.row) == PetariEditor::RowState::Deleted;
+        if (sourceDeleted) {
+            finishArray(false, false);
+            return false;
+        }
+        const auto selection = gather();
+        bool same = selection.size() == gArray.sources.size();
+        for (size_t i = 0; same && i < selection.size(); ++i)
+            same = selection[i].row == gArray.sources[i].row;
+        if (!same) {
+            finishArray(true, false);
+            return false;
+        }
+        auto p = A::parameters();
+        if (input.dragBegin)
+            gArray.dragging = true;
+        if (gArray.dragging && (input.dragMove || input.dragBegin)) {
+            const V3 ray = cam.ray(input.x, input.y);
+            if (p.pattern == A::Pattern::Line) {
+                float distance;
+                if (G::closestOnAxis(cam.eye, ray, gArray.origin, gArray.frame.z, &distance)) {
+                    p.count = std::clamp(static_cast< int >(std::round(std::max(0.f, distance) / p.spacing)), 1, A::kMaxCopies);
+                    A::configure(p);
+                }
+            } else if (p.pattern == A::Pattern::Arc || p.pattern == A::Pattern::Ring) {
+                V3 hit;
+                if (G::rayPlane(cam.eye, ray, gArray.origin, gArray.frame.y, &hit)) {
+                    p.radius = G::length(hit - gArray.origin);
+                    A::configure(p);
+                }
+            }
+        }
+        if (input.dragEnd)
+            gArray.dragging = false;
+        p = A::parameters();
+        if (gArray.settingsRevision != A::revision() || gArray.modelRevision != model->revision()) {
+            gArray.sources = selection;
+            const auto& first = gArray.sources.front();
+            gArray.origin = first.pos;
+            gArray.frame = G::gravityFrame(gravityUp(first.pos, first.basis.y), first.basis.z);
+            if (p.markerCenter && gMarker.valid && (p.pattern == A::Pattern::Ring || p.pattern == A::Pattern::Arc))
+                gArray.origin = gMarker.pos;
+            A::Polyline rail;
+            if (p.pattern == A::Pattern::Path) {
+                for (const auto& candidate : PetariEditor::Paths::collect(*model)) {
+                    if (candidate.row == p.rail) {
+                        rail = A::railPolyline(candidate, model->zoneWorldMatrix(candidate.zone));
+                        break;
+                    }
+                }
+            }
+            gArray.pathLength = rail.length();
+            const auto samples = A::layout(p, gArray.origin, gArray.frame, &rail);
+            gArray.copies.clear();
+            gArray.message.clear();
+            if (samples.empty())
+                gArray.message = "Choose an existing path with at least two distinct points.";
+            if (samples.size() * gArray.sources.size() > A::kMaxCopies)
+                gArray.message = "Reduce the count: at most 256 new objects per array.";
+            else {
+                int missingGround = 0;
+                for (const auto& sample : samples) {
+                    for (const auto& source : gArray.sources) {
+                        Item copy = source;
+                        copy.pos = sample.position + (source.pos - first.pos);
+                        if (p.groundSnap && !settle(copy, source)) {
+                            ++missingGround;
+                        }
+                        if (p.facing != A::Facing::Preserve)
+                            copy.basis = G::gravityFrame(copy.basis.y, sample.forward);
+                        float center[3], radius = 60;
+                        if (source.actor)
+                            EditorPicking::bounds(source.actor, center, &radius);
+                        gArray.copies.push_back({source.row, copy.pos, copy.basis, source.pos, source.basis, std::clamp(radius, 10.f, 2000.f)});
+                    }
+                }
+                if (missingGround)
+                    gArray.message = std::to_string(missingGround) + " copies have no ground below; they keep their preview position.";
+            }
+            gArray.handle =
+                p.pattern == A::Pattern::Line ? gArray.origin + gArray.frame.z * (p.spacing * p.count) : gArray.origin + gArray.frame.x * p.radius;
+            gArray.settingsRevision = A::revision();
+            gArray.modelRevision = model->revision();
+        }
+        if (input.apply) {
+            finishArray(true, true);
+            return false;
+        }
+        A::View out;
+        out.active = true;
+        out.copies = gArray.copies;
+        out.message = gArray.message;
+        out.pathLength = gArray.pathLength;
+        if (p.pattern == A::Pattern::Line || p.pattern == A::Pattern::Arc || p.pattern == A::Pattern::Ring)
+            out.handleVisible = cam.project(gArray.handle, &out.handleX, &out.handleY);
+        A::publish(std::move(out));
+        return true;
+    }
+
     void groundCommand(int what) {
         std::vector< Item > items = gather();
         if (items.empty()) return;
@@ -600,7 +766,8 @@ namespace EditorGizmo {
         PetariNative::HostAllocationScope host;
         const UI::Take input = UI::take();
         if (input.ground != 0 && !gDrag.active) groundCommand(input.ground);
-        if (PetariNative::EditorPick::takeDuplicate() && !gDrag.active) duplicate();
+        if (PetariNative::EditorPick::takeDuplicate() && !gDrag.active && !gArray.active)
+            duplicate();
 
         const Camera cam = cameraOf(view);
         UI::View out;
@@ -636,6 +803,11 @@ namespace EditorGizmo {
         if (gMarker.valid && cam.project(gMarker.pos, &out.markerX, &out.markerY)) {
             out.marker = true;
             out.markerRadius = 60.0f / cam.worldPerHeight(gMarker.pos);  // Mario's footprint
+        }
+        // Array: render-only copies claim the gizmo while their panel is open.
+        if (updateArray(cam, view)) {
+            UI::publish(out);
+            return;
         }
         // Other missions' objects as ghosts (UX section 12): rows not in the mission being edited, placed
         // through their zone; the nearest few hundred in front of the camera.
@@ -749,6 +921,8 @@ namespace EditorGizmo {
     }
 
     void reset() {
+        PetariNative::HostAllocationScope host;
+        finishArray(false, false);
         gDrag.active = false;
         UI::publish(UI::View{});
     }
