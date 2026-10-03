@@ -32,6 +32,10 @@ struct MissionChange {
 /// object that can't have those missions, or a mask of no missions, makes it an error.
 MissionChange changeMissions(const ModelView& m, const std::vector< RowId >& rows, std::uint32_t missionMask);
 
+/// The missions of the object a row is part of: the row and its identical copies in other layers
+/// (what changeMissions edits; the Inspector's mission chips show this).
+std::uint32_t objectMissions(const ModelView& m, RowId row);
+
 /// A Star ID (Obj_arg0) for a new Power Star in `mission`: the lowest of 1..missionCount that no
 /// Power Star in that mission uses (another star's ID makes one of them vanish after a restart);
 /// missionCount + 1 when all are taken.
