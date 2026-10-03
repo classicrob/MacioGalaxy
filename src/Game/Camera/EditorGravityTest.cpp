@@ -2,6 +2,7 @@
 #include "Game/Camera/EditorGravity.hpp"
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/Gravity.hpp"
+#include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/Util.hpp"
 #include <algorithm>
 #include <cmath>
