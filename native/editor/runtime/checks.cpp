@@ -5,6 +5,7 @@
 
 #include "edit_model.hpp"
 #include <petari/editor/catalog.hpp>
+#include <petari/editor/model_ops.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -309,10 +310,22 @@ std::vector< Check > computeChecks(const ModelView& m) {
         }
         for (const auto& [id, rows] : stars) {
             if (rows.size() < 2) continue;
-            out.push_back(Check{"duplicate-star:" + std::to_string(mission) + ":" + std::to_string(id), Severity::Warning,
-                                std::to_string(rows.size()) + " Power Stars in mission " + std::to_string(mission) + " share Star ID " +
-                                    std::to_string(id) + "; collecting one counts as the others",
-                                rows, "", Op{}, ""});
+            // A star the edit placed with an ID in use is killed when the galaxy loads (the
+            // star bookkeeping keeps one per ID): an error, fixed by giving it a free ID.
+            RowId placed;
+            for (RowId row : rows) {
+                if (m.state(row) == RowState::Added) placed = row;
+            }
+            Check check{"duplicate-star:" + std::to_string(mission) + ":" + std::to_string(id), placed.valid() ? Severity::Error : Severity::Warning,
+                        std::to_string(rows.size()) + " Power Stars in mission " + std::to_string(mission) + " share Star ID " + std::to_string(id) +
+                            ": after a restart only one of them exists. Give the new star an unused Star ID of this galaxy",
+                        rows, "", Op{}, ""};
+            if (placed.valid()) {
+                const int free = ModelOps::freeStarId(m, mission);
+                check.fixLabel = "Use Star ID " + std::to_string(free);
+                check.fix = setOp(check.fixLabel, placed, "Obj_arg0", free);
+            }
+            out.push_back(std::move(check));
         }
     }
     for (CheckProvider provider : providers()) {

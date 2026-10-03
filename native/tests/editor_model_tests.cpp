@@ -6,6 +6,7 @@
 #include "checks.hpp"
 #include "edit_model.hpp"
 #include <petari/editor/catalog.hpp>
+#include <petari/editor/model_ops.hpp>
 #include <petari/editor/patch.hpp>
 
 #include <cmath>
@@ -616,7 +617,24 @@ void testStarChecks() {
     };
     const std::vector< E::Check > checks = E::computeChecks(*m);
     const E::Check* stars = find(checks, "duplicate-star:1:3");
-    check(stars != nullptr && stars->rows.size() == 2, "two Power Stars sharing Star ID 3 in mission 1");
+    check(stars != nullptr && stars->rows.size() == 2 && stars->severity == E::Severity::Warning, "two Power Stars sharing Star ID 3 in mission 1");
+    {
+        // One placed by the edit: an error (it's killed after a restart), fixed with a free ID.
+        E::AddRow star;
+        star.id = E::newRowId();
+        star.zone = 1;
+        star.table = "jmp/placement/layera/objinfo";
+        star.cells.push_back({E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, "PowerStar"}});
+        star.cells.push_back({E::columnHash("Obj_arg0"), E::Cell{E::CellType::Int, 1, 0, {}}});
+        E::AddRow other = star;
+        other.id = E::newRowId();
+        check(m->apply(E::Op{"Stars", {}, {}, {star, other}, {}}, &error), error);
+        const std::vector< E::Check > now = E::computeChecks(*m);
+        const E::Check* dup = find(now, "duplicate-star:1:1");
+        check(dup && dup->severity == E::Severity::Error && !dup->fix.sets.empty() && dup->fix.sets[0].after.i == 2,
+              "a placed star reusing an ID is an error, fixed with Star ID 2");
+        m->undo();
+    }
     const E::RowId launcher = findRow(*m, 1, "jmp/placement/layera/objinfo", "SuperSpinDriver");
     check(m->apply(E::Op{"On the path", {E::SetCell{launcher, E::columnHash("CommonPath_ID"), E::Cell{E::CellType::Int, 0, 0, {}}}}, {}}, &error),
           error);
@@ -624,6 +642,71 @@ void testStarChecks() {
     const E::Check* away = find(facing, "launch-star-facing:");
     check(away != nullptr && away->fix.sets.size() == 3, "a Launch Star facing +Z on a path going +X is flagged, with a fix");
     check(m->apply(away->fix, &error) && find(E::computeChecks(*m), "launch-star-facing:") == nullptr, "the fix faces it along the path");
+}
+
+// Mission membership (ModelOps): a row moves to the layer with the asked missions, keeping its
+// l_id; split copies are one object; capacity follows; impossible and empty masks are refused.
+void testMissionOps() {
+    namespace O = PetariEditor::ModelOps;
+    std::map< std::string, F::Bytes > disc = syntheticDisc();
+    E::FileSource source = [&](const std::string& path) -> std::optional< F::Bytes > {
+        auto it = disc.find(path);
+        return it == disc.end() ? std::nullopt : std::optional< F::Bytes >(it->second);
+    };
+    std::string error;
+    std::unique_ptr< E::EditModel > m = E::EditModel::load("TestGalaxy", 1, source, &error);
+    check(O::layerMissions(*m, 1, 1) == 0b01 && O::layerMissions(*m, 1, 2) == 0b10 && O::layerMissions(*m, 1, 0) == 0b11,
+          "layer missions: A = 1, B = 2, Common = both");
+    const E::RowId kuribo = findRow(*m, 1, "jmp/placement/layera/objinfo", "Kuribo");
+    const int lid = m->cell(kuribo, E::columnHash("l_id"))->i;
+    O::MissionChange toTwo = O::changeMissions(*m, {kuribo}, 0b10);
+    check(toTwo.error.empty() && toTwo.rows.size() == 1 && toTwo.op.adds.size() == 1 && toTwo.op.deletes.size() == 1, "to mission 2: one move");
+    check(m->apply(toTwo.op, &error), error);
+    const E::RowId moved = toTwo.rows[0];
+    check(m->rowMissions(moved) == 0b10 && m->cell(moved, E::columnHash("l_id"))->i == lid, "now in mission 2 only, same l_id");
+    check(O::changeMissions(*m, {moved}, 0b10).op.adds.empty(), "already there: nothing to do");
+    check(!O::changeMissions(*m, {moved}, 0).error.empty(), "no missions is refused (not a delete)");
+    check(!O::changeMissions(*m, {moved}, 0b100).error.empty(), "a mission the galaxy doesn't have is refused");
+    m->undo();
+    check(m->rowMissions(kuribo) == 0b01, "undo puts it back");
+
+    // Split copies (the same object in A and B) are one object: to Common it becomes one row.
+    E::AddRow copy;
+    copy.id = E::newRowId();
+    copy.zone = 1;
+    copy.table = "jmp/placement/layerb/objinfo";
+    copy.copyOf = kuribo;
+    copy.cells.push_back({E::columnHash("l_id"), E::Cell{E::CellType::Int, lid, 0, {}}});
+    check(m->apply(E::Op{"Split", {}, {}, {copy}, {}}, &error), error);
+    O::MissionChange both = O::changeMissions(*m, {kuribo}, 0b11);
+    check(both.error.empty() && both.rows.size() == 1 && both.op.deletes.size() == 2, "split copies merge into one Common row");
+    check(m->apply(both.op, &error) && m->rowMissions(both.rows[0]) == 0b11, "in both missions once");
+
+    // Capacity follows: 17 Launch Stars in both missions; one moved to mission 1 clears mission 2.
+    E::Op many{"Launch Stars", {}, {}, {}, {}};
+    for (int i = 0; i < 17; i++) {
+        E::AddRow add;
+        add.id = E::newRowId();
+        add.zone = 1;
+        add.table = "jmp/placement/common/objinfo";
+        add.cells.push_back({E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, "SuperSpinDriver"}});
+        many.adds.push_back(add);
+    }
+    check(m->apply(many, &error), error);
+    auto has = [&](const char* key) {
+        for (const E::Check& c : E::computeChecks(*m))
+            if (c.key == key) return true;
+        return false;
+    };
+    check(has("launch-stars:1") && has("launch-stars:2"), "17 Launch Stars in each mission");
+    O::MissionChange one = O::changeMissions(*m, {many.adds[0].id}, 0b01);
+    check(one.error.empty() && m->apply(one.op, &error), "one to mission 1 only: " + one.error);
+    check(has("launch-stars:1") && !has("launch-stars:2"), "mission 2 is down to 16");
+    m->undo();
+    check(has("launch-stars:2"), "undo brings the count back");
+
+    // A free Star ID: the lowest not used by a Power Star in that mission.
+    check(O::freeStarId(*m, 1) == 1, "no stars yet: ID 1");
 }
 
 void testDisc() {
@@ -696,6 +779,7 @@ int main() {
     testChecks();
     testPatch();
     testStarChecks();
+    testMissionOps();
     testDisc();
     std::printf("editor model: %d checks passed\n", checks);
     return 0;

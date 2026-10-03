@@ -1142,3 +1142,12 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
   - While isolated, NAND writes are skipped (`NANDManagerThread::executeWriteSequence`; the game sees a successful write). The Gravity worker's gates stop progress.json and the mod galaxies' sidecars.
   - At End (another galaxy or mission, or the editor turned off), the progress is restored first, then the flag is released.
   - Live check: editor_sync_smoke's fifth run earns 100 Star Bits in a session, turns the editor off, and finds the count restored.
+- **Mission membership and star IDs** (`editor/model-ops`; `petari/editor/model_ops.hpp`, in core):
+  - `ModelOps::changeMissions(model, rows, mask)` moves each object to the layer with exactly those missions, or splits it over the fewest layers whose missions don't overlap.
+    - Copies keep the l_id, so links and paths stay.
+    - An object includes its identical copies in other layers.
+    - It returns one Op and the flattened result rows.
+    - An impossible or empty mask is an error that says what's possible.
+  - `possibleMissionMasks` and `layerMissions` list what a zone allows.
+  - `freeStarId(model, mission)` gives the lowest Star ID no Power Star in that mission uses.
+  - `duplicate-star` is an Error with a "Use Star ID n" fix when the edit placed one of the stars, since the placed star is killed after a restart.
