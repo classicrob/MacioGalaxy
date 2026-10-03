@@ -216,7 +216,8 @@ namespace EditorTerrainTest {
         static const bool sOn = [] {
             const char* p = std::getenv("PETARI_EDITOR_TERRAIN_TEST");
             gArchive = p != nullptr && std::strcmp(p, "archive") == 0;
-            return p != nullptr && (p[0] == '1' || gArchive) && PetariEditor::Hooks::enabled();
+            // Archive mode only watches what placement made: it runs with the editor off too.
+            return p != nullptr && ((p[0] == '1' && PetariEditor::Hooks::enabled()) || gArchive);
         }();
         if (!sOn || gFailure != nullptr || !actionNerve) {
             return;

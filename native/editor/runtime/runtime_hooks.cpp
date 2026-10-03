@@ -16,6 +16,7 @@ namespace PetariEditor::Hooks {
 namespace {
     std::map< int, RailTables > gRailTables;
     std::atomic< int > gEnabled{-1};  // -1: not yet read from the environment
+    std::atomic< bool > gBrushRows{false};  // noteBrushRow, this scene
 
     struct Range {
         std::uintptr_t begin, end;
@@ -177,6 +178,15 @@ void sceneDestroyed() {
     ranges().clear();
     placedList().clear();
     gSceneSerial++;
+    gBrushRows.store(false, std::memory_order_relaxed);
+}
+
+void noteBrushRow() {
+    gBrushRows.store(true, std::memory_order_relaxed);
+}
+
+bool sceneHasBrushRows() {
+    return gBrushRows.load(std::memory_order_relaxed);
 }
 
 }  // namespace PetariEditor::Hooks
