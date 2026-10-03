@@ -507,6 +507,7 @@ bool viewportRect(float* x, float* y, float* width, float* height) {
     return true;
 }
 
+// M3 areas: use the editor style for viewport panels.
 bool drawStyledOverlay(const std::function< bool() >& draw) {
     StyleScope style;
     return draw();

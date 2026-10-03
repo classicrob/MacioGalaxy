@@ -17,6 +17,30 @@ namespace PetariEditor::Ui {
         ImTextureID previewTexture = 0;
         RowId previewRow;
         double nextPreview = 0;
+        const char* cameraTypeName(const std::string& type) {
+            static const std::pair< const char*, const char* > names[] = {
+                {"CAM_TYPE_XZ_PARA", "Fixed-angle follow (XZ parallel)"},
+                {"CAM_TYPE_TOWER", "Tower orbit"},
+                {"CAM_TYPE_FOLLOW", "Follow"},
+                {"CAM_TYPE_WONDER_PLANET", "Planet follow"},
+                {"CAM_TYPE_POINT_FIX", "Fixed target"},
+                {"CAM_TYPE_EYEPOS_FIX", "Fixed viewpoint"},
+                {"CAM_TYPE_SLIDER", "Slider follow"},
+                {"CAM_TYPE_INWARD_TOWER", "Inside tower"},
+                {"CAM_TYPE_INWARD_SPHERE", "Inside sphere"},
+                {"CAM_TYPE_TRIPOD_PLANET", "Planet tripod"},
+                {"CAM_TYPE_GROUND", "Ground follow"},
+                {"CAM_TYPE_2D_SLIDE", "Side-scrolling follow"},
+                {"CAM_TYPE_WATER_FOLLOW", "Water follow"},
+                {"CAM_TYPE_WATER_PLANET", "Water planet follow"},
+            };
+            for (const auto& entry : names) {
+                if (type == entry.first) {
+                    return entry.second;
+                }
+            }
+            return "Special camera";
+        }
         void cameraParameters(const ModelView& m, const A::Volume& area) {
             const auto row = A::cameraRow(m, area);
             if (!row.valid()) {
@@ -29,8 +53,12 @@ namespace PetariEditor::Ui {
                 previewSource = static_cast< P::Source >(source);
             ImGui::TextWrapped("Preview shows scene models. Effects and postprocessing appear in Play.");
             const auto* type = m.cell(row, columnHash("camtype"));
-            if (type)
-                ImGui::TextWrapped("Camera type: %s", type->s.c_str());
+            if (type) {
+                ImGui::TextWrapped("Camera type: %s", cameraTypeName(type->s));
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", type->s.c_str());
+                }
+            }
             struct Draft {
                 std::uint64_t revision;
                 float value;
