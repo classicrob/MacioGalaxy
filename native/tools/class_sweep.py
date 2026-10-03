@@ -624,6 +624,12 @@ def bisect_stage(args, stage, scenario):
     failing = [r for r in results.values()
                if r["mode"] == "empty" and r["status"] not in PASS and "|empty|" in r["key"]
                and not any(f"{f}=" in r["overrides"] for f in LINK_FIELDS)]
+    if args.classes:
+        wanted = {c.lower() for c in args.classes.split(",")}
+        failing = [r for r in failing if r["class"].lower() in wanted]
+    if args.with_template_link:
+        # Only classes whose own row in this stage links something (e.g. CommonPath_ID: the rail users).
+        failing = [r for r in failing if args.with_template_link in parse_tpl_links((r.get("metrics") or {}).get("tpl_links", "-"))]
     harvest = harvest_links(stage, scenario)
     print(f"[{stage}] bisect {len(failing)} failing classes; link ids per field: "
           + ", ".join(f"{f}={v}" for f, v in harvest.items()), flush=True)
@@ -924,6 +930,7 @@ def main():
         p.add_argument("--rerun", action="store_true", help="discard recorded results")
         p.add_argument("--keep-logs", action="store_true")
         p.add_argument("--confirm-every", type=int, default=8, help="re-run alone 1 in N failures from multi-class batches (1: all)")
+        p.add_argument("--with-template-link", help="bisect: only failing classes whose template row has this link field set, e.g. CommonPath_ID")
         p.add_argument("--infer-known-bad", action="store_true",
                        help="do not run classes that failed on another stage; copy their result, marked inferred_from")
         p.add_argument("--normal-priority", action="store_true", help="do not run the app under taskpolicy -b")
