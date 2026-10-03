@@ -55,6 +55,8 @@ namespace EditorGravity {
             return;
         }
         ++frame;
+        PetariNative::EditorPick::setHoverWanted(true);
+        PetariNative::EditorSettings::cursor(0, 0);
         auto* m = model();
         if (!m)
             return;
