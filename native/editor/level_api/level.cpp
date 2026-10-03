@@ -2,8 +2,7 @@
 #include "level_internal.hpp"
 
 #include "checks.hpp"
-#include "load_model.hpp"
-#include "save_mod.hpp"
+#include "model_io.hpp"
 #include "world.hpp"
 
 #include <petari/editor/patch.hpp>
@@ -87,7 +86,8 @@ std::unique_ptr< Level > Level::open(const OpenOptions& options, Error* pError) 
     std::unique_ptr< Level > level(new Level());
     level->mOptions = options;
     std::string catalogError;
-    level->mImpl->model = Runtime::loadEditModel(options.galaxy.c_str(), std::max(1, options.mission), &error, &catalogError);
+    // The editor's own loader (as the in-game session): catalog, the disc's planets, the Paths checks, the model.
+    level->mImpl->model = ModelIO::load(options.galaxy, std::max(1, options.mission), options.user.string(), {}, &error, &catalogError);
     if (!level->mImpl->model) {
         const std::vector< std::string > galaxies = discGalaxies();
         if (std::find(galaxies.begin(), galaxies.end(), options.galaxy) == galaxies.end()) {
@@ -435,8 +435,16 @@ Json::Value Level::call(const std::string& command, const Json::Value& rawArgs) 
             if (mOptions.user.empty()) fail("no-user", "save needs a user directory", "open with --user <dir> (the CLI defaults it to <workspace>/user)");
             const std::string mod = args["mod"].asString();
             if (mod.empty()) fail("bad-args", "save needs \"mod\": the mod folder name", "e.g. {\"mod\": \"My Good Egg\"}", {}, "mod");
-            std::string notice, error;
-            if (!Runtime::saveMod(model, mod, args["full"].asBool(), &notice, &error)) fail("save-failed", error, "", {}, "mod");
+            if (!ModelIO::validModName(mod)) {
+                fail("bad-value", "mod: '" + mod + "' is not a mod folder name", "letters, digits, spaces, '-', '_' and '.'; 1-64 characters", {}, "mod");
+            }
+            // The editor's own save (as the in-game Save sheet), then on for the next start like the game's.
+            std::string summary, error;
+            if (!ModelIO::saveToDirectory(model, mOptions.user / "mods" / mod, args["full"].asBool(), &summary, &error)) fail("save-failed", error, "", {}, "mod");
+            std::string enableError;
+            ModFolder::resolveForUser(mOptions.user);  // the mod list now includes it
+            ModFolder::setEnabled(mod, true, &enableError);
+            const std::string notice = "Saved " + summary + " to mods/" + mod + (enableError.empty() ? " (on from the next start)" : " (turn it on: " + enableError + ")");
             impl.model->markSaved();
             out.set("notice", notice);
             out.set("mod_dir", (mOptions.user / "mods" / mod).string());

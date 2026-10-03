@@ -12,6 +12,7 @@
 #include <petari/platform/crash.hpp>
 #include <petari/platform/diagnostics.hpp>
 #include <petari/editor/patch.hpp>
+#include <petari/editor/terrain/bake.hpp>
 #include <petari/platform/dvd.hpp>
 #include <petari/platform/mod_folder.hpp>
 #include <petari/platform/mod_galaxy.hpp>
@@ -85,6 +86,7 @@ bool preparePlatform(const Paths& paths, std::string* error) {
         // Level editor patch mods are built from this disc at start-up (docs/dev/level-editor/TECH.md 5.1).
         // Generated files (terrain) come from builders registered with PetariEditor::Patch::registerAssetBuilder
         // before this point.
+        PetariEditor::Terrain::registerPatchBuilder();
         Platform::ModFolder::setPatchBuilder(&PetariEditor::Patch::buildForLoader);
         auto resolved = Platform::ModFolder::resolveForUser(paths.user, paths.disc);
         for (const std::string& line : resolved.log) std::fprintf(stderr, "[mods] %s\n", line.c_str());

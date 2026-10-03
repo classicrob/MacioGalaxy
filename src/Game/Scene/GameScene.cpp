@@ -45,6 +45,7 @@
 extern "C" void petari_os_preemption_point(void);
 #include "Game/Camera/EditorCamera.hpp"
 #include "Game/Camera/EditorDraw.hpp"
+#include "Game/Camera/EditorGravity.hpp"
 #include "Game/Camera/EditorThumbs.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
@@ -214,6 +215,7 @@ void GameScene::update() {
 #endif
 #ifdef PETARI_NATIVE
     PetariEditor::Runtime::tick(isPermitToPauseMenu());  // the level editor's commands and SceneSync; nothing while it is off
+    EditorGravity::testTick(isPermitToPauseMenu());  // M3 gravity: opt-in live smoke.
     EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
     EditorTerrainTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_TERRAIN_TEST
     EditorGalaxyTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_GALAXY_TEST

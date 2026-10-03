@@ -5,7 +5,7 @@
 #include "checks.hpp"
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
-#include "load_model.hpp"
+#include "model_io.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
 #include <petari/editor/catalog.hpp>
@@ -97,23 +97,17 @@ namespace {
     void loadModel(const char* pStage, int scenario) {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
-        static bool pathChecks = false;
-        if (!pathChecks) {
-            registerCheckProvider(+[](const ModelView& model, std::vector< Check >& out) {
-                auto checks = Paths::computeChecks(model);
-                out.insert(out.end(), checks.begin(), checks.end());
-            });
-            pathChecks = true;
-        }
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
         std::string catalogError;
-        s.model = loadEditModel(pStage, scenario, &error, &catalogError);
+        s.checkedRevision = 0;
+        // Shared with the headless tools (model_io.hpp): the catalog, terrain's brush class, the
+        // disc's planets, then the model.
+        s.model = ModelIO::load(pStage, scenario, PetariNative::Platform::ModFolder::userDirectory().string(), TerrainSync::registerWithEditor,
+                                &error, &catalogError);
         if (!catalogError.empty()) {
             Core::reportError("Catalog: " + catalogError);
         }
-        TerrainSync::registerWithEditor();
-        s.checkedRevision = 0;
         s.suspectNotices.clear();
         s.actors.clear();
         s.pending.clear();

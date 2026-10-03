@@ -2,7 +2,7 @@
 // nearest-surface queries, approximate gravity.
 #include "world.hpp"
 
-#include "load_model.hpp"
+#include "model_io.hpp"
 
 #include <petari/editor/terrain/brush.hpp>
 #include <petari/editor/terrain/mesh.hpp>
@@ -211,7 +211,7 @@ void World::sync(const EditModel& model) {
             auto it = mCache.find(item.name);
             if (it == mCache.end()) {
                 std::shared_ptr< std::vector< Triangle > > tris;
-                if (std::optional< Formats::Bytes > raw = Runtime::readMountedDisc("/ObjectData/" + item.name + ".arc")) {
+                if (std::optional< Formats::Bytes > raw = ModelIO::readMounted("/ObjectData/" + item.name + ".arc")) {
                     if (std::optional< Formats::Archive > archive = Formats::Archive::parse(*raw)) {
                         const Formats::Bytes* kcl = archive->file(item.name + ".kcl");
                         if (kcl == nullptr) {
