@@ -272,13 +272,13 @@ int main() {
     std::printf("open: %.0f ms\n", ms(t0));
     L::Level& lv = *level;
 
-    const Value info = call(lv, "info");
-    check(!info.has("existing_checks"), "existing checks are omitted from default replies");
+    const Value coordinateInfo = call(lv, "info");
+    check(!coordinateInfo.has("existing_checks"), "existing checks are omitted from default replies");
     const Value diagnostics = call(lv, "info", R"({"existing_checks":true})");
     check(diagnostics.has("existing_checks") && diagnostics["existing_checks"].isArray(), "existing checks are explicitly available");
     check(diagnostics["existing_checks"].items().size() == call(lv, "checks", R"({"all":true})")["checks"].items().size(),
           "fresh-model existing checks match the core baseline");
-    for (const auto& zone : info["zones"].items()) {
+    for (const auto& zone : coordinateInfo["zones"].items()) {
         const auto matrix = zone["world_matrix"];
         check(matrix.items().size() == 4 && matrix.items()[3].items()[3].asNumber() == 1, "zone matrix is homogeneous 4x4");
         const auto core = lv.model().zoneWorldMatrix(zone["index"].asInt());
