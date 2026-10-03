@@ -1,8 +1,9 @@
 #ifdef PETARI_NATIVE
 #include "Game/Camera/EditorPlaytest.hpp"
 #include "Game/Editor/EditorScene.hpp"
-#include "Game/LiveActor/Spine.hpp"
 #include "Game/MapObj/PowerStar.hpp"
+#include "Game/MapObj/PowerStarHolder.hpp"
+#include "Game/NPC/EventDirector.hpp"
 #include "Game/Util.hpp"
 #include <cmath>
 #include <cstdio>
@@ -128,19 +129,16 @@ namespace EditorPlaytest {
         } else if (step == 7 && mode() == Mode::Playing && playable && frame > 45) {
             if (view.frames <= pausedFrames)
                 return fail("Resume reset or stopped timer");
-            forEachBoundRow([&](RowId row, LiveActor* actor) {
-                if (!star && actor && std::string(m->objectName(row)) == "PowerStar")
-                    star = static_cast< PowerStar* >(actor);
-            });
+            const auto* info = EventFunction::getPowerStarHolder()->findPowerStarRequestInfo(m->scenario());
+            star = info ? info->mStar : nullptr;
             if (!star)
                 return fail("no Power Star fixture");
             hadStar = MR::hasPowerStarInCurrentStage(star->mPowerStarId);
+            const auto position = *MR::getPlayerPos(), gravity = *MR::getPlayerGravity();
+            star->mPosition.set(position.x - gravity.x * 50, position.y - gravity.y * 50, position.z - gravity.z * 50);
             star->offAppearDemo();
             star->appear();
-            if (!star->receiveOtherMsg(ACTMES_AUTORUSH_BEGIN, nullptr, nullptr))
-                return fail("star did not enter get nerve");
-            // Exercise the production first-step hook before the fixture's far-away star can clip.
-            star->mSpine->update();
+            MR::calcAnimDirect(star);
             advance(8);
         } else if (step == 8 && mode() == Mode::Editing && frame > 30) {
             if (!view.cleared || view.running || !MR::isDead(star))
