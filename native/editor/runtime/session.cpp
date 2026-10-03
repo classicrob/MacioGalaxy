@@ -45,6 +45,7 @@ namespace {
     std::vector< RowUpdater > gRowUpdaters;
     bool gChecksInvalid = false;
     std::vector< PlayListener > gPlayListeners;
+    std::vector< MissHandler > gMissHandlers;
 
     // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
     // are spent by every creation, retired fields included, until the next scene build.
@@ -85,6 +86,7 @@ namespace {
         bool inPlay = false;       // a play-test run is on (Begin/Resume told, ToEdit not yet)
         bool hadRun = false;       // a run began this session (Resume continues it; with none, Resume is a Begin)
         bool scenePlayed = false;  // this scene has been played since it was built (a fresh Play rebuilds it)
+        bool missed = false;       // Edit froze a miss: the next Play or Resume starts a fresh run
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -103,6 +105,9 @@ namespace {
         }
         s.inPlay = event == PlayEvent::Begin || event == PlayEvent::Resume;
         s.hadRun = event == PlayEvent::End ? false : (s.hadRun || event == PlayEvent::Begin);
+        if (event == PlayEvent::End || event == PlayEvent::Begin) {
+            s.missed = false;
+        }
         s.scenePlayed = s.scenePlayed || s.inPlay;
     }
 
@@ -601,10 +606,11 @@ namespace {
         Session& s = session();
         if (from == PlayFrom::MissionStart) {
             startReload(Session::After::PlayStart);
-        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed)) {
+        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed) || s.missed) {
             // Edits to rebuild, or a fresh run in a scene already played (UX 3: collected and
             // defeated objects, switches and Mario's state reset; only Resume keeps them).
-            startReload(from == PlayFrom::Marker ? Session::After::PlayMarker : Session::After::PlayStart);
+            startReload(from == PlayFrom::Marker || s.missed ? Session::After::PlayMarker : Session::After::PlayStart);
+            s.missed = false;
         } else {
             // Nothing needs a reload: unfreeze where we are (and put Mario on the marker).
             if (Core::uiCallbacks().leaveEdit != nullptr) {
@@ -814,6 +820,31 @@ bool ensureModel() {
 void registerPlayListener(PlayListener listener) {
     PetariNative::HostAllocationScope host;  // the list outlives scenes
     if (std::find(gPlayListeners.begin(), gPlayListeners.end(), listener) == gPlayListeners.end()) gPlayListeners.push_back(listener);
+}
+
+void registerMissHandler(MissHandler handler) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
+    if (std::find(gMissHandlers.begin(), gMissHandlers.end(), handler) == gMissHandlers.end()) gMissHandlers.push_back(handler);
+}
+
+bool playerMissing(const char* event) {
+    if (mode() != Mode::Playing) {
+        return false;
+    }
+    for (MissHandler handler : gMissHandlers) {
+        if (handler(event)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool requestEditAfterMiss(const char* reason) {
+    if (!requestEdit(reason)) {
+        return false;
+    }
+    session().missed = true;
+    return true;
 }
 
 bool requestEdit(const char* reason) {
