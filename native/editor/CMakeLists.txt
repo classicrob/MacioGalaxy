@@ -62,14 +62,29 @@ if(TARGET petari_platform_dvd)
 endif()
 target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
+# Loading a galaxy's model from the mounted disc and saving mods: the DVD layer and the mod folder, no
+# game code, so headless tools (level_api) load and save exactly as the in-game session does.
+if(TARGET petari_platform_dvd)
+    add_library(petari_editor_save STATIC runtime/load_model.cpp runtime/save_mod.cpp)
+    target_include_directories(petari_editor_save PUBLIC include PRIVATE runtime)
+    target_link_libraries(petari_editor_save PUBLIC petari_editor_model petari_editor_core petari_editor_terrain petari_platform_dvd)
+    target_compile_features(petari_editor_save PUBLIC cxx_std_17)
+endif()
+
+# The agent level-authoring API and its CLI, petari-level-x (headless).
+if(TARGET petari_editor_save)
+    add_subdirectory(level_api)
+endif()
+
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
 # game code (src/Game/Editor), so only the app and the link check link it.
-add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
+add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
     runtime/redraw_test.cpp runtime/brush_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_native_config)
 if(TARGET petari_platform_dvd)
     target_link_libraries(petari_editor_runtime PRIVATE petari_platform_dvd)
+    target_link_libraries(petari_editor_runtime PUBLIC petari_editor_save)
 endif()
 
 if(BUILD_TESTING)

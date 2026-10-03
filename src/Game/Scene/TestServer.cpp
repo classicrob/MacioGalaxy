@@ -3,6 +3,7 @@
 #include "Game/Editor/EditorScene.hpp"
 #include "Game/LiveActor/AllLiveActorGroup.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
+#include "Game/Scene/TestServerEditor.hpp"
 #include "Game/Util/DemoUtil.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
@@ -105,6 +106,10 @@ namespace {
             std::fflush(stderr);
             _exit(0);
         }
+        // The live-editing and verification commands (TestServerEditor.cpp) also run in Edit mode.
+        if (TestServerEditor::run(name, w, playable, reply)) {
+            return true;
+        }
         if (!playable) {
             reply(name, "error not in normal play (retry)");
             return true;
@@ -171,6 +176,9 @@ namespace TestServer {
                          EditorScene::stageName() != nullptr ? EditorScene::stageName() : "-");
         }
         const bool playable = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isPlayerDead();
+        if (TestServerEditor::tick(playable, reply)) {
+            return;
+        }
         if (gHavePending && gPending.isReload) {
             if (!PetariEditor::Runtime::reloading()) {
                 char text[160];

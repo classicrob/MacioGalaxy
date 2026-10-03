@@ -4,17 +4,15 @@
 // community's tools write them, in files/StageData/. The mod is switched on for the next start;
 // during the session the edits already show (reloads inject them).
 #include "edit_model.hpp"
+#include "load_model.hpp"
 #include "save_mod.hpp"
 
 #include <petari/editor/terrain/bake.hpp>
-#include <petari/platform/dvd.hpp>
 #include <petari/platform/mod_folder.hpp>
-#include <revolution/dvd.h>
 
 #include <filesystem>
 #include <set>
 #include <fstream>
-#include <iterator>
 #include <optional>
 #include <system_error>
 #include <vector>
@@ -23,19 +21,6 @@ namespace PetariEditor::Runtime {
 namespace fs = std::filesystem;
 
 namespace {
-    // A disc file through the mounted disc (enabled mod files win, as for the game).
-    std::optional< Formats::Bytes > readMountedDisc(const std::string& path) {
-        const s32 entry = DVDConvertPathToEntrynum(path.c_str());
-        if (entry < 0) {
-            return std::nullopt;
-        }
-        std::ifstream in(PetariNative::Platform::DVD::hostPathForEntry(entry), std::ios::binary);
-        if (!in) {
-            return std::nullopt;
-        }
-        return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
-    }
-
     bool validName(const std::string& name) {
         if (name.empty() || name.size() > 64 || name == "." || name == "..") {
             return false;
