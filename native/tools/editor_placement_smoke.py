@@ -44,6 +44,9 @@ def main():
             if '[editor-placement] PASS' in text:
                 print('\n'.join(lines))
                 return 0
+            if starter.poll() not in (None, 0):
+                print('FAIL: test server did not start')
+                return 1
             time.sleep(.5)
         print('FAIL: timed out waiting for clean placement checks')
         return 1
