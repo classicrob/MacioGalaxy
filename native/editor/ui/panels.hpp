@@ -6,6 +6,7 @@
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 
+#include <array>
 #include <functional>
 #include <string>
 #include <vector>
@@ -102,6 +103,7 @@ struct BrowserEntry {
     std::vector< RowId > examples;  // some of those placements (the first is what Place copies)
     std::string key;                // unique per card: the class, or "<class>#<preset>"
     std::vector< std::pair< int, std::int32_t > > presetArgs;  // a catalog preset's args (Obj_arg index, value)
+    std::array< float, 3 > presetScale{1.0f, 1.0f, 1.0f};      // and its size (the new row's scale)
 };
 // Every class placed in the galaxy, plus the catalog's placeable classes, by display name.
 std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model);
