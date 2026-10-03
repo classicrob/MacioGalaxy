@@ -452,6 +452,7 @@ void GameScene::draw3D() const {
     }
 
 #ifdef PETARI_NATIVE
+    EditorDraw::beginFrame();  // the editor's draw budget for this frame (EP-004)
     EditorCameraPreview::render();  // M3 areas: camera picture-in-picture.
     EditorThumbs::render();  // the level editor's Browser: one model offscreen, copied out
 #endif

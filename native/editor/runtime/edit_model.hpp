@@ -113,7 +113,8 @@ private:
         std::vector< std::vector< Cell > > cells;     // current, decoded [row][column]
         std::vector< std::vector< Cell > > origCells;  // as on disc [row][column in original]; empty for added rows
         std::vector< RowId > ids;                      // stable ids, parallel to the rows
-        std::vector< bool > added;                     // rows added in this session
+        std::vector< bool > added;                     // rows the disc doesn't have (added in this session, or by the loaded mod)
+        std::vector< int > sourceToDisc;               // loaded row index -> the disc's row (-1: not on the disc); empty: the same index
     };
     struct ZoneModel {
         std::string name;

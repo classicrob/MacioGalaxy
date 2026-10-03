@@ -78,6 +78,7 @@ namespace {
         double reloadStartMs = 0;
         bool teleportPending = false;
         bool plainReload = false;  // reloadScene() without an edit session
+        bool keepModel = false;    // ensureModel(): the model stays loaded outside Edit
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -128,6 +129,13 @@ namespace {
                 list += (mission > 1 ? ", " : "") + std::to_string(mission) + " \"" + names.back() + "\"";
             }
             s.model->setMissionNames(std::move(names));
+            // The mod the galaxy's archives came from (the Save sheet defaults to it).
+            std::string loadedMod;
+            for (int zone = 0; zone < s.model->zoneCount() && loadedMod.empty(); zone++) {
+                const std::string path = std::string("/StageData/") + s.model->zoneName(zone) + ".arc";
+                loadedMod = PetariNative::Platform::DVD::overlayModForEntry(DVDConvertPathToEntrynum(path.c_str()));
+            }
+            Core::mutableStatus().loadedMod = loadedMod;
             std::fprintf(stderr, "[editor] editing %s mission %d: %d zones; missions %s\n", pStage, scenario, s.model->zoneCount(),
                          list.c_str());
         }
@@ -697,6 +705,7 @@ void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDI
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void areasTestTick();
+void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
 bool reloadScene(bool fromStart) {
@@ -715,6 +724,27 @@ bool reloadScene(bool fromStart) {
     s.reloadStartMs = nowMs();
     EditorReload::requestReload(fromStart);
     return true;
+}
+
+bool ensureModel() {
+    Session& s = session();
+    const char* pStage = EditorScene::stageName();
+    if (!Hooks::enabled()) {
+        Core::reportError("The level editor is off (Home menu, Mods page; or PETARI_EDITOR=1)");
+        return false;
+    }
+    if (pStage == nullptr || mode() == Mode::Reloading) {
+        return false;
+    }
+    s.keepModel = true;
+    if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
+        PetariNative::HostAllocationScope host;
+        loadModel(pStage, EditorScene::scenario());
+    }
+    if (s.model && s.boundScene != Hooks::sceneSerial()) {
+        bindPlacements();
+    }
+    return s.model != nullptr;
 }
 
 void registerPreviewHandler(PreviewHandler handler) {
@@ -778,12 +808,13 @@ void tick(bool playable) {
     saveTestTick();
     brushTestTick();
     redrawTestTick();
+    ensureTestTick();
     pathsTestTick();
     areasTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
-    if (mode() != Mode::Off && mode() != Mode::Reloading && pStage != nullptr) {
+    if ((mode() != Mode::Off || s.keepModel) && mode() != Mode::Reloading && pStage != nullptr) {
         PetariNative::HostAllocationScope host;
         if (!s.model || std::string(s.model->galaxy()) != pStage || s.model->scenario() != EditorScene::scenario()) {
             loadModel(pStage, EditorScene::scenario());

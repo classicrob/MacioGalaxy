@@ -382,6 +382,9 @@ namespace EditorPicking {
         if (wantHover || click != Pick::Click::None) under = pick(of(view.eye), ray);
         gHover = wantHover ? under.actor : nullptr;
 
+        if (click != Pick::Click::None && pickTrace()) {
+            std::fprintf(stderr, "[editor] game click: cursor (%.3f, %.3f) aspect %.3f fovy %.1f\n", view.cursorX, view.cursorY, view.aspect, view.fovy);
+        }
         if (click != Pick::Click::None) {
             const auto hitRow = under.row.valid() ? under.row : PetariEditor::rowForActor(under.actor);
             std::size_t index = hitRow.valid() ? std::find(rows.begin(), rows.end(), hitRow) - rows.begin()

@@ -37,6 +37,10 @@ void drawFrame(float windowWidth, float windowHeight);
 // keeps the edits and history.
 void switchMission(int mission);
 
+// Where the editor keeps its small UI settings (the last mod saved per galaxy, for the Save sheet's
+// defaults): <user folder>/editor/ui-settings.txt. Unset: nothing is remembered between sessions.
+void setSettingsFile(const char* path);
+
 // Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
 // false if it wasn't drawn.
 bool testTargetRect(const char* name, float* x, float* y, float* width, float* height);

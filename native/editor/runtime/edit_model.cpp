@@ -33,6 +33,67 @@ namespace {
         return sTable;
     }
 
+    // Rows of `from` matched to rows of `to` (index in `to`, or -1): equal rows first, in order,
+    // then rows with the same name and l_id (edited since the disc).
+    std::vector< int > matchRows(const Formats::Table& from, const Formats::Table& to) {
+        auto key = [](const Formats::Table& t, int row, const Formats::Table& columnsOf) {
+            std::string k;
+            for (const Formats::TableColumn& c : columnsOf.columns()) {
+                const int index = t.column(c.hash);
+                const CellValue v = index >= 0 ? t.get(row, index) : CellValue{};
+                k += std::to_string(static_cast< int >(v.kind)) + ":" + std::to_string(v.i) + ":" + std::to_string(v.f) + ":" + v.s + "|";
+            }
+            return k;
+        };
+        std::vector< int > out(from.rowCount(), -1);
+        std::vector< bool > used(to.rowCount(), false);
+        std::map< std::string, std::vector< int > > byKey;
+        for (int r = to.rowCount() - 1; r >= 0; r--) byKey[key(to, r, to)].push_back(r);
+        for (int r = 0; r < from.rowCount(); r++) {
+            auto it = byKey.find(key(from, r, to));
+            if (it != byKey.end() && !it->second.empty()) {
+                out[r] = it->second.back();
+                used[out[r]] = true;
+                it->second.pop_back();
+            }
+        }
+        const int nameFrom = from.column(Formats::jmapHash("name")), nameTo = to.column(Formats::jmapHash("name"));
+        const int lidFrom = from.column(Formats::jmapHash("l_id")), lidTo = to.column(Formats::jmapHash("l_id"));
+        if (nameFrom >= 0 && nameTo >= 0 && lidFrom >= 0 && lidTo >= 0) {
+            for (int r = 0; r < from.rowCount(); r++) {
+                if (out[r] >= 0) continue;
+                for (int d = 0; d < to.rowCount(); d++) {
+                    if (!used[d] && to.get(d, nameTo) == from.get(r, nameFrom) && to.get(d, lidTo) == from.get(r, lidFrom)) {
+                        out[r] = d;
+                        used[d] = true;
+                        break;
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    // Two tables with the same columns (hash and type) and the same cells in the same rows.
+    bool sameCells(const Formats::Table& table, const Bytes& other) {
+        std::optional< Formats::Table > b = Formats::Table::parse(other);
+        if (!b || b->rowCount() != table.rowCount() || b->columns().size() != table.columns().size()) {
+            return false;
+        }
+        for (int c = 0; c < static_cast< int >(table.columns().size()); c++) {
+            const int bc = b->column(table.columns()[c].hash);
+            if (bc < 0 || b->columns()[bc].type != table.columns()[c].type) {
+                return false;
+            }
+            for (int r = 0; r < table.rowCount(); r++) {
+                if (table.get(r, c) != b->get(r, bc)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     CellType cellTypeOf(ColumnType type) {
         switch (type) {
         case ColumnType::Float:
@@ -261,13 +322,19 @@ std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scen
             model.path = file;
             model.layer = layerOf(file);
             model.original = *table;
-            // The disc's table is the original when its rows line up with the loaded one (a mod
-            // that added or removed rows: the loaded table is its own original).
+            // The disc's table is the original. Its rows line up with the loaded one by index when
+            // the counts agree; otherwise (a mod added or removed rows) they are matched as the
+            // patch writer does, and loaded rows the disc doesn't have read as Added.
             if (disc && disc->file(file) != nullptr) {
                 std::optional< Formats::Table > discTable = Formats::Table::parse(*disc->file(file));
-                if (discTable && discTable->rowCount() == table->rowCount()) {
+                if (discTable && discTable->rowCount() != table->rowCount()) {
+                    model.sourceToDisc = matchRows(*table, *discTable);
+                }
+                if (discTable) {
                     model.original = std::move(*discTable);
                 }
+            } else if (disc) {
+                model.sourceToDisc.assign(table->rowCount(), -1);  // a table the disc's archive lacks: every row is the mod's
             }
             model.current = std::move(*table);
             for (const Formats::TableColumn& c : model.current.columns()) {
@@ -278,12 +345,13 @@ std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scen
                 for (int c = 0; c < static_cast< int >(model.columns.size()); c++) {
                     row.push_back(toCell(model.current.get(r, c), model.current.columns()[c].type));
                 }
-                for (int c = 0; c < static_cast< int >(model.original.columns().size()); c++) {
-                    original.push_back(toCell(model.original.get(r, c), model.original.columns()[c].type));
+                const int discRow = model.sourceToDisc.empty() ? r : model.sourceToDisc[r];
+                for (int c = 0; discRow >= 0 && c < static_cast< int >(model.original.columns().size()); c++) {
+                    original.push_back(toCell(model.original.get(discRow, c), model.original.columns()[c].type));
                 }
                 model.cells.push_back(std::move(row));
                 model.origCells.push_back(std::move(original));
-                model.added.push_back(false);
+                model.added.push_back(discRow < 0);
             }
             zone.tables.push_back(std::move(model));
         }
@@ -962,7 +1030,9 @@ std::vector< std::pair< std::string, Formats::Bytes > > EditModel::changedArchiv
                 continue;  // a table made in this session: added with the archive rebuild below
             }
             Bytes now = table.current.build();
-            if (now != *pLoaded) {
+            // Different bytes with the same cells (an undone string edit leaves its string in the
+            // pool, which never shrinks): unchanged.
+            if (now != *pLoaded && !sameCells(table.current, *pLoaded)) {
                 archive.replace(table.path, std::move(now));
                 edited = true;
             }
@@ -1019,47 +1089,6 @@ const Formats::Table* EditModel::rowTable(RowId id, int* pRowIndex) const {
 // ---- patch ---------------------------------------------------------------------------------------
 
 namespace {
-    // Rows of `from` matched to rows of `to` (index in `to`, or -1): equal rows first, in order,
-    // then rows with the same name and l_id (edited since the disc).
-    std::vector< int > matchRows(const Formats::Table& from, const Formats::Table& to) {
-        auto key = [](const Formats::Table& t, int row, const Formats::Table& columnsOf) {
-            std::string k;
-            for (const Formats::TableColumn& c : columnsOf.columns()) {
-                const int index = t.column(c.hash);
-                const CellValue v = index >= 0 ? t.get(row, index) : CellValue{};
-                k += std::to_string(static_cast< int >(v.kind)) + ":" + std::to_string(v.i) + ":" + std::to_string(v.f) + ":" + v.s + "|";
-            }
-            return k;
-        };
-        std::vector< int > out(from.rowCount(), -1);
-        std::vector< bool > used(to.rowCount(), false);
-        std::map< std::string, std::vector< int > > byKey;
-        for (int r = to.rowCount() - 1; r >= 0; r--) byKey[key(to, r, to)].push_back(r);
-        for (int r = 0; r < from.rowCount(); r++) {
-            auto it = byKey.find(key(from, r, to));
-            if (it != byKey.end() && !it->second.empty()) {
-                out[r] = it->second.back();
-                used[out[r]] = true;
-                it->second.pop_back();
-            }
-        }
-        const int nameFrom = from.column(Formats::jmapHash("name")), nameTo = to.column(Formats::jmapHash("name"));
-        const int lidFrom = from.column(Formats::jmapHash("l_id")), lidTo = to.column(Formats::jmapHash("l_id"));
-        if (nameFrom >= 0 && nameTo >= 0 && lidFrom >= 0 && lidTo >= 0) {
-            for (int r = 0; r < from.rowCount(); r++) {
-                if (out[r] >= 0) continue;
-                for (int d = 0; d < to.rowCount(); d++) {
-                    if (!used[d] && to.get(d, nameTo) == from.get(r, nameFrom) && to.get(d, lidTo) == from.get(r, lidFrom)) {
-                        out[r] = d;
-                        used[d] = true;
-                        break;
-                    }
-                }
-            }
-        }
-        return out;
-    }
-
     std::string patchColumnName(std::uint32_t hash) {
         if (const char* pName = knownColumnName(hash)) return pName;
         char buffer[16];
@@ -1153,16 +1182,14 @@ EditModel::PatchOut EditModel::patch() const {
                 for (int r = 0; r < cur.rowCount(); r++) addRowOp(r);
                 continue;
             }
-            // Each current row's disc row: its own index when the loaded table is the disc's, else matched.
-            const Formats::Bytes* pSource = zone.archive.file(t.path);
-            const bool sourceIsDisc = pSource != nullptr && *pSource == *pDiscBytes;
-            const std::vector< int > sourceToDisc = sourceIsDisc ? std::vector< int >() : matchRows(t.original, *disc);
+            // Each current row's disc row, as mapped at load (TableModel::sourceToDisc).
+            const std::vector< int >& sourceToDisc = t.sourceToDisc;
             std::vector< int > discOf(cur.rowCount(), -1);
             std::vector< bool > kept(disc->rowCount(), false);
             for (int r = 0; r < cur.rowCount(); r++) {
                 if (t.added[r] || (t.ids[r].v >> 63)) continue;
                 const int source = static_cast< int >(t.ids[r].v & kField) - 1;
-                const int d = sourceIsDisc ? source : (source >= 0 && source < static_cast< int >(sourceToDisc.size()) ? sourceToDisc[source] : -1);
+                const int d = sourceToDisc.empty() ? source : (source >= 0 && source < static_cast< int >(sourceToDisc.size()) ? sourceToDisc[source] : -1);
                 if (d >= 0 && d < disc->rowCount() && !kept[d]) {
                     discOf[r] = d;
                     kept[d] = true;
