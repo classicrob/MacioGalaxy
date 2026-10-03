@@ -65,13 +65,15 @@ namespace EditorGravity {
             static RowId wideRows[2];
             if (step == 0) {
                 const auto fields = Gravity::view().fields;
+                if (fields.empty()) return;
                 float nearest[2] = {1e30f, 1e30f};
                 const auto* mario = MR::getPlayerPos();
                 if (!mario) return;
                 for (const auto& f : fields) {
                     if (!f.row.valid() || !f.active) continue;
                     const int kind = f.shape == Gravity::Shape::Point ? 0 :
-                        (f.shape == Gravity::Shape::Cube || f.shape == Gravity::Shape::Disk) && f.radius > 500 ? 1 : -1;
+                        (f.shape == Gravity::Shape::Cube || f.shape == Gravity::Shape::Disk ||
+                         (f.shape == Gravity::Shape::Parallel && f.bound == Gravity::Bound::Box)) && f.radius > 500 ? 1 : -1;
                     if (kind < 0) continue;
                     const float dx=f.center.x-mario->x, dy=f.center.y-mario->y, dz=f.center.z-mario->z;
                     const float distance=dx*dx+dy*dy+dz*dz;

@@ -123,7 +123,9 @@ namespace PetariEditor::Ui {
             const auto detail = hover != v.fields.end() ? hover : winner;
             if (detail != v.fields.end()) {
                 char range[64];
-                if (detail->range < 0) std::snprintf(range, sizeof(range), "unlimited");
+                if (detail->shape == Gravity::Shape::Parallel && detail->bound != Gravity::Bound::Sphere)
+                    std::snprintf(range, sizeof(range), "%s boundary", detail->bound == Gravity::Bound::Box ? "box" : "cylinder");
+                else if (detail->range < 0) std::snprintf(range, sizeof(range), "unlimited");
                 else std::snprintf(range, sizeof(range), "%.0f", detail->range);
                 if (hover != v.fields.end())
                     label = detail->name + " | priority " + std::to_string(detail->priority) + " | range " + range + "\nPull: " + label;
