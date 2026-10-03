@@ -14,7 +14,7 @@ Use **W** to move, **E** to rotate, **R** to scale and **Q** to select without a
 
 ## Add things and tune them
 
-In the **Browser**, search for an object or choose a category. **Click a card, then click the ground** to place it; you can also drag the card onto the ground. Click the armed card again or press **Esc** to stop placing. Some cards need an example already present in the galaxy, or required links before the object can work. Read the placement feedback and **Checks**.
+In the **Browser**, search for an object or choose a category. **Click a card, then click the ground** to place it; you can also drag the card onto the ground. Click the armed card again or press **Esc** to stop placing. Some cards need an example already present in the galaxy, or required links before the object can work. Copies clear optional switches and other links by default; use **Keep links** only to reuse that wiring. Required paths retain their zone. Read the placement feedback and **Checks**.
 
 The **Inspector** shows transforms and named settings for the selection. Hover fields for help; expand **Raw fields** only when you need the original game values. The **Changes** tab shows edits and history. **Cmd+Z** undoes, **Cmd+Shift+Z** redoes. Most edits appear immediately; the **Reload … pending** count tells you when the scene needs rebuilding.
 

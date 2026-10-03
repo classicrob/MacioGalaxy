@@ -360,6 +360,13 @@ void testHelpInput() {
     key(ImGuiKey_Slash, true);
     CHECK(!Ui::helpVisible());
     key(ImGuiKey_Slash, false);
+    io.AddKeyEvent(ImGuiMod_Shift, false);
+    io.AddInputCharacter('?');  // Non-US layouts can produce the character without Shift+/.
+    ImGui::NewFrame();
+    Ui::updateHelpInput();
+    CHECK(Ui::helpVisible());
+    ImGui::Render();
+    Ui::toggleHelp();
     Ui::setVisible(true);
     Ui::setFocusMode(true);
     Ui::toggleHelp();
