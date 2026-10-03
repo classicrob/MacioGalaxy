@@ -694,6 +694,11 @@ std::vector< const Check* > orderChecks(const std::vector< Check >& all) {
 
 void openTab(const char* name) { gOpenTab = name; }
 
+void drawSection(const char* title, const char* right) { section(title, right); }
+void applyOp(Op op) { enqueueOp(std::move(op)); }
+std::string& helpText() { return gHelp; }
+std::string displayName(const ModelView& model, RowId row) { return rowName(model, row); }
+
 std::string missionLabel(const ModelView& model, int mission) {
     const char* name = model.missionName(mission);
     return name != nullptr && name[0] != '\0' ? std::string(name) : "Mission " + std::to_string(mission);
