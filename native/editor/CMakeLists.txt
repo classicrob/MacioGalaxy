@@ -67,12 +67,21 @@ target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 
 # The runtime in the game: the session, the binding, the command drain and SceneSync. It calls
 # game code (src/Game/Editor), so only the app and the link check link it.
+# Loading for editing and saving as a mod, without the game (runtime/model_io.hpp): the Runtime and
+# headless tools (petari-level) share it. Needs the native DVD layer (the disc and the mod overlay).
+if(TARGET petari_platform_dvd)
+    add_library(petari_editor_save STATIC runtime/model_io.cpp)
+    target_include_directories(petari_editor_save PUBLIC include runtime)
+    target_link_libraries(petari_editor_save PUBLIC petari_editor_model petari_editor_core petari_editor_terrain petari_platform_dvd
+        petari_native_config)
+endif()
+
 add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
     runtime/redraw_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_editor_terrain_catalog petari_native_config)
 if(TARGET petari_platform_dvd)
-    target_link_libraries(petari_editor_runtime PRIVATE petari_platform_dvd)
+    target_link_libraries(petari_editor_runtime PRIVATE petari_platform_dvd PUBLIC petari_editor_save)
 endif()
 
 if(BUILD_TESTING)
@@ -100,6 +109,14 @@ if(BUILD_TESTING)
     add_executable(petari_editor_catalog_tests ${PETARI_REPO_ROOT}/native/tests/editor_catalog_tests.cpp)
     target_link_libraries(petari_editor_catalog_tests PRIVATE petari_editor_core petari_editor_terrain_catalog)
     add_test(NAME native_editor_catalog COMMAND petari_editor_catalog_tests)
+
+    if(TARGET petari_editor_save)
+        add_executable(petari_editor_save_tests ${PETARI_REPO_ROOT}/native/tests/editor_save_tests.cpp)
+        target_compile_definitions(petari_editor_save_tests PRIVATE
+            PETARI_TEST_DISC_FILES="${PETARI_REPO_ROOT}/build/game-data/RMGE01/files")
+        target_link_libraries(petari_editor_save_tests PRIVATE petari_editor_save)
+        add_test(NAME native_editor_save COMMAND petari_editor_save_tests)
+    endif()
 
     add_executable(petari_editor_share_tests ${PETARI_REPO_ROOT}/native/tests/editor_share_tests.cpp)
     target_link_libraries(petari_editor_share_tests PRIVATE petari_editor_share)
