@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <exception>
 #include <fstream>
 #include <iterator>
 #include <string>
@@ -64,7 +65,12 @@ namespace {
             model->revision() < gBase.revision || (model->historySize() == 0 && gBase.history != 0)) {
             // Retain the initial content through edits/reloads; capture a new model before its first API op.
             PetariNative::HostAllocationScope host;
-            const std::string fingerprint = E::LevelApi::modelFingerprint(*model);
+            std::string fingerprint;
+            try {
+                fingerprint = E::LevelApi::modelFingerprint(*model);
+            } catch (const std::exception& error) {
+                std::fprintf(stderr, "[test-server] cannot fingerprint editor base: %s\n", error.what());
+            }
             gBase.model = model;
             gBase.mission = model->scenario();
             std::snprintf(gBase.galaxy, sizeof(gBase.galaxy), "%s", model->galaxy());

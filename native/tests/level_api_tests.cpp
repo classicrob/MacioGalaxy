@@ -118,6 +118,7 @@ double ms(std::chrono::steady_clock::time_point since) {
         check(call(*reopened, "info")["source_warnings"].items().empty(), "refreeze clears stale warning");
         const Value frozen = reopened->base();
         const fs::path copied = options.user / "copied-workspace" / "base";
+        fs::create_directories(copied.parent_path());
         fs::copy(options.baseDirectory, copied, fs::copy_options::recursive);
         options.baseDirectory = copied;
         options.base = frozen;
