@@ -32,6 +32,14 @@ bool worldUp();
 // 1 resume the frozen moment (Shift+Tab), 2 the mission start (Option+Tab; Cmd+Tab is the app switcher).
 void setPlayFrom(int from);
 
+// A field being typed in (the UI sets it each frame): a Tab tap then waits for the field to commit, so
+// Play never runs without the value just typed (the playtester's friction #10). The UI takes the deferred
+// tap, ends the edit, and toggles a moment later.
+void setTyping(bool typing);
+bool typing();
+void deferToggle();      // the host: a Tab tap while typing
+bool takeDeferredToggle();  // the UI
+
 void resetForTesting();
 
 }  // namespace PetariNative::EditorSettings
