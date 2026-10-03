@@ -34,6 +34,9 @@ extern "C" void petari_gx_pipeline_report();
 #include "smoke_domes.hpp"
 #include "smoke_movement.hpp"
 #include "smoke_replay.hpp"
+#include <petari/agent_replay.hpp>
+#include <fstream>
+#include <sstream>
 #include "smoke_goodegg.hpp"
 #include "smoke_soak.hpp"
 #include "smoke_stage.hpp"
@@ -235,6 +238,11 @@ Smoke::SoakDriver* gSoak = nullptr;
 // Or the dome tour (smoke_domes.hpp), PETARI_SMOKE=domes.
 Smoke::DomesDriver* gDomes = nullptr;
 Smoke::ReplayDriver* gReplay = nullptr;
+Smoke::ReplayDriver* gAgentReplay = nullptr;
+uint64_t gAgentMissingLayout = 0;
+uint64_t gAgentMissingSound = 0;
+uint64_t gAgentManifestFailures = 0;
+bool gAgentAssetFailure = false;
 Smoke::MovementDriver* gMovement = nullptr;
 
 unsigned long environmentNumber(const char* name, unsigned long fallback) {
@@ -349,7 +357,7 @@ void startSmoke() {
 // Game state is read here, before the seam releases the CPU, while this
 // thread owns the game. Driver is Smoke::Driver or Smoke::StageDriver.
 template <class Driver>
-void runSmoke(Driver* driver) {
+void runSmoke(Driver* driver, bool quitOnFinish = true) {
     Smoke::Observation observation = Smoke::observeGame(driver->wantsPlayer());
     observation.physical = Events::physicalInputs();
     const Smoke::Step step = driver->step(observation);
@@ -377,7 +385,14 @@ void runSmoke(Driver* driver) {
         std::fprintf(stderr, "PETARI SMOKE: warp requested with no player to move\n");
     }
     Smoke::heartbeat(driver->frame(), driver->phase());
-    if (step.requestQuit) {
+    if (step.requestQuit && !quitOnFinish) {
+        for (Smoke::Button button : {Smoke::Button::A, Smoke::Button::B, Smoke::Button::StickUp,
+             Smoke::Button::StickDown, Smoke::Button::StickLeft, Smoke::Button::StickRight,
+             Smoke::Button::Spin, Smoke::Button::Plus, Smoke::Button::Minus}) {
+            Events::pressButton(static_cast<int>(button), false);
+        }
+    }
+    if (step.requestQuit && quitOnFinish) {
         // A route that passed while looking up layout panes/animations or sounds that do
         // not exist in the disc data did not really pass: those lookups were skipped.
         Smoke::Result result = driver->result();
@@ -647,6 +662,66 @@ void reportFrameStats() {
 
 }  // namespace Seam
 
+namespace AgentReplay {
+    bool start(const std::string& route, const std::string& stage, int scenario, unsigned long frames, bool requireStar, std::string* error) {
+        HostAllocationScope host;
+        if (gAgentReplay && gAgentReplay->result() == Smoke::Result::Running) {
+            *error = "a recorded route is already running";
+            return false;
+        }
+        std::ifstream in(route);
+        std::ostringstream text;
+        text << in.rdbuf();
+        Smoke::ReplayConfig config;
+        config.stage = stage;
+        config.scenario = scenario;
+        config.routePath = route;
+        config.route = Smoke::parseReplayRoute(text.str());
+        config.requireStar = requireStar;
+        config.startInStage = true;
+        if (!in || config.route.size() < 2 || frames < 60 || frames > 1080000) {
+            *error = "route needs a readable CSV with at least 2 waypoints and frame limit 60..1080000";
+            return false;
+        }
+        delete gAgentReplay;
+        gAgentMissingLayout = petari_layout_missing_reference_count();
+        gAgentMissingSound = petari_sound_missing_reference_count();
+        gAgentManifestFailures = petari_gx_pipeline_manifest_failure_count();
+        gAgentAssetFailure = false;
+        gAgentReplay = new Smoke::ReplayDriver(frames, config);
+        return true;
+    }
+    bool active() {
+        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Running;
+    }
+    bool finished() {
+        return gAgentReplay && gAgentReplay->result() != Smoke::Result::Running;
+    }
+    bool passed() {
+        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Pass && !gAgentAssetFailure;
+    }
+    std::string reason() {
+        HostAllocationScope host;
+        if (!gAgentReplay)
+            return "no route";
+        auto result = gAgentReplay->reason();
+        if (gAgentReplay->result() == Smoke::Result::Pass && !passed())
+            result += "; missing game assets or shader manifest failures (see server log)";
+        return result;
+    }
+    unsigned long frame() {
+        return gAgentReplay ? gAgentReplay->frame() : 0;
+    }
+    void cancel() {
+        HostAllocationScope host;
+        for (Smoke::Button button : {Smoke::Button::A, Smoke::Button::B, Smoke::Button::StickUp, Smoke::Button::StickDown, Smoke::Button::StickLeft,
+                                     Smoke::Button::StickRight, Smoke::Button::Spin, Smoke::Button::Plus, Smoke::Button::Minus})
+            Events::pressButton(static_cast< int >(button), false);
+        delete gAgentReplay;
+        gAgentReplay = nullptr;
+    }
+}  // namespace AgentReplay
+
 }  // namespace PetariNative::App
 
 using namespace PetariNative::App;
@@ -670,7 +745,14 @@ extern "C" void petari_host_frame_seam(void) {
     observeProgressFrame();
     // Game state is readable here, before the CPU is released.
     recordFrame(entry, gTiming.probe != nullptr ? gTiming.probe() : FrameStats::Phase::Gameplay);
-    if (gSmoke != nullptr) {
+    if (gAgentReplay != nullptr && !AgentReplay::finished()) {
+        runSmoke(gAgentReplay, false);
+        if (AgentReplay::finished()) {
+            gAgentAssetFailure = petari_layout_missing_reference_count() != gAgentMissingLayout ||
+                                 petari_sound_missing_reference_count() != gAgentMissingSound ||
+                                 petari_gx_pipeline_manifest_failure_count() != gAgentManifestFailures;
+        }
+    } else if (gSmoke != nullptr) {
         runSmoke(gSmoke);
     } else if (gStage != nullptr) {
         runSmoke(gStage);

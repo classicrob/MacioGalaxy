@@ -241,15 +241,20 @@ Step ReplayDriver::step(const Observation& o) {
     if (mResult != Result::Running) return step;
 
     if (mPhase == Phase::Boot) {
-        step = mBoot.step(o);
-        for (const std::string& line : mBoot.log()) {
-            if (line.rfind("physical ", 0) != 0 && line.rfind("window focus", 0) != 0) mLog.push_back(line);
-        }
-        if (mBoot.result() != Result::Running) {
-            mResult = mBoot.result() == Result::Blocked ? Result::Blocked : Result::Fail;
-            mReason = std::string("before the replay: ") + mBoot.reason();
-            mPhase = Phase::Done;
-            step.requestQuit = true;
+        if (!mConfig.startInStage) {
+            step = mBoot.step(o);
+            for (const std::string& line : mBoot.log()) {
+                if (line.rfind("physical ", 0) != 0 && line.rfind("window focus", 0) != 0) mLog.push_back(line);
+            }
+            if (mBoot.result() != Result::Running) {
+                mResult = mBoot.result() == Result::Blocked ? Result::Blocked : Result::Fail;
+                mReason = std::string("before the replay: ") + mBoot.reason();
+                mPhase = Phase::Done;
+                step.requestQuit = true;
+                return step;
+            }
+        } else if (o.scene != "Game" || o.stage != mConfig.stage) {
+            finish(Result::Fail, "live replay left its starting stage before handover", step);
             return step;
         }
         // Hand over once Mario stands in the stage, playable, for a second: the
@@ -477,6 +482,13 @@ void ReplayDriver::route(const Observation& o, Step& step) {
         resync(o, 0, mConfig.route.size(), "respawn");
     }
     if (mWaypoint >= mConfig.route.size()) {
+        if (!mConfig.requireStar) {
+            steer({}, step);
+            mReadyFrames = o.playerOnGround && !o.playerInBind && !o.demoActive && o.pausePermitted ? mReadyFrames+1 : 0;
+            if (mReadyFrames >= 30) finish(Result::Pass, "recorded route completed and Mario landed at " + text(pos), step);
+            else if (++mWaypointFrames >= kWaypointLimit) finish(Result::Fail, "route completed but Mario did not land", step);
+            return;
+        }
         // The route ends where the recording's star grab began: the star is near.
         steer({}, step);
         if (mPhaseFrames % 120 == 0) note("route finished; waiting for the star at " + text(pos));
