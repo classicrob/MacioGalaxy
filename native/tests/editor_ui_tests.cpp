@@ -3,12 +3,13 @@
 #include <petari/editor/ui.hpp>
 
 #include "../editor/runtime/runtime_core.hpp"
-#include "panels.hpp"
-#include "missions.hpp"
-#include "journal.hpp"
+#include "choice_labels.hpp"
 #include "galaxy_info.hpp"
 #include "help.hpp"
 #include "imgui_internal.h"
+#include "journal.hpp"
+#include "missions.hpp"
+#include "panels.hpp"
 #include "paths.hpp"
 #include <petari/editor/paths_view.hpp>
 #include <petari/editor_pick.hpp>
@@ -462,6 +463,29 @@ void testMissionInput() {
     Core::setModel(nullptr);
 }
 
+void testChoiceLabels() {
+    namespace Ui = PetariEditor::Ui;
+    CHECK(Ui::galaxyChoiceLabel("EggStarGalaxy") == "Good Egg Galaxy");
+    CHECK(Ui::galaxyChoiceLabel("HeavenlyBeachGalaxy") == "Beach Bowl Galaxy");
+    CHECK(Ui::galaxyChoiceLabel("CosmosGardenGalaxy") == "Gusty Garden Galaxy");
+    CHECK(Ui::galaxyChoiceLabel("CustomGalaxy") == "CustomGalaxy");
+    CHECK(Ui::galaxyChoiceLabel("good-egg") == "good-egg");
+    CHECK(Ui::galaxyChoiceLabel("").empty());
+    CHECK(Ui::skyChoiceLabel("AuroraSky") == "Aurora Sky");
+    CHECK(Ui::skyChoiceLabel("MilkyWaySky") == "Milky Way Sky");
+    CHECK(Ui::skyChoiceLabel("CustomSky") == "CustomSky");
+    CHECK(Ui::skyChoiceLabel("VRDarkSpace") == "VRDarkSpace");
+    CHECK(Ui::skyChoiceLabel("").empty());
+    PetariEditor::Catalog::ClassInfo sky;
+    sky.name = "AuroraSky";
+    sky.displayName = "AuroraSky";
+    PetariEditor::Catalog::addClass(sky);
+    CHECK(Ui::skyChoiceLabel(sky.name) == "Aurora Sky");
+    sky.displayName = "Custom Aurora";
+    PetariEditor::Catalog::addClass(sky);
+    CHECK(Ui::skyChoiceLabel(sky.name) == "Custom Aurora");
+}
+
 void testGalaxyInfoInput() {
     namespace Ui = PetariEditor::Ui;
     static std::optional<GalaxyInfo> info;
@@ -507,6 +531,8 @@ void testGalaxyInfoInput() {
     click("button:Apply galaxy settings");
     CHECK(Core::drainCommands().empty());
     click("button:Add mission");
+    click("combo:Galaxy music");
+    click("galaxy-music:HeavenlyBeachGalaxy");
     Core::mutableStatus().unsaved = true;
     draw();
     click("button:Apply galaxy settings");
@@ -517,6 +543,7 @@ void testGalaxyInfoInput() {
     if (commands.size() == 1) {
         const auto& g = commands[0].galaxyInfo;
         CHECK(g.discardUnsaved && g.missions.size() == 2 && g.missions[0] == "First star");
+        CHECK(g.musicFrom == "HeavenlyBeachGalaxy");
         CHECK(g.name == "Test Galaxy" && g.internalName == "TestModGalaxy" && g.mod == "TestMod");
     }
     click("button:Discard and apply galaxy settings");
@@ -736,6 +763,7 @@ int main() {
     testPathInputCapture();
     testMissionInput();
     testHelpInput();
+    testChoiceLabels();
     testGalaxyInfoInput();
     testJournalInput();
     ImGui::DestroyContext();

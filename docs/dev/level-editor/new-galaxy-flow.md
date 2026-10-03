@@ -50,6 +50,7 @@ What is live and what restarts:
 In every template:
 - **Missions.** Mission k's Power Star (`Obj_arg0` = k) stands 900 units from the start, on the mission's layer. A single mission uses Common; with more, mission 1 is Layer A, and so on.
 - **Sky.** `NewGalaxyRequest::sky` is one of `newGalaxyChoices().skies`: the game's Sky and ProjectionMapSky classes that the disc has. The row is copied as a disc galaxy places it and moved to the origin, in Common. Empty means Good Egg's sky; for Copy, empty keeps the source's sky. A chosen sky replaces the sky in the copy's own archive (a sky placed in a shared zone stays).
+- **Labels.** Music (including Galaxy settings) and Copy choices use the same galaxy names as Level Select, such as "Good Egg Galaxy". Sky choices prefer catalog display names, then readable labels for known straightforward names, such as "Aurora Sky". Unknown/custom IDs are shown unchanged. Choices and saved requests still use the original internal IDs; template defaults and presets are unchanged.
 - **Lighting** falls back to the default area light.
 
 ## The pieces

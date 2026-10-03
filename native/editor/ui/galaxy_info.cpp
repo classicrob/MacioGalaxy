@@ -1,4 +1,5 @@
 #include "galaxy_info.hpp"
+#include "choice_labels.hpp"
 #include "imgui.h"
 #include "panels.hpp"
 #include <algorithm>
@@ -61,12 +62,16 @@ namespace PetariEditor::Ui {
         noteTestTarget("field:Galaxy name");
         drawSection("Music");
         ImGui::SetNextItemWidth(-1);
-        if (ImGui::BeginCombo("##galaxy-music", draft.musicFrom.empty() ? "Default (Good Egg)" : draft.musicFrom.c_str())) {
+        if (ImGui::BeginCombo("##galaxy-music", draft.musicFrom.empty() ? "Default (Good Egg)" : galaxyChoiceLabel(draft.musicFrom).c_str())) {
             if (ImGui::Selectable("Default (Good Egg)", draft.musicFrom.empty()))
                 draft.musicFrom.clear();
-            for (const auto& name : newGalaxyChoices().galaxies)
-                if (ImGui::Selectable(name.c_str(), draft.musicFrom == name))
+            for (const auto& name : newGalaxyChoices().galaxies) {
+                ImGui::PushID(name.c_str());
+                if (ImGui::Selectable(galaxyChoiceLabel(name).c_str(), draft.musicFrom == name))
                     draft.musicFrom = name;
+                noteTestTarget(("galaxy-music:" + name).c_str());
+                ImGui::PopID();
+            }
             ImGui::EndCombo();
         }
         noteTestTarget("combo:Galaxy music");

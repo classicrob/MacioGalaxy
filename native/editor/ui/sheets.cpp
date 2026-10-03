@@ -1,6 +1,7 @@
 // The level editor's sheets (docs/dev/level-editor/UX.md section 17): Save, as a modal over the editor.
 // Save writes the session's edits as a mod through Runtime (Command::SaveMod): a patch by default (row edits
 // against the player's disc, no game data, fine to share), or Full archives for other tools.
+#include "choice_labels.hpp"
 #include "host.hpp"
 #include "panels.hpp"
 
@@ -546,12 +547,17 @@ struct NewGalaxyFields {
 } gNew;
 
 // A searchable list of choices; returns the chosen one (or keeps `current`).
-void choiceList(const char* id, const std::vector< std::string >& items, const char* filter, std::string* current, float height) {
+void choiceList(const char* id, const std::vector< std::string >& items, const char* filter, std::string* current, float height,
+                bool galaxies = false) {
     ImGui::BeginChild(id, ImVec2(-1.0f, height), ImGuiChildFlags_Borders);
     int shown = 0;
     for (const std::string& item : items) {
         if (filter != nullptr && !matchesQuery(item, filter)) continue;
-        if (ImGui::Selectable(item.c_str(), *current == item)) *current = item;
+        ImGui::PushID(item.c_str());
+        const std::string label = galaxies ? galaxyChoiceLabel(item) : item;
+        if (ImGui::Selectable(label.c_str(), *current == item))
+            *current = item;
+        ImGui::PopID();
         if (++shown > 400) break;
     }
     if (shown == 0) ImGui::TextDisabled(items.empty() ? "(the disc's list isn't ready yet)" : "Nothing matches.");
@@ -613,22 +619,19 @@ void drawNewGalaxySheet() {
         ImGui::InputTextWithHint("##planet-filter", "Find a planet", gNew.planetFilter, sizeof(gNew.planetFilter));
         choiceList("planets", choices.planets, gNew.planetFilter, &gNew.planet, 120.0f);
     } else if (gNew.from == 3) {
-        choiceList("galaxies", choices.galaxies, nullptr, &gNew.copyOf, 120.0f);
+        choiceList("galaxies", choices.galaxies, nullptr, &gNew.copyOf, 120.0f, true);
     }
     // 2. Look and sound.
     drawSection("2  Sky and music");
     ImGui::TextUnformatted("Sky");
     ImGui::SetNextItemWidth(-1.0f);
-    auto skyLabel = [](const std::string& sky) {
-        const auto* info = Catalog::find(sky.c_str());
-        return info && !info->displayName.empty() ? info->displayName : sky;
-    };
-    if (ImGui::BeginCombo("##sky", gNew.sky.empty() ? "Template's" : skyLabel(gNew.sky).c_str())) {
+    if (ImGui::BeginCombo("##sky", gNew.sky.empty() ? "Template's" : skyChoiceLabel(gNew.sky).c_str())) {
         if (ImGui::Selectable("Template's", gNew.sky.empty())) gNew.sky.clear();
         noteTestTarget("sky:template");
         for (const auto& sky : choices.skies) {
             ImGui::PushID(sky.c_str());
-            if (ImGui::Selectable(skyLabel(sky).c_str(), gNew.sky == sky)) gNew.sky = sky;
+            if (ImGui::Selectable(skyChoiceLabel(sky).c_str(), gNew.sky == sky))
+                gNew.sky = sky;
             noteTestTarget(("sky:" + sky).c_str());
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", sky.c_str());
             ImGui::PopID();
@@ -638,12 +641,17 @@ void drawNewGalaxySheet() {
     noteTestTarget("combo:New galaxy sky");
     ImGui::TextUnformatted("Music");
     ImGui::SetNextItemWidth(-1.0f);
-    if (ImGui::BeginCombo("##music", gNew.music.empty() ? "Good Egg's" : gNew.music.c_str())) {
+    if (ImGui::BeginCombo("##music", gNew.music.empty() ? "Good Egg's" : galaxyChoiceLabel(gNew.music).c_str())) {
         for (const std::string& galaxy : choices.galaxies) {
-            if (ImGui::Selectable(galaxy.c_str(), gNew.music == galaxy)) gNew.music = galaxy;
+            ImGui::PushID(galaxy.c_str());
+            if (ImGui::Selectable(galaxyChoiceLabel(galaxy).c_str(), gNew.music == galaxy))
+                gNew.music = galaxy;
+            noteTestTarget(("music:" + galaxy).c_str());
+            ImGui::PopID();
         }
         ImGui::EndCombo();
     }
+    noteTestTarget("combo:New galaxy music");
     ImGui::TextColored(kDim, "Music and sound banks borrowed from that galaxy.");
     // 3. Name and missions.
     drawSection("3  Name and missions");
