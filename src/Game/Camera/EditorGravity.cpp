@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 #include "Game/Camera/EditorGravity.hpp"
 #include "Game/Editor/EditorScene.hpp"
+#include "Game/Editor/EditorTerrain.hpp"
 #include "Game/Gravity.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/LiveActor/HitSensor.hpp"
@@ -357,15 +358,16 @@ namespace EditorGravity {
         auto result = probe(position, false);
         if (result.covered && !result.winner.valid())
             forEachBoundRow([&](RowId row, LiveActor* actor) {
-                if (isGlobal(actor) &&
-                    reinterpret_cast< std::uintptr_t >(static_cast< GlobalGravityObj* >(actor)->getGravity()) == result.winnerIdentity)
+                PlanetGravity* field = isGlobal(actor) ? static_cast< GlobalGravityObj* >(actor)->getGravity() : EditorTerrain::partGravity(actor);
+                if (field && reinterpret_cast< std::uintptr_t >(field) == result.winnerIdentity)
                     result.winner = row;
             });
         return result;
     }
     G::Probe queryGround(Vec3 origin, Vec3 direction) {
         PetariNative::HostAllocationScope host;
-        if (!std::isfinite(length(direction)) || length(direction) < 1e-5f)
+        if (!std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
+            !std::isfinite(length(direction)) || length(direction) < 1e-5f)
             return {};
         Vec3 point, normal;
         RowId row;
@@ -406,6 +408,8 @@ namespace EditorGravity {
             if (isGlobal(a)) {
                 rows[static_cast< GlobalGravityObj* >(a)->getGravity()] = r;
                 s.bindingConfig.emplace(a, bindingConfig(r));
+            } else if (auto* field = EditorTerrain::partGravity(a)) {
+                rows[field] = r;
             }
         });
         for (int i = 0; i < mgr->nativeGravityCount(); i++) {
