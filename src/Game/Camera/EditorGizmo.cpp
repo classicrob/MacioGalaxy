@@ -16,6 +16,7 @@
 #include <petari/editor/gizmo_math.hpp>
 #include <petari/editor/import_assets.hpp>
 #include <petari/editor_pick.hpp>
+#include <petari/editor_settings.hpp>
 #include <petari/host_allocation.hpp>
 
 #include <algorithm>
@@ -697,7 +698,7 @@ namespace {
             const V3 ray = cam.ray(input.x, input.y);
             if (p.pattern == A::Pattern::Line) {
                 float distance;
-                if (G::closestOnAxis(cam.eye, ray, gArray.origin, gArray.frame.z, &distance)) {
+                if (G::closestOnAxis(cam.eye, ray, gArray.origin, A::lineDirection(p.direction, gArray.frame), &distance)) {
                     p.count =
                         static_cast< int >(std::clamp(std::round(std::max(0.f, distance) / p.spacing), 1.f, static_cast< float >(A::kMaxCopies)));
                     A::configure(p);
@@ -713,7 +714,8 @@ namespace {
         if (input.dragEnd)
             gArray.dragging = false;
         p = A::parameters();
-        if (gArray.settingsRevision != A::revision() || gArray.modelRevision != model->revision()) {
+        const bool layoutChanged = gArray.settingsRevision != A::revision() || gArray.modelRevision != model->revision();
+        if (layoutChanged) {
             gArray.sources = selection;
             const auto& first = gArray.sources.front();
             gArray.origin = first.pos;
@@ -749,8 +751,9 @@ namespace {
                         if (p.groundSnap)
                             copy.basis = G::alignUp(copy.basis, gravityUp(copy.pos, copy.basis.y));
                         if (p.facing != A::Facing::Preserve) {
-                            copy.basis = p.pattern == A::Pattern::Path ? A::alignAlong(sample.forward, copy.basis.y) :
-                                                                         G::gravityFrame(copy.basis.y, sample.forward);
+                            copy.basis = (p.pattern == A::Pattern::Path || p.pattern == A::Pattern::Line) ?
+                                             A::alignAlong(sample.forward, copy.basis.y) :
+                                             G::gravityFrame(copy.basis.y, sample.forward);
                         }
                         float center[3], radius = 60;
                         if (source.actor)
@@ -761,8 +764,8 @@ namespace {
                 if (missingGround)
                     gArray.message = std::to_string(missingGround) + " copies have no ground below; they keep their preview position.";
             }
-            gArray.handle =
-                p.pattern == A::Pattern::Line ? gArray.origin + gArray.frame.z * (p.spacing * p.count) : gArray.origin + gArray.frame.x * p.radius;
+            gArray.handle = p.pattern == A::Pattern::Line ? gArray.origin + A::lineDirection(p.direction, gArray.frame) * (p.spacing * p.count) :
+                                                            gArray.origin + gArray.frame.x * p.radius;
             gArray.settingsRevision = A::revision();
             gArray.modelRevision = model->revision();
         }
@@ -775,9 +778,16 @@ namespace {
         out.copies = gArray.copies;
         out.message = gArray.message;
         out.pathLength = gArray.pathLength;
-        if (p.pattern == A::Pattern::Line || p.pattern == A::Pattern::Arc || p.pattern == A::Pattern::Ring)
+        out.origin = gArray.origin;
+        out.handle = gArray.handle;
+        out.hasHandle = p.pattern == A::Pattern::Line || p.pattern == A::Pattern::Arc || p.pattern == A::Pattern::Ring;
+        if (out.hasHandle)
             out.handleVisible = cam.project(gArray.handle, &out.handleX, &out.handleY);
+        const bool offscreen = !out.handleVisible || std::fabs(out.handleX) > .82f || std::fabs(out.handleY) > .82f;
+        const bool fit = input.frame || (out.hasHandle && offscreen && !gArray.dragging && (layoutChanged || input.dragEnd));
         A::publish(std::move(out));
+        if (fit)
+            PetariNative::EditorSettings::frame();
         return true;
     }
 
