@@ -368,3 +368,20 @@ Each zone in `info` includes `world_matrix`: a full-precision 4x4 row-major matr
 Pass `existing_checks: true` to any loaded-level command to include the currently present baseline checks in an `existing_checks` array. The default remains compact; new problems still appear in the usual checks fields. The option must be boolean, and is validated before mutation.
 
 Mutation and dry-run replies report new switch reservations in `allocated_switches`, each `{ref, zone, field, id}`. Separate `"new"` requests reserve distinct free IDs even within one row. Connect another socket to the returned ID or to `"@label.SW_A"` when it should share that switch.
+
+### Gravity fields and brushes
+
+`gravity-shape` takes field refs, `shape` (Point, Cube, Cone, Disk, Torus, Parallel, Segment or Wire), and optional Parallel `bound` (Sphere, Box, Cylinder). It calls `Gravity::shapeOp`, including its safe argument resets. Wire requires a linked rail with at least two points; failure rolls back the batch.
+
+`gravity-values` takes refs and `values` containing `Range`, `Distant`, `Priority`, `Inverse`, or `Obj_arg0..7`, through `Gravity::numericOp`. Priority, Inverse and args are integers; Inverse also accepts booleans. Negative Range becomes -1; negative Distant/Priority becomes 0. Catalog-named args remain available through `set.args`. Ordinary add/transform operations create and place fields.
+
+Brushes use the shared loader's registered `EditorBrush` catalog class, presets and four named enums (Shape, Material, Surface, Gravity); inspect `class EditorBrush` for choices. Exact class `EditorBrush` stays editable in patch saves. Full saves bake it into planet assets. Headless KCL loading uses the terrain library's canonical `readKcl`; headless gravity remains approximate for complex shapes, while `Live.gravity` uses the engine.
+
+```python
+with lv.batch(label="Gravity and platform") as b:
+    field = b.add("GlobalPointGravity", [0, 3000, 0], label="field")
+    b.gravity_shape(field, "Parallel", bound="Box")
+    b.gravity_values(field, Range=3000, Priority=2, Inverse=False)
+    b.add("EditorBrush", [0, 2000, 0], scale=[0.5, 0.1, 0.5],
+          args={"Shape": "Box", "Gravity": "Down only"}, label="platform")
+```

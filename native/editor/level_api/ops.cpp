@@ -6,6 +6,7 @@
 #include "world.hpp"
 
 #include <petari/editor/paths.hpp>
+#include <petari/editor/gravity.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -14,6 +15,8 @@
 #include <limits>
 
 namespace PetariEditor::LevelApi {
+
+namespace EditorGravity = PetariEditor::Gravity;
 
 namespace {
     // ---- snapshots and the merged op ----------------------------------------------------------------
@@ -859,6 +862,53 @@ namespace {
                 if (op.has("path"))
                     linkRail(row, op["path"], where + ".path");
                 label(row, op, where);
+            } else if (kind == "gravity-shape" || kind == "gravity-values") {
+                checkKeys(op, kind == "gravity-shape" ? std::vector<std::string>{"op", "ref", "refs", "select", "shape", "bound"} :
+                                                        std::vector<std::string>{"op", "ref", "refs", "select", "values"}, where);
+                const auto rows = impl.resolveTargets(op, where);
+                for (RowId row : rows) {
+                    if (EditorGravity::shapeForPlacement(model.objectName(row)) == EditorGravity::Shape::Unknown)
+                        fail("bad-ref", where + ": target is not a gravity field", "select category Gravity", {}, where);
+                }
+                if (kind == "gravity-shape") {
+                    EditorGravity::Shape shape = EditorGravity::Shape::Unknown;
+                    std::vector<std::string> names;
+                    for (int i = 0; i < 8; ++i) {
+                        const auto candidate = static_cast<EditorGravity::Shape>(i);
+                        names.push_back(EditorGravity::shapeName(candidate));
+                        if (lower(names.back()) == lower(op["shape"].asString())) shape = candidate;
+                    }
+                    if (shape == EditorGravity::Shape::Unknown)
+                        fail("bad-value", where + ".shape is not a gravity shape", "", names, where + ".shape");
+                    const std::string boundName = lower(op["bound"].asString("Sphere"));
+                    if (boundName != "sphere" && boundName != "box" && boundName != "cylinder")
+                        fail("bad-value", where + ".bound must be Sphere, Box or Cylinder", "", {"Sphere", "Box", "Cylinder"}, where + ".bound");
+                    if (op.has("bound") && shape != EditorGravity::Shape::Parallel)
+                        fail("bad-args", where + ": bound applies to Parallel fields", "omit bound", {}, where + ".bound");
+                    const auto bound = boundName == "box" ? EditorGravity::Bound::Box : boundName == "cylinder" ? EditorGravity::Bound::Cylinder : EditorGravity::Bound::Sphere;
+                    for (RowId row : rows) {
+                        const Op change = EditorGravity::shapeOp(model, row, shape, bound);
+                        if (change.sets.empty())
+                            fail("op-failed", where + ": gravity shape could not be changed", "Wire requires a linked rail with at least two points", {}, where);
+                        apply(change, where);
+                    }
+                } else {
+                    if (!op["values"].isObject() || op["values"].members().empty())
+                        fail("bad-args", where + ".values must be a nonempty object", "use Range, Distant, Priority, Inverse or Obj_arg0..7", {}, where + ".values");
+                    for (const auto& [column, value] : op["values"].members()) {
+                        const bool arg = column.size() == 8 && column.rfind("Obj_arg", 0) == 0 && column.back() >= '0' && column.back() <= '7';
+                        if (column != "Range" && column != "Distant" && column != "Priority" && column != "Inverse" && !arg)
+                            fail("bad-arg", where + ": unknown gravity value " + column, "named catalog args can also be changed with set.args", {"Range", "Distant", "Priority", "Inverse", "Obj_arg0"}, where + ".values." + column);
+                        const bool integer = column == "Priority" || column == "Inverse" || arg;
+                        const double number = value.type() == Json::Value::Type::Bool && column == "Inverse" ? (value.asBool() ? 1 : 0) : value.asNumber();
+                        if ((value.type() != Json::Value::Type::Number && !(column == "Inverse" && value.type() == Json::Value::Type::Bool)) ||
+                            !std::isfinite(number) || std::fabs(number) > 10000000 || (integer && number != std::floor(number)))
+                            fail("bad-value", where + ".values." + column + " must be a finite " + (integer ? "integer" : "number") + " within +/-10000000", "", {}, where + ".values." + column);
+                        if (column == "Inverse" && number != 0 && number != 1)
+                            fail("bad-value", where + ".values.Inverse must be 0, 1 or boolean", "", {}, where + ".values.Inverse");
+                        apply(EditorGravity::numericOp(model, rows, column.c_str(), static_cast<float>(number), integer), where);
+                    }
+                }
             } else if (kind == "path") {
                 checkKeys(op, {"op", "zone", "points", "closed", "smooth", "on_ground", "height", "down", "as"}, where);
                 const int zone = op.has("zone") ? zoneOf(op["zone"], where + ".zone") : 0;

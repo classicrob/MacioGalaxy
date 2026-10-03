@@ -6,6 +6,7 @@
 
 #include <petari/editor/terrain/brush.hpp>
 #include <petari/editor/terrain/mesh.hpp>
+#include <petari/editor/terrain/kcl_reader.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -15,20 +16,6 @@
 namespace PetariEditor::LevelApi {
 
 namespace {
-    std::uint32_t be32(const Formats::Bytes& b, std::size_t at) {
-        return static_cast< std::uint32_t >(b[at]) << 24 | static_cast< std::uint32_t >(b[at + 1]) << 16 | static_cast< std::uint32_t >(b[at + 2]) << 8 |
-               b[at + 3];
-    }
-    std::uint16_t be16(const Formats::Bytes& b, std::size_t at) {
-        return static_cast< std::uint16_t >(b[at] << 8 | b[at + 1]);
-    }
-    float bef(const Formats::Bytes& b, std::size_t at) {
-        const std::uint32_t u = be32(b, at);
-        float f;
-        std::memcpy(&f, &u, 4);
-        return f;
-    }
-
     // A row's world transform with scale: world = zone * T * R * S.
     struct Affine {
         G::V3 origin;
@@ -123,33 +110,14 @@ namespace {
 }  // namespace
 
 std::vector< Triangle > readKclTriangles(const Formats::Bytes& kcl) {
-    std::vector< Triangle > out;
-    if (kcl.size() < 0x38) return out;
-    const std::uint32_t posOff = be32(kcl, 0), nrmOff = be32(kcl, 4), prismOff = be32(kcl, 8), octOff = be32(kcl, 12);
-    if (posOff >= kcl.size() || nrmOff >= kcl.size() || prismOff >= kcl.size() || octOff > kcl.size() || octOff < prismOff) return out;
-    auto vec = [&](std::uint32_t base, std::uint32_t index, G::V3* pOut) {
-        const std::size_t at = base + static_cast< std::size_t >(index) * 12;
-        if (at + 12 > kcl.size()) return false;
-        *pOut = {bef(kcl, at), bef(kcl, at + 4), bef(kcl, at + 8)};
-        return true;
-    };
-    const std::uint32_t count = (octOff - prismOff) / 16;
-    for (std::uint32_t i = 1; i < count; i++) {
-        const std::size_t at = prismOff + static_cast< std::size_t >(i) * 16;
-        const float height = bef(kcl, at);
-        if (!(height > 0)) continue;
-        G::V3 pos, face, e0, e1, e2;
-        if (!vec(posOff, be16(kcl, at + 4), &pos) || !vec(nrmOff, be16(kcl, at + 6), &face) || !vec(nrmOff, be16(kcl, at + 8), &e0) ||
-            !vec(nrmOff, be16(kcl, at + 10), &e1) || !vec(nrmOff, be16(kcl, at + 12), &e2)) {
-            continue;
-        }
-        // As KCollisionServer::getPos: corners 1 and 2 along cross(edge1, face) and cross(face, edge0).
-        const G::V3 c1 = G::cross(e1, face), c2 = G::cross(face, e0);
-        const float d1 = G::dot(c1, e2), d2 = G::dot(c2, e2);
-        if (std::fabs(d1) < 1e-9f || std::fabs(d2) < 1e-9f) continue;
-        Triangle t{pos, pos + c1 * (height / d1), pos + c2 * (height / d2), G::normalized(face)};
-        if (!std::isfinite(t.b.x) || !std::isfinite(t.c.x)) continue;
-        out.push_back(t);
+    std::vector<Triangle> out;
+    const auto mesh = Terrain::readKcl(kcl);
+    if (!mesh) return out;
+    auto vec = [](Terrain::Vec3 p) { return G::V3{p.x, p.y, p.z}; };
+    for (std::size_t i = 0; i < mesh->indices.size(); i += 3) {
+        const auto index = mesh->indices[i];
+        out.push_back({vec(mesh->positions[index]), vec(mesh->positions[mesh->indices[i + 1]]),
+                       vec(mesh->positions[mesh->indices[i + 2]]), G::normalized(vec(mesh->normals[index]))});
     }
     return out;
 }

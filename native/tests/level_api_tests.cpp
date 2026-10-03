@@ -64,6 +64,37 @@ bool hasCandidate(const Value& reply, const std::string& text) {
 double ms(std::chrono::steady_clock::time_point since) {
     return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now() - since).count();
 }
+    void testGravityEdits(const L::OpenOptions& originalOptions) {
+        auto options = originalOptions;
+        options.user /= "gravity";
+        L::Error error;
+        auto level = L::Level::open(options, &error);
+        check(level != nullptr, "gravity test open: " + error.message);
+        auto& lv = *level;
+        check(call(lv, "class", R"({"class":"EditorBrush"})")["args"].items().size() == 4,
+              "shared loader registers the brush catalog with four named args");
+        check(ok(call(lv, "apply", R"({"ops":[{"op":"add","class":"GlobalPointGravity","pos":[0,3000,0],"as":"g"},{"op":"gravity-shape","ref":"@g","shape":"Parallel","bound":"Box"},{"op":"gravity-values","ref":"@g","values":{"Range":-20,"Distant":-5,"Priority":3,"Inverse":true}},{"op":"add","class":"EditorBrush","pos":[0,4000,0],"scale":[0.3,0.1,0.3],"args":{"Shape":"Box","Gravity":"Down only"},"as":"brush"}]})"), "gravity and brush batch"),
+              "canonical gravity operations and named brush enums share one transaction");
+        const Value gravity = call(lv, "get", R"({"ref":"@g"})");
+        check(gravity["class"].asString() == "GlobalPlaneGravityInBox", "shape helper chooses canonical bounded parallel class");
+        const auto gravityRow = L::parseRowRef(lv.model(), gravity["ref"].asString());
+        check(lv.model().cell(gravityRow, PetariEditor::columnHash("Range"))->f == -1 &&
+              lv.model().cell(gravityRow, PetariEditor::columnHash("Distant"))->f == 0 &&
+              lv.model().cell(gravityRow, PetariEditor::columnHash("Priority"))->i == 3 &&
+              lv.model().cell(gravityRow, PetariEditor::columnHash("Inverse"))->i == 1, "numeric helper preserves canonical clamp and cell semantics");
+        const auto before = lv.journal();
+        check(call(lv, "apply", R"({"ops":[{"op":"gravity-values","ref":"@g","values":{"Priority":2}},{"op":"gravity-shape","ref":"@g","shape":"Wire"}]})")["error"]["code"].asString() == "op-failed" &&
+              show(lv.journal()) == show(before), "wire without a rail rejects and rolls back earlier gravity changes");
+        check(call(lv, "apply", R"({"ops":[{"op":"gravity-values","ref":"@brush","values":{"Range":100}}]})")["error"]["code"].asString() == "bad-ref", "non-gravity target is rejected");
+        check(call(lv, "apply", R"({"ops":[{"op":"gravity-values","ref":"@g","values":{"Priorty":2}}]})")["error"]["code"].asString() == "bad-arg", "unknown gravity value is rejected with candidates");
+        check(ok(call(lv, "apply", R"({"ops":[{"op":"path","points":[[0,3000,0],[1000,3000,0]],"as":"wire"},{"op":"link","ref":"@g","path":"@wire"},{"op":"gravity-shape","ref":"@g","shape":"Wire"}]})"), "wire link"),
+              "wire conversion uses a canonical linked path");
+        auto copy = L::Level::open(options, &error);
+        check(copy && copy->replay(lv.journal(), &error), "gravity/brush journal replays");
+        check(show(call(*copy, "get", R"({"ref":"@g"})")) == show(call(lv, "get", R"({"ref":"@g"})")), "gravity value types survive replay");
+        check(show(call(*copy, "get", R"({"ref":"@brush"})")) == show(call(lv, "get", R"({"ref":"@brush"})")), "brush remains an editable catalog row");
+    }
+
     void testPathEdits(const L::OpenOptions& originalOptions) {
         auto options = originalOptions;
         options.user /= "paths";
@@ -461,6 +492,7 @@ int main() {
     }
 
     testPathEdits(options);
+    testGravityEdits(options);
     fs::remove_all(user);
     std::printf("petari_level: %d checks passed\n", sChecks);
     return 0;

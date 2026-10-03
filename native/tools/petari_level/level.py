@@ -114,6 +114,14 @@ class Batch:
         self.ops.append({"op": "link", "ref": ref, "path": path})
         return self
 
+    def gravity_shape(self, ref: Any, shape: str, *, bound: Optional[str] = None) -> "Batch":
+        """Change a field's shape; bound applies to Parallel. Wire requires a linked rail."""
+        return self.op(_clean({"op": "gravity-shape", "ref": ref, "shape": shape, "bound": bound}))
+
+    def gravity_values(self, ref: Any, **values: Any) -> "Batch":
+        """Core gravity numbers: Range, Distant, Priority, Inverse, Obj_arg0..7."""
+        return self.op({"op": "gravity-values", "ref": ref, "values": values})
+
     def move_point(self, ref: Any, **kw: Any) -> "Batch":
         """Move a rail point and its handles: exactly one of pos, zone_pos or by."""
         return self.op(_clean({"op": "move-point", "ref": ref, **_vectors(kw)}))
