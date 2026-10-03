@@ -79,11 +79,13 @@ void testCatalog() {
     check(C::find("RailMoveObj") == nullptr || C::tablePath(*C::find("RailMoveObj"), "layera") == "jmp/mapparts/layera/mappartsinfo",
           "map parts: jmp/mapparts");
     check(C::tablePath(*C::find("EditorBrush"), "common") == "jmp/placement/common/objinfo", "not on the disc: objinfo");
-    bool readsA=false,writesA=false;
-    for(const auto& socket:C::find("BroadBeanMoveStepA")->switches)if(socket.field=="SW_A") {
-        readsA=readsA||socket.role==C::SwitchRole::Read;writesA=writesA||socket.role==C::SwitchRole::Write;
-    }
-    check(readsA && writesA,"switch fields retain both read and write roles");
+    bool readsA = false, writesA = false;
+    for (const auto& socket : C::find("BroadBeanMoveStepA")->switches)
+        if (socket.field == "SW_A") {
+            readsA = readsA || socket.role == C::SwitchRole::Read;
+            writesA = writesA || socket.role == C::SwitchRole::Write;
+        }
+    check(readsA && writesA, "switch fields retain both read and write roles");
     // Curated entries (native/editor/catalog/curated.json) name the common classes.
     check(kuribo->displayName == "Goomba" && kuribo->curated && !kuribo->description.empty(), "Kuribo is the Goomba");
     check(C::find("Takobo")->displayName == "Octoomba" && C::find("SuperSpinDriver")->displayName == "Launch Star", "curated names");

@@ -431,14 +431,18 @@ void EditModel::forEachRow(int zone, int table, const std::function< void(RowId)
 }
 
 bool EditModel::locate(RowId id, int* pZone, int* pTable) const {
-    int zone=0,table=0,row=0;
-    if (!unpack(id,&zone,&table,&row)) {
-        auto it=mDeleted.find(id);
-        if(it==mDeleted.end())return false;
-        zone=it->second.zone;table=it->second.table;
+    int zone = 0, table = 0, row = 0;
+    if (!unpack(id, &zone, &table, &row)) {
+        auto it = mDeleted.find(id);
+        if (it == mDeleted.end())
+            return false;
+        zone = it->second.zone;
+        table = it->second.table;
     }
-    if(pZone)*pZone=zone;
-    if(pTable)*pTable=table;
+    if (pZone)
+        *pZone = zone;
+    if (pTable)
+        *pTable = table;
     return true;
 }
 
@@ -666,10 +670,11 @@ int EditModel::ensureTable(int zone, const std::string& rawPath) {
         }
     }
     const std::string leaf = path.substr(path.rfind('/') + 1);
-    const auto schemaFamily=[](const std::string& leaf) {
-        const std::string prefix="commonpathpointinfo.";
-        if(leaf.rfind(prefix,0)==0 && leaf.size()>prefix.size() &&
-           std::all_of(leaf.begin()+prefix.size(),leaf.end(),[](char c){return c>='0'&&c<='9';}))return prefix;
+    const auto schemaFamily = [](const std::string& leaf) {
+        const std::string prefix = "commonpathpointinfo.";
+        if (leaf.rfind(prefix, 0) == 0 && leaf.size() > prefix.size() &&
+            std::all_of(leaf.begin() + prefix.size(), leaf.end(), [](char c) { return c >= '0' && c <= '9'; }))
+            return prefix;
         return leaf;
     };
     const TableModel* pSibling = nullptr;
@@ -722,8 +727,8 @@ bool EditModel::addRow(const AddRow& add, Entry* pEntry, std::string* pError) {
         return false;
     }
     TableModel& t = mZones[add.zone].tables[table];
-    if(add.at < -1 || add.at > t.current.rowCount()) {
-        *pError="add: insertion index outside the table";
+    if (add.at < -1 || add.at > t.current.rowCount()) {
+        *pError = "add: insertion index outside the table";
         return false;
     }
     // Start from the row copied (same table: its record; another table: its values by column),
@@ -780,9 +785,9 @@ bool EditModel::addRow(const AddRow& add, Entry* pEntry, std::string* pError) {
     record.index = index;
     record.record = t.current.rowRecord(index);
     record.added = true;
-    if(add.at >= 0 && add.at < index) {
-        record=removeRecord(add.zone,table,index);
-        record.index=add.at;
+    if (add.at >= 0 && add.at < index) {
+        record = removeRecord(add.zone, table, index);
+        record.index = add.at;
         insertRecord(record);
     }
     pEntry->inserted.push_back(std::move(record));

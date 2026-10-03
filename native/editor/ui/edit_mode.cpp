@@ -151,11 +151,13 @@ void cameraInput(const Area& area, bool toolConsumed) {
             16.0f) {
         Pick::click(io.KeyShift ? Pick::Click::Add : (io.KeyCtrl || io.KeySuper) ? Pick::Click::Toggle : Pick::Click::Replace);
     }
-    if (!toolConsumed && !escapeDisarms && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false)) Pick::clearSelection();
+    if (!toolConsumed && !escapeDisarms && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+        Pick::clearSelection();
 
     // The gizmo (UX section 6): the left button over the viewport presses and releases it (an
     // Option-drag orbits instead); Cmd suspends snapping for the drag.
-    if (!toolConsumed && inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt) Gizmo::press();
+    if (!toolConsumed && inside && armedPlacement() == 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !io.KeyAlt)
+        Gizmo::press();
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) Gizmo::release();
     Gizmo::setSnapSuspended(io.KeyCtrl || io.KeySuper);
     // What a Tab tap plays: Shift resumes the frozen moment, Option plays from the mission start
@@ -171,7 +173,10 @@ void cameraInput(const Area& area, bool toolConsumed) {
             Gizmo::setFrame(static_cast<Gizmo::Frame>((static_cast<int>(Gizmo::frame()) + 1) % 3));
         }
         // Delete / Backspace: delete the selection (one op, undoable). Cmd+D: duplicate it.
-        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) { if (!pathsDelete()) deleteSelection(); }
+        if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) || ImGui::IsKeyPressed(ImGuiKey_Backspace, false)) {
+            if (!pathsDelete())
+                deleteSelection();
+        }
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_D)) Pick::duplicate();
         // M: the play marker onto the ground under the cursor.
         if (ImGui::IsKeyPressed(ImGuiKey_M, false) && inside) Pick::placeMarker();

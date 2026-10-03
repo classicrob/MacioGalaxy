@@ -91,15 +91,15 @@ void testHooksAndBinding() {
 }
 
 void testRailHooks() {
-    const bool before=E::Hooks::enabled();
-    const auto* info=reinterpret_cast<const JMapInfo*>(0x1234);
-    E::Hooks::setRailTables(3,{info,{info}});
+    const bool before = E::Hooks::enabled();
+    const auto* info = reinterpret_cast< const JMapInfo* >(0x1234);
+    E::Hooks::setRailTables(3, {info, {info}});
     E::Hooks::setEnabled(false);
-    check(E::Hooks::railTables(3)==nullptr,"rail overrides inert with editor off");
+    check(E::Hooks::railTables(3) == nullptr, "rail overrides inert with editor off");
     E::Hooks::setEnabled(true);
-    check(E::Hooks::railTables(3)->info==info && E::Hooks::railTables(2)==nullptr,"rail overrides scoped to zone");
+    check(E::Hooks::railTables(3)->info == info && E::Hooks::railTables(2) == nullptr, "rail overrides scoped to zone");
     E::Hooks::sceneDestroyed();
-    check(E::Hooks::railTables(3)==nullptr,"rail overrides cleared before scene data expires");
+    check(E::Hooks::railTables(3) == nullptr, "rail overrides cleared before scene data expires");
     E::Hooks::setEnabled(before);
 }
 

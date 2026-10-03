@@ -407,11 +407,12 @@ void drawChecks(const ModelView& model) {
                     // A pick flow (fixKind): show the object; its Inspector has the link field to set.
                     showRows(check->rows);
                     gHintFrames = 600;
-                    if(check->fixKind=="pick-path" && !check->rows.empty())beginPathPick(check->rows.front());  // M3 paths: choose in the viewport.
-                    gHint = check->fixKind == "pick-path"     ? "Click a path in the viewport to link it. Escape cancels."
-                            : check->fixKind == "pick-switch" ? "Drag a switch socket from Links in the Inspector onto another object."
-                            : check->fixKind == "pick-camera" ? "Choose a camera: set CameraSetId in the Inspector."
-                                                              : "";
+                    if (check->fixKind == "pick-path" && !check->rows.empty())
+                        beginPathPick(check->rows.front());  // M3 paths: choose in the viewport.
+                    gHint = check->fixKind == "pick-path"   ? "Click a path in the viewport to link it. Escape cancels." :
+                            check->fixKind == "pick-switch" ? "Drag a switch socket from Links in the Inspector onto another object." :
+                            check->fixKind == "pick-camera" ? "Choose a camera: set CameraSetId in the Inspector." :
+                                                              "";
                 }
             }
         }

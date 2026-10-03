@@ -6,13 +6,13 @@
 #include "petari/editor/json.hpp"
 
 #include <algorithm>
-#include <set>
-#include <cstdlib>
 #include <cctype>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <map>
+#include <set>
 
 // The shipped files, embedded at build time (native/editor/CMakeLists.txt).
 extern const char* const kPetariCatalogGenerated;
@@ -71,7 +71,8 @@ namespace {
         if (e.has("description")) info.description = e["description"].asString();
         if (e.has("category")) info.category = categoryFrom(e["category"].asString());
         if (e.has("placeable")) info.placeable = e["placeable"].asBool(true);
-        if (e.has("live_recreate")) info.liveRecreate = e["live_recreate"].asString();
+        if (e.has("live_recreate"))
+            info.liveRecreate = e["live_recreate"].asString();
         if (e.has("keepable")) info.keepable = e["keepable"].asBool(false);
         if (e.has("appearSound")) info.appearSound = e["appearSound"].asString();
         if (e.has("table")) info.table = e["table"].asString();
@@ -121,18 +122,20 @@ namespace {
         std::sort(info.args.begin(), info.args.end(), [](const Arg& a, const Arg& b) { return a.index < b.index; });
         // One field may be both read and written (moving map parts use SW_A/SW_B this way).
         // An override replaces that field's roles as a group, preserving both roles within a file.
-        std::set<std::string> replacedSwitches;
+        std::set< std::string > replacedSwitches;
         for (const Json::Value& w : e["switches"].items()) {
             const std::string field = w["field"].asString();
-            if(w.has("role") && replacedSwitches.insert(field).second)
-                info.switches.erase(std::remove_if(info.switches.begin(),info.switches.end(),[&](const Switch& s){return s.field==field;}),info.switches.end());
+            if (w.has("role") && replacedSwitches.insert(field).second)
+                info.switches.erase(std::remove_if(info.switches.begin(), info.switches.end(), [&](const Switch& s) { return s.field == field; }),
+                                    info.switches.end());
         }
         for (const Json::Value& w : e["switches"].items()) {
             const std::string field = w["field"].asString();
-            const auto role=w["role"].asString()=="write"?SwitchRole::Write:SwitchRole::Read;
-            auto it = std::find_if(info.switches.begin(), info.switches.end(), [&](const Switch& x) { return x.field == field && (!w.has("role") || x.role==role); });
+            const auto role = w["role"].asString() == "write" ? SwitchRole::Write : SwitchRole::Read;
+            auto it = std::find_if(info.switches.begin(), info.switches.end(),
+                                   [&](const Switch& x) { return x.field == field && (!w.has("role") || x.role == role); });
             if (it == info.switches.end()) {
-                info.switches.push_back(Switch{field,role,{}});
+                info.switches.push_back(Switch{field, role, {}});
                 it = info.switches.end() - 1;
             }
             if (w.has("help")) it->help = w["help"].asString();

@@ -45,7 +45,7 @@ const std::vector< Placed >& placed();
 // Rail tables copied from the model. Owned by Runtime until this scene ends.
 struct RailTables {
     const JMapInfo* info = nullptr;
-    std::vector<const JMapInfo*> points;
+    std::vector< const JMapInfo* > points;
 };
 void setRailTables(int zoneId, RailTables tables);
 const RailTables* railTables(int zoneId);

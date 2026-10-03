@@ -1,11 +1,11 @@
 #ifdef PETARI_NATIVE
 // The level editor's camera over the frozen scene (Game/Camera/EditorCamera.hpp).
 #include "Game/Camera/EditorCamera.hpp"
-#include "Game/Camera/EditorPaths.hpp"
-#include "Game/Camera/EditorGizmo.hpp"
-#include "Game/Camera/EditorPicking.hpp"
 #include "Game/AudioLib/AudSystem.hpp"
 #include "Game/AudioLib/AudWrap.hpp"
+#include "Game/Camera/EditorGizmo.hpp"
+#include "Game/Camera/EditorPaths.hpp"
+#include "Game/Camera/EditorPicking.hpp"
 #include "Game/System/GameSystemFunction.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/GravityUtil.hpp"

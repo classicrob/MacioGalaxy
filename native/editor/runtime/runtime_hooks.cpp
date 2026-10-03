@@ -14,7 +14,7 @@
 
 namespace PetariEditor::Hooks {
 namespace {
-    std::map<int, RailTables> gRailTables;
+    std::map< int, RailTables > gRailTables;
     std::atomic< int > gEnabled{-1};  // -1: not yet read from the environment
 
     struct Range {
@@ -160,14 +160,17 @@ std::uint32_t sceneSerial() {
 
 void setRailTables(int zoneId, RailTables tables) {
     PetariNative::HostAllocationScope host;
-    gRailTables[zoneId]=std::move(tables);
+    gRailTables[zoneId] = std::move(tables);
 }
 const RailTables* railTables(int zoneId) {
-    if(!enabled())return nullptr;
-    const auto it=gRailTables.find(zoneId);
-    return it==gRailTables.end()?nullptr:&it->second;
+    if (!enabled())
+        return nullptr;
+    const auto it = gRailTables.find(zoneId);
+    return it == gRailTables.end() ? nullptr : &it->second;
 }
-void clearRailTables() { gRailTables.clear(); }
+void clearRailTables() {
+    gRailTables.clear();
+}
 
 void sceneDestroyed() {
     clearRailTables();

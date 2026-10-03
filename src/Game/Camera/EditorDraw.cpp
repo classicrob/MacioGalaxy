@@ -1,12 +1,12 @@
 #ifdef PETARI_NATIVE
 // The level editor's drawing in the scene (Game/Camera/EditorDraw.hpp).
 #include "Game/Camera/EditorDraw.hpp"
-#include "Game/Camera/EditorPaths.hpp"
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorPaths.hpp"
 #include "Game/Camera/EditorPicking.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
-#include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/CameraUtil.hpp"
+#include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/ModelUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include <JSystem/J3DGraphAnimator/J3DModel.hpp>

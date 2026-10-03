@@ -2,9 +2,9 @@
 // the row <-> actor binding, the command drain and SceneSync (TECH.md 2.1-2.6).
 #include "petari/editor/runtime.hpp"
 
+#include "checks.hpp"
 #include "edit_model.hpp"
 #include "runtime_core.hpp"
-#include "checks.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
 #include <petari/editor/catalog.hpp>
@@ -18,6 +18,7 @@
 #include <petari/platform/mod_folder.hpp>
 #include <revolution/dvd.h>
 
+#include <cassert>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -42,8 +43,9 @@ namespace {
         std::set< RowId > pending;                             // edits that need a reload
         std::vector< std::unique_ptr< LiveRow > > liveRows;
         std::set< RowId > previewing;
-        std::vector<std::unique_ptr<LiveRow>> railStorage;
-        std::map<RowId,std::pair<int,int>> railOwners;
+        std::vector< std::unique_ptr< LiveRow > > railStorage;
+        std::map< RowId, std::pair< int, int > > railOwners;
+        std::set< std::string > suspectNotices;
         Vec3 playMarker;
         bool hasMarker = false;
         // A reload in flight: what to do once its scene is playable.
@@ -96,8 +98,14 @@ namespace {
     void loadModel(const char* pStage, int scenario) {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
-        static bool pathChecks=false;
-        if(!pathChecks) { registerCheckProvider(+[](const ModelView& model,std::vector<Check>& out){auto checks=Paths::computeChecks(model);out.insert(out.end(),checks.begin(),checks.end());});pathChecks=true; }
+        static bool pathChecks = false;
+        if (!pathChecks) {
+            registerCheckProvider(+[](const ModelView& model, std::vector< Check >& out) {
+                auto checks = Paths::computeChecks(model);
+                out.insert(out.end(), checks.begin(), checks.end());
+            });
+            pathChecks = true;
+        }
         std::string error;
         Hooks::clearArchiveOverrides();  // another galaxy or mission: the old edits don't apply
         std::string catalogError;
@@ -106,6 +114,7 @@ namespace {
         }
         TerrainSync::registerWithEditor();
         s.checkedRevision = 0;
+        s.suspectNotices.clear();
         // Planet classes: the names PlanetMapDataTable lists on this disc.
         if (std::optional< Formats::Bytes > raw = readDisc("/ObjectData/PlanetMapDataTable.arc")) {
             if (std::optional< Formats::Archive > archive = Formats::Archive::parse(*raw)) {
@@ -144,68 +153,116 @@ namespace {
     }
 
     const JMapInfo* railTable(const Formats::Table* table, int zone) {
-        Session& s=session();
-        auto row=std::make_unique<LiveRow>();
-        if(table) row->bytes=table->build();
-        else {row->bytes.assign(16,0);row->bytes[11]=16;}
+        Session& s = session();
+        auto row = std::make_unique< LiveRow >();
+        if (table) {
+            row->bytes = table->build();
+        } else {
+            row->bytes.assign(16, 0);
+            row->bytes[11] = 16;
+        }
         row->info.attach(row->bytes.data());
-        Hooks::registerRows(row->bytes.data(),row->bytes.size(),s.model->zoneId(zone));
-        const JMapInfo* info=&row->info;
+        Hooks::registerRows(row->bytes.data(), row->bytes.size(), s.model->zoneId(zone));
+        const JMapInfo* info = &row->info;
         s.railStorage.push_back(std::move(row));
         return info;
     }
 
     void rebuildRails(int zone) {
-        Session& s=session();
-        EditModel& m=*s.model;
-        for(auto it=s.railOwners.begin();it!=s.railOwners.end();) {
-            if(it->second.first==zone)it=s.railOwners.erase(it);else ++it;
+        Session& s = session();
+        EditModel& m = *s.model;
+        for (auto it = s.railOwners.begin(); it != s.railOwners.end();) {
+            if (it->second.first == zone) {
+                it = s.railOwners.erase(it);
+            } else {
+                ++it;
+            }
         }
         Hooks::RailTables tables;
-        const Formats::Table* info=nullptr;
-        for(const auto& rail:Paths::collect(m)) if(rail.zone==zone) {
-            int index=0;
-            if(!info)info=m.rowTable(rail.row,&index);
-            const Formats::Table* points=rail.points.empty()?nullptr:m.rowTable(rail.points.front().row,&index);
-            tables.points.push_back(railTable(points,zone));
-            s.railOwners[rail.row]={zone,rail.id};
-            for(const auto& point:rail.points)s.railOwners[point.row]={zone,rail.id};
+        const Formats::Table* info = nullptr;
+        for (int table = 0; table < m.tableCount(zone); ++table) {
+            if (std::string(m.tablePath(zone, table)) != "jmp/path/commonpathinfo") {
+                continue;
+            }
+            m.forEachRow(zone, table, [&](RowId rail) {
+                if (m.state(rail) == RowState::Deleted) {
+                    return;
+                }
+                int index = 0;
+                info = m.rowTable(rail, &index);
+                const auto points = m.railPoints(rail);
+                const Formats::Table* pointTable = points.empty() ? nullptr : m.rowTable(points.front(), &index);
+                // Even an empty rail occupies a slot: StageDataHolder indexes by the info row ordinal.
+                tables.points.push_back(railTable(pointTable, zone));
+                const Cell* id = m.cell(rail, columnHash("l_id"));
+                s.railOwners[rail] = {zone, id ? id->i : -1};
+                for (RowId point : points) {
+                    s.railOwners[point] = s.railOwners[rail];
+                }
+            });
         }
-        tables.info=railTable(info,zone);
-        Hooks::setRailTables(m.zoneId(zone),std::move(tables));
+        assert(!info || tables.points.size() == static_cast< std::size_t >(info->rowCount()));
+        tables.info = railTable(info, zone);
+        Hooks::setRailTables(m.zoneId(zone), std::move(tables));
     }
 
     // Rail rows are data, not actors. Refresh lookup first, then re-create every affected rider.
-    void expandRailChanges(std::set<RowId>& changed) {
-        Session& s=session();
-        EditModel& m=*s.model;
-        std::set<std::pair<int,int>> affected;
-        std::set<int> zones;
-        const auto rails=Paths::collect(m);
-        for(auto it=changed.begin();it!=changed.end();) {
-            bool railRow=false;
-            auto old=s.railOwners.find(*it);
-            if(old!=s.railOwners.end()) {affected.insert(old->second);zones.insert(old->second.first);railRow=true;}
-            int z=-1,t=-1;
-            if(m.locate(*it,&z,&t) && std::string(m.tablePath(z,t)).rfind("jmp/path/",0)==0) {
-                railRow=true;zones.insert(z);
-                for(const auto& rail:rails)if(rail.zone==z) {
-                    bool match=rail.row==*it;
-                    for(const auto& p:rail.points)match=match||p.row==*it;
-                    if(match)affected.insert({z,rail.id});
+    void expandRailChanges(std::set< RowId >& changed) {
+        Session& s = session();
+        EditModel& m = *s.model;
+        std::set< std::pair< int, int > > affected;
+        std::set< int > zones;
+        const auto rails = Paths::collect(m);
+        for (auto it = changed.begin(); it != changed.end();) {
+            bool railRow = false;
+            auto old = s.railOwners.find(*it);
+            if (old != s.railOwners.end()) {
+                affected.insert(old->second);
+                zones.insert(old->second.first);
+                railRow = true;
+            }
+            int z = -1, t = -1;
+            if (m.locate(*it, &z, &t) && std::string(m.tablePath(z, t)).rfind("jmp/path/", 0) == 0) {
+                railRow = true;
+                zones.insert(z);
+                for (const auto& rail : rails) {
+                    if (rail.zone == z) {
+                        bool match = rail.row == *it;
+                        for (const auto& p : rail.points) {
+                            match = match || p.row == *it;
+                        }
+                        if (match) {
+                            affected.insert({z, rail.id});
+                        }
+                    }
                 }
             }
-            if(railRow){s.pending.erase(*it);it=changed.erase(it);}else ++it;
+            if (railRow) {
+                s.pending.erase(*it);
+                it = changed.erase(it);
+            } else {
+                ++it;
+            }
         }
-        for(int z:zones)rebuildRails(z);
-        for(int z:zones)for(int t=0;t<m.tableCount(z);++t) {
-            const std::string path=m.tablePath(z,t);
-            if(path.rfind("jmp/placement/",0)!=0 && path.rfind("jmp/mapparts/",0)!=0 && path.rfind("jmp/childobj/",0)!=0)continue;
-            m.forEachRow(z,t,[&](RowId row){
-                if(m.state(row)==RowState::Deleted)return;
-                const Cell* id=m.cell(row,columnHash("CommonPath_ID"));
-                if(id && affected.count({z,id->i}))changed.insert(row);
-            });
+        for (int z : zones) {
+            rebuildRails(z);
+        }
+        for (int z : zones) {
+            for (int t = 0; t < m.tableCount(z); ++t) {
+                const std::string path = m.tablePath(z, t);
+                if (path.rfind("jmp/placement/", 0) != 0 && path.rfind("jmp/mapparts/", 0) != 0 && path.rfind("jmp/childobj/", 0) != 0) {
+                    continue;
+                }
+                m.forEachRow(z, t, [&](RowId row) {
+                    if (m.state(row) == RowState::Deleted) {
+                        return;
+                    }
+                    const Cell* id = m.cell(row, columnHash("CommonPath_ID"));
+                    if (id && affected.count({z, id->i})) {
+                        changed.insert(row);
+                    }
+                });
+            }
         }
     }
 
@@ -218,7 +275,13 @@ namespace {
         Hooks::clearRailTables();
         s.railStorage.clear();
         s.railOwners.clear();
-        for(int z=0;z<s.model->zoneCount();++z)rebuildRails(z);
+        // Remember original identities for deletes; publish overrides only after a zone's first rail edit.
+        for (const auto& rail : Paths::collect(*s.model)) {
+            s.railOwners[rail.row] = {rail.zone, rail.id};
+            for (const auto& point : rail.points) {
+                s.railOwners[point.row] = {rail.zone, rail.id};
+            }
+        }
         s.previewing.clear();
         Core::clearBindings();
         std::map< const void*, std::pair< int, int > > tableOf;
@@ -287,9 +350,12 @@ namespace {
             s.pending.erase(id);
             return;
         }
-        const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || endsWith(path,"/childobjinfo");
+        const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo");
 
         if (!live) {
+            if (endsWith(path, "/childobjinfo")) {
+                Core::reportNotice("Child objects must be rebuilt with their parent; Reload to apply this change");
+            }
             s.pending.insert(id);
             return;
         }
@@ -302,24 +368,32 @@ namespace {
             return;  // not in this mission's scene; nothing to show
         }
         const char* pName = m.objectName(id);
-        const auto* info=pName?Catalog::find(pName):nullptr;
-        const Cell* railId=m.cell(id,columnHash("CommonPath_ID"));
-        if(info && info->liveRecreate=="unsafe" && railId && railId->i>=0) {
+        const auto* info = pName ? Catalog::find(pName) : nullptr;
+        const Cell* railId = m.cell(id, columnHash("CommonPath_ID"));
+        if (info && info->liveRecreate == "unsafe" && railId && railId->i >= 0) {
             s.pending.insert(id);
-            Core::reportNotice(std::string(pName)+" follows this path but cannot be re-created live; Reload to apply it");
+            Core::reportNotice(std::string(pName) + " follows this path but cannot be re-created live; Reload to apply it");
             return;
         }
-        if(info && info->liveRecreate=="suspect" && railId && railId->i>=0)
-            Core::reportNotice(std::string(pName)+" was re-created; its sweep reported a visual or state issue");
-        bool required=false;
-        if(info)for(const auto& link:info->links)required=required||(link.kind==Catalog::LinkKind::Rail&&link.required);
-        bool validPath=false;
-        if(railId && railId->i>=0)for(const auto& rail:Paths::collect(m))
-            validPath=validPath||(rail.zone==zone&&rail.id==railId->i&&rail.points.size()>=2);
-        if((required || (railId && railId->i>=0))&&!validPath) {
+        if (info && info->liveRecreate == "suspect" && railId && railId->i >= 0 && s.suspectNotices.insert(pName).second) {
+            Core::reportNotice(std::string(pName) + " was re-created; its sweep reported a visual or state issue");
+        }
+        bool required = false;
+        if (info) {
+            for (const auto& link : info->links) {
+                required = required || (link.kind == Catalog::LinkKind::Rail && link.required);
+            }
+        }
+        bool validPath = false;
+        if (railId && railId->i >= 0) {
+            for (const auto& rail : Paths::collect(m)) {
+                validPath = validPath || (rail.zone == zone && rail.id == railId->i && rail.points.size() >= 2);
+            }
+        }
+        if ((required || (railId && railId->i >= 0)) && !validPath) {
             retireRow(id);
             s.pending.insert(id);
-            Core::reportNotice(std::string(pName?pName:"Object")+" needs a valid path before it can be re-created");
+            Core::reportNotice(std::string(pName ? pName : "Object") + " needs a valid path before it can be re-created");
             return;
         }
         retireRow(id);

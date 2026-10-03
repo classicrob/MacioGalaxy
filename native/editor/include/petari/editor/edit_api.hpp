@@ -103,7 +103,7 @@ public:
 
     // Rails use the current CommonPathInfo row index to select their point table.
     virtual int railPointTable(RowId rail) const;
-    virtual std::vector<RowId> railPoints(RowId rail) const;
+    virtual std::vector< RowId > railPoints(RowId rail) const;
 
     // rows
     // Either output pointer may be null.
@@ -151,7 +151,7 @@ struct AddRow {
         Cell value;
     };
     std::vector< Value > cells;  // override copyOf's (or the table's neutral values)
-    int at = -1;  // insert before this current row index; -1 appends
+    int at = -1;                 // insert before this current row index; -1 appends
 };
 
 /// One undo step. Applied in this order: adds, sets (which may name added rows), deletes,

@@ -2,9 +2,9 @@
 // headless (no window, no renderer). The presenter's calls are recorded instead.
 #include <petari/editor/ui.hpp>
 
+#include "../editor/runtime/runtime_core.hpp"
 #include "panels.hpp"
 #include "paths.hpp"
-#include "../editor/runtime/runtime_core.hpp"
 #include <petari/editor/paths_view.hpp>
 #include <petari/editor_pick.hpp>
 
@@ -113,8 +113,10 @@ struct FakeModel : ModelView {
     bool locate(RowId id, int* zone, int* table) const override {
         const R* r = find(id);
         if (r == nullptr) return false;
-        if(zone)*zone = r->zone;
-        if(table)*table = 0;
+        if (zone)
+            *zone = r->zone;
+        if (table)
+            *table = 0;
         return true;
     }
     RowState state(RowId id) const override { return find(id)->state; }
@@ -258,23 +260,25 @@ void testPanelsLogic() {
 void testPathInputCapture() {
     FakeModel model;
     PetariEditor::Core::setModel(&model);
-    auto& io=ImGui::GetIO();
-    io.DisplaySize=ImVec2(800,600);
+    auto& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(800, 600);
     PetariEditor::PathsView::View snapshot;
-    snapshot.marks.push_back({RowId{9},RowId{1},0,0,0});
+    snapshot.marks.push_back({RowId{9}, RowId{1}, 0, 0, 0});
     PetariEditor::PathsView::publish(snapshot);
-    auto draw=[&](bool down) {
-        io.AddMousePosEvent(400,300);
-        io.AddMouseButtonEvent(ImGuiMouseButton_Left,down);
-        ImGui::NewFrame();io.WantCaptureMouse=false;
-        const bool consumed=PetariEditor::Ui::drawPathsViewport(0,0,800,600);
-        ImGui::Render();return consumed;
+    auto draw = [&](bool down) {
+        io.AddMousePosEvent(400, 300);
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, down);
+        ImGui::NewFrame();
+        io.WantCaptureMouse = false;
+        const bool consumed = PetariEditor::Ui::drawPathsViewport(0, 0, 800, 600);
+        ImGui::Render();
+        return consumed;
     };
     CHECK(draw(true));
-    auto input=PetariEditor::PathsView::take();
-    CHECK(input.begin && input.point==RowId{1});
+    auto input = PetariEditor::PathsView::take();
+    CHECK(input.begin && input.point == RowId{1});
     CHECK(draw(false));
-    input=PetariEditor::PathsView::take();
+    input = PetariEditor::PathsView::take();
     CHECK(input.end && input.move);
     CHECK(!draw(false));
     PetariNative::EditorPick::takeSelectRows();
