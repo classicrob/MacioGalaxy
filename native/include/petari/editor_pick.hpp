@@ -31,6 +31,15 @@ void selectRow(std::uint64_t row, Click mode);  // select a row's object (the Ch
 void placeMarker();  // M: the play marker onto the ground under the cursor
 // Place a copy of `exampleRow` (its class and settings) on the ground under the cursor (the Browser).
 void place(std::uint64_t exampleRow);
+// Place a class with no example in the galaxy (a catalog class, a Terrain brush preset): the game adds a row
+// from the catalog's table and defaults, then these args (Obj_arg<index> = value), on the ground under the cursor.
+struct PlaceClass {
+    char name[64] = {};
+    int argCount = 0;
+    int argIndex[8] = {};
+    std::int32_t argValue[8] = {};
+};
+void placeClass(const PlaceClass& request);
 void duplicate();  // Cmd+D: copies of the selection, a step ahead along its gravity frame's front
 
 // Game, Edit nerve: the requests, then the answers.
@@ -45,6 +54,7 @@ struct RowRequest {
 std::vector<RowRequest> takeSelectRows();  // in order
 bool takePlaceMarker();
 std::uint64_t takePlace();  // 0: none
+bool takePlaceClass(PlaceClass* out);
 bool takeDuplicate();
 void publish(const Item* hover, const std::vector<Item>& selection);
 

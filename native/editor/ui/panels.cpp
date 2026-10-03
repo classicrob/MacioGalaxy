@@ -678,7 +678,8 @@ void transformRow(const ModelView& model, const std::vector< RowId >& rows, cons
     ImGui::SameLine(120.0f);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 18.0f);
     const float before[3] = {values[0], values[1], values[2]};
-    const bool changedNow = ImGui::DragFloat3("##v", values, speed, 0.0f, 0.0f, "%.1f");
+    // Scales are small numbers (a brush's 0.15 = 150 units): two decimals there, one for positions and degrees.
+    const bool changedNow = ImGui::DragFloat3("##v", values, speed, 0.0f, 0.0f, std::strcmp(prefix, "scale_") == 0 ? "%.2f" : "%.1f");
     if (changedNow && rows.size() == 1 && model.hasTransform(primary)) {
         // Live preview while scrubbing (not recorded).
         RowTransform t = model.transform(primary);
