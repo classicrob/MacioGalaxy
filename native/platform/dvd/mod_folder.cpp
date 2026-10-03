@@ -44,6 +44,7 @@ void readModText(const fs::path& file, ModInfo& mod) {
         const std::string key = upper(trim(line.substr(0, eq)));
         const std::string value = trim(line.substr(eq + 1));
         if (key == "NAME") mod.title = value;
+        else if (key == "EDITOR") mod.editor = value == "1";
         else if (key == "DESCRIPTION") mod.description = value;
         else if (key == "PRIORITY") {
             char* end = nullptr;
@@ -217,6 +218,7 @@ std::vector<ModInfo> discover(const std::vector<fs::path>& directories) {
             }
             const fs::path files = folder / "files";
             std::error_code dirError;
+            mod.bakes = mod.editor && fs::is_directory(files / "StageData", dirError);
             if (fs::is_directory(files, dirError)) {
                 walk(files, [&](const std::string& relative, const fs::path&) {
                     if (!normalizePath(relative).empty()) ++mod.fileCount;
@@ -329,7 +331,7 @@ Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, b
     {
         std::vector<fs::path> roots;
         for (auto it = enabled.rbegin(); it != enabled.rend(); ++it) {
-            if ((*it)->hasEdits) roots.push_back((*it)->root);
+            if ((*it)->hasEdits || (*it)->bakes) roots.push_back((*it)->root);
         }
         PatchBuilder builder;
         {
@@ -348,7 +350,7 @@ Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, b
         out.log.push_back("mod " + mod.name + " (priority " + std::to_string(mod.priority) + ", rank " +
                           std::to_string(rank + 1) + " of " + std::to_string(enabled.size()) + "): " +
                           std::to_string(mod.fileCount) + " files" + (mod.hasEdits ? " and level edits" : ""));
-        if (mod.hasEdits && !patchedClaimed) {
+        if ((mod.hasEdits || mod.bakes) && !patchedClaimed) {
             patchedClaimed = true;
             for (const auto& [discPath, host] : patched) {
                 const std::string path = normalizePath(discPath);

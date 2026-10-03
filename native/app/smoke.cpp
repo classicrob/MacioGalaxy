@@ -2,6 +2,7 @@
 // feeds it observations and applies its presses.
 
 #include "smoke.hpp"
+#include <petari/player_launch.hpp>
 
 #include <signal.h>
 #include <spawn.h>
@@ -229,6 +230,7 @@ StickKeys stickKeysFor(float x, float y) {
 Driver::Driver(unsigned long frameLimit, Script script) : mFrameLimit(frameLimit), mScript(script) {
     const char* player = std::getenv("PETARI_SMOKE_PLAYER");
     mChooseLuigi = player != nullptr && std::strcmp(player, "luigi") == 0;
+    mOpenRestart = PetariNative::PlayerLaunch::openFile > 0;
 }
 
 bool Driver::seen(const std::string& milestone) const {
@@ -1514,7 +1516,19 @@ Step Driver::step(const Observation& observation) {
         return step;
     }
 
-    if (mBgmPrepareAt >= 0 && mLogoDisplayAt < 0 && mFrame - mBgmPrepareAt >= kBgmPrepareLimit) {
+    // A restart into a new galaxy (the level editor's New Galaxy) passes the strap, the title and
+    // the file select by itself: only watch until the file starts, then go on as after a start.
+    if (mOpenRestart) {
+        if (!seen("FileSelector.DemoStartWait")) {
+            return step;
+        }
+        if (mPhase < Phase::WaitDemo) {
+            note("the restart opened the file by itself");
+            mPhase = Phase::WaitDemo;
+            mPhaseFrames = 0;
+        }
+    }
+    if (!mOpenRestart && mBgmPrepareAt >= 0 && mLogoDisplayAt < 0 && mFrame - mBgmPrepareAt >= kBgmPrepareLimit) {
         finish(Result::Fail,
                "stuck in the title's BgmPrepare for " + std::to_string(kBgmPrepareLimit) +
                    " frames (STM_TITLE not prepared)",
