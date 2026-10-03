@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's drawing in the scene (Game/Camera/EditorDraw.hpp).
 #include "Game/Camera/EditorDraw.hpp"
+#include "Game/Camera/EditorPaths.hpp"
 #include "Game/Camera/EditorCamera.hpp"
 #include "Game/Camera/EditorPicking.hpp"
 #include "Game/LiveActor/LiveActor.hpp"
@@ -127,6 +128,7 @@ namespace EditorDraw {
             outline(actor, GXColor{250, 204, 56, 255}, 2.5f);
         }
         if (hover != nullptr && !hoverSelected) outline(hover, GXColor{102, 219, 255, 255}, 1.5f);
+        EditorPaths::draw();  // M3 paths: depth-tested rails and wires.
         // Leave the state as the game's own draw passes expect it.
         GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
         GXSetAlphaUpdate(GX_FALSE);

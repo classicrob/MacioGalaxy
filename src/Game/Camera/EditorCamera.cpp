@@ -1,6 +1,7 @@
 #ifdef PETARI_NATIVE
 // The level editor's camera over the frozen scene (Game/Camera/EditorCamera.hpp).
 #include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorPaths.hpp"
 #include "Game/Camera/EditorGizmo.hpp"
 #include "Game/Camera/EditorPicking.hpp"
 #include "Game/AudioLib/AudSystem.hpp"
@@ -289,6 +290,7 @@ namespace EditorCamera {
         view.cursorX = in.cursorX;
         view.cursorY = in.cursorY;
         EditorPicking::update(view);
+        EditorPaths::update(view);  // M3 paths: publish curves and handle edits.
         EditorGizmo::update(view);
         return false;
     }

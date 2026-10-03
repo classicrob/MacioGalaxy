@@ -3,6 +3,7 @@
 
 #include "edit_mode.hpp"
 #include "panels.hpp"
+#include "paths.hpp"
 
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor_pick.hpp>
@@ -238,6 +239,7 @@ void drawToolbar(float width) {
         ImGui::SameLine(0.0f, 10.0f);
         bool ghosts = PetariNative::EditorGizmo::showGhosts();
         if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
+        drawPathsToggle();  // M3 paths: selection/all/none.
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
         ImGui::SameLine(0.0f, 16.0f);
     }

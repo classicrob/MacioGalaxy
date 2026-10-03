@@ -3,6 +3,7 @@
 // hook, the row <-> actor binding and error reporting. No game, no retail data.
 
 #include "runtime_core.hpp"
+#include <petari/editor/runtime_hooks.hpp>
 
 #include <cstdio>
 #include <cstdlib>
@@ -89,6 +90,19 @@ void testHooksAndBinding() {
     check(E::actorForRow(E::RowId{1}) == nullptr, "cleared");
 }
 
+void testRailHooks() {
+    const bool before=E::Hooks::enabled();
+    const auto* info=reinterpret_cast<const JMapInfo*>(0x1234);
+    E::Hooks::setRailTables(3,{info,{info}});
+    E::Hooks::setEnabled(false);
+    check(E::Hooks::railTables(3)==nullptr,"rail overrides inert with editor off");
+    E::Hooks::setEnabled(true);
+    check(E::Hooks::railTables(3)->info==info && E::Hooks::railTables(2)==nullptr,"rail overrides scoped to zone");
+    E::Hooks::sceneDestroyed();
+    check(E::Hooks::railTables(3)==nullptr,"rail overrides cleared before scene data expires");
+    E::Hooks::setEnabled(before);
+}
+
 void testErrors() {
     std::uint64_t serial = E::status().errorSerial;
     E::Core::reportError("Can't add: gravity limit 128");
@@ -103,6 +117,7 @@ int main() {
     testMode();
     testHooksAndBinding();
     testErrors();
+    testRailHooks();
     std::printf("editor api: %d checks passed\n", checks);
     return 0;
 }

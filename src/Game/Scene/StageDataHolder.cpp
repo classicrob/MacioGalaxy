@@ -181,12 +181,24 @@ void StageDataHolder::initPlacement() {
 }
 
 JMapInfoIter StageDataHolder::getCommonPathPointInfo(const JMapInfo** ppOut, int idx) const {
+#ifdef PETARI_NATIVE
+    if(const auto* tables=PetariEditor::Hooks::railTables(mZoneID)) {
+        const JMapInfoIter rail=tables->info->findElement<s32>("l_id",idx,0);
+        return getCommonPathPointInfoFromRailDataIndex(ppOut,rail.mIndex);
+    }
+#endif
     const JMapInfo* pInfo = findJmpInfoFromArray(&mPathObjs, "CommonPathInfo");
     JMapInfoIter pathIter = pInfo->findElement< s32 >("l_id", idx, 0);
     return getCommonPathPointInfoFromRailDataIndex(ppOut, pathIter.mIndex);
 }
 
 JMapInfoIter StageDataHolder::getCommonPathPointInfoFromRailDataIndex(const JMapInfo** ppInfo, int idx) const {
+#ifdef PETARI_NATIVE
+    if(const auto* tables=PetariEditor::Hooks::railTables(mZoneID)) {
+        *ppInfo=idx>=0 && static_cast<std::size_t>(idx)<tables->points.size()?tables->points[idx]:nullptr;
+        return JMapInfoIter(tables->info,idx);
+    }
+#endif
     const JMapInfo* pInfo = findJmpInfoFromArray(&mPathObjs, "CommonPathInfo");
     char buf[128];
     snprintf(buf, sizeof(buf), "CommonPathPointInfo.%d", idx);
@@ -203,6 +215,9 @@ void StageDataHolder_FORCE_MATCH_DATA(const char* pName) {
 }
 
 s32 StageDataHolder::getCommonPathInfoElementNum() const {
+#ifdef PETARI_NATIVE
+    if(const auto* tables=PetariEditor::Hooks::railTables(mZoneID)) return tables->info->getNumEntries();
+#endif
     return findJmpInfoFromArray(&mPathObjs, "CommonPathInfo")->getNumEntries();
 }
 

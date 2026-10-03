@@ -109,8 +109,8 @@ struct FakeModel : ModelView {
     bool locate(RowId id, int* zone, int* table) const override {
         const R* r = find(id);
         if (r == nullptr) return false;
-        *zone = r->zone;
-        *table = 0;
+        if(zone)*zone = r->zone;
+        if(table)*table = 0;
         return true;
     }
     RowState state(RowId id) const override { return find(id)->state; }

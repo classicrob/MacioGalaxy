@@ -98,7 +98,12 @@ public:
     /// Every row, in table order, including Added and Deleted ones.
     virtual void forEachRow(int zone, int table, const std::function< void(RowId) >& fn) const = 0;
 
+    // Rails use the current CommonPathInfo row index to select their point table.
+    virtual int railPointTable(RowId rail) const;
+    virtual std::vector<RowId> railPoints(RowId rail) const;
+
     // rows
+    // Either output pointer may be null.
     virtual bool locate(RowId row, int* pZone, int* pTable) const = 0;
     virtual RowState state(RowId row) const = 0;
     virtual const Cell* cell(RowId row, std::uint32_t column) const = 0;          // current; null: no such column
@@ -143,6 +148,7 @@ struct AddRow {
         Cell value;
     };
     std::vector< Value > cells;  // override copyOf's (or the table's neutral values)
+    int at = -1;  // insert before this current row index; -1 appends
 };
 
 /// One undo step. Applied in this order: adds, sets (which may name added rows), deletes,

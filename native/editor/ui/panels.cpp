@@ -1,5 +1,6 @@
 // The level editor's M1 panels (panels.hpp).
 #include "panels.hpp"
+#include "paths.hpp"
 
 #include <petari/editor/catalog.hpp>
 #include <petari/editor_pick.hpp>
@@ -406,8 +407,9 @@ void drawChecks(const ModelView& model) {
                     // A pick flow (fixKind): show the object; its Inspector has the link field to set.
                     showRows(check->rows);
                     gHintFrames = 600;
-                    gHint = check->fixKind == "pick-path"     ? "Choose a path: set the object's path field (CommonPath_ID) in the Inspector."
-                            : check->fixKind == "pick-switch" ? "Choose a switch: set the switch field in the Inspector to a number another object uses."
+                    if(check->fixKind=="pick-path" && !check->rows.empty())beginPathPick(check->rows.front());  // M3 paths: choose in the viewport.
+                    gHint = check->fixKind == "pick-path"     ? "Click a path in the viewport to link it. Escape cancels."
+                            : check->fixKind == "pick-switch" ? "Drag a switch socket from Links in the Inspector onto another object."
                             : check->fixKind == "pick-camera" ? "Choose a camera: set CameraSetId in the Inspector."
                                                               : "";
                 }
@@ -974,6 +976,7 @@ void drawInspectorWindow(const char* title) {
                 transformRow(*model, rows, "Rotation", "dir_", 0.5f);
                 transformRow(*model, rows, "Scale", "scale_", 0.01f);
             }
+            drawPathsInspector(*model, rows);  // M3 paths: points and link sockets.
             // Settings (UX section 8): the class's named args from the catalog, then every raw field folded below.
             const Catalog::ClassInfo* info = sharedClass(*model, rows);
             bool named = false;
