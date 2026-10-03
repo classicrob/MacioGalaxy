@@ -837,7 +837,7 @@ Design notes:
 | `Obj_arg0` | Shape: box, sphere, cylinder, ramp |
 | `Obj_arg1` | Material: an index into `materialPalette()`, ten planet materials from the disc (checker, grass, soil, stone, wood, metal, ice, snow, rock, lava), each with its footstep sound |
 | `Obj_arg2` | Surface: normal, ice, sand, slippery, burns, death, snow, no wall jump |
-| `Obj_arg3` | Gravity: 0 = the stage's, 1 = fitted |
+| `Obj_arg3` | Gravity: 0 = the stage's, 1 = fitted, 2 = down only (a cube field over the bounds with only its top face: upright platforming, no pull round the edges) |
 
 Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefore need nothing new. The catalog registers the class (`TerrainSync::registerWithEditor`): Browser presets "Box/Sphere/Cylinder/Ramp brush", and the four args as named Enum args, so the Inspector shows dropdowns.
 
@@ -860,7 +860,10 @@ Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefo
 - **Gravity: 128 fields, never unregistered.** Good Egg already uses 113. A brush keeps one field and changes it in place. A different kind retires the old one until the next reload, and creation is refused at the cap.
 - **Mounted archives: 384, unchecked.** Good Egg uses about 351. Each model rebuild serves a new archive name (resource holders are cached by name) and unmounts the previous one (`EditorTerrain::releaseArchive`), so the count stays flat. Resource holders still grow by one per rebuild (512); a reload resets them.
 - **TEX1 is trimmed** to the textures the cloned material uses: generated models average 56 KB.
+- **Donor vertex colours.** Planet materials are made for their own painted vertex colours, often about half with a TEV scale of 2 (FlowerPlanet's grass averages 115/255). The baked light is scaled by the donor's average vertex colour on that material (`MaterialClone::vertexTint`), or a brush draws twice as bright as the planet (grass looked white). Some donors also light COLOR0 with the scene's light 0; the clone turns that off, so the bake is the only light.
 - `calcCollisionMtx` multiplies by the actor's `scale.x`. That is why the part computes its own collision matrix.
+
+**Without the game.** `petari_editor_terrain` and `petari_editor_terrain_catalog` need no runtime: brush meshes and fits, the KCL writer and reader (`readKcl`, `raycast`: triangles as KCollisionServer::getPos rebuilds them), the model writer, the bake, and the brush class and Check (`brushClassInfo`, `brushChecks` from rows). The headless tools use them.
 
 **Checks.** A brush over 16,000 triangles warns (`brush-tris:<row>`, a provider in Runtime's Checks engine). Galaxy-level Checks (missions > 8, stars > 7, launch-star paths > 16, name rules) are Runtime's (5.7).
 
