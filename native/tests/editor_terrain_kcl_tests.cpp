@@ -19,6 +19,7 @@
 #include "Game/Map/KCollision.hpp"
 #include "Game/Util/JMapInfo.hpp"
 #include <petari/editor/terrain/brush.hpp>
+#include <petari/editor/terrain/kcl_reader.hpp>
 #include <petari/editor/terrain/kcl_writer.hpp>
 #include <petari/editor/formats/formats.hpp>
 #include <petari/kcl_collision.hpp>
@@ -315,9 +316,43 @@ static void testBrushes() {
         check(fit.kind != T::GravityFit::Kind::None && fit.range >= 1000.0f, (name + ": fitted gravity").c_str());
     }
     const T::Brush sphere = T::brushFromRow(1, -1, -1, -1, {2, 5, 9});
-    check(sphere.size.y == 2000 && sphere.size.z == 2000 && sphere.fittedGravity && sphere.material == 0, "a sphere is round; -1 args default");
+    check(sphere.size.y == 2000 && sphere.size.z == 2000 && sphere.gravity == T::GravityMode::Fitted && sphere.material == 0, "a sphere is round; -1 args default");
     check(T::fitGravity(T::brushFromRow(0, 0, 0, 0, {1, 1, 1})).kind == T::GravityFit::Kind::None, "gravity 0: the stage's own");
     check(T::brushFromRow(9, 99, 99, 1, {0, 0, 0}).size.x >= 50.0f, "args and sizes clamp");
+    // Gravity 2, down only: a cube over the bounds with only its top face, for any shape.
+    const T::GravityFit down = T::fitGravity(T::brushFromRow(1, 0, 0, 2, {2, 2, 2}));
+    check(T::brushFromRow(0, 0, 0, 2, {1, 1, 1}).gravity == T::GravityMode::DownOnly && T::gravityModeNames().size() == 3, "gravity 2: down only");
+    check(down.kind == T::GravityFit::Kind::Cube && down.activeFaces == 4 && std::fabs(down.half.x - 1000.0f) < 0.01f &&
+              std::fabs(down.center.y - 1000.0f) < 0.01f,
+          "down only: the sphere's bounds, top face only");
+}
+
+// The reader (kcl_reader.hpp) on the writer's output: the same triangles; rays meet them.
+static void testReader() {
+    const T::Mesh box = T::makeBox({0, 150, 0}, {1500, 150, 1500});
+    const T::KclResult kcl = T::buildKcl(box);
+    std::string error;
+    const auto read = T::readKcl(kcl.kcl, &error);
+    check(read.has_value() && read->triangleCount() == box.triangleCount(), "read back: one triangle per prism");
+    if (!read) {
+        return;
+    }
+    float worst = 0.0f;
+    for (std::size_t t = 0; t < box.triangleCount(); t++) {
+        for (int k = 0; k < 3; k++) {
+            const T::Vec3 a = box.positions[box.indices[t * 3 + k]], b = read->positions[read->indices[t * 3 + k]];
+            worst = std::max({worst, std::fabs(a.x - b.x), std::fabs(a.y - b.y), std::fabs(a.z - b.z)});
+        }
+    }
+    check(worst < 0.05f, "read back: the written vertices, in order");
+    const auto hit = T::raycast(*read, {100, 1000, -200}, {0, -1, 0}, 5000.0f);
+    check(hit && std::fabs(hit->point.y - 300.0f) < 0.01f && hit->normal.y > 0.99f && hit->front && std::fabs(hit->distance - 700.0f) < 0.01f,
+          "a ray down meets the box's top at y = 300");
+    const auto under = T::raycast(*read, {100, 100, -200}, {0, 1, 0}, 5000.0f);
+    check(under && std::fabs(under->point.y - 300.0f) < 0.01f && !under->front, "from inside: the top, from behind");
+    check(!T::raycast(*read, {100, 1000, -200}, {0, 1, 0}, 5000.0f) && !T::raycast(*read, {100, 1000, -200}, {0, -1, 0}, 500.0f),
+          "rays away or too short miss");
+    check(!T::readKcl(PetariEditor::Formats::Bytes(16, 0)).has_value(), "a short file is refused");
 }
 
 static void testHeightfield() {
@@ -447,6 +482,33 @@ static void testDiscPlanet(const char* pDisc, const char* pName) {
     KCollisionServer disc;
     disc.init(original.data(), nullptr);
 
+    // The reader rebuilds the disc's triangles as the game's getPos does.
+    const auto read = T::readKcl(*pKcl);
+    check(read.has_value() && static_cast< s32 >(read->triangleCount()) <= disc.getTriangleNum() && read->triangleCount() > 0,
+          "the reader reads a disc .kcl");
+    if (read && static_cast< s32 >(read->triangleCount()) == disc.getTriangleNum()) {
+        float worst = 0.0f;
+        for (s32 i = 0; i < disc.getTriangleNum(); i++) {
+            KC_PrismData* pPrism = disc.getPrismData(i);
+            if (pPrism->mHeight <= 0.0f || disc.isNearParallelNormal(pPrism)) {
+                continue;
+            }
+            for (int k = 0; k < 3; k++) {
+                const T::Vec3 r = read->positions[read->indices[i * 3 + k]];
+                float nearest = 1e30f;
+                for (int g = 0; g < 3; g++) {
+                    const TVec3f p = disc.getPos(pPrism, g);
+                    nearest = std::min(nearest, std::max({std::fabs(p.x - r.x), std::fabs(p.y - r.y), std::fabs(p.z - r.z)}));
+                }
+                worst = std::max(worst, nearest);
+            }
+        }
+        check(worst < 0.5f, "the reader's triangles are the game's (getPos)");
+        std::printf("disc %s: reader matches getPos within %.4f\n", pName, worst);
+    } else {
+        check(false, "the reader keeps every disc prism");
+    }
+
     T::Mesh mesh;
     std::vector< int > prismOfTriangle;
     for (s32 i = 0; i < disc.getTriangleNum(); i++) {
@@ -528,6 +590,7 @@ int main() {
     testBrushes();
     testAttributes();
     testLimits();
+    testReader();
 #ifdef PETARI_TEST_DISC_FILES
     for (const char* pName : {"AssemblyBlockPlanet", "BroadBeanPlanet", "BathtubPlanet"}) {
         testDiscPlanet(PETARI_TEST_DISC_FILES, pName);
