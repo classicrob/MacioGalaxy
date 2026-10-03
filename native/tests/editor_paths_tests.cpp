@@ -209,6 +209,26 @@ void testPaths() {
     E::Op del;del.label="Delete middle point";del.deletes={before.row};check(m->apply(del,&error),"delete point");
     check(m->railPoints(railId).size()==2,"delete preserves remaining order");
     check(m->undo() && m->railPoints(railId)[1]==before.row,"delete undo stable identity");
+    const auto createdRail=E::newRowId();
+    std::vector<P::Point> newPoints={{E::newRowId(),{0,10,0},{0,10,0},{0,10,0}},
+                                    {E::newRowId(),{50,20,0},{50,20,0},{50,20,0}}};
+    const auto creation=P::addRail(*m,0,newPoints,false,createdRail,&error);
+    check(creation.adds.size()==3 && m->apply(creation,&error),"create path with fresh indexed point table: "+error);
+    auto created=P::collect(*m).back();
+    check(created.row==createdRail && created.id==0 && created.points.size()==2 && created.points[1].position.x==50,"created path has allocated ID and ordered geometry");
+    check(m->undo() && P::collect(*m).size()==1,"create path undo removes all rows");
+    check(m->redo() && P::collect(*m).back().points[0].row==newPoints[0].row,"create path redo keeps identities");
+    auto creationPatch=m->patch();
+    auto creationFiles=E::Patch::build({{"Paths",creationPatch.json}},[&](const std::string& path){return source("/"+path);},&patchLog);
+    bool creationSaved=false;
+    for(const auto& file:creationFiles)if(file.path=="StageData/TestGalaxy.arc") {
+        const auto arc=F::Archive::parse(file.bytes);
+        const auto* bytes=arc->file("jmp/path/commonpathpointinfo.1");
+        if(bytes) {const auto points=F::Table::parse(*bytes);creationSaved=points && points->rowCount()==2;}
+    }
+    check(creationSaved,"patch creates numeric-suffix point table from sibling schema");
+    check(P::addRail(*m,0,newPoints,false,E::newRowId(),&error).adds.empty(),"create rejects reused point identities");
+    check(m->undo(),"undo creation before remaining checks");
     E::Catalog::ClassInfo required=writer;required.name="TestRequiredRail";
     required.links={{E::Catalog::LinkKind::Rail,"CommonPath_ID",true}};E::Catalog::addClass(required);
     const auto missing=object(0,"TestRequiredRail","SW_A",-1);

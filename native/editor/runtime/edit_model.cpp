@@ -666,11 +666,17 @@ int EditModel::ensureTable(int zone, const std::string& rawPath) {
         }
     }
     const std::string leaf = path.substr(path.rfind('/') + 1);
+    const auto schemaFamily=[](const std::string& leaf) {
+        const std::string prefix="commonpathpointinfo.";
+        if(leaf.rfind(prefix,0)==0 && leaf.size()>prefix.size() &&
+           std::all_of(leaf.begin()+prefix.size(),leaf.end(),[](char c){return c>='0'&&c<='9';}))return prefix;
+        return leaf;
+    };
     const TableModel* pSibling = nullptr;
     for (int z = 0; z < zoneCount() && pSibling == nullptr; z++) {
         const int first = z == 0 ? zone : (z == zone ? 0 : z);  // this zone first
         for (const TableModel& t : mZones[first].tables) {
-            if (t.path.substr(t.path.rfind('/') + 1) == leaf) {
+            if (schemaFamily(t.path.substr(t.path.rfind('/') + 1)) == schemaFamily(leaf)) {
                 pSibling = &t;
                 break;
             }

@@ -155,7 +155,15 @@ bool drawPathsViewport(float x,float y,float width,float height) {
     list->PushClipRect(ImVec2(x,y),ImVec2(x+width,y+height),true);
     const V::Mark* hit=nullptr;float nearest=10;
     for(const auto& p:view.marks) {
-        const auto screen=at(p.x,p.y);
+        auto screen=at(p.x,p.y);
+        if(p.handle)for(const auto& point:view.marks)if(!point.handle && point.point==p.point) {
+            const auto center=at(point.x,point.y);
+            if(std::hypot(screen.x-center.x,screen.y-center.y)<12) {
+                screen.x=center.x+(p.handle==1?-24:24);
+                list->AddLine(center,screen,IM_COL32(100,215,255,180),1);
+            }
+            break;
+        }
         list->AddCircleFilled(screen,p.handle?4:5,p.handle?IM_COL32(100,215,255,240):IM_COL32(250,204,56,255));
         const float d=std::hypot(screen.x-io.MousePos.x,screen.y-io.MousePos.y);
         if(d<nearest){nearest=d;hit=&p;}
@@ -165,10 +173,29 @@ bool drawPathsViewport(float x,float y,float width,float height) {
         float t=0;const float d=distance(io.MousePos,at(c.x0,c.y0),at(c.x1,c.y1),&t);
         if(d<curveDistance){curveDistance=d;curveRail=c.rail;curveIndex=c.segment;curveT=c.t0+(c.t1-c.t0)*t;}
     }
-    int socketIndex=0;
+    struct SocketGroup {RowId row;ImVec2 origin;int count=0,index=0;};
+    std::vector<SocketGroup> groups;
     for(const auto& socket:view.sockets) {
-        auto p=at(socket.x,socket.y);p.x+=35;p.y+=socketIndex++*20;
-        list->AddCircle(p,6,socket.color,16,2);if(socket.output)list->AddCircleFilled(p,3,socket.color);list->AddText(ImVec2(p.x+10,p.y-7),socket.color,socket.field.c_str());
+        auto group=std::find_if(groups.begin(),groups.end(),[&](const SocketGroup& g){return g.row==socket.row;});
+        if(group==groups.end())groups.push_back({socket.row,at(socket.x,socket.y),1,0});
+        else ++group->count;
+    }
+    for(std::size_t i=0;i<groups.size();++i) {
+        auto& group=groups[i];
+        group.origin.x=std::clamp(group.origin.x+35,x+12,std::max(x+12,x+width-180));
+        group.origin.y=std::clamp(group.origin.y,y+12,std::max(y+12,y+height-group.count*20-12));
+        for(std::size_t j=0;j<i;++j) {
+            const auto& other=groups[j];
+            if(std::fabs(group.origin.x-other.origin.x)<180 && group.origin.y<other.origin.y+other.count*20 && other.origin.y<group.origin.y+group.count*20)
+                group.origin.x=other.origin.x>x+width/2?other.origin.x-185:other.origin.x+185;
+        }
+    }
+    for(const auto& socket:view.sockets) {
+        auto& group=*std::find_if(groups.begin(),groups.end(),[&](const SocketGroup& g){return g.row==socket.row;});
+        const ImVec2 p(group.origin.x,group.origin.y+group.index++*20);
+        list->AddCircle(p,6,socket.color,16,2);if(socket.output)list->AddCircleFilled(p,3,socket.color);
+        const std::string label=socket.field+(socket.output?" out":" in");
+        list->AddText(ImVec2(p.x+10,p.y-7),socket.color,label.c_str());
         if(inside&&ImGui::IsMouseClicked(ImGuiMouseButton_Left)&&std::hypot(p.x-io.MousePos.x,p.y-io.MousePos.y)<10){startLink(socket.row,socket.field,p,socket.output);consumed=true;}
     }
     for(const auto& wire:view.wires) {

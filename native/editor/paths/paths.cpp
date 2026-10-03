@@ -2,6 +2,8 @@
 #include <petari/editor/debug_draw.hpp>
 #include <algorithm>
 #include <map>
+#include <set>
+#include <cmath>
 
 namespace PetariEditor {
 int ModelView::railPointTable(RowId rail) const {
@@ -75,6 +77,39 @@ std::vector<Rail> collect(const ModelView& m) {
     }
     return rails;
 }
+Op addRail(const ModelView& m, int zone, const std::vector<Point>& points, bool closed, RowId freshRail, std::string* error) {
+    auto reject=[&](const char* message) {if(error)*error=message;return Op{};};
+    if(zone<0 || zone>=m.zoneCount() || points.size()<2)return reject("Choose a zone and at least two path points.");
+    std::set<RowId> identities;
+    identities.insert(freshRail);
+    if(!freshRail.valid() || m.locate(freshRail,nullptr,nullptr))return reject("The rail needs a fresh row ID.");
+    for(const auto& p:points) {
+        if(!p.row.valid() || m.locate(p.row,nullptr,nullptr) || !identities.insert(p.row).second)return reject("Each point needs a distinct fresh row ID.");
+        for(Vec3 v:{p.position,p.incoming,p.outgoing})
+            if(!std::isfinite(v.x)||!std::isfinite(v.y)||!std::isfinite(v.z))return reject("Path coordinates must be finite.");
+    }
+    int index=0,id=0;
+    std::set<int> used;
+    for(const auto& rail:collect(m))if(rail.zone==zone){++index;used.insert(rail.id);}
+    while(used.count(id))++id;
+    Op op;op.label="Create path";
+    AddRow rail;rail.id=freshRail;rail.zone=zone;rail.table="jmp/path/commonpathinfo";
+    rail.cells={{columnHash("l_id"),Cell{CellType::Int,id,0,{}}},
+                {columnHash("no"),Cell{CellType::Int,index,0,{}}},
+                {columnHash("num_pnt"),Cell{CellType::Int,static_cast<int>(points.size()),0,{}}},
+                {columnHash("closed"),Cell{CellType::StringOffset,0,0,closed?"CLOSE":"OPEN"}},
+                {columnHash("type"),Cell{CellType::StringOffset,0,0,"Bezier"}}};
+    op.adds.push_back(std::move(rail));
+    for(int i=0;i<static_cast<int>(points.size());++i) {
+        const auto& p=points[i];
+        AddRow add;add.id=p.row;add.zone=zone;add.table="jmp/path/commonpathpointinfo."+std::to_string(index);
+        add.cells.push_back({columnHash("id"),Cell{CellType::Int,i,0,{}}});
+        const auto coords=movePoint(p,p.position);
+        for(const auto& cell:coords.sets)add.cells.push_back({cell.column,cell.after});
+        op.adds.push_back(std::move(add));
+    }
+    return op;
+}
 Vec3 evaluate(const Point& a, const Point& b, float t) {
     t=std::clamp(t,0.0f,1.0f);
     const Vec3 ab=lerp(a.position,a.outgoing,t), bc=lerp(a.outgoing,b.incoming,t), cd=lerp(b.incoming,b.position,t);
@@ -100,6 +135,7 @@ Op insertPoint(const Rail& rail,int index,float t,RowId freshPoint,std::string* 
     auto next=moveHandle(b,false,b.incoming);op.sets.insert(op.sets.end(),next.sets.begin(),next.sets.end());
     AddRow add;add.id=point.row;add.zone=rail.zone;add.table=rail.table;add.copyOf=a.row;add.at=index+1;
     op.adds.push_back(add);
+    op.sets.push_back({rail.row,columnHash("num_pnt"),Cell{CellType::Int,static_cast<int>(rail.points.size())+1,0,{}}});
     auto values=movePoint(point,point.position);op.sets.insert(op.sets.end(),values.sets.begin(),values.sets.end());
     op.sets.push_back({point.row,columnHash("id"),Cell{CellType::Int,index+1,0,{}}});
     for(int i=index+1;i<static_cast<int>(rail.points.size());++i)
@@ -112,6 +148,7 @@ Op deletePoint(const Rail& rail,RowId row,std::string* error) {
         return {};
     }
     Op op;op.label="Delete path point";op.deletes.push_back(row);
+    op.sets.push_back({rail.row,columnHash("num_pnt"),Cell{CellType::Int,static_cast<int>(rail.points.size())-1,0,{}}});
     int index=0;
     for(const auto& p:rail.points)if(p.row!=row)op.sets.push_back({p.row,columnHash("id"),Cell{CellType::Int,index++,0,{}}});
     return op;

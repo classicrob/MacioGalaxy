@@ -15,6 +15,8 @@ struct Rail {
     std::vector<Point> points;
 };
 std::vector<Rail> collect(const ModelView& model);
+// Point and rail IDs must be fresh; positions and handles are zone-local.
+Op addRail(const ModelView& model, int zone, const std::vector<Point>& points, bool closed, RowId freshRail, std::string* error);
 Vec3 evaluate(const Point& a, const Point& b, float t);
 // de Casteljau split preserves the entire curve, including its tangents.
 Point split(Point* a, Point* b, float t);

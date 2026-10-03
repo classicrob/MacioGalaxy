@@ -23,6 +23,10 @@ def main():
                PETARI_SURFACE_DUMP_LABELS='paths-edited,paths-wires', PETARI_SURFACE_DUMP_EVERY='5',
                PETARI_SURFACE_DUMP_SPAN='15')
     try:
+        # Warm without the test hook: other seed stages need not contain this fixture's riders.
+        subprocess.run([sys.executable, str(root / 'native/tools/warm_seed.py'), 'env',
+                        '--app', str(args.app.resolve()), '--owner', args.owner],
+                       check=True, stdout=subprocess.DEVNULL, cwd=root)
         result = subprocess.run(command + ['start', '--app', str(args.app.resolve()), '--dir', str(server),
                                           '--owner', args.owner, '--boot-timeout', '300'], env=env, cwd=root)
         log = (server / 'server.log').read_text(errors='replace') if (server / 'server.log').exists() else ''

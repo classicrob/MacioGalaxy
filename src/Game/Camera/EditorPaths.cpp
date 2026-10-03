@@ -88,7 +88,7 @@ void update(const EditorPicking::View& input) {
     mesh={};
     V::View out;
     const E::ModelView* model=E::model();
-    if(!model || V::visibility()==V::Visibility::None) { V::publish(std::move(out));return; }
+    if(!model || V::visibility()==V::Visibility::None) { drag.active=false;V::take();V::publish(std::move(out));return; }
     D::Camera camera{{input.eye[0],input.eye[1],input.eye[2]},
                      {input.forward[0],input.forward[1],input.forward[2]},
                      {input.up[0],input.up[1],input.up[2]},input.fovy,input.aspect};
