@@ -7,6 +7,7 @@
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
+#include "Game/Scene/TestServerInput.hpp"
 #include <petari/editor/runtime.hpp>
 #include <petari/editor/runtime_hooks.hpp>
 #include <petari/player_launch.hpp>
@@ -105,6 +106,16 @@ namespace {
             std::fflush(stderr);
             _exit(0);
         }
+        {
+            std::string inputReply;
+            const TestServerInput::Result input = TestServerInput::start(name, line, playable, &inputReply);
+            if (input != TestServerInput::Result::Unhandled) {
+                if (input == TestServerInput::Result::Done) {
+                    reply(name, inputReply);
+                }
+                return true;
+            }
+        }
         if (!playable) {
             reply(name, "error not in normal play (retry)");
             return true;
@@ -169,6 +180,13 @@ namespace TestServer {
         if (++sBeat % 300 == 1) {
             std::fprintf(stderr, "[test-server] alive: beat %d action %d pending %d stage %s\n", sBeat, actionNerve, gHavePending,
                          EditorScene::stageName() != nullptr ? EditorScene::stageName() : "-");
+        }
+        if (TestServerInput::pending()) {
+            std::string inputName, inputText;
+            if (TestServerInput::poll(&inputName, &inputText)) {
+                reply(inputName, inputText);
+            }
+            return;
         }
         const bool playable = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isPlayerDead();
         if (gHavePending && gPending.isReload) {
