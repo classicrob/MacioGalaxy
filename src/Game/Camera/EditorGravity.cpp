@@ -401,11 +401,6 @@ namespace EditorGravity {
         }
         auto& s = state();
         auto* mgr = manager();
-        if (!mgr) {
-            s.view = {};
-            G::reset();
-            return;
-        }
         if (s.scene != Hooks::sceneSerial() || s.revision != (model() ? model()->revision() : 0)) {
             if (s.scene != Hooks::sceneSerial()) {
                 s.bindingConfig.clear();
@@ -426,7 +421,7 @@ namespace EditorGravity {
         }
         s.baselineSealed = s.baselineSealed || (currentModel && currentModel->historySize() != 0);
         s.view.fields.clear();
-        s.view.registered = mgr->nativeGravityCount();
+        s.view.registered = mgr ? mgr->nativeGravityCount() : 0;
         std::map< PlanetGravity*, RowId > rows;
         forEachBoundRow([&](RowId r, LiveActor* a) {
             if (isGlobal(a)) {
@@ -436,7 +431,7 @@ namespace EditorGravity {
                 rows[field] = r;
             }
         });
-        for (int i = 0; i < mgr->nativeGravityCount(); i++) {
+        for (int i = 0; i < s.view.registered; i++) {
             auto* g = mgr->nativeGravityAt(i);
             if (!g->mAppeared)
                 continue;
