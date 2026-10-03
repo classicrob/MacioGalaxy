@@ -200,3 +200,20 @@ must likewise be unique. Tracy is disabled in the current native build.
   once machine load was controlled (hidden-run slowness was load, not App Nap), so it is off by default.
 - A runner timeout while `--jobs>1` or another Petari app was running is `INFRA_TIMEOUT`
   (shared-machine contention, not a game failure; rerun quiet). A single quiet timeout stays `TIMEOUT`.
+
+## Warm shader seed for any live run (`warm_seed.py`)
+
+A fresh `--user` dir starts with no `dawn_cache.db`/`pipeline_cache.db` and the build has no Metal cache, so a run
+recompiles its pipelines (about 940 slow compiles, MTLCompilerService pinned) before it plays. `native/tools/warm_seed.py`
+publishes `build/shader-seed/<app sha16>/` (Metal + both databases, warmed on Good Egg, Ocean Ring, Koopa Battle 1 and the
+observatory; about 10 min, one publisher at a time, automatic on first use after a rebuild) and clones the databases into
+a run's user dir (copy-on-write, so runs stay isolated):
+
+```sh
+eval $(native/tools/warm_seed.py env --app <Petari binary>)                  # exports PETARI_SHADER_SEED_DIR (publishes if missing)
+native/tools/warm_seed.py prepare --app <Petari binary> --user <user dir>    # clone the warm databases in
+```
+
+Measured (Good Egg, one class, same build): slow compiles 939 -> 376, compile build time 306 s -> 90 s, longest compile
+queue 82 s -> 29 s, launch to first frame 168 s -> 56-63 s (the cold figure included contention from other runs).
+`class_sweep.py` uses it by default (`--no-warm-seed` to compare).

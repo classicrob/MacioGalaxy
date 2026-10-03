@@ -26,6 +26,7 @@ namespace PetariNative::App::Smoke {
 namespace {
 
 constexpr unsigned long kStrapFirstTap = 480;    // game accepts a button after 450
+constexpr unsigned long kStrapFirstTapFast = 40;   // PETARI_FAST_BOOT=1: the game accepts a button after 30
 constexpr unsigned long kStrapTapInterval = 120;
 constexpr unsigned long kTapFrames = 6;          // at least one KPAD read at 60 Hz
 constexpr unsigned long kLogoDisplaySettle = 10;   // after TitleSequence.LogoDisplay (A+B is read from then)
@@ -1556,7 +1557,9 @@ Step Driver::step(const Observation& observation) {
         }
         if (observation.strap) {
             ++mStrapFrames;
-            if (mStrapFrames >= kStrapFirstTap && (mStrapFrames - kStrapFirstTap) % kStrapTapInterval == 0) {
+            const char* fast = std::getenv("PETARI_FAST_BOOT");
+            const unsigned long first = fast != nullptr && fast[0] == '1' ? kStrapFirstTapFast : kStrapFirstTap;
+            if (mStrapFrames >= first && (mStrapFrames - first) % kStrapTapInterval == 0) {
                 note("tap A: strap reminder");
                 tap(Button::A, kTapFrames, step);
             }

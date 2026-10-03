@@ -616,6 +616,13 @@ int main(int argc, char** argv) {
 
     SDL_SetHintWithPriority("PETARI_SMOKE_BACKGROUND", App::SmokeBackground::enabled ? "1" : "0", SDL_HINT_OVERRIDE);
     if (App::SmokeBackground::enabled) {
+        // A muted smoke has no use for a CoreAudio device (coreaudiod sat at ~35% of a core per smoke): SDL's dummy driver
+        // keeps the callback timing, so the mixer and the game logic run as before. PETARI_SMOKE_REAL_AUDIO=1 opens the
+        // real device (audio timing/choppiness evidence needs it).
+        if (const char* real = std::getenv("PETARI_SMOKE_REAL_AUDIO"); real == nullptr || real[0] != '1') {
+            SDL_SetHintWithPriority(SDL_HINT_AUDIO_DRIVER, "dummy", SDL_HINT_OVERRIDE);
+            std::fputs("PETARI SMOKE AUDIO DRIVER: dummy (PETARI_SMOKE_REAL_AUDIO=1 opens the real device)\n", stderr);
+        }
         SDL_SetHintWithPriority(SDL_HINT_MAC_BACKGROUND_APP, "1", SDL_HINT_OVERRIDE);
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0", SDL_HINT_OVERRIDE);
         SDL_SetHintWithPriority(SDL_HINT_WINDOW_ACTIVATE_WHEN_RAISED, "0", SDL_HINT_OVERRIDE);
