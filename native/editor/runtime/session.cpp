@@ -11,6 +11,8 @@
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
 #include <petari/editor/catalog.hpp>
+#include <petari/editor/json.hpp>
+#include <petari/editor/patch.hpp>
 #include <petari/editor/paths.hpp>
 
 #include "Game/Editor/EditorScene.hpp"
@@ -93,6 +95,11 @@ namespace {
         bool hadRun = false;       // a run began this session (Resume continues it; with none, Resume is a Begin)
         bool scenePlayed = false;  // this scene has been played since it was built (a fresh Play rebuilds it)
         bool missed = false;       // Edit froze a miss: the next Play or Resume starts a fresh run
+        // The journal (crash recovery): the revision last written, an offer waiting for an answer,
+        // and edits restored from one (they count toward the next journal's total).
+        std::uint64_t journalRevision = 0;
+        bool journalHeld = false;
+        int restoredEdits = 0;
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -136,7 +143,78 @@ namespace {
         return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now().time_since_epoch()).count();
     }
 
-    void loadModel(const char* pStage, int scenario) {
+    // ---- the journal: unsaved edits survive a crash (UX "Autosave and the journal") ----
+    // <user>/editor/journal/<Galaxy>.json: the session's edits as a patch against the disc (as a
+    // Save writes them), the count and the time; rewritten after each op, removed once nothing is
+    // unsaved.
+    std::filesystem::path journalPath(const std::string& galaxy) {
+        const std::filesystem::path user = PetariNative::Platform::ModFolder::userDirectory();
+        return user.empty() ? std::filesystem::path() : user / "editor" / "journal" / (galaxy + ".json");
+    }
+
+    std::optional< Json::Value > readJournal(const std::string& galaxy) {
+        std::ifstream in(journalPath(galaxy), std::ios::binary);
+        if (!in) return std::nullopt;
+        const std::string text((std::istreambuf_iterator< char >(in)), {});
+        std::optional< Json::Value > doc = Json::parse(text);
+        if (!doc || (*doc)["format"].asInt() != 1 || (*doc)["galaxy"].asString() != galaxy) return std::nullopt;
+        return doc;
+    }
+
+    void writeJournal() {
+        Session& s = session();
+        if (!s.model || s.journalHeld || s.model->revision() == s.journalRevision) return;
+        s.journalRevision = s.model->revision();
+        const std::filesystem::path path = journalPath(s.model->galaxy());
+        if (path.empty()) return;
+        std::error_code ec;
+        const std::filesystem::path files = std::filesystem::path(path).replace_extension(".files");
+        const EditModel::PatchOut patch = s.model->unsaved() ? s.model->patch() : EditModel::PatchOut{};
+        std::optional< Json::Value > edits = patch.json.empty() ? std::optional< Json::Value >(Json::Value::object()) : Json::parse(patch.json);
+        std::filesystem::remove_all(files, ec);
+        if (!edits || (patch.json.empty() && patch.wholeArchives.empty())) {
+            std::filesystem::remove(path, ec);
+            return;
+        }
+        // Zones the disc lacks (a new galaxy's) can't be patched: whole, beside it.
+        for (const auto& [archive, bytes] : patch.wholeArchives) {
+            const std::filesystem::path file = files / archive.substr(1);
+            std::filesystem::create_directories(file.parent_path(), ec);
+            std::ofstream(file, std::ios::binary).write(reinterpret_cast< const char* >(bytes.data()), static_cast< std::streamsize >(bytes.size()));
+        }
+        Json::Value doc = Json::Value::object();
+        doc.set("format", 1);
+        doc.set("galaxy", s.model->galaxy());
+        doc.set("scenario", s.model->scenario());
+        doc.set("time", static_cast< double >(std::time(nullptr)));
+        doc.set("edits", s.restoredEdits + s.model->historyCursor());
+        doc.set("patch", std::move(*edits));
+        const std::string text = Json::write(doc);
+        std::filesystem::create_directories(path.parent_path(), ec);
+        const std::filesystem::path temp = path.string() + ".tmp";
+        {
+            std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+            out << text;
+        }
+        std::filesystem::rename(temp, path, ec);
+    }
+
+    void offerJournal() {
+        Session& s = session();
+        Status& st = Core::mutableStatus();
+        st.journalEdits = 0;
+        st.journalTime = 0;
+        s.journalHeld = false;
+        if (!s.model) return;
+        if (std::optional< Json::Value > doc = readJournal(s.model->galaxy())) {
+            st.journalEdits = std::max(1, (*doc)["edits"].asInt(1));
+            st.journalTime = static_cast< std::int64_t >((*doc)["time"].asNumber());
+            s.journalHeld = true;
+            std::fprintf(stderr, "[editor] journal: %d unsaved edits of %s found\n", st.journalEdits, s.model->galaxy());
+        }
+    }
+
+    void loadModel(const char* pStage, int scenario, const FileSource& restored = nullptr) {
         PetariNative::HostAllocationScope host;  // editor data, never the game heap
         Session& s = session();
         if (s.model) {
@@ -157,7 +235,9 @@ namespace {
                 TerrainSync::registerWithEditor();
                 ImportSync::registerWithEditor();
             },
-            &error, &catalogError);
+            &error, &catalogError, ModelIO::readMounted, ModelIO::readUnmodded, restored);
+        s.restoredEdits = 0;
+        s.journalRevision = s.model ? s.model->revision() : 0;
         if (!catalogError.empty()) {
             Core::reportError("Catalog: " + catalogError);
         }
@@ -193,6 +273,7 @@ namespace {
                 loadedMod = PetariNative::Platform::DVD::overlayModForEntry(DVDConvertPathToEntrynum(path.c_str()));
             }
             Core::mutableStatus().loadedMod = loadedMod;
+            offerJournal();
             std::fprintf(stderr, "[editor] editing %s mission %d: %d zones; missions %s\n", pStage, scenario, s.model->zoneCount(),
                          list.c_str());
         }
@@ -792,11 +873,79 @@ namespace {
                 std::string notice;
                 if (saveMod(*s.model, command.modName, command.fullArchives, &notice, &error)) {
                     s.model->markSaved();
+                    std::error_code ec;
+                    std::filesystem::remove(journalPath(s.model->galaxy()), ec);  // saved: nothing to recover
+                    std::filesystem::remove_all(journalPath(s.model->galaxy()).replace_extension(".files"), ec);
+                    s.journalRevision = s.model->revision();
                     Core::reportNotice(notice);
                     std::fprintf(stderr, "[editor] %s\n", notice.c_str());
                 } else {
                     Core::reportError("Save: " + error);
                 }
+                break;
+            }
+            case Command::Kind::RestoreJournal: {
+                const std::string galaxy = s.model->galaxy();
+                const int scenario = s.model->scenario();
+                std::map< std::string, Formats::Bytes > built;
+                int edits = 0;
+                {
+                    PetariNative::HostAllocationScope host;
+                    std::optional< Json::Value > doc = readJournal(galaxy);
+                    if (!doc) {
+                        Core::reportError("No unsaved edits to restore");
+                        break;
+                    }
+                    edits = std::max(1, (*doc)["edits"].asInt(1));
+                    // Disc-relative, as a Save writes them: the patch over the disc, and the zones
+                    // the disc lacks whole.
+                    std::vector< std::string > log;
+                    for (Patch::Built& b : Patch::build({{"journal", Json::write((*doc)["patch"])}},
+                                                        [](const std::string& p) { return ModelIO::readUnmodded("/" + p); }, &log)) {
+                        built["/" + b.path] = std::move(b.bytes);
+                    }
+                    for (const std::string& line : log) std::fprintf(stderr, "[editor] journal: %s\n", line.c_str());
+                    const std::filesystem::path files = journalPath(galaxy).replace_extension(".files");
+                    std::error_code ec;
+                    for (std::filesystem::recursive_directory_iterator it(files, ec), end; !ec && it != end; it.increment(ec)) {
+                        if (!it->is_regular_file()) continue;
+                        std::ifstream in(it->path(), std::ios::binary);
+                        built["/" + it->path().lexically_relative(files).generic_string()] =
+                            Formats::Bytes((std::istreambuf_iterator< char >(in)), {});
+                    }
+                }
+                // The session again: the disc with the journal's edits, unsaved.
+                loadModel(galaxy.c_str(), scenario, [&built](const std::string& path) -> std::optional< Formats::Bytes > {
+                    auto it = built.find(path);
+                    return it != built.end() ? std::optional< Formats::Bytes >(it->second) : std::nullopt;
+                });
+                if (!s.model) {
+                    break;
+                }
+                {
+                    PetariNative::HostAllocationScope host;
+                    for (auto& [path, bytes] : built) Hooks::setArchiveOverride(path, std::move(bytes));  // the scene from them
+                }
+                s.model->markRestored();
+                s.restoredEdits = edits;
+                s.journalHeld = false;
+                Core::mutableStatus().journalEdits = 0;
+                Core::mutableStatus().journalTime = 0;
+                Core::reportNotice("Restored " + std::to_string(edits) + (edits == 1 ? " unsaved edit" : " unsaved edits"));
+                std::fprintf(stderr, "[editor] journal: %d edits restored\n", edits);
+                startReload(Session::After::Edit);
+                requeueRest();
+                return;
+            }
+            case Command::Kind::DiscardJournal: {
+                PetariNative::HostAllocationScope host;
+                std::error_code ec;
+                std::filesystem::remove(journalPath(s.model->galaxy()), ec);
+                std::filesystem::remove_all(journalPath(s.model->galaxy()).replace_extension(".files"), ec);
+                s.journalHeld = false;
+                s.journalRevision = s.model->revision() - 1;  // the session's own edits, if any, journaled next tick
+                Core::mutableStatus().journalEdits = 0;
+                Core::mutableStatus().journalTime = 0;
                 break;
             }
             case Command::Kind::SwitchScenario: {
@@ -852,6 +1001,7 @@ void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_E
 void scratchTestTick(); // scratch_test.cpp: play-test progress isolation (PETARI_EDITOR_SCRATCH_TEST)
 void newPathTestTick();
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
+void journalTestTick(); // journal_test.cpp: crash recovery across a kill (PETARI_EDITOR_JOURNAL_TEST)
 
 bool reloadScene(bool fromStart) {
     Session& s = session();
@@ -1060,6 +1210,7 @@ void tick(bool playable) {
     syncTestTick();
     reloadTestTick();
     saveTestTick();
+    journalTestTick();
     brushTestTick();
     redrawTestTick();
     ensureTestTick();
@@ -1149,6 +1300,10 @@ void tick(bool playable) {
             }
         }
         s.checkedRevision = s.model->revision();
+    }
+    {
+        PetariNative::HostAllocationScope host;
+        writeJournal();
     }
     updateStatus();
     Core::runUiSeamHook();

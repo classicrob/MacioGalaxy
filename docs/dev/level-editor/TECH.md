@@ -358,7 +358,7 @@ These follow UX section 3, agreed between UX and tech.
 - **Undo.** Applying an op's inverse is a normal edit: SceneSync re-derives the affected actors, re-creating them or marking them pending.
 - **Drag coalescing.** A drag streams preview pokes and records **one** op on release.
 - **Multi-object ops.** Duplicate, array and paste are one compound op.
-- **Journal.** The op log is written to the project journal as it happens (UX "Autosave and the journal"), so a crash loses nothing. Replaying the journal onto the original archives rebuilds the project.
+- **Journal.** After each op the session's unsaved edits are written to `<user>/editor/journal/<Galaxy>.json` (atomically: a temp file renamed) as `EditModel::patch()` (disc-relative, as a Save writes; zones the disc lacks whole, beside it in `<Galaxy>.files/`), with the edit count and time (UX "Autosave and the journal"), so a crash loses no edit. Opening the galaxy again finds it and offers it (`Status::journalEdits`; new edits aren't journaled until it's answered). `RestoreJournal` builds the patch over the unmodded disc, reloads the model with those archives before every other source (`ModelIO::load`'s `restored`, so they also win over a patch mod's), overrides the scene's archives with them and marks the model unsaved (`markRestored`). A save or an undo back to the saved state removes the file, and so does `DiscardJournal`. The undo history itself isn't journaled yet.
 - **Undo across a reload** works because ops live in native editor state.
 - **Undo across play.** The undo stack never includes play-test results; Keep is an explicit op.
 

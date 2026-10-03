@@ -1003,14 +1003,21 @@ shape leaves room for it now. Sketch:
 - Play-tests never add steps and never break the history.
 - Play-tests can't touch your save: while you edit, the game doesn't save, and
   your save file and progress are exactly as they were when you leave the editor.
-- Undo history survives quitting (it's in the journal below).
+- Unsaved edits survive quitting and crashes (the journal below); their undo
+  history doesn't yet: restored edits are where the next session starts.
 
 ### Autosave and the journal
 
-- Every change is written to a journal in the project folder as you make it.
-  If the game quits or crashes, the next time you open the editor it says
-  "Restored your edit of Good Egg from 2 minutes ago" and you're where you
-  were, history included.
+- Every change is written to a journal as you make it
+  (`<user>/editor/journal/<Galaxy>.json`: the unsaved edits as a patch against
+  the disc, as a save writes them). If the game quits or crashes before a save,
+  the next time you edit that galaxy the editor asks "Restore 3 unsaved edits
+  from 2 minutes ago?". **Restore** reloads with them (still unsaved, so Cmd+S
+  keeps them); **Discard** drops them. Saving, or undoing back to the saved
+  state, clears the journal. Built: per-galaxy journal, the offer
+  (`status().journalEdits/journalTime`), `RestoreJournal`/`DiscardJournal`;
+  live test `editor_journal_smoke.py` (SIGKILL mid-session). Not yet: the undo
+  history itself.
 - **Cmd+S** writes the mod (the archives the game loads: section 17). Until
   then, the mod folder holds the last saved version, so a half-done edit never
   breaks the game for you or anyone else. The toolbar shows "Unsaved changes"

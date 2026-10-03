@@ -79,6 +79,8 @@ public:
     /// Edits since the last markSaved().
     bool unsaved() const { return serialAtCursor() != mSavedSerial; }
     void markSaved();
+    /// The loaded state isn't saved (edits restored from a journal): unsaved() until the next save.
+    void markRestored() { mSavedSerial = ~std::uint64_t(0); }
     /// The edits as a patch against the disc (petari/editor/patch.hpp): `json` is edits/<Galaxy>.json
     /// (empty when nothing differs from the disc); zones the disc doesn't have can't be patched and
     /// come back whole, to be saved as files.
