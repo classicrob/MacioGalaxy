@@ -37,6 +37,25 @@ void selectByName(const char* name) {
 void placeMarker() { gPlaceMarker.store(true, std::memory_order_relaxed); }
 void place(std::uint64_t exampleRow) { gPlace.store(exampleRow, std::memory_order_relaxed); }
 std::uint64_t takePlace() { return gPlace.exchange(0, std::memory_order_relaxed); }
+
+namespace {
+PlaceClass gPlaceClass;  // under gMutex
+bool gPlaceClassPending = false;
+}  // namespace
+
+void placeClass(const PlaceClass& request) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    gPlaceClass = request;
+    gPlaceClassPending = true;
+}
+
+bool takePlaceClass(PlaceClass* out) {
+    std::lock_guard<std::mutex> lock(gMutex);
+    if (!gPlaceClassPending) return false;
+    *out = gPlaceClass;
+    gPlaceClassPending = false;
+    return true;
+}
 void duplicate() { gDuplicate.store(true, std::memory_order_relaxed); }
 bool takeDuplicate() { return gDuplicate.exchange(false, std::memory_order_relaxed); }
 bool takePlaceMarker() { return gPlaceMarker.exchange(false, std::memory_order_relaxed); }
