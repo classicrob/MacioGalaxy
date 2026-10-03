@@ -243,7 +243,10 @@ void drawToolbar(float width) {
         if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
         drawPathsToggle();  // M3 paths: selection/all/none.
+        ImGui::SameLine(0.0f, 10.0f);
         drawAreasToggle();  // M3 areas: bounds visibility.
+        ImGui::SameLine(0.0f, 10.0f);
+        drawAreasToggle(true);  // M3 areas: camera volume visibility.
         ImGui::SameLine(0.0f, 10.0f);
         bool gravity = Gravity::visible();  // M3 gravity: view toggle.
         if (ImGui::Checkbox("Gravity", &gravity)) Gravity::setVisible(gravity);

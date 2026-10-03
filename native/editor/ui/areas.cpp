@@ -69,20 +69,18 @@ namespace PetariEditor::Ui {
             }
         }
         void visibility(bool cameras) {
-            ImGui::PushID(cameras ? "camera-areas" : "areas");
             const auto current = A::visibility(cameras);
-            const char* labels[] = {"Selection", "All", "Off"};
-            const std::string title = std::string(cameras ? "Cameras" : "Areas") + ": " + labels[static_cast< int >(current)];
-            if (ImGui::BeginCombo(title.c_str(), nullptr, ImGuiComboFlags_NoPreview)) {
-                for (int i = 0; i < 3; ++i)
-                    if (ImGui::Selectable(labels[i], i == static_cast< int >(current)))
-                        A::setVisibility(cameras, static_cast< A::Visibility >(i));
-                ImGui::EndCombo();
+            bool visible = current != A::Visibility::None;
+            if (ImGui::Checkbox(cameras ? "Cameras" : "Areas", &visible)) {
+                A::setVisibility(cameras, visible ? A::Visibility::All : A::Visibility::None);
             }
-            if (ImGui::IsItemHovered())
-                ImGui::SetTooltip("%s: selection, all, or hidden. Click an outline to select. Shortcut: %s", cameras ? "Camera areas" : "Areas",
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s. %s cycles selection, all, or hidden. Click an outline to select.",
+                                  current == A::Visibility::Selection ? "Showing selected volumes" :
+                                  visible                             ? "Showing all volumes" :
+                                                                        "Volumes hidden",
                                   cameras ? "3" : "2");
-            ImGui::PopID();
+            }
         }
         void dimension(const ModelView& m, RowId row, const char* label, const char* field, float multiplier) {
             const auto hash = columnHash(field);
@@ -110,11 +108,8 @@ namespace PetariEditor::Ui {
             ImGui::PopID();
         }
     }  // namespace
-    void drawAreasToggle() {
-        ImGui::SameLine();
-        visibility(false);
-        ImGui::SameLine();
-        visibility(true);
+    void drawAreasToggle(bool cameras) {
+        visibility(cameras);
     }
     void drawAreasInspector(const ModelView& m, const std::vector< RowId >& rows) {
         if (rows.size() != 1)
