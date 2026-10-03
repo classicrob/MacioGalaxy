@@ -416,6 +416,7 @@ bool Menu::takeLevelRequest(const char** stage, int* mission) {
 }
 
 void Menu::setEditorEnabled(bool enabled) {
+    if (enabled == mEditorEnabled) return;
     mEditorEnabled = enabled;
     int count = 0;
     App::LaunchStage::galaxies(&count);

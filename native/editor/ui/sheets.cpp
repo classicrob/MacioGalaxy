@@ -8,6 +8,7 @@
 
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor/share.hpp>
+#include <petari/editor/catalog.hpp>
 
 #include "imgui.h"
 
@@ -538,6 +539,7 @@ struct NewGalaxyFields {
     std::string planet;
     std::string copyOf;
     std::string music;
+    std::string sky;
     int missions = 1;
     char missionNames[8][48] = {};
     std::string sent;           // after Create: the name it was sent for
@@ -603,6 +605,7 @@ void drawNewGalaxySheet() {
     for (int i = 0; i < 4; i++) {
         if (i > 0) ImGui::SameLine();
         if (ImGui::RadioButton(kFrom[i], gNew.from == i)) gNew.from = i;
+        noteTestTarget((std::string("template:") + kFrom[i]).c_str());
     }
     ImGui::TextColored(kDim, "%s", kFromHelp[gNew.from]);
     if (gNew.from == 1) {
@@ -613,7 +616,27 @@ void drawNewGalaxySheet() {
         choiceList("galaxies", choices.galaxies, nullptr, &gNew.copyOf, 120.0f);
     }
     // 2. Look and sound.
-    drawSection("2  Music");
+    drawSection("2  Sky and music");
+    ImGui::TextUnformatted("Sky");
+    ImGui::SetNextItemWidth(-1.0f);
+    auto skyLabel = [](const std::string& sky) {
+        const auto* info = Catalog::find(sky.c_str());
+        return info && !info->displayName.empty() ? info->displayName : sky;
+    };
+    if (ImGui::BeginCombo("##sky", gNew.sky.empty() ? "Template's" : skyLabel(gNew.sky).c_str())) {
+        if (ImGui::Selectable("Template's", gNew.sky.empty())) gNew.sky.clear();
+        noteTestTarget("sky:template");
+        for (const auto& sky : choices.skies) {
+            ImGui::PushID(sky.c_str());
+            if (ImGui::Selectable(skyLabel(sky).c_str(), gNew.sky == sky)) gNew.sky = sky;
+            noteTestTarget(("sky:" + sky).c_str());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", sky.c_str());
+            ImGui::PopID();
+        }
+        ImGui::EndCombo();
+    }
+    noteTestTarget("combo:New galaxy sky");
+    ImGui::TextUnformatted("Music");
     ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::BeginCombo("##music", gNew.music.empty() ? "Good Egg's" : gNew.music.c_str())) {
         for (const std::string& galaxy : choices.galaxies) {
@@ -621,7 +644,7 @@ void drawNewGalaxySheet() {
         }
         ImGui::EndCombo();
     }
-    ImGui::TextColored(kDim, "Music and sound banks borrowed from that galaxy. Sky and lighting come later.");
+    ImGui::TextColored(kDim, "Music and sound banks borrowed from that galaxy.");
     // 3. Name and missions.
     drawSection("3  Name and missions");
     ImGui::TextUnformatted("Name");
@@ -678,6 +701,7 @@ void drawNewGalaxySheet() {
         command.newGalaxy.planet = gNew.planet;
         command.newGalaxy.copyOf = gNew.copyOf;
         command.newGalaxy.musicFrom = gNew.music;
+        command.newGalaxy.sky = gNew.sky;  // M4: empty retains the template sky.
         for (int m = 0; m < gNew.missions; m++) command.newGalaxy.missions.push_back(gNew.missionNames[m]);
         command.newGalaxy.discardUnsaved = discard || (gSubmitNewGalaxy && unsaved);
         enqueue(std::move(command));

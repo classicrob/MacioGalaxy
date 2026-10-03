@@ -6,6 +6,7 @@
 #include "panels.hpp"
 #include "missions.hpp"
 #include "journal.hpp"
+#include "galaxy_info.hpp"
 #include "help.hpp"
 #include "imgui_internal.h"
 #include "paths.hpp"
@@ -461,14 +462,85 @@ void testMissionInput() {
     Core::setModel(nullptr);
 }
 
+void testGalaxyInfoInput() {
+    namespace Ui = PetariEditor::Ui;
+    static std::optional<GalaxyInfo> info;
+    static NewGalaxyChoices choices;
+    choices.galaxies = {"EggStarGalaxy", "HeavenlyBeachGalaxy"};
+    info = GalaxyInfo{};
+    info->internalName = "TestModGalaxy";
+    info->mod = "TestMod";
+    info->name = "Test Galaxy";
+    info->missions = {"First star"};
+    info->musicFrom = "EggStarGalaxy";
+    Core::NewGalaxyServices services;
+    services.choices = []() -> const NewGalaxyChoices& { return choices; };
+    services.galaxyInfo = []() { return info; };
+    services.checkInfo = [](const GalaxyInfo& g) { return g.name.empty() ? std::string("Name is empty") : std::string{}; };
+    services.infoNeedsRestart = [](const GalaxyInfo& g) { return info && g.missions.size() != info->missions.size(); };
+    Core::setNewGalaxyServices(services);
+    Core::drainCommands();
+    auto& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1000, 900);
+    auto draw = [&]() {
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(20, 20));
+        ImGui::SetNextWindowSize(ImVec2(400, 820));
+        ImGui::Begin("Galaxy settings test", nullptr, ImGuiWindowFlags_NoSavedSettings);
+        Ui::drawGalaxyInfoPanel();
+        ImGui::End();
+        ImGui::Render();
+    };
+    auto click = [&](const char* target) {
+        draw(); draw();  // A changed mission count moves the buttons on the next frame.
+        float x = 0, y = 0, w = 0, h = 0;
+        CHECK(Ui::testTargetRect(target, &x, &y, &w, &h));
+        io.AddMousePosEvent(x + w / 2, y + h / 2);
+        draw();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, true); draw();
+        io.AddMouseButtonEvent(ImGuiMouseButton_Left, false); draw();
+    };
+    draw(); draw();
+    click("button:Apply galaxy settings");
+    CHECK(Core::drainCommands().empty());
+    click("button:Add mission");
+    CHECK(Core::drainCommands().empty());
+    click("button:Cancel galaxy settings");
+    click("button:Apply galaxy settings");
+    CHECK(Core::drainCommands().empty());
+    click("button:Add mission");
+    Core::mutableStatus().unsaved = true;
+    draw();
+    click("button:Apply galaxy settings");
+    CHECK(Core::drainCommands().empty());  // Restart cannot silently discard layout edits.
+    click("button:Discard and apply galaxy settings");
+    auto commands = Core::drainCommands();
+    CHECK(commands.size() == 1 && commands[0].kind == Command::Kind::SetGalaxyInfo);
+    if (commands.size() == 1) {
+        const auto& g = commands[0].galaxyInfo;
+        CHECK(g.discardUnsaved && g.missions.size() == 2 && g.missions[0] == "First star");
+        CHECK(g.name == "Test Galaxy" && g.internalName == "TestModGalaxy" && g.mod == "TestMod");
+    }
+    click("button:Discard and apply galaxy settings");
+    CHECK(Core::drainCommands().empty());
+    Core::reportError("Galaxy settings: fixture error"); draw();
+    Core::mutableStatus().unsaved = false;
+    click("button:Apply galaxy settings");
+    commands = Core::drainCommands();
+    CHECK(commands.size() == 1 && !commands[0].galaxyInfo.discardUnsaved);
+    info.reset(); draw();  // Disc galaxies have no panel or stale draft.
+    Core::setNewGalaxyServices({});
+    Core::mutableStatus() = Status{};
+}
+
 void testJournalInput() {
     namespace Ui = PetariEditor::Ui;
-    CHECK(Ui::journalQuestion(1, 100, 120) == "Restore 1 unsaved edit from just now?");
+    CHECK(Ui::journalQuestion(1, 100, 120) == "Restore 1 unsaved edit from a moment ago?");
     CHECK(Ui::journalQuestion(3, 100, 220) == "Restore 3 unsaved edits from 2 minutes ago?");
     CHECK(Ui::journalQuestion(1, 100, 3700) == "Restore 1 unsaved edit from 1 hour ago?");
     CHECK(Ui::journalQuestion(2, 100, 173000) == "Restore 2 unsaved edits from 2 days ago?");
     CHECK(Ui::journalQuestion(1, 0, 120).find("earlier session") != std::string::npos);
-    CHECK(Ui::journalQuestion(1, 200, 120).find("just now") != std::string::npos);
+    CHECK(Ui::journalQuestion(1, 200, 120).find("a moment ago") != std::string::npos);
     FakeModel model;
     Core::setModel(&model);
     Core::setMode(Mode::Off);
@@ -642,6 +714,7 @@ int main() {
     testPathInputCapture();
     testMissionInput();
     testHelpInput();
+    testGalaxyInfoInput();
     testJournalInput();
     ImGui::DestroyContext();
     testPanelsLogic();

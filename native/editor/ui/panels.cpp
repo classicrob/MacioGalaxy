@@ -1,3 +1,4 @@
+#include "galaxy_info.hpp"
 #include "missions.hpp"
 #include "playtest.hpp"
 #include "areas.hpp"
@@ -1038,6 +1039,15 @@ void drawGalaxyWindow(const char* title) {
                 noteTab("Browser");
                 drawBrowser(*model);
                 ImGui::EndTabItem();
+            }
+            if (modGalaxyInfo()) {  // M4: settings exist only for registered mod galaxies.
+                const bool missionsOpen = ImGui::BeginTabItem("Missions", nullptr, flags("Missions"));
+                noteTestTarget("tab:Missions");
+                if (missionsOpen) {
+                    noteTab("Missions");
+                    drawGalaxyInfoPanel();
+                    ImGui::EndTabItem();
+                }
             }
             const int changeCount = static_cast< int >(collectChanges(*model).size());
             char changesLabel[32];
