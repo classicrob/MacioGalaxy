@@ -66,7 +66,7 @@ add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
 
 # The session core behind edit_api.hpp. No game or SDK dependency, so it is unit-tested alone.
-add_library(petari_editor_core STATIC placement/placement.cpp array/array.cpp playtest/playtest.cpp areas/areas.cpp areas/camera_preview.cpp gravity/gravity.cpp paths/paths.cpp paths/paths_view.cpp runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp
+add_library(petari_editor_core STATIC placement/placement.cpp array/array.cpp playtest/playtest.cpp areas/areas.cpp areas/camera_preview.cpp gravity/gravity.cpp paths/paths.cpp paths/paths_view.cpp runtime/edit_api_core.cpp runtime/runtime_hooks.cpp runtime/catalog.cpp runtime/share_mods.cpp runtime/model_ops.cpp
     ${_petari_catalog_cpp})
 target_include_directories(petari_editor_core PUBLIC include PRIVATE runtime)
 target_link_libraries(petari_editor_core PUBLIC petari_editor_formats petari_editor_share petari_native_config petari_host_runtime)
