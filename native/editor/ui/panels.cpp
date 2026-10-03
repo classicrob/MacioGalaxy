@@ -1,3 +1,4 @@
+#include "playtest.hpp"
 #include "areas.hpp"
 // The level editor's M1 panels (panels.hpp).
 #include "panels.hpp"
@@ -1104,6 +1105,7 @@ void drawInspectorWindow(const char* title) {
                 transformRow(*model, rows, "Rotation", "dir_", 0.5f);
                 transformRow(*model, rows, "Scale", "scale_", 0.01f);
             }
+            drawPlaytestInspector(rows);  // M3 play-test: Keep and its disabled reason.
             drawAreasInspector(*model, rows);    // M3 areas: dimensions and camera preview.
             drawGravityInspector(*model, rows);  // M3 gravity: shape, range and priority.
             drawPathsInspector(*model, rows);  // M3 paths: points and link sockets.

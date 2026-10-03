@@ -14,6 +14,7 @@
 #include "../app/smoke_goodegg.hpp"
 #include "../app/smoke_replay.hpp"
 #include "petari/milestone.hpp"
+#include "petari/test_server_gate.hpp"
 
 namespace Smoke = PetariNative::App::Smoke;
 using Smoke::Button;
@@ -2471,6 +2472,14 @@ void testReplay() {
 }
 
 int main() {
+    check(!PetariNative::testServerReady(false, nullptr, true), "disabled test server never dispatches");
+    check(PetariNative::testServerReady(true, nullptr, false), "normal private save dispatches without smoke");
+    check(PetariNative::testServerReady(true, "", false), "empty smoke variable is normal play");
+    check(!PetariNative::testServerReady(true, "stage", false), "stage smoke waits for checks");
+    check(PetariNative::testServerReady(true, "stage", true), "stage smoke tail dispatches");
+    for (const char* mode : {"goodegg", "soak", "domes", "replay", "movement", "title", "story"}) {
+        check(!PetariNative::testServerReady(true, mode, false), std::string("server cannot interrupt smoke ") + mode);
+    }
     testHappyPath();
     testTitleRetries();
     testTitleBgmStall();
