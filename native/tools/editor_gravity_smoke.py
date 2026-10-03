@@ -25,8 +25,8 @@ def main():
                PETARI_EDITOR_GRAVITY_TEST=str(trigger),
                PETARI_EDITOR_GRAVITY_SHOT=str(output / "gravity.png"),
                PETARI_SURFACE_DUMP=str(output / "surfaces"),
-               PETARI_SURFACE_DUMP_LABELS="idle", PETARI_SURFACE_DUMP_SPAN="5000",
-               PETARI_SURFACE_DUMP_EVERY="100")
+               PETARI_SURFACE_DUMP_LABELS="gravity-edited,gravity-dead", PETARI_SURFACE_DUMP_SPAN="15",
+               PETARI_SURFACE_DUMP_EVERY="5")
     server = [sys.executable, str(TOOLS / "test_server.py")]
     try:
         subprocess.run(server + ["start", "--app", str(args.app.resolve()), "--dir", str(directory),

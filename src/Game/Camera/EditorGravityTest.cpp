@@ -14,6 +14,7 @@
 #include <petari/editor_pick.hpp>
 #include <petari/editor_settings.hpp>
 #include <petari/host_allocation.hpp>
+#include <petari/efb_dump_mark.hpp>
 #include <petari/screenshot.hpp>
 #include <petari/smoke_phase.hpp>
 #include <string>
@@ -159,6 +160,7 @@ namespace EditorGravity {
             enqueue(std::move(c));
         }
         if (step == 1 && frame == 165) {
+            PetariNative::EfbDump::mark("gravity-edited");
             if (actorForRow(row) == original || !actorForRow(row))
                 return fail("Shape edit did not replace field");
             if (static_cast< GlobalGravityObj* >(original)->getGravity()->mAppeared)
@@ -239,6 +241,7 @@ namespace EditorGravity {
             }
         }
         if (step == 1 && frame == 440) {
+            PetariNative::EfbDump::mark("gravity-dead");
             if (Gravity::view().deadGround.empty())
                 return fail("Uncovered ground was not marked red");
             const auto& problems = checks();
