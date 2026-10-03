@@ -116,11 +116,13 @@ namespace PetariEditor::Ui {
         std::array< ImTextureID, 16 > gTextures{};
         std::array< bool, 16 > gTextureValid{};
         std::shared_ptr< I::Scene > gTextureSource;
+        std::shared_ptr< I::Asset > gTextureAsset;
         void previewTextures() {
-            if (gTextureSource == gScene || !Host::makeTexture()) {
+            if ((gTextureSource == gScene && gTextureAsset == gAsset) || !Host::makeTexture()) {
                 return;
             }
             gTextureSource = gScene;
+            gTextureAsset = gAsset;
             gTextureValid.fill(false);
             if (!gScene) {
                 return;
@@ -142,6 +144,13 @@ namespace PetariEditor::Ui {
                             rgba[(size_t(y) * w + x) * 4 + c] =
                                 image.rgba[(size_t(y * image.height / h) * image.width + x * image.width / w) * 4 + c];
                         }
+                    }
+                }
+                if (gAsset && m < gAsset->materials.size() && gAsset->materials[m].texture.format == I::TextureFormat::I8) {
+                    for (size_t i = 0; i < rgba.size(); i += 4) {
+                        const unsigned value = (77 * rgba[i] + 150 * rgba[i + 1] + 29 * rgba[i + 2] + 128) >> 8;
+                        rgba[i] = rgba[i + 1] = rgba[i + 2] = value;
+                        rgba[i + 3] = 255;
                     }
                 }
                 if (!gTextures[m]) {
@@ -171,7 +180,7 @@ namespace PetariEditor::Ui {
             }
             const I::Vec3 center{(lo.x + hi.x) / 2, (lo.y + hi.y) / 2, (lo.z + hi.z) / 2};
             const float extent = std::max({hi.x - lo.x, hi.y - lo.y, hi.z - lo.z, 160.f});
-            const float zoom = std::min(size.x * .68f, size.y * .7f) / extent;
+            const float zoom = std::min(size.x * .62f, size.y * .55f) / extent;
             auto rotate = [&](I::Vec3 p) {
                 p = {p.x - center.x, p.y - center.y, p.z - center.z};
                 const float x = std::cos(gYaw) * p.x + std::sin(gYaw) * p.z, z = -std::sin(gYaw) * p.x + std::cos(gYaw) * p.z;
@@ -316,8 +325,8 @@ namespace PetariEditor::Ui {
             for (const auto& m : gAsset->materials) {
                 texture += m.texture.data.size();
             }
-            ImGui::TextWrapped("%zu parts  |  %zu triangles\n%zu collision triangles  |  %.2f MiB textures", gAsset->parts.size(), triangles,
-                               collision, texture / 1048576.0);
+            ImGui::TextWrapped("%zu part%s  |  %zu triangles\n%zu collision triangles  |  %.2f MiB textures", gAsset->parts.size(),
+                               gAsset->parts.size() == 1 ? "" : "s", triangles, collision, texture / 1048576.0);
             for (const auto& warning : gAsset->warnings) {
                 ImGui::TextWrapped("%s", warning.c_str());
             }

@@ -47,6 +47,7 @@ namespace PetariEditor::Imports {
                 c.category = Catalog::Category::Planet;
                 c.curated = true;
                 c.keepable = true;
+                c.bakesScale = true;
                 c.hasCollision = !asset.parts[i].collision.indices.empty();
                 c.liveRecreate = "safe";
                 Catalog::addClass(std::move(c));

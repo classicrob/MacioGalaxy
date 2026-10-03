@@ -11,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <petari/boot.hpp>
+#include <petari/editor/catalog.hpp>
 #include <petari/editor/import_assets.hpp>
 #include <petari/editor/terrain/kcl_reader.hpp>
 #include <petari/editor/terrain/kcl_writer.hpp>
@@ -261,6 +262,22 @@ int main() {
         options.scale = 100;
         options.collision = I::Collision::Mesh;
         auto asset = I::prepare(*wedge, options, &error);
+        I::loadLibrary(dir.string(), {});
+        const auto libraryId = I::storeAsset(*asset, &error);
+        check(!libraryId.empty() && I::findAsset(libraryId), "import persists neutral reusable library asset");
+        PetariEditor::AddRow first;
+        first.id = PetariEditor::newRowId();
+        first.zone = 2;
+        first.table = "jmp/placement/common/objinfo";
+        first.cells.push_back(
+            {PetariEditor::columnHash("name"), PetariEditor::Cell{PetariEditor::CellType::StringOffset, 0, 0, I::className(libraryId, 0)}});
+        PetariEditor::Op placement;
+        placement.adds.push_back(first);
+        I::appendPlacementParts(placement, first);
+        check(placement.adds.size() == asset->parts.size() && placement.adds[1].zone == 2 && placement.adds[1].id != first.id,
+              "Browser model placement includes all material splits in one op");
+        const auto* info = PetariEditor::Catalog::find(I::className(libraryId, 0).c_str());
+        check(info && info->bakesScale, "generated import catalog declares exact XYZ collision scale");
         const auto encoded = I::serialize(*asset);
         const auto id = I::contentId(encoded);
         F::CellValue name;

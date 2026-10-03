@@ -114,8 +114,8 @@ std::vector< Check > computeChecks(const ModelView& m) {
 
                 // Collision can't stretch (CollisionParts::makeEqualScale): a solid object scaled
                 // unevenly draws stretched but collides with one scale on every axis.
-                // (Not terrain brushes: their scale goes into the mesh they bake, a planet at scale 1.)
-                if (pInfo != nullptr && pInfo->hasCollision && name != "EditorBrush") {
+                // Generated parts bake scale into their mesh, a planet at scale 1.
+                if (pInfo != nullptr && pInfo->hasCollision && !pInfo->bakesScale) {
                     const RowTransform t = m.transform(row);
                     const float x = t.scale.x;
                     if (std::fabs(t.scale.y - x) > 0.001f || std::fabs(t.scale.z - x) > 0.001f) {
