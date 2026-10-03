@@ -385,6 +385,14 @@ namespace {
         EditModel& m = *s.model;
         int zone = 0, table = 0;
         if (!m.locate(id, &zone, &table)) {
+            // Undoing an insertion removes the row identity entirely.
+            for (RowUpdater updater : gRowUpdaters) {
+                if (updater(id, JMapInfoIter())) {
+                    break;
+                }
+            }
+            retireRow(id);
+            s.pending.erase(id);
             return;
         }
         const std::string path = m.tablePath(zone, table);
