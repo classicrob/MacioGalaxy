@@ -116,6 +116,14 @@ The runner records source and binary hashes, captures both new objects, stops it
 server and removes its fixture cache. `native_editor_placement` covers catalog
 metadata, typed link resets, donor preservation, and destination-layer visibility.
 
+### Arrival: wait for `settled` before an input plan
+
+A stage entry (a normal launch, `warp`, `reload`) reports `playable` while Mario is still landing: a plan started then begins from a position that is not
+the arrival (seen on a normal native launch: 120 neutral frames, then the first walk started 270 units from where `status` first reported Mario). Use
+`status` (`settled=<n>`: consecutive frames Mario has stood still on the ground in normal play, 0 during a demo, a wipe or movement) or
+`send --dir <dir> settle [frames=60] [timeout=1800]`, which replies `ok ...` once Mario has been settled for `frames` game frames (`error not settled`
+after `timeout` frames). The input command does not wait for it by itself.
+
 ### Editor help
 
 `native/tools/editor_help_smoke.py --app <Petari> --output build/<your-help-run>`

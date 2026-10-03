@@ -6,9 +6,11 @@
 #include "Game/Scene/TestServerEditor.hpp"
 #include "Game/Scene/TestServerReplay.hpp"
 #include <petari/agent_replay.hpp>
+#include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/DemoUtil.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
+#include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/Scene/TestServerInput.hpp"
 #include "Game/System/GalaxyStatusAccessor.hpp"
@@ -21,6 +23,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -54,7 +57,14 @@ namespace {
         s32 serialBefore = 0;
         bool leftScene = false;  // the old scene went away (not in normal play) at least once
         bool isReload = false;   // done when PetariEditor::Runtime::reloading() clears
+        bool isSettle = false;   // done when Mario has been settled for settleNeed frames
+        s32 settleNeed = 0;
+        s32 settleLeft = 0;      // frames until it gives up
     };
+    // Arrival: how many frames in a row Mario has stood still on the ground in normal play (no demo, no wipe). A stage entry
+    // reports "playable" while Mario is still landing/being placed; a plan started then begins from a position that is not the arrival.
+    s32 gSettledFrames = 0;
+    float gLastPos[3] = {};
     bool gHavePending = false;
     Pending gPending;
     s32 gFramesPlayable = 0;
@@ -84,6 +94,7 @@ namespace {
             std::snprintf(buf, sizeof(buf), " mario=(%.0f,%.0f,%.0f)", p->x, p->y, p->z);
             out << buf;
         }
+        out << " settled=" << gSettledFrames;
         return out.str();
     }
 
@@ -138,6 +149,25 @@ namespace {
             reply(name, "error not in normal play (retry)");
             return true;
         }
+        if (w[0] == "pos" && (w.size() == 4 || w.size() == 6)) {
+            // Mario at a world position (and facing a direction in x/z), the camera reset behind him:
+            // a route's exact start (camera-relative inputs need the camera too).
+            const TVec3f at(static_cast< f32 >(std::atof(w[1].c_str())), static_cast< f32 >(std::atof(w[2].c_str())),
+                            static_cast< f32 >(std::atof(w[3].c_str())));
+            MR::setPlayerPosAndWait(at);
+            if (w.size() == 6) {
+                TVec3f front(static_cast< f32 >(std::atof(w[4].c_str())), 0.0f, static_cast< f32 >(std::atof(w[5].c_str())));
+                const f32 length = std::sqrt(front.x * front.x + front.z * front.z);
+                if (length > 0.0f) {
+                    front.x /= length;
+                    front.z /= length;
+                    MR::setPlayerFrontVec(front, 0);
+                }
+            }
+            MR::resetCameraMan();
+            reply(name, "ok pos " + w[1] + " " + w[2] + " " + w[3]);
+            return true;
+        }
         if (w[0] == "warp" && w.size() >= 2) {
             // The move code crashes on a stage it does not know: reject unknown stages and scenarios here.
             const ScenarioData* pData = ScenarioDataFunction::getScenarioDataParser()->getScenarioData(w[1].c_str());
@@ -164,6 +194,18 @@ namespace {
             PetariNative::PlayerLaunch::warpPending.store(true);  // GameScene::update does the galaxy move when pause is permitted
             gHavePending = true;
             gFramesPlayable = 0;
+            return false;
+        }
+        if (w[0] == "settle") {
+            // settle [frames=60] [timeout=1800]: replies once Mario has stood still on the ground for `frames` game frames.
+            gPending = Pending{};
+            std::snprintf(gPending.name, sizeof(gPending.name), "%s", name.c_str());
+            std::snprintf(gPending.what, sizeof(gPending.what), "%s", line.c_str());
+            gPending.settleNeed = w.size() >= 2 ? std::max(1, std::atoi(w[1].c_str())) : 60;
+            gPending.settleLeft = w.size() >= 3 ? std::max(1, std::atoi(w[2].c_str())) : 1800;
+            gPending.since = nowMs();
+            gPending.isSettle = true;
+            gHavePending = true;
             return false;
         }
         if (w[0] == "reload") {
@@ -212,6 +254,18 @@ namespace TestServer {
             std::fprintf(stderr, "[test-server] alive: beat %d action %d pending %d stage %s\n", sBeat, actionNerve, gHavePending,
                          EditorScene::stageName() != nullptr ? EditorScene::stageName() : "-");
         }
+        {
+            const bool standing = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isWipeActive() &&
+                                  !MR::isWipeBlank() && !MR::isPlayerDead() && MR::isOnGroundPlayer();
+            if (standing) {
+                const TVec3f* p = MR::getPlayerPos();
+                const float dx = p->x - gLastPos[0], dy = p->y - gLastPos[1], dz = p->z - gLastPos[2];
+                gSettledFrames = (dx * dx + dy * dy + dz * dz < 0.25f) ? gSettledFrames + 1 : 0;
+                gLastPos[0] = p->x, gLastPos[1] = p->y, gLastPos[2] = p->z;
+            } else {
+                gSettledFrames = 0;
+            }
+        }
         if (TestServerInput::pending()) {
             // One step per frame; commands (status, cancel, ...) keep dispatching while a plan runs.
             std::string inputName, inputText;
@@ -221,6 +275,18 @@ namespace TestServer {
         }
         const bool playable = actionNerve && MR::isExistSceneObj(SceneObj_MarioHolder) && !MR::isDemoActive() && !MR::isPlayerDead();
         if (TestServerEditor::tick(playable, reply)) {
+            return;
+        }
+        if (gHavePending && gPending.isSettle) {
+            if (gSettledFrames >= gPending.settleNeed) {
+                char text[200];
+                std::snprintf(text, sizeof(text), "ok %s after %.0f ms", statusText().c_str(), nowMs() - gPending.since);
+                reply(gPending.name, text);
+                gHavePending = false;
+            } else if (--gPending.settleLeft <= 0) {
+                reply(gPending.name, "error not settled: " + statusText());
+                gHavePending = false;
+            }
             return;
         }
         if (gHavePending && gPending.isReload) {

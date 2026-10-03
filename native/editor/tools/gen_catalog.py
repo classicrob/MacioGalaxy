@@ -199,12 +199,18 @@ def main():
     if tables_path.is_file():
         doc = json.loads(tables_path.read_text())
         tables, collision = doc["tables"], {a.lower() for a in doc.get("collision", [])}
+        boxes = {a.lower(): b for a, b in doc.get("collisionBoxes", {}).items()}
         for entry in out:
             if entry["name"] in tables:
                 entry["table"] = tables[entry["name"]]
             # Collision when one of its archives (or the name's own) holds a .kcl.
             if any(a.lower() in collision for a in entry["archives"] + [entry["name"]]):
                 entry["hasCollision"] = True
+            # The collision box: of its own-named archive first, else the first archive with one.
+            for a in [entry["name"]] + entry["archives"]:
+                if a.lower() in boxes:
+                    entry["collisionBox"] = boxes[a.lower()]
+                    break
     target = ROOT / "native/editor/catalog/generated.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]

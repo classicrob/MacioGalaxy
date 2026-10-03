@@ -2,7 +2,7 @@
 """Persistent test server client: one background Petari stays up and takes commands (src/Game/Scene/TestServer.cpp).
 
   native/tools/test_server.py start --app <Petari> [--stage EggStarGalaxy --scenario 1] [--dir build/test-server/<name>]
-  native/tools/test_server.py send  --dir <dir> status | warp <Stage> [<scenario>] | reload [start] | quit
+  native/tools/test_server.py send  --dir <dir> status | warp <Stage> [<scenario>] | reload [start] | settle [frames] [timeout] | pos <x> <y> <z> [<front_x> <front_z>] | quit
   native/tools/test_server.py stop  --dir <dir>
   native/tools/test_server.py input --dir <dir> [--log f.csv] --steps '[{"frames":60,"stick":[0,1],"buttons":["A"],"press":false}, ...]'
   native/tools/test_server.py route --dir <dir> <route.csv> [--log f.csv] [--from N] [--frames N]

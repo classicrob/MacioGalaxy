@@ -1135,9 +1135,12 @@ void tick(bool playable) {
         if (s.checkedRevision == 0) {
             // The first pass is the galaxy as loaded: quirks of the shipped data (a class the game
             // ignores, a switch only one object uses) are its own, not the user's.
+            // Except a mod galaxy's own ("galaxy-" keys): what's left to make it playable shows at once.
             s.baselineChecks.clear();
             for (const Check& c : all) {
-                s.baselineChecks.insert(c.key);
+                if (c.key.rfind("galaxy-", 0) != 0) {
+                    s.baselineChecks.insert(c.key);
+                }
             }
         }
         std::vector< Check >& shown = Core::mutableChecks();

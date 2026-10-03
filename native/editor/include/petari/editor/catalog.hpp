@@ -84,6 +84,10 @@ struct ClassInfo {
     std::string liveRecreate;  // Own-row sweep: safe, suspect, unsafe; empty = not classified.
     bool keepable = false;     // the placed transform is the actor's (UX "Keep"); false for rail riders, children
     bool hasCollision = false;
+    // The box its collision fills, in model units at scale 1 (x, y, z min then max), from the disc's
+    // KCL: the footprint and anchor the Browser and Inspector show. hasCollisionBox false: unknown.
+    bool hasCollisionBox = false;
+    std::array< float, 6 > collisionBox{};
     bool bakesScale = false;  // generated geometry rebuilds collision at the row's full XYZ scale
     std::vector< std::string > archives;  // archives it loads (ObjectData/<name>.arc)
     std::string thumbnailArchive;  // the model to render for its thumbnail

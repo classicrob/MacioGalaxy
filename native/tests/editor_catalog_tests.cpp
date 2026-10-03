@@ -111,6 +111,13 @@ int main() {
     testJson();
     testCatalog();
     testBrushClass();
+    {
+        // The collision box from the disc's KCL: StrongBlock is a 150 cube anchored at its bottom centre.
+        const C::ClassInfo* pBlock = C::find("StrongBlock");
+        check(pBlock && pBlock->hasCollisionBox && pBlock->collisionBox[1] > 0.0f && pBlock->collisionBox[1] < 1.0f &&
+                  pBlock->collisionBox[4] > 149.0f && pBlock->collisionBox[3] > 74.0f,
+              "StrongBlock's collision box");
+    }
     std::printf("editor catalog: %d checks passed (%zu classes)\n", checks, C::classes().size());
     return 0;
 }

@@ -514,6 +514,10 @@ void testGameResolution() {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // These tests check drawn pixels, with a pipeline cache emptied below: under the default policy a draw whose pipeline is still
+  // compiling (more than ~6 ms) is skipped, which reads as "the rectangle is not drawn". Blocking waits for every pipeline
+  // (same cause as native_rfl_render's cold-cache failures). Set before the first pipeline lookup.
+  setenv("PETARI_PIPELINE_POLICY", "blocking", 1);
   // A fresh state directory each run: no pipeline cache from earlier runs, so
   // first-use pipelines are compiled here as in a first game launch.
   const auto state = std::filesystem::temp_directory_path() / "petari-present-tests";
