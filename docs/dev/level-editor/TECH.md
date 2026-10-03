@@ -1044,3 +1044,9 @@ The open questions are resolved; the user took every recommendation (SUMMARY.md 
     - Builders register before `ModFolder::setPatchBuilder` in `native/app/platform_host.cpp`.
   - **Size:** Good Egg with a move, a delete, a duplicate and a new layer's table comes to 5 ops, 2.6 KB.
   - **Tests:** `native_editor_model` (round trip on the synthetic galaxy and Good Egg, re-save over the built mod, two-mod merge, another disc refused, the loader cache) and `native_mod_folder` (claiming and precedence). Live: `editor_save_smoke.py` saves Full archives, saves again as a patch over them, then starts with the mod: the loader builds the archive and the Octoomba stands 600 units up.
+- **Share and Install** (`editor/share`; UX 17; `petari/editor/share.hpp`, wrappers in `edit_api.hpp`):
+  - **Export:** `shareMod(modName, info, zipPath)` puts the sheet's name/author/version/description/needs into the mod's `mod.txt` (other lines kept) and writes `preview.png`. It then zips the folder as `<Name>/...`, leaving out host clutter.
+  - **Inspect:** `inspectModZip` gives the Install sheet its preview: title, author, version, needs, screenshot, galaxies changed (from `edits/*.json` and `galaxy.json`), archives touched, whether it's an editor mod, and whether `files/` carries game data.
+  - **Install:** `installModZip(zip, replace)` unpacks into `<user>/mods/<Name>` through a staging folder and turns the mod on.
+    - It refuses paths escaping the folder, zips that aren't one mod folder, more than 2 GB, and an installed folder of the same name unless `replace`.
+  - **Zip format:** our own (deflate via zlib, CRC-checked on read; no zip64 or encryption). The system's `unzip` accepts our zips (`native_editor_share`).
