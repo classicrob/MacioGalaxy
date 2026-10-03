@@ -10,6 +10,9 @@
 #include "imgui.h"
 
 #include <cctype>
+#include <filesystem>
+#include <fstream>
+#include <vector>
 #include <cstdio>
 #include <string>
 
@@ -25,6 +28,34 @@ bool gFullArchives = false; // the session's format
 char gNameField[64] = {};
 bool gFullField = false;
 bool gSubmit = false;       // the test driver's "Save" press
+std::string gSettingsFile;  // <user>/editor/ui-settings.txt: the last mod per galaxy (Save sheet defaults)
+
+// "mod.<galaxy>=<name>|<0 patch, 1 full>" lines.
+std::string readSetting(const std::string& key) {
+    std::ifstream in(gSettingsFile);
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.rfind(key + "=", 0) == 0) return line.substr(key.size() + 1);
+    }
+    return "";
+}
+
+void writeSetting(const std::string& key, const std::string& value) {
+    if (gSettingsFile.empty()) return;
+    std::vector< std::string > lines;
+    {
+        std::ifstream in(gSettingsFile);
+        std::string line;
+        while (std::getline(in, line)) {
+            if (line.rfind(key + "=", 0) != 0 && !line.empty()) lines.push_back(line);
+        }
+    }
+    lines.push_back(key + "=" + value);
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(gSettingsFile).parent_path(), ec);
+    std::ofstream out(gSettingsFile, std::ios::trunc);
+    for (const std::string& line : lines) out << line << "\n";
+}
 
 void save(const std::string& name, bool fullArchives) {
     Command command{Command::Kind::SaveMod};
@@ -33,6 +64,9 @@ void save(const std::string& name, bool fullArchives) {
     enqueue(std::move(command));
     gModName = name;
     gFullArchives = fullArchives;
+    if (const ModelView* model = PetariEditor::model()) {
+        writeSetting(std::string("mod.") + model->galaxy(), name + "|" + (fullArchives ? "1" : "0"));
+    }
 }
 
 }  // namespace
@@ -72,13 +106,26 @@ void submitSaveSheet() { gSubmit = true; }
 
 void openSaveSheet() { requestSave(true); }
 
+void setSettingsFile(const char* path) { gSettingsFile = path != nullptr ? path : ""; }
+
 void drawSaveSheet() {
     const ModelView* model = PetariEditor::model();
     if (gOpenSave) {
         gOpenSave = false;
-        const std::string name = !gModName.empty() ? gModName : defaultModName(model != nullptr ? model->galaxy() : nullptr);
+        // The session's mod, else the last one saved for this galaxy, else one named after it.
+        std::string name = gModName;
+        bool full = gFullArchives;
+        if (name.empty() && model != nullptr) {
+            const std::string remembered = readSetting(std::string("mod.") + model->galaxy());
+            const size_t bar = remembered.rfind('|');
+            if (!remembered.empty()) {
+                name = remembered.substr(0, bar);
+                full = bar != std::string::npos && remembered.substr(bar + 1) == "1";
+            }
+        }
+        if (name.empty()) name = defaultModName(model != nullptr ? model->galaxy() : nullptr);
         std::snprintf(gNameField, sizeof(gNameField), "%s", name.c_str());
-        gFullField = gFullArchives;
+        gFullField = full;
         ImGui::OpenPopup("Save mod");
     }
     const ImVec2 center = ImGui::GetMainViewport()->GetCenter();

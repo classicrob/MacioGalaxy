@@ -198,9 +198,53 @@ void drawRawTables(const ModelView& model, int zone, const std::vector< RowId >&
     }
 }
 
+std::string gOutlinerQuery;
+
+// The Outliner searched: every placed row whose name (display or class) contains the query, by zone.
+void drawOutlinerMatches(const ModelView& model, const std::vector< RowId >& selected) {
+    int shown = 0;
+    for (int zone = 0; zone < model.zoneCount() && shown < 300; zone++) {
+        if (!model.zonePlaced(zone)) continue;
+        bool header = false;
+        for (int table = 0; table < model.tableCount(zone) && shown < 300; table++) {
+            const char* path = model.tablePath(zone, table);
+            Kind kind;
+            if (!kindOfTable(path, &kind) || kind == Kind::Paths) continue;
+            model.forEachRow(zone, table, [&](RowId row) {
+                const char* name = model.objectName(row);
+                if (shown >= 300 || (!matchesQuery(rowName(model, row), gOutlinerQuery) && !matchesQuery(name != nullptr ? name : "", gOutlinerQuery))) return;
+                if (!header) {
+                    header = true;
+                    ImGui::TextColored(kDim, "%s", model.zoneName(zone));
+                }
+                ImGui::PushID(zone);
+                outlinerRow(model, row, selected, layerTag(path));
+                ImGui::PopID();
+                shown++;
+            });
+        }
+    }
+    if (shown == 0) ImGui::TextDisabled("Nothing matches.");
+    if (shown >= 300) ImGui::TextDisabled("First 300 shown; type more to narrow it.");
+}
+
 void drawOutliner(const ModelView& model, const std::vector< RowId >& selected) {
-    ImGui::Checkbox("Raw tables", &gRawTables);
+    // Search (names and classes: "hard" finds the HardBlocks), then the tree in its own scroll region, so the
+    // tabs above stay put.
+    char query[64];
+    std::snprintf(query, sizeof(query), "%s", gOutlinerQuery.c_str());
+    ImGui::SetNextItemWidth(-90.0f);
+    if (ImGui::InputTextWithHint("##find", "Find (name or class)", query, sizeof(query))) gOutlinerQuery = query;
+    noteTestTarget("field:Find");
+    ImGui::SameLine();
+    ImGui::Checkbox("Raw", &gRawTables);
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Advanced: the zone archives' tables as they are on the disc");
+    ImGui::BeginChild("outliner-list", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+    if (!gOutlinerQuery.empty() && !gRawTables) {
+        drawOutlinerMatches(model, selected);
+        ImGui::EndChild();
+        return;
+    }
     for (int zone = 0; zone < model.zoneCount(); zone++) {
         if (!model.zonePlaced(zone)) continue;
         ImGui::PushID(zone);
@@ -263,6 +307,7 @@ void drawOutliner(const ModelView& model, const std::vector< RowId >& selected) 
         }
         ImGui::PopID();
     }
+    ImGui::EndChild();
 }
 
 // ---- Changes --------------------------------------------------------------------------------------
@@ -711,6 +756,15 @@ std::vector< const Check* > orderChecks(const std::vector< Check >& all) {
 
 void openTab(const char* name) { gOpenTab = name; }
 
+bool matchesQuery(const std::string& text, const std::string& query) {
+    if (query.empty()) return true;
+    auto lower = [](std::string v) {
+        for (char& c : v) c = static_cast< char >(std::tolower(static_cast< unsigned char >(c)));
+        return v;
+    };
+    return lower(text).find(lower(query)) != std::string::npos;
+}
+
 namespace {
 struct TargetRect {
     float x, y, w, h;
@@ -926,11 +980,13 @@ void drawGalaxyWindow(const char* title) {
                 if (ImGui::RadioButton("History", sHistory)) sHistory = true;
                 ImGui::SameLine();
                 ImGui::TextColored(kDim, "Cmd+Z / Cmd+Shift+Z");
+                ImGui::BeginChild("changes-list", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
                 if (sHistory) {
                     drawHistory(*model);
                 } else {
                     drawChanges(*model);
                 }
+                ImGui::EndChild();
                 ImGui::EndTabItem();
             }
             const CheckCounts counts = countChecks(checks());
@@ -943,7 +999,9 @@ void drawGalaxyWindow(const char* title) {
             if (counts.errors > 0) ImGui::PopStyleColor();
             if (checksOpen) {
                 noteTab("Checks");
+                ImGui::BeginChild("checks-list", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
                 drawChecks(*model);
+                ImGui::EndChild();
                 ImGui::EndTabItem();
             }
             ImGui::EndTabBar();

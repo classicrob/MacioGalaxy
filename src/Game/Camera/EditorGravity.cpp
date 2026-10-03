@@ -194,6 +194,7 @@ namespace {
         bool baselineSealed = false;
         std::set< RowId > baselineGround;
         std::map< const LiveActor*, std::string > bindingConfig;
+        std::map<PlanetGravity*, std::uint64_t> colorKeys;
     };
     State& state() {
         PetariNative::HostAllocationScope host;
@@ -404,6 +405,7 @@ namespace EditorGravity {
         if (s.scene != Hooks::sceneSerial() || s.revision != (model() ? model()->revision() : 0)) {
             if (s.scene != Hooks::sceneSerial()) {
                 s.bindingConfig.clear();
+                s.colorKeys.clear();
                 s.checkSignature.clear();
             }
             s.scene = Hooks::sceneSerial();
@@ -437,6 +439,7 @@ namespace EditorGravity {
                 continue;
             auto f = describe(g);
             f.row = rows[g];
+            f.colorKey = s.colorKeys.emplace(g, s.colorKeys.size() + 1).first->second;
             f.name += " #" + std::to_string(g->mGravityId >= 0 ? g->mGravityId : i + 1);
             s.view.fields.push_back(std::move(f));
         }
@@ -502,48 +505,85 @@ namespace EditorGravity {
         s.pickLines.clear();
         if (G::visible()) {
             auto selected = PetariNative::EditorPick::selection();
+            PetariNative::EditorPick::Item hovered;
+            const bool hasHover = PetariNative::EditorPick::hover(&hovered);
+            s.view.hoveredIdentity = 0;
+            auto selectedField = [&](const G::Field& f) {
+                return std::any_of(selected.begin(), selected.end(), [&](const auto& item) { return item.row && item.row == f.row.v; });
+            };
+            const bool hasSelectedField = std::any_of(s.view.fields.begin(), s.view.fields.end(), selectedField);
             for (auto& f : s.view.fields) {
-                bool isSelected = std::any_of(selected.begin(), selected.end(), [&](const auto& item) { return item.row && item.row == f.row.v; });
-                auto mesh = G::geometry(f, isSelected);
+                bool isSelected = selectedField(f);
+                bool isHovered = hasHover && hovered.row && hovered.row == f.row.v;
+                if (isHovered) s.view.hoveredIdentity = f.identity;
+                auto mesh = G::geometry(f, isSelected, isHovered, hasSelectedField);
+                if (!isSelected && !isHovered) {
+                    const float anchorDistance = length(sub(s.view.probe.position,c.eye));
+                    const float fade = std::clamp(anchorDistance / std::max(1.0f,length(sub(f.center,c.eye))),0.15f,1.0f);
+                    for (auto& line : mesh.lines)
+                        line.color = (line.color & 0xffffff) | (static_cast<unsigned>((line.color >> 24)*fade) << 24);
+                }
                 if (f.row.valid())
                     s.pickLines.emplace_back(f.row, mesh.lines);
                 s.mesh.lines.insert(s.mesh.lines.end(), mesh.lines.begin(), mesh.lines.end());
                 s.mesh.triangles.insert(s.mesh.triangles.end(), mesh.triangles.begin(), mesh.triangles.end());
             }
             double seconds = std::chrono::duration< double >(std::chrono::steady_clock::now().time_since_epoch()).count();
-            // Each field has a few flow samples; the denser cursor grid below resolves overlaps.
-            for (const auto& field : s.view.fields) {
-                if (!field.active)
-                    continue;
-                float r = std::max(150.0f, field.radius * 1.2f);
-                for (Vec3 offset : {Vec3{r, 0, 0}, Vec3{-r, 0, 0}, Vec3{0, r, 0}, Vec3{0, -r, 0}, Vec3{0, 0, r}, Vec3{0, 0, -r}}) {
-                    Vec3 p = add(field.center, offset);
-                    auto pull = probe(p, false);
-                    if (!pull.covered)
-                        continue;
-                    float phase = static_cast< float >(std::fmod(seconds * 0.6 + field.identity % 31 / 31.0, 1.0));
-                    p = add(p, mul(pull.direction, phase * std::min(r / 4, 200.0f)));
-                    auto winner =
-                        std::find_if(s.view.fields.begin(), s.view.fields.end(), [&](const auto& f) { return f.identity == pull.winnerIdentity; });
-                    D::arrow(s.mesh, p, add(p, mul(pull.direction, std::min(r / 5, 180.0f))), c.up,
-                             winner != s.view.fields.end() ? G::color(winner->shape, 220) : 0xffe0e0e0);
+            std::vector<Vec3> arrowScreens;
+            auto flow = [&](Vec3 point, const G::Field* expected) {
+                const float depth = dot(sub(point, c.eye), c.forward);
+                if (depth < 10 || arrowScreens.size() >= 32) return;
+                const float size = std::clamp(depth * 0.035f, 30.0f, 350.0f);
+                auto pull = probe(point, false);
+                if (!pull.covered || (expected && pull.winnerIdentity != expected->identity)) return;
+                const float phase = static_cast<float>(std::fmod(seconds * 0.5, 1.0));
+                point = add(point, mul(pull.direction, (phase - 0.5f) * size * 0.5f));
+                pull = probe(point, false);
+                if (!pull.covered || (expected && pull.winnerIdentity != expected->identity)) return;
+                float x, y;
+                if (!c.project(point, &x, &y) || std::fabs(x) > 0.95f || std::fabs(y) > 0.92f) return;
+                for (auto screen : arrowScreens)
+                    if (std::hypot((x-screen.x)*c.aspect, y-screen.y) < 0.24f) return;
+                auto winner = std::find_if(s.view.fields.begin(), s.view.fields.end(),
+                    [&](const auto& field) { return field.identity == pull.winnerIdentity; });
+                if (winner == s.view.fields.end()) return;
+                auto* gravity = reinterpret_cast<PlanetGravity*>(winner->identity);
+                TVec3f own;
+                float distance = 0;
+                if (!gravity->calcOwnGravityVector(&own, &distance, tv(point))) return;
+                const float fade = G::flowFade(*winner, point, distance);
+                const bool focused = selectedField(*winner) || winner->identity == s.view.hoveredIdentity;
+                const unsigned alpha = static_cast<unsigned>((focused ? 230 : hasSelectedField ? 105 : 175) * fade);
+                if (alpha < 12) return;
+                arrowScreens.push_back({x,y,0});
+                D::arrow(s.mesh, point, add(point, mul(pull.direction, size)), c.up,
+                         G::fieldColor(*winner, alpha), focused ? 2.5f : 1.5f);
+            };
+            // Sparse boundary samples reveal each field's flow only where that field wins.
+            std::vector<const G::Field*> ordered;
+            for (const auto& field : s.view.fields) if (field.active) ordered.push_back(&field);
+            std::stable_sort(ordered.begin(), ordered.end(), [&](const auto* a, const auto* b) {
+                if (selectedField(*a) != selectedField(*b)) return selectedField(*a);
+                return length(sub(a->center,c.eye)) < length(sub(b->center,c.eye));
+            });
+            for (const auto* field : ordered) {
+                if (arrowScreens.size() >= 24) break;
+                const auto outline = G::geometry(*field);
+                const size_t stride = std::max<size_t>(1, outline.lines.size()/10);
+                for (size_t i=0; i<outline.lines.size(); i+=stride) {
+                    const Vec3 p = outline.lines[i].a;
+                    flow(add(p, mul(unit(sub(p,field->center)), std::max(40.0f,field->radius*0.12f))), field);
                 }
             }
-            Vec3 anchor = s.view.probe.position;
-            float span = std::clamp(length(sub(anchor, c.eye)) * 0.25f, 250.0f, 1800.0f);
-            for (int a = -3; a <= 3; a++)
-                for (int b = -3; b <= 3; b++) {
-                    Vec3 p = add(anchor, D::point(c.right() * (a * span / 3) + c.screenUp() * (b * span / 3)));
-                    auto pull = probe(p, false);
-                    if (!pull.covered)
-                        continue;
-                    Vec3 v = pull.direction;
-                    float phase = std::fmod(seconds * 0.6f + (a + 3) * 0.13f + (b + 3) * 0.19f, 1.0f);
-                    p = add(p, mul(v, phase * span / 3));
-                    auto winner =
-                        std::find_if(s.view.fields.begin(), s.view.fields.end(), [&](const auto& f) { return f.identity == pull.winnerIdentity; });
-                    D::arrow(s.mesh, p, add(p, mul(v, span / 7)), c.up, winner != s.view.fields.end() ? G::color(winner->shape, 240) : 0xffe0e0e0, 2);
+            // A few surface samples show the combined pull across overlapping volumes.
+            for (int y=0; y<3; ++y) for (int x=0; x<4; ++x) {
+                Vec3 p,n;
+                RowId row;
+                if (groundAt(c.eye,c.ray(-0.72f+x*0.48f,-0.55f+y*0.55f),&p,&n,&row)) {
+                    const float lift = std::clamp(length(sub(p,c.eye))*0.035f,40.0f,350.0f);
+                    flow(add(p,mul(n,lift)),nullptr);
                 }
+            }
             for (auto& d : s.view.deadGround) {
                 auto n = D::vector(unit(d.normal));
                 auto x = Gizmo::normalized(Gizmo::cross(n, {0, 1, 0}), {1, 0, 0});
@@ -562,7 +602,7 @@ namespace EditorGravity {
     }
     void draw() {
         if (G::visible())
-            D::draw(state().mesh, 0.04f);
+            D::draw(state().mesh, 0.015f);
     }
     bool bounds(const LiveActor* actor, float center[3], float* radius) {
         if (!isGlobal(actor))
