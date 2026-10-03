@@ -210,7 +210,8 @@ void GameScene::update() {
     }
     // The level editor's Edit mode: the same rule, and never over photo mode.
     if (!EditorCamera::isActive() && !PhotoCamera::isActive() &&
-        EditorCamera::takeEnterRequest(isPermitToPauseMenu() && isNerve(GET_NERVE(GameScene, GameSceneAction)))) {
+        EditorCamera::takeEnterRequest((isPermitToPauseMenu() || EditorPlaytest::missPending()) &&
+                                      isNerve(GET_NERVE(GameScene, GameSceneAction)))) {
         EditorCamera::start();
         setNerve(GET_NERVE(GameScene, GameSceneEditMode));
     }

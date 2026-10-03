@@ -4,6 +4,8 @@
 #include "Game/MapObj/PowerStar.hpp"
 #include "Game/MapObj/PowerStarHolder.hpp"
 #include "Game/NPC/EventDirector.hpp"
+#include "Game/Player/MarioAccess.hpp"
+#include "Game/Player/MarioActor.hpp"
 #include "Game/Util.hpp"
 #include <cmath>
 #include <cstdio>
@@ -34,7 +36,7 @@ namespace EditorPlaytest {
         static PowerStar* star = nullptr;
         static bool hadStar = false;
         static double personalTime;
-        static int personalDeaths;
+        static int personalDeaths, livesAtMiss;
         static std::string personalRecord;
         if (!trigger || step == 999)
             return;
@@ -189,9 +191,80 @@ namespace EditorPlaytest {
         } else if (step == 10 && mode() == Mode::Playing && playable && frame > 15) {
             if (view.frames >= pausedFrames || view.cleared || Hooks::sceneSerial() == runScene)
                 return fail("new Play did not reset scene and run");
-            Runtime::requestEdit("Play-test checks passed");
+            runScene = Hooks::sceneSerial();
+            const auto gravity = *MR::getPlayerGravity();
+            TVec3f side;
+            MR::getPlayerSideVec(&side);
+            MR::forceJumpPlayer(TVec3f(-gravity.x * 24 + side.x * 8, -gravity.y * 24 + side.y * 8, -gravity.z * 24 + side.z * 8));
+            advance(11);
+        } else if (step == 11 && frame > 45 && playable) {
+            livesAtMiss = MR::getPlayerLeft();
+            const auto noticeSerial = status().noticeSerial;
+            MR::forceKillPlayerByAbyss();
+            if (status().noticeSerial == noticeSerial || status().notice.find("Missed at ") != 0 || MR::isPlayerDead())
+                return fail("fall did not intercept immediately before the miss demo");
+            advance(12);
+        } else if (step == 12 && frame >= 2) {
+            if (mode() != Mode::Editing)
+                return fail("accepted miss did not open Edit within two frames");
+            if (!view.missed || view.running || view.samples < 30 || Hooks::sceneSerial() != runScene)
+                return fail("miss lost the trail or reloaded the scene");
+            if (MR::getPlayerLeft() != livesAtMiss || status().notice.find("Missed at ") != 0)
+                return fail("miss consumed a life or omitted the result toast");
+            pausedFrames = view.frames;
+            PetariNative::EfbDump::mark("playtest-missed");
+            std::fprintf(stderr, "[editor-playtest] immediate fall interception PASS: %s; %zu samples\n", status().notice.c_str(), view.samples);
+            advance(13);
+        } else if (step == 13 && frame > 30) {
+            if (view.frames != pausedFrames || Hooks::sceneSerial() != runScene)
+                return fail("missed run continued while in Edit");
+            play(PlayFrom::Resume);
+            advance(14);
+        } else if (step == 14 && mode() == Mode::Playing && playable && frame > 15) {
+            if (view.missed || view.frames >= pausedFrames || Hooks::sceneSerial() == runScene)
+                return fail("Resume after death did not start a fresh playable world");
+            runScene = Hooks::sceneSerial();
+            const auto noticeSerial = status().noticeSerial;
+            MR::forceKillPlayerByGroundRace();
+            if (status().noticeSerial == noticeSerial || status().notice.find("Missed at ") != 0 || MR::isPlayerDead())
+                return fail("forced death did not intercept immediately");
+            advance(15);
+        } else if (step == 15 && frame >= 2) {
+            if (mode() != Mode::Editing)
+                return fail("accepted miss did not open Edit within two frames");
+            if (!view.missed || view.running || Hooks::sceneSerial() != runScene || MR::getPlayerLeft() != livesAtMiss)
+                return fail("forced death lost the scene, trail or life");
+            std::fprintf(stderr, "[editor-playtest] immediate forced-death interception PASS\n");
+            play(PlayFrom::Resume);
+            advance(16);
+        } else if (step == 16 && mode() == Mode::Playing && playable && frame > 15) {
+            runScene = Hooks::sceneSerial();
+            const auto noticeSerial = status().noticeSerial;
+            MarioAccess::getPlayerActor()->forceGameOverBlackHole();
+            if (status().noticeSerial == noticeSerial || status().notice.find("Missed at ") != 0 || MR::isPlayerDead())
+                return fail("black-hole death did not intercept before its animation");
+            advance(17);
+        } else if (step == 17 && frame >= 2) {
+            if (mode() != Mode::Editing)
+                return fail("accepted miss did not open Edit within two frames");
+            if (!view.missed || view.running || Hooks::sceneSerial() != runScene || MR::getPlayerLeft() != livesAtMiss)
+                return fail("black-hole miss lost scene, trail or life");
+            std::fprintf(stderr, "[editor-playtest] immediate black-hole interception PASS\n");
+            play(PlayFrom::Resume);
+            advance(18);
+        } else if (step == 18 && mode() == Mode::Playing && playable && frame > 15) {
+            runScene = Hooks::sceneSerial();
+            MarioAccess::getPlayerActor()->setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOverSink));
+            if (!MR::isPlayerDead())
+                return fail("direct death-nerve fixture was not dying");
+            advance(19);
+        } else if (step == 19 && frame >= 2) {
+            if (mode() != Mode::Editing || !view.missed || view.running || Hooks::sceneSerial() != runScene)
+                return fail("first-step death fallback could not freeze dying Mario");
+            if (MR::getPlayerLeft() != livesAtMiss)
+                return fail("direct death nerve consumed a life");
             std::fprintf(stderr,
-                         "[editor-playtest] PASS: trail, gravity-relative peak, pause/resume, Keep/undo, star interception, fresh-world reset\n");
+                         "[editor-playtest] PASS: trail, peaks, Keep/undo, star, fresh world, fall/death/black-hole, dying-player freeze, retry\n");
             step = 999;
         }
     }

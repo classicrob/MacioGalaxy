@@ -36,6 +36,7 @@ extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgb
 #include <petari/pipeline_startup.hpp>
 #include <petari/mods.hpp>
 #include <petari/editor/terrain/bake.hpp>
+#include <petari/editor/import_assets.hpp>
 #include <petari/platform/mod_folder.hpp>
 #include <petari/platform/mod_galaxy.hpp>
 #include <petari/progress.hpp>
@@ -819,6 +820,7 @@ int main(int argc, char** argv) {
         const char* editorEnv = std::getenv("PETARI_EDITOR");
         if (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::LevelEditor) && !(editorEnv != nullptr && editorEnv[0] == '1')) {
             PetariEditor::Terrain::registerPatchBuilder();
+            PetariEditor::Imports::registerPatchBuilder();  // M6 import: neutral assets become native planets.
         }
     }
     if (!App::Host::preparePlatform(paths, &error)) {

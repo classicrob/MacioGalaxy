@@ -347,6 +347,7 @@ These follow UX section 3, agreed between UX and tech.
   - Teleport: the play marker dropped along gravity; the smoke's `PETARI_STAGE_WARP` shows the warp path.
 - **Return to Edit** freezes only; the played state stays visible. Edits made there still go to rows and re-create their actors; the spike re-created actors in a scene that had been playing for 1,000 frames. Played-state caveats are shown, not prevented: switches on, collected items dead, Mario's state.
 - **Trail.** `EditorPlaytest` records Mario at the game-frame seam into a 3,600-sample ring. Returning to Edit draws dotted, depth-tested segments coloured by ground, air, dive or cap-bounce state. Gold diamonds mark peaks along local gravity. Begin resets the run; Resume retains it and breaks the line across time spent in Edit; End clears it. The elapsed timer continues after the ring wraps.
+- **Miss.** Native death entry points call Runtime's miss handlers before death camera, animation or event work; first-step death-nerve hooks cover direct nerve changes. `EditorPlaytest::miss` adds the terminal sample and red marker, pauses the trail, and calls `requestEditAfterMiss` with a `Missed at m:ss` notice. Edit preserves this scene; the next Play or Resume rebuilds from the marker. The normal game follows its original death path.
 - **Keep.** Copies a live actor's transform into its row, for classes the catalog marks as placement-owned (not rail riders, children, or actors that re-derive their position; the spike saw one snap back).
 - **Save isolation.** During an edit session NAND writes go to `<user>/editor/scratch-NAND` (the native NAND is a host folder). On Power Star contact, `EditorPlaytest::collectStar` intercepts the first step of `PowerStar::exeStageClearDemo`, before progress writes or the star-get sequence. It releases Mario, retires the star and requests Edit with a `Cleared in m:ss` notice. Normal play follows the original path.
 - **Mission switch.** `requestGalaxyMove` to the same stage and another scenario (Level Select's path, `src/Game/Scene/GameScene.cpp:191-202`), skipping the intro. 2-4 s.
@@ -866,6 +867,50 @@ Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefo
 **Without the game.** `petari_editor_terrain` and `petari_editor_terrain_catalog` need no runtime: brush meshes and fits, the KCL writer and reader (`readKcl`, `raycast`: triangles as KCollisionServer::getPos rebuilds them), the model writer, the bake, and the brush class and Check (`brushClassInfo`, `brushChecks` from rows). The headless tools use them.
 
 **Checks.** A brush over 16,000 triangles warns (`brush-tris:<row>`, a provider in Runtime's Checks engine). Galaxy-level Checks (missions > 8, stars > 7, launch-star paths > 16, name rules) are Runtime's (5.7).
+
+### 6.6 M6 static model import
+
+`petari_editor_import` reads OBJ, glTF and GLB with pinned MIT copies of tinyobjloader,
+cgltf and meshoptimizer (versions and licenses in `native/editor/import/vendor`). It reads
+local sibling files and embedded buffers/images; it never fetches network resources. Node
+transforms, mirrored winding, UV sets, texture transforms and meshoptimizer-compressed
+buffer views are applied. Animation, skinning and morph targets import as static/rest
+geometry with a warning. The imported look uses base colour and its texture, not the full
+PBR material graph.
+
+**Sheet and reusable parts.** Drop a model onto the window while editing, or choose
+Import model from the Browser or editor title menu. The sheet loads and prepares on a host
+worker thread. Its orbitable source-texture preview includes an approximate Mario-sized
+reference and the origin. Scale, up axis, origin, collision mode, LOD, optional downward
+box gravity, and each material's look/surface are chosen before placement. The native file
+panel uses the shared asynchronous Host dialog callback. The first Browser card places all
+material/collision splits together in one op; individual split cards remain available.
+
+**Portable assets.** Each prepared model is a versioned, bounded `.pmodel` containing user
+vertices, normals, UVs, surface codes, GX texture data and LOD meshes. A disc material is
+only a palette reference. Neutral assets live in `<user>/editor/imports/<content-id>.pmodel`
+and referenced assets are copied into `<mod>/assets/models`. Placement rows use
+`EditorModel_<content-id>_<part-index>`; undo removes the rows while retaining the reusable
+library asset. The source file is not needed to reopen or share a saved mod.
+
+**Geometry and limits.** Materials and triangle chunks produce parts of at most 16,000
+triangles, so the KCL normal/index budget is respected. Collision can use the full mesh,
+a meshoptimizer simplification, an AABB hull, a separate model or none. Textures encode to
+CMPR, RGB5A3 or I8; Auto chooses CMPR for opaque images and RGB5A3 when alpha is present.
+Images over 1024 pixels are reduced; the sheet warns above the recommended 512-pixel
+texture budget. Checks report missing assets, more than 64 distinct imported parts, and
+more than 64k imported triangles in a zone for the current mission. A single import is
+limited to 64 parts. Simplification preserves collision borders and material boundaries.
+
+**Runtime and save.** `Runtime::GeneratedRowProvider` supplies owns/sync/retire/beginScene;
+TerrainSync and ImportSync are clients. Imported parts use EditorTerrain's collision/model
+actors, including a null-collision path for decorative models. The row's full XYZ scale is
+baked into the vertices and KCL; `ClassInfo::bakesScale` exempts these generated parts from
+the game's ordinary uneven-collision Check. ModelIO's `Assets::Provider` supplies
+load/save/bake/ownsFile, composing bakers over the files produced by previous providers.
+The imported model baker writes BMD/KCL/PA planet archives, Middle/Low archives and
+PlanetMapDataTable entries. The patch loader invokes it only with the editor off; editing
+keeps the neutral rows and creates the same geometry live. Both paths call `buildPart`.
 
 ## 7. Milestones
 

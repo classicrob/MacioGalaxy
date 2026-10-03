@@ -31,8 +31,8 @@ void syncBrush(const EditModel& model, RowId id);
 void retireBrush(RowId id);
 
 /// After every scene build (SceneSync's bindPlacements): forgets the previous scene's parts and
-/// creates every brush row of the placed zones' active layers.
-void sceneBound(const EditModel& model);
+/// releases their collision buffers. The generated-row registry then syncs active rows.
+void beginScene();
 
 /// The brush's triangle count (0: not a live brush), for the Checks (a KCL holds about 16k).
 std::size_t triangleCount(RowId id);

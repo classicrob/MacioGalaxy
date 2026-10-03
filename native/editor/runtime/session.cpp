@@ -4,11 +4,12 @@
 
 #include "checks.hpp"
 #include "edit_model.hpp"
-#include "runtime_core.hpp"
+#include "import_sync.hpp"
 #include "model_io.hpp"
+#include "new_galaxy_session.hpp"
+#include "runtime_core.hpp"
 #include "save_mod.hpp"
 #include "terrain_sync.hpp"
-#include "new_galaxy_session.hpp"
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/paths.hpp>
 
@@ -43,8 +44,10 @@ namespace {
     std::vector< LiveUpdater > gLiveUpdaters;
     std::vector< RowPreviewHandler > gRowPreviewHandlers;
     std::vector< RowUpdater > gRowUpdaters;
+    std::vector< GeneratedRowProvider > gGeneratedProviders;
     bool gChecksInvalid = false;
     std::vector< PlayListener > gPlayListeners;
+    std::vector< MissHandler > gMissHandlers;
 
     // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
     // are spent by every creation, retired fields included, until the next scene build.
@@ -67,6 +70,7 @@ namespace {
         std::uint32_t boundScene = 0;
         std::map< const void*, std::map< int, RowId > > placementRows;
         std::map< RowId, std::vector< LiveActor* > > actors;  // every actor a row made, first first
+        std::map< RowId, bool (*)(const char*) > generatedOwners;
         std::set< RowId > pending;                             // edits that need a reload
         std::vector< std::unique_ptr< LiveRow > > liveRows;
         std::set< RowId > previewing;
@@ -85,6 +89,7 @@ namespace {
         bool inPlay = false;       // a play-test run is on (Begin/Resume told, ToEdit not yet)
         bool hadRun = false;       // a run began this session (Resume continues it; with none, Resume is a Begin)
         bool scenePlayed = false;  // this scene has been played since it was built (a fresh Play rebuilds it)
+        bool missed = false;       // Edit froze a miss: the next Play or Resume starts a fresh run
         std::uint64_t checkedRevision = 0;
         std::set< std::string > baselineChecks;  // the problems the galaxy has as shipped: not reported
     };
@@ -103,6 +108,9 @@ namespace {
         }
         s.inPlay = event == PlayEvent::Begin || event == PlayEvent::Resume;
         s.hadRun = event == PlayEvent::End ? false : (s.hadRun || event == PlayEvent::Begin);
+        if (event == PlayEvent::End || event == PlayEvent::Begin) {
+            s.missed = false;
+        }
         s.scenePlayed = s.scenePlayed || s.inPlay;
     }
 
@@ -130,13 +138,19 @@ namespace {
         s.checkedRevision = 0;
         // Shared with the headless tools (model_io.hpp): the catalog, terrain's brush class, the
         // disc's planets, then the model.
-        s.model = ModelIO::load(pStage, scenario, PetariNative::Platform::ModFolder::userDirectory().string(), TerrainSync::registerWithEditor,
-                                &error, &catalogError);
+        s.model = ModelIO::load(
+            pStage, scenario, PetariNative::Platform::ModFolder::userDirectory().string(),
+            [] {
+                TerrainSync::registerWithEditor();
+                ImportSync::registerWithEditor();
+            },
+            &error, &catalogError);
         if (!catalogError.empty()) {
             Core::reportError("Catalog: " + catalogError);
         }
         s.suspectNotices.clear();
         s.actors.clear();
+        s.generatedOwners.clear();
         s.placementRows.clear();
         s.pending.clear();
         s.boundScene = 0;
@@ -286,6 +300,7 @@ namespace {
         Session& s = session();
         s.scenePlayed = false;
         s.actors.clear();
+        s.generatedOwners.clear();
         s.placementRows.clear();
         s.liveRows.clear();
         Hooks::clearRailTables();
@@ -334,7 +349,36 @@ namespace {
             bound++;
         }
         s.boundScene = Hooks::sceneSerial();
-        TerrainSync::sceneBound(*s.model);  // brush rows: placement made nothing for them
+        for (const auto& provider : gGeneratedProviders) {
+            if (provider.beginScene) {
+                provider.beginScene();
+            }
+        }
+        const EditModel& model = *s.model;
+        for (int zone = 0; zone < model.zoneCount(); ++zone) {
+            if (!model.zonePlaced(zone)) {
+                continue;
+            }
+            const auto layers = model.activeLayers(zone, model.scenario());
+            for (int table = 0; table < model.tableCount(zone); ++table) {
+                const int layer = model.tableLayer(zone, table);
+                if (!endsWith(model.tablePath(zone, table), "/objinfo") || layer < 0 || !(layers & (1u << layer))) {
+                    continue;
+                }
+                model.forEachRow(zone, table, [&](RowId id) {
+                    if (model.state(id) == RowState::Deleted) {
+                        return;
+                    }
+                    for (const auto& provider : gGeneratedProviders) {
+                        if (provider.owns(model.objectName(id))) {
+                            s.generatedOwners[id] = provider.owns;
+                            provider.sync(model, id);
+                            break;
+                        }
+                    }
+                });
+            }
+        }
         std::fprintf(stderr, "[editor] bound %d rows to their actors\n", bound);
         if (Core::uiCallbacks().sceneRebuilt != nullptr) {
             Core::uiCallbacks().sceneRebuilt();
@@ -342,8 +386,11 @@ namespace {
     }
 
     void retireRow(RowId id) {
-        TerrainSync::retireBrush(id);  // nothing unless the row was a brush
+        for (const auto& provider : gGeneratedProviders) {
+            provider.retire(id);
+        }
         Session& s = session();
+        s.generatedOwners.erase(id);
         auto it = s.actors.find(id);
         if (it != s.actors.end()) {
             for (LiveActor* pActor : it->second) {
@@ -399,17 +446,27 @@ namespace {
         }
         const std::string path = m.tablePath(zone, table);
         const int layer = m.tableLayer(zone, table);
-        if (TerrainSync::isBrush(m.objectName(id))) {
-            // Terrain brushes are shown by terrain parts (terrain_sync.cpp), not the factory.
+        for (const auto& provider : gGeneratedProviders) {
+            if (!provider.owns(m.objectName(id))) {
+                continue;
+            }
             const bool shown = m.state(id) != RowState::Deleted && m.zonePlaced(zone) && layer >= 0 &&
                                (m.activeLayers(zone, m.scenario()) & (1u << layer));
             if (shown) {
-                TerrainSync::syncBrush(m, id);
+                const auto previous = s.generatedOwners.find(id);
+                if (previous == s.generatedOwners.end() || previous->second != provider.owns) {
+                    retireRow(id);
+                }
+                s.generatedOwners[id] = provider.owns;
+                provider.sync(m, id);
             } else {
                 retireRow(id);
             }
             s.pending.erase(id);
             return;
+        }
+        if (s.generatedOwners.count(id)) {
+            retireRow(id);
         }
         const bool gravity = isGravityTable(path);
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
@@ -601,10 +658,11 @@ namespace {
         Session& s = session();
         if (from == PlayFrom::MissionStart) {
             startReload(Session::After::PlayStart);
-        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed)) {
+        } else if (!s.pending.empty() || (from == PlayFrom::Marker && s.scenePlayed) || s.missed) {
             // Edits to rebuild, or a fresh run in a scene already played (UX 3: collected and
             // defeated objects, switches and Mario's state reset; only Resume keeps them).
-            startReload(from == PlayFrom::Marker ? Session::After::PlayMarker : Session::After::PlayStart);
+            startReload(from == PlayFrom::Marker || s.missed ? Session::After::PlayMarker : Session::After::PlayStart);
+            s.missed = false;
         } else {
             // Nothing needs a reload: unfreeze where we are (and put Mario on the marker).
             if (Core::uiCallbacks().leaveEdit != nullptr) {
@@ -769,6 +827,7 @@ void newGalaxyTestTick();  // new_galaxy_test.cpp: New Galaxy across its restart
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
 void areasTestTick();
 void arrayTestTick();
+void importTestTick();
 void ensureTestTick();  // ensure_test.cpp: ensureModel in Play (PETARI_EDITOR_ENSURE_TEST)
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
@@ -816,6 +875,31 @@ void registerPlayListener(PlayListener listener) {
     if (std::find(gPlayListeners.begin(), gPlayListeners.end(), listener) == gPlayListeners.end()) gPlayListeners.push_back(listener);
 }
 
+void registerMissHandler(MissHandler handler) {
+    PetariNative::HostAllocationScope host;  // the list outlives scenes
+    if (std::find(gMissHandlers.begin(), gMissHandlers.end(), handler) == gMissHandlers.end()) gMissHandlers.push_back(handler);
+}
+
+bool playerMissing(const char* event) {
+    if (mode() != Mode::Playing) {
+        return false;
+    }
+    for (MissHandler handler : gMissHandlers) {
+        if (handler(event)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool requestEditAfterMiss(const char* reason) {
+    if (!requestEdit(reason)) {
+        return false;
+    }
+    session().missed = true;
+    return true;
+}
+
 bool requestEdit(const char* reason) {
     if (mode() != Mode::Playing) {
         return false;
@@ -861,6 +945,17 @@ void registerRowPreviewHandler(RowPreviewHandler handler) {
         gRowPreviewHandlers.push_back(handler);
     }
 }
+void registerGeneratedRowProvider(GeneratedRowProvider provider) {
+    if (!provider.owns || !provider.sync || !provider.retire) {
+        return;
+    }
+    const auto found =
+        std::find_if(gGeneratedProviders.begin(), gGeneratedProviders.end(), [&](const auto& current) { return current.owns == provider.owns; });
+    if (found == gGeneratedProviders.end()) {
+        gGeneratedProviders.push_back(provider);
+    }
+}
+
 void registerRowUpdater(RowUpdater updater) {
     if (std::find(gRowUpdaters.begin(), gRowUpdaters.end(), updater) == gRowUpdaters.end()) {
         gRowUpdaters.push_back(updater);
@@ -933,6 +1028,7 @@ void tick(bool playable) {
     pathsTestTick();
     areasTestTick();
     arrayTestTick();
+    importTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)
@@ -977,6 +1073,7 @@ void tick(bool playable) {
         s.teleportPending = false;
     }
     drain();
+    ImportSync::placeRequested(*s.model);  // M6 import: one op, then ordinary generated-row sync.
     std::set< RowId > changed;
     {
         PetariNative::HostAllocationScope host;

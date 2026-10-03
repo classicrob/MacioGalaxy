@@ -329,6 +329,7 @@ void testChecks() {
         PetariEditor::Catalog::ClassInfo brush;  // terrain's brush: its scale is baked into the mesh
         brush.name = "EditorBrush";
         brush.hasCollision = true;
+        brush.bakesScale = true;
         PetariEditor::Catalog::addClass(brush);
         setName(solid, "EditorBrush");
         check(m->apply(E::Op{"scale", {setFloat(solid, "scale_y", 0.08f)}, {}}, &error) && !find(E::computeChecks(*m), "uneven-collision:"),

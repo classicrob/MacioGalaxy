@@ -14,6 +14,7 @@
 #include <petari/editor/catalog.hpp>
 #include <petari/editor/edit_api.hpp>
 #include <petari/editor/gizmo_math.hpp>
+#include <petari/editor/import_assets.hpp>
 #include <petari/editor_pick.hpp>
 #include <petari/host_allocation.hpp>
 
@@ -559,10 +560,15 @@ namespace {
         PetariEditor::Command command{PetariEditor::Command::Kind::Apply};
         command.op.label = "Placed " + (info->displayName.empty() ? info->name : info->displayName);
         command.op.adds.push_back(add);
+        PetariEditor::Imports::appendPlacementParts(command.op, add);  // M6 import: preserve all material splits.
+        std::vector< PetariEditor::RowId > placed;
+        for (const auto& row : command.op.adds)
+            placed.push_back(row.id);
         std::fprintf(stderr, "[editor] place %s (new, %s) in %s at (%.0f, %.0f, %.0f)\n", info->name.c_str(), add.table.c_str(),
                      model->zoneName(zone), point.x, point.y, point.z);
         PetariEditor::enqueue(std::move(command));
-        PetariNative::EditorPick::selectRow(add.id.v, PetariNative::EditorPick::Click::Replace);
+        for (size_t i = 0; i < placed.size(); ++i)
+            PetariNative::EditorPick::selectRow(placed[i].v, i ? PetariNative::EditorPick::Click::Add : PetariNative::EditorPick::Click::Replace);
     }
 
     // Cmd+D (UX section 6): a copy of each selected object one step ahead along its gravity frame's front,
