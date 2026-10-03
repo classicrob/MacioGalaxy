@@ -239,8 +239,9 @@ A translucent Mario standing in the scene, with a small arrow for facing.
 
 ### Play-tests don't touch your save
 
-A play-test runs on a scratch copy of the current save file: stars, coins and
-unlocks from a test are thrown away. Collecting a Power Star in a play-test
+A play-test can't change your save: the game doesn't write it while you edit, and
+the stars, coins, lives and unlocks a test earns are put back as they were when you
+leave the editor. Collecting a Power Star in a play-test
 returns immediately to Edit with a "Cleared in 0:42" toast, skipping the star
 cutscene and save prompt. Dying returns to Edit with the
 frame frozen at the moment of death and the trail drawn.
@@ -981,9 +982,8 @@ shape leaves room for it now. Sketch:
   6 Coins", "Linked Goomba → Switch 7"); click a step to go back to it; the
   steps after it stay (greyed) until you make a new change.
 - Play-tests never add steps and never break the history.
-- Play-tests can't touch your save: while you edit, the game's saving goes to a
-  scratch copy in the project, and your save file is exactly as it was when
-  you leave the editor.
+- Play-tests can't touch your save: while you edit, the game doesn't save, and
+  your save file and progress are exactly as they were when you leave the editor.
 - Undo history survives quitting (it's in the journal below).
 
 ### Autosave and the journal
@@ -1231,8 +1231,8 @@ same kind, Missions, Delete, See examples).
   applied to each player's own disc at load) is smaller and contains no
   Nintendo data, but needs our loader to apply it. Proposal: patch by default,
   "full archives" as an option for other tools (TECH.md).
-- **Q6. Play-tests and the save.** Proposal: play-tests use a scratch copy of the
-  save and never save stars. Do you also want a "play it for real" mode that
+- **Q6. Play-tests and the save.** Decided: play-tests never write the save, and their
+  progress is put back when the session ends (no scratch copy is kept). Do you also want a "play it for real" mode that
   plays your mod as the game (with saving), or is enabling the mod and using
   Level Select enough?
 - **Q7. Compare key.** Hold-to-compare wants a key you can hold. Backquote is
