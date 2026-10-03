@@ -77,9 +77,13 @@ double ms(std::chrono::steady_clock::time_point since) {
         const auto originalRow = L::parseRowRef(stock->model(), stockCoin["ref"].asString());
         const int originalIndex = stock->model().discRowIndex(originalRow);
         check(originalIndex >= 0, "original row has a disc index");
+        const Value nextCoin = call(*stock, "get", R"({"ref":"Coin#1"})");
+        const auto survivingRow = L::parseRowRef(stock->model(), nextCoin["ref"].asString());
+        const int survivingIndex = stock->model().discRowIndex(survivingRow);
         check(ok(call(*stock, "apply", R"({"ops":[{"op":"delete","ref":"Coin#0"}]})"), "delete original"), "delete original row for mapping test");
-        check(stock->model().discRowIndex(originalRow) == originalIndex, "disc index survives deletion");
+        check(stock->model().discRowIndex(survivingRow) == survivingIndex, "surviving row keeps its disc index after another deletion");
         check(ok(call(*stock, "undo"), "restore original"), "restore original row");
+        check(stock->model().discRowIndex(originalRow) == originalIndex, "undo restores the original disc index");
         const auto savedOps = call(*stock, "apply", R"({"ops":[{"op":"add","class":"Coin","zone":"DiskGardenZone","pos":[0,70000,0]},{"op":"add","class":"SuperSpinDriver","zone":"DiskGardenZone","pos":[0,71000,0]}]})");
         check(ok(savedOps, "source patch objects"), "source patch created");
         const auto addedRow = L::parseRowRef(stock->model(), savedOps["created"].items()[0]["ref"].asString());
