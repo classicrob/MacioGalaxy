@@ -59,12 +59,14 @@ def main():
     ahead = flat_unit([center[i] - start[i] for i in range(3)], up)
     launch = lv.ground(add(add(start, ahead, 450), up, 300))["point"]      # probes start above the ground
     # The landing: flat open ground on the far side. Probe from high above (an origin inside the tree there
-    # is refused) and keep the first spot whose surface faces up.
+    # is refused) and keep the first spot whose surface faces up at about the start's level.
     side = [ahead[1] * up[2] - ahead[2] * up[1], ahead[2] * up[0] - ahead[0] * up[2], ahead[0] * up[1] - ahead[1] * up[0]]
     landing = None
-    for k, s in [(2900, 0), (2900, 700), (2900, -700), (2600, 700), (2600, -700), (3200, 0)]:
+    for k, s in [(2900, 0), (2900, 700), (2900, -700), (2600, 700), (2600, -700), (3200, 0), (2400, 1000), (2400, -1000), (3200, 900), (3200, -900)]:
         probe = lv.ground(add(add(add(start, ahead, k), side, s), up, 3000))
-        if probe.get("hit") and sum(probe["normal"][i] * up[i] for i in range(3)) > 0.9:
+        # Up-facing and near the planet's surface level (not a tree top or a roof seen from above).
+        level = sum((probe.get("point", start)[i] - start[i]) * up[i] for i in range(3))
+        if probe.get("hit") and sum(probe["normal"][i] * up[i] for i in range(3)) > 0.9 and abs(level) < 500:
             landing = probe["point"]
             break
     assert landing is not None, "no flat landing found"
