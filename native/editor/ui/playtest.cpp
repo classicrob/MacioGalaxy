@@ -34,7 +34,7 @@ namespace PetariEditor::Ui {
         if (ImGui::Checkbox("Show trail", &visible))
             Playtest::setVisible(visible);
         if (ImGui::IsItemHovered())
-            ImGui::SetTooltip("Last 60 seconds: green ground, blue air, orange dive, purple cap bounce. Gold marks jump peaks.");
+            ImGui::SetTooltip("Last 60 seconds: green ground, blue air, orange dive, purple cap bounce. Gold marks jump peaks; red marks a miss.");
     }
     void drawPlaytestInspector(const std::vector< RowId >& rows) {
         const auto view = Playtest::view();
@@ -68,7 +68,10 @@ namespace PetariEditor::Ui {
         else if (!view.keepRows.empty() && !view.keepReason.empty())
             ImGui::Text("K unavailable: %s", view.keepReason.c_str());
         else
-            ImGui::Text("%s%s  |  Trail: %zu samples, %zu %s  |  K keep   Tab play   Cmd+Z undo", view.cleared ? "Cleared in " : "Play-test ",
+            ImGui::Text("%s%s  |  Trail: %zu samples, %zu %s  |  K keep   Tab play   Cmd+Z undo",
+                        view.missed  ? "Missed at " :
+                        view.cleared ? "Cleared in " :
+                                       "Play-test ",
                         Playtest::elapsed(view.frames).c_str(), view.samples, view.peaks, view.peaks == 1 ? "peak" : "peaks");
         return true;
     }
