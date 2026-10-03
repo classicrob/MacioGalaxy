@@ -8,11 +8,12 @@ It is the in-game editor's own core, linked without the game or a renderer:
 
 | | the API uses |
 | --- | --- |
-| loading | `Runtime::loadEditModel`: the disc mounted through `petari_platform_dvd`, with the user's enabled mods if asked |
+| loading | `ModelIO::load`: the disc mounted through `petari_platform_dvd`, with the user's enabled mods if asked |
 | state, ops, undo | `EditModel` (`apply`, `undo`, `redo`, row ids, `patch()`) |
+| paths and switch nets | `Paths` (`addRail`, `linkPath`, its switch checks) |
 | names, args, links | the object `Catalog`: curated names, enum labels, required links, presets |
 | problems | `computeChecks`, with the shipped galaxy's own problems as the baseline (as the in-game Checks) |
-| output | `Runtime::saveMod`: a patch mod (`edits/<Galaxy>.json`, no game data) or Full archives |
+| output | `ModelIO::saveToDirectory`: a patch mod (`edits/<Galaxy>.json`, no game data) or Full archives; then on, as the Save sheet does |
 
 So an edit made here has the same semantics, validation and output as the same edit made in the
 game. stage_edit.py is superseded.
@@ -113,6 +114,8 @@ row in the zone uses; `"@goomba.SW_DEAD"` takes another row's switch (in the sam
 | `duplicate` | copy a row (every field), then edit the copy |
 | `delete`, `revert` | delete rows; put rows back to the disc |
 | `array` | many adds along a `line`, `arc`, `ring`, `grid` or `path` (polyline) |
+| `path` | a rail from world points (`Paths::addRail`): smooth Catmull-Rom handles unless given, `closed`, `on_ground`; label it |
+| `link` | objects' `CommonPath_ID` to a path (`Paths::linkPath`: same zone); `add` takes `"path": "@flight"` too |
 | `fix` | apply a check's automatic fix by its key |
 | `label` | name an existing row |
 | `raw` | a low-level op (the journal's format) |
@@ -209,13 +212,18 @@ vector, else as text; a `{...}` argument merges into the args.
 
 ## Examples
 
+- `examples/launch_star_course.py`: Good Egg mission 1 (Disk Garden's mission-1 layer): a coin
+  trail to a Launch Star on a new path arcing over the planet, an arc of coins along the flight, a
+  Power Star where it lands; first a dry-run probe of the same course in the common layer, which the
+  Checks refuse (mission 2 would have 17 Launch Stars; the game keeps 16 paths).
 - `examples/sling_star_course.py`: Good Egg mission 1, from Mario's start: a coin trail on the
   planet, a Sling Star, a coin column above it and a Power Star at the top (12 objects, one batch).
 - `examples/goomba_switch_garden.py`: on Soramame: a ring of coins, a Goomba whose defeat (a "new"
   switch) makes a 1-Up appear (`"@goomba.SW_DEAD"`), a grid of Star Bits, and a dry-run probe of a
   mistake showing the checks an agent gets back.
-- `examples/live_verify.py`: example 1 in a running game (sync, reload, exact ground vs headless,
-  screenshots, Mario dropped on the Sling Star and traced).
+- `examples/live_verify.py --course sling|launch`: a course in a running game (sync, reload, exact
+  ground vs headless, screenshots; the Sling Star course also drops Mario on the Sling Star and
+  traces his height).
 
 ## Performance
 
@@ -230,8 +238,9 @@ each class's collision once per process.
 - Headless gravity is approximate (above). The ground is the collision of rows with a `.kcl` named
   after their class; objects whose collision comes from another archive (some map parts) are not
   ground headless (`colliders` and its `no_kcl` list show what is).
-- No path, gravity-shape or brush-specific ops yet beyond raw fields: paths use their tables' rows
-  by ref and `fields`; gravity rows take `args`/`fields`; brushes take their named args.
+- Paths: create and link (Paths' ops); moving single points and handles is `fields` on the point
+  rows for now. Gravity rows take `args`/`fields` (no shape op); terrain brushes are unknown to the
+  headless catalog until Terrain's `registerBrushClass` lands (add them with `"force": true`).
 - Mission names come from ScenarioData (Japanese, internal); the pause-menu names need the game's messages.
 - Route playback (a recorded input route) is not wired to the test server yet: verification uses
   warp + trace (positions over frames) instead.
