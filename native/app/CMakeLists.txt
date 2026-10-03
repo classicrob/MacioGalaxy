@@ -54,7 +54,7 @@ if(NOT _petari_app_standalone)
         target_compile_definitions(petari_app_host PRIVATE PETARI_EDITOR_UI=1)
     endif()
 
-    add_executable(petari MACOSX_BUNDLE app_main.cpp smoke_storage.cpp pipeline_cache_dir.cpp latency_report.cpp)
+    add_executable(petari MACOSX_BUNDLE app_main.cpp editor_m4_smoke.cpp smoke_storage.cpp pipeline_cache_dir.cpp latency_report.cpp)
     target_link_libraries(petari PRIVATE petari_app_host petari_app_platform aurora::core aurora::main SQLite::SQLite3)
     if(TARGET petari_editor_ui)
         target_compile_definitions(petari PRIVATE PETARI_EDITOR_UI=1)

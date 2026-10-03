@@ -528,7 +528,31 @@ void testGalaxyInfoInput() {
     click("button:Apply galaxy settings");
     commands = Core::drainCommands();
     CHECK(commands.size() == 1 && !commands[0].galaxyInfo.discardUnsaved);
+    const auto original = info;
     info.reset(); draw();  // Disc galaxies have no panel or stale draft.
+    info = original; draw(); draw();
+    click("field:Galaxy name");
+    const ImGuiKey commandKey = io.ConfigMacOSXBehaviors ? ImGuiMod_Super : ImGuiMod_Ctrl;
+    io.AddKeyEvent(commandKey, true);
+    io.AddKeyEvent(ImGuiKey_A, true); draw();
+    io.AddKeyEvent(ImGuiKey_A, false);
+    io.AddKeyEvent(commandKey, false);
+    io.AddInputCharactersUTF8("  Renamed Galaxy  "); draw();
+    io.AddKeyEvent(ImGuiKey_Enter, true); draw();
+    io.AddKeyEvent(ImGuiKey_Enter, false); draw();
+    Core::mutableStatus().unsaved = true;
+    click("button:Apply galaxy settings");
+    commands = Core::drainCommands();
+    CHECK(commands.size() == 1 && commands[0].galaxyInfo.name == "  Renamed Galaxy  " && !commands[0].galaxyInfo.discardUnsaved);
+    info->name = "Renamed Galaxy";  // Backend normalization must not leave the panel disabled.
+    Core::reportNotice("Saved Renamed Galaxy settings");
+    draw(); draw();
+    Core::mutableStatus().unsaved = false;
+    click("button:Add mission");
+    click("button:Apply galaxy settings");
+    commands = Core::drainCommands();
+    CHECK(commands.size() == 1 && commands[0].galaxyInfo.name == "Renamed Galaxy" && commands[0].galaxyInfo.missions.size() == 2);
+    info.reset(); draw();
     Core::setNewGalaxyServices({});
     Core::mutableStatus() = Status{};
 }

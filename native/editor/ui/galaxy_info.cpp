@@ -10,7 +10,7 @@ namespace PetariEditor::Ui {
         struct Draft {
             GalaxyInfo value, original;
             bool initialized = false, pending = false, restarting = false;
-            std::uint64_t errorSerial = 0;
+            std::uint64_t errorSerial = 0, noticeSerial = 0;
             std::string error;
         } gGalaxy;
 
@@ -43,9 +43,9 @@ namespace PetariEditor::Ui {
             gGalaxy.pending = false;
             gGalaxy.error = st.lastError;
         }
-        if (gGalaxy.pending && !gGalaxy.restarting && same(*current, gGalaxy.value)) {
+        if (gGalaxy.pending && !gGalaxy.restarting && (same(*current, gGalaxy.value) || st.noticeSerial != gGalaxy.noticeSerial)) {
             gGalaxy.pending = false;
-            gGalaxy.original = *current;
+            gGalaxy.value = gGalaxy.original = *current;
         }
         if (!gGalaxy.pending && same(gGalaxy.value, gGalaxy.original))
             gGalaxy.value = gGalaxy.original = *current;
@@ -99,6 +99,7 @@ namespace PetariEditor::Ui {
             gGalaxy.pending = true;
             gGalaxy.restarting = restart;
             gGalaxy.errorSerial = st.errorSerial;
+            gGalaxy.noticeSerial = st.noticeSerial;
             gGalaxy.error.clear();
         };
         if (restart) {
@@ -133,8 +134,10 @@ namespace PetariEditor::Ui {
         noteTestTarget("button:Cancel galaxy settings");
         ImGui::EndDisabled();
         ImGui::EndDisabled();
-        if (!problem.empty())
+        if (!problem.empty()) {
             ImGui::TextWrapped("%s", problem.c_str());
+            noteTestTarget("text:Galaxy settings validation");
+        }
         if (!gGalaxy.error.empty())
             ImGui::TextWrapped("%s", gGalaxy.error.c_str());
         if (gGalaxy.pending)

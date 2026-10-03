@@ -1,3 +1,4 @@
+#include "editor_m4_smoke.hpp"
 extern "C" bool aurora_imgui_update_texture(unsigned long long, unsigned, unsigned, const void*);
 // Native entry point: window, platform start-up, then the game's main loop
 // on this (the macOS main) thread. See docs/dev/INTEGRATION_PLAN.md.
@@ -793,6 +794,7 @@ App::FrameStats::Phase framePhaseForPipelines() {
             std::fprintf(stderr, "[mods-test] shoot press at gameplay frame %ld\n", gameplayFrames);
         }
     }
+    App::editorM4Smoke(gameplay);  // M4: opt-in SDL regression driver.
     return phase;
 }
 
