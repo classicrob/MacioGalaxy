@@ -41,7 +41,7 @@ from petari_level import Level
 lv = Level.init("build/ws/egg", disc="build/game-data/RMGE01", galaxy="EggStarGalaxy", force=True)
 with lv.batch(key="arc", label="Coin arc") as b:
     b.array("Coin", "arc", start=[0, 1200, 0], end=[1500, 1200, 0], peak=600, count=8)
-    b.add("PowerStar", [1800, 1500, 0], on_ground=True, height=200, args={"Star ID": 1}, label="star")
+    b.add("PowerStar", [1800, 1500, 0], on_ground=True, height=200, args={"Star ID": 2}, label="star")
 print(lv.checks())
 lv.save("Coin Arc")
 ```
@@ -79,7 +79,7 @@ several (`select`, which may carry `"expect": n` as a guard).
 the current mission. `zone_pos` / `zone_rot` read and write the row's own values. `up`/`front`
 orient by direction instead of angles; `turn` spins about the object's own up.
 
-**Args by name.** `args` takes the catalog's names (`"Star ID": 1`), enum labels
+**Args by name.** `args` takes the catalog's names (`"Star ID": 2`), enum labels
 (`"Shadow type": "Surface circle"`), `true`/`false` for bools (written 1 / -1: the game's bool
 getter treats anything but -1 as on), `null` for the class default (-1), or raw `Obj_arg0..7`.
 Reading an object shows the same names; `null` means "the class's default".
@@ -126,6 +126,16 @@ row in the zone uses; `"@goomba.SW_DEAD"` takes another row's switch (in the sam
 
 Edit keys (add, set, duplicate, array): `pos`, `zone_pos`, `by`, `rot`, `zone_rot`, `up`, `front`,
 `turn`, `scale`, `args`, `switches`, `links`, `fields`, `on_ground`, `height`, `down`, `align`.
+
+## Power Stars: give each a Star ID of its own
+
+A Power Star's Star ID (`args: {"Star ID": n}`) must be unused in every mission the star appears in.
+A placed star that reuses its mission's Star ID (say mission 1's own star 1) looks fine while editing,
+because editing re-creates it, but after a save and restart only one of the two survives: the
+original wins the game's bookkeeping. The `duplicate-star:<mission>:<id>` check reports it; treat it
+as an error. The working choice is another valid Star ID of the galaxy that the mission doesn't use
+(Good Egg mission 1: ID 2). The trade-off: collecting it counts as that star, and the result screen
+names that star's mission. A galaxy's valid IDs are its missions' (`info` lists them).
 
 ## Placing on the ground
 

@@ -7,7 +7,7 @@
         b.array("Coin", "arc", start=[0, 1200, 0], end=[1500, 1200, 0], peak=600, count=8)
         flight = b.path([[0, 1300, 0], [800, 2600, 0], [1600, 1300, 0]], label="flight")
         b.add("Launch Star", [0, 1200, 0], on_ground=True, height=150, path=flight)
-        star = b.add("PowerStar", pos=[1700, 1400, 0], on_ground=True, height=200, args={"Star ID": 1}, label="star")
+        star = b.add("PowerStar", pos=[1700, 1400, 0], on_ground=True, height=200, args={"Star ID": 2}, label="star")
     print(lv.checks())
     lv.save("Coin Arc")
 
