@@ -3,6 +3,7 @@
 // errors with candidates, the journal's replay, checks and their fixes, and a patch save loaded back.
 // Skipped without the disc.
 #include <petari/editor/level_api.hpp>
+#include <petari/editor/paths.hpp>
 
 #include "edit_model.hpp"
 
@@ -47,13 +48,15 @@ std::string show(const Value& v) {
 }
 
 bool ok(const Value& reply, const std::string& what) {
-    if (!reply["ok"].asBool()) std::fprintf(stderr, "%s: %s\n", what.c_str(), show(reply).c_str());
+        if (!reply["ok"].asBool())
+            std::fprintf(stderr, "%s: %s\n", what.c_str(), show(reply).c_str());
     return reply["ok"].asBool();
 }
 
 bool hasCandidate(const Value& reply, const std::string& text) {
     for (const Value& c : reply["error"]["candidates"].items()) {
-        if (c.asString().find(text) != std::string::npos) return true;
+            if (c.asString().find(text) != std::string::npos)
+                return true;
     }
     return false;
 }
@@ -61,6 +64,119 @@ bool hasCandidate(const Value& reply, const std::string& text) {
 double ms(std::chrono::steady_clock::time_point since) {
     return std::chrono::duration< double, std::milli >(std::chrono::steady_clock::now() - since).count();
 }
+    void testPathEdits(const L::OpenOptions& originalOptions) {
+        auto options = originalOptions;
+        options.user /= "paths";
+        L::Error error;
+        auto level = L::Level::open(options, &error);
+        check(level != nullptr, "path test open: " + error.message);
+        auto& lv = *level;
+        check(
+            ok(call(
+                   lv, "apply",
+                   R"({"ops":[{"op":"path","zone":"DiskGardenZone","points":[[0,400,950],[0,700,950],[0,1000,950]],"smooth":false,"as":"editable"}]})"),
+               "path create"),
+            "create path in rotated zone");
+        const Value original = call(lv, "get", R"({"ref":"@editable"})");
+        Value edits = Value::object(), ops = Value::array(), label = Value::object();
+        label.set("op", "label");
+        label.set("ref", original["points"].items()[0]["ref"]);
+        label.set("as", "first");
+        ops.push(label);
+        ops.push(parse(R"({"op":"insert-point","path":"@editable","segment":0,"as":"mid"})"));
+        ops.push(parse(R"({"op":"delete-point","ref":"@first"})"));
+        edits.set("ops", ops);
+        edits.set("show_op", true);
+        const int cursor = lv.model().historyCursor();
+        Value inserted = lv.call("apply", edits);
+        check(ok(inserted, "insert/delete") && lv.model().historyCursor() == cursor + 1, "mixed insertion/deletion is one undo transaction");
+        Value rail = call(lv, "get", R"({"ref":"@editable"})");
+        check(rail["points"].items().size() == 3 &&
+                  rail["points"].items()[0]["ref"].asString() == call(lv, "get", R"({"ref":"@mid"})")["ref"].asString(),
+              "merged insertion remains before the surviving original point");
+        check(inserted["op"]["adds"].items()[0]["at"].asInt(-1) == 1, "ordered add accounts for rows deleted later by core");
+        check(std::fabs(rail["points"].items()[0]["pos"].items()[1].asNumber() - 550) < 0.1, "de Casteljau midpoint survives world/zone conversion");
+        const Value midpoint = call(lv, "get", R"({"ref":"@mid"})");
+        check(midpoint["kind"].asString() == "path-point" && midpoint.has("in") && midpoint.has("out"),
+              "point get exposes world position and handles");
+        check(ok(call(lv, "undo"), "undo insertion"), "undo mixed path edit");
+        check(show(call(lv, "get", R"({"ref":"@editable"})")) == show(original), "undo restores point order and neighbor handles");
+        check(ok(call(lv, "redo"), "redo insertion"), "redo mixed path edit");
+        check(show(call(lv, "get", R"({"ref":"@editable"})")) == show(rail), "redo restores insertion order");
+        check(ok(call(lv, "apply", R"({"ops":[{"op":"move-point","ref":"@mid","by":[10,20,30]}]})"), "move point"), "move point canonically");
+        const Value moved = call(lv, "get", R"({"ref":"@mid"})");
+        for (const char* key : {"pos", "in", "out"}) {
+            for (int axis = 0; axis < 3; ++axis)
+                check(std::fabs(moved[key].items()[axis].asNumber() - midpoint[key].items()[axis].asNumber() - (axis + 1) * 10) < .1,
+                      "point and both handles move by the world delta");
+        }
+        check(ok(call(lv, "apply", R"({"ops":[{"op":"move-handle","ref":"@mid","handle":"out","by":[40,0,0]}]})"), "move handle"),
+              "move outgoing handle");
+        const Value handle = call(lv, "get", R"({"ref":"@mid"})");
+        check(show(handle["in"]) == show(moved["in"]) &&
+                  std::fabs(handle["out"].items()[0].asNumber() - moved["out"].items()[0].asNumber() - 40) < .1,
+              "moving one handle preserves the other");
+        const auto beforeFailure = lv.journal();
+        Value deletionArgs = Value::object(), deletionOps = Value::array();
+        deletionOps.push(parse(R"({"op":"delete-point","ref":"@mid"})"));
+        Value deleteAnother = Value::object();
+        deleteAnother.set("op", "delete-point");
+        deleteAnother.set("ref", rail["points"].items()[1]["ref"]);
+        deletionOps.push(deleteAnother);
+        deletionArgs.set("ops", deletionOps);
+        Value failure = lv.call("apply", deletionArgs);
+        check(failure["error"]["code"].asString() == "op-failed" && show(lv.journal()) == show(beforeFailure),
+              "minimum-point failure rolls the entire batch back");
+        check(call(lv, "apply", R"({"ops":[{"op":"move-handle","ref":"@mid","handle":"side","by":[1,0,0]}]})")["error"]["code"].asString() ==
+                  "bad-value",
+              "unknown handle is an actionable error");
+        check(call(lv, "apply", R"({"ops":[{"op":"insert-point","path":"@editable","segment":0,"t":0}]})")["error"]["code"].asString() == "bad-value",
+              "insert t outside canonical interval refused");
+        Value distance = call(
+            lv, "apply",
+            R"({"ops":[{"op":"path","points":[[0,2000,0],[900,2000,0],[900,2100,0]],"smooth":false,"as":"distance"},{"op":"array","class":"Coin","along":"@distance","spacing":200,"as":"sample"}]})");
+        check(ok(distance, "rail array") && distance["created"].items().size() == 7, "arc-distance array includes the rail plus six coins");
+        for (int i = 0; i < 6; ++i) {
+            Value args = Value::object();
+            args.set("ref", "@sample." + std::to_string(i));
+            const auto point = lv.call("get", args)["pos"];
+            check(std::fabs(point.items()[0].asNumber() - (i == 5 ? 900 : i * 200)) < .5 &&
+                      std::fabs(point.items()[1].asNumber() - (i == 5 ? 2100 : 2000)) < .5,
+                  "spacing remains K units across unequal rail segments");
+        }
+        auto copy = L::Level::open(options, &error);
+        check(copy && copy->replay(lv.journal(), &error), "path journal replays: " + error.message);
+        check(show(call(*copy, "get", R"({"ref":"@editable"})")) == show(call(lv, "get", R"({"ref":"@editable"})")),
+              "journal preserves integer-valued float coordinates and ordered insertion");
+        check(ok(call(lv, "save", R"({"mod":"Path Port"})"), "path save"), "save edited rails as patch");
+        auto modOptions = options;
+        modOptions.userMods = true;
+        auto mod = L::Level::open(modOptions, &error);
+        check(mod != nullptr, "reopen path patch: " + error.message);
+        // Patch reload assigns original row refs; compare by rail ID and point positions through the raw model.
+        bool matched = false;
+        for (const auto& candidate : PetariEditor::Paths::collect(mod->model())) {
+            if (std::string(mod->model().zoneName(candidate.zone)) != "DiskGardenZone")
+                continue;
+            if (candidate.id != rail["rail_id"].asInt())
+                continue;
+            const auto expected = PetariEditor::Paths::collect(lv.model());
+            for (const auto& source : expected) {
+                if (source.zone != candidate.zone || source.id != candidate.id)
+                    continue;
+                matched = candidate.points.size() == source.points.size();
+                for (std::size_t i = 0; matched && i < source.points.size(); ++i) {
+                    for (const auto pair : {std::pair{candidate.points[i].position, source.points[i].position},
+                                           std::pair{candidate.points[i].incoming, source.points[i].incoming},
+                                           std::pair{candidate.points[i].outgoing, source.points[i].outgoing}})
+                        matched = matched && std::fabs(pair.first.x - pair.second.x) < .01 &&
+                                  std::fabs(pair.first.y - pair.second.y) < .01 && std::fabs(pair.first.z - pair.second.z) < .01;
+                }
+            }
+        }
+        check(matched, "saved patch keeps point order, coordinates and both handles");
+    }
+
 }  // namespace
 
 int main() {
@@ -68,8 +184,7 @@ int main() {
     check(liveHelp["ok"].asBool() && liveHelp["live_command"]["schema"]["required"].items().size()==1,
           "live replay help exposes its request schema without opening a disc");
     const Value inputHelp = L::Level::help(parse(R"({"live":"inputs-start"})"));
-    check(inputHelp["ok"].asBool() && inputHelp["live_command"]["schema"]["type"].asString()=="array",
-          "frame-held input plan is discoverable");
+    check(inputHelp["ok"].asBool() && inputHelp["live_command"]["schema"]["type"].asString() == "array", "frame-held input plan is discoverable");
     const fs::path disc = fs::path(PETARI_TEST_DISC_FILES).parent_path();
     if (!fs::exists(disc / "files" / "StageData" / "EggStarGalaxy" / "EggStarGalaxyScenario.arc")) {
         std::printf("petari_level: no disc at %s, skipped\n", disc.string().c_str());
@@ -91,7 +206,8 @@ int main() {
         L::Error e;
         check(!L::Level::open(bad, &e) && e.code == "unknown-galaxy", "unknown galaxy refused");
         bool suggested = false;
-        for (const std::string& c : e.candidates) suggested = suggested || c == "EggStarGalaxy";
+        for (const std::string& c : e.candidates)
+            suggested = suggested || c == "EggStarGalaxy";
         check(suggested, "unknown galaxy suggests EggStarGalaxy");
     }
 
@@ -114,7 +230,8 @@ int main() {
     check(info["errors"].asInt() == 0 && info["warnings"].asInt() == 0, "the shipped galaxy reports no new problems");
     Value catalog = call(lv, "catalog", R"({"query":"coin"})");
     bool coin = false;
-    for (const Value& c : catalog["classes"].items()) coin = coin || c["class"].asString() == "Coin";
+    for (const Value& c : catalog["classes"].items())
+        coin = coin || c["class"].asString() == "Coin";
     check(coin, "catalog search finds Coin");
     Value goomba = call(lv, "class", R"({"class":"goomba"})");
     check(ok(goomba, "class goomba") && goomba["class"].asString() == "Kuribo", "a display name resolves to the class");
@@ -155,7 +272,8 @@ int main() {
     // Atomic: a bad op later in the batch leaves nothing behind.
     const int objects = call(lv, "info")["objects"].asInt();
     Value bad = call(lv, "apply", R"({"ops":[{"op":"add","class":"Coin","pos":[0,0,0]},{"op":"set","ref":"@star","args":{"Star IDD":2}}]})");
-    check(!bad["ok"].asBool() && bad["error"]["code"].asString() == "bad-arg" && hasCandidate(bad, "Star ID"), "a bad arg name suggests the real one");
+    check(!bad["ok"].asBool() && bad["error"]["code"].asString() == "bad-arg" && hasCandidate(bad, "Star ID"),
+          "a bad arg name suggests the real one");
     check(bad["error"]["where"].asString().rfind("ops[1]", 0) == 0, "the error says which op");
     check(call(lv, "info")["objects"].asInt() == objects, "a failed batch changes nothing");
     Value badKey = call(lv, "apply", R"({"ops":[{"op":"add","class":"Coin","position":[0,0,0]}]})");
@@ -187,11 +305,13 @@ int main() {
     // A zone row: world <-> zone space.
     std::string zoneName;
     for (const Value& z : info["zones"].items()) {
-        if (z["index"].asInt() > 0 && z["placed"].asBool() && zoneName.empty()) zoneName = z["name"].asString();
+        if (z["index"].asInt() > 0 && z["placed"].asBool() && zoneName.empty())
+            zoneName = z["name"].asString();
     }
     check(!zoneName.empty(), "Good Egg has a placed sub-zone");
-    Value inZone = lv.call("apply", parse(("{\"ops\":[{\"op\":\"add\",\"class\":\"Coin\",\"zone\":\"" + zoneName +
-                                           "\",\"pos\":[1000,2000,3000],\"as\":\"zc\"}]}").c_str()));
+    Value inZone = lv.call(
+        "apply",
+        parse(("{\"ops\":[{\"op\":\"add\",\"class\":\"Coin\",\"zone\":\"" + zoneName + "\",\"pos\":[1000,2000,3000],\"as\":\"zc\"}]}").c_str()));
     check(ok(inZone, "zone add"), "add in a zone");
     Value zc = call(lv, "get", R"({"ref":"@zc"})");
     check(std::fabs(zc["pos"].items()[0].asNumber() - 1000) < 0.5 && std::fabs(zc["pos"].items()[2].asNumber() - 3000) < 0.5 && zc.has("zone_pos"),
@@ -204,7 +324,8 @@ int main() {
     char buf[512];
     std::snprintf(buf, sizeof(buf), R"({"pos":[%.1f,%.1f,%.1f]})", sx, sy + 600, sz);
     Value ground = lv.call("ground", parse(buf));
-    check(ok(ground, "ground") && ground["hit"].asBool() && ground["on_class"].asString() == "DiskGardenPlanet", "ground under the start is Disk Garden");
+    check(ok(ground, "ground") && ground["hit"].asBool() && ground["on_class"].asString() == "DiskGardenPlanet",
+          "ground under the start is Disk Garden");
     check(ground["gravity"].asString().find("GlobalDiskGravity") == 0, "the disk's gravity there");
     check(std::fabs(ground["point"].items()[1].asNumber() - sy) < 40, "the ground is where Mario starts (within 40 units)");
     // A point inside the planet is refused (the evaluator's underside bug), naming the collider and how far to raise it.
@@ -215,12 +336,15 @@ int main() {
     check(inside["error"]["message"].asString().find("units below its surface") != std::string::npos, "it says how far below the surface");
     std::snprintf(buf, sizeof(buf), R"({"pos":[%.1f,%.1f,%.1f]})", sx, sy - 300, sz);
     Value insideProbe = lv.call("ground", parse(buf));
-    check(insideProbe["hit"].asBool() == false && insideProbe.has("inside") && insideProbe["surface_above"].asNumber() > 200, "ground reports inside + surface_above");
+    check(insideProbe["hit"].asBool() == false && insideProbe.has("inside") && insideProbe["surface_above"].asNumber() > 200,
+          "ground reports inside + surface_above");
     // 50 units inside is an error too (strict: only numerical slack is forgiven).
-    std::snprintf(buf, sizeof(buf), R"({"dry_run":true,"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true}]})", sx, ground["point"].items()[1].asNumber() - 50, sz);
+    std::snprintf(buf, sizeof(buf), R"({"dry_run":true,"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true}]})", sx,
+                  ground["point"].items()[1].asNumber() - 50, sz);
     check(lv.call("apply", parse(buf))["error"]["code"].asString() == "inside-collision", "50 units inside the starter planet: inside-collision");
     // From above, it lands on the top.
-    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true,"height":100,"as":"gc"}]})", sx, sy + 50, sz);
+    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Coin","pos":[%.1f,%.1f,%.1f],"on_ground":true,"height":100,"as":"gc"}]})", sx,
+                  sy + 50, sz);
     Value grounded = lv.call("apply", parse(buf));
     check(ok(grounded, "on_ground") && grounded["placements"].items().size() == 1, "on_ground reports its placement");
     const double gy = call(lv, "get", R"({"ref":"@gc"})")["pos"].items()[1].asNumber();
@@ -230,45 +354,59 @@ int main() {
     check(noGround["error"]["code"].asString() == "no-ground", "no ground: an actionable error");
 
     // Arrays: an arc of 7 coins with labels; a ring; a grid.
-    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"array","class":"Coin","shape":"arc","from":[%.1f,%.1f,%.1f],"to":[%.1f,%.1f,%.1f],"peak":400,"count":7,"down":[0,-1,0],"as":"arc"}]})",
+    std::snprintf(
+        buf, sizeof(buf),
+        R"({"ops":[{"op":"array","class":"Coin","shape":"arc","from":[%.1f,%.1f,%.1f],"to":[%.1f,%.1f,%.1f],"peak":400,"count":7,"down":[0,-1,0],"as":"arc"}]})",
                   sx, sy + 100, sz, sx + 1200, sy + 100, sz);
     Value arc = lv.call("apply", parse(buf));
     check(ok(arc, "arc") && arc["created"].items().size() == 7, "an arc of 7");
     const double mid = call(lv, "get", R"({"ref":"@arc.3"})")["pos"].items()[1].asNumber();
     check(std::fabs(mid - (sy + 500)) < 1, "the arc's middle is peak above the line");
-    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"array","class":"StarPiece","shape":"grid","origin":[%.1f,%.1f,%.1f],"size":[3,2],"spacing":100,"down":[0,-1,0]},{"op":"array","class":"Coin","shape":"ring","center":[%.1f,%.1f,%.1f],"radius":300,"count":6,"down":[0,-1,0]}]})",
+    std::snprintf(
+        buf, sizeof(buf),
+        R"({"ops":[{"op":"array","class":"StarPiece","shape":"grid","origin":[%.1f,%.1f,%.1f],"size":[3,2],"spacing":100,"down":[0,-1,0]},{"op":"array","class":"Coin","shape":"ring","center":[%.1f,%.1f,%.1f],"radius":300,"count":6,"down":[0,-1,0]}]})",
                   sx, sy + 800, sz, sx, sy + 900, sz);
     Value shapes = lv.call("apply", parse(buf));
     check(ok(shapes, "grid+ring") && shapes["created"].items().size() == 12, "a 3x2 grid and a ring of 6 in one batch");
 
     // Switch references: the mushroom reads the Goomba's fresh switch.
-    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"add","class":"Kuribo","pos":[%.1f,%.1f,%.1f],"switches":{"SW_DEAD":"new"},"as":"goomba"},{"op":"add","class":"BenefitItemOneUp","pos":[%.1f,%.1f,%.1f],"switches":{"SW_APPEAR":"@goomba.SW_DEAD"},"as":"oneup"}]})",
+    std::snprintf(
+        buf, sizeof(buf),
+        R"({"ops":[{"op":"add","class":"Kuribo","pos":[%.1f,%.1f,%.1f],"switches":{"SW_DEAD":"new"},"as":"goomba"},{"op":"add","class":"BenefitItemOneUp","pos":[%.1f,%.1f,%.1f],"switches":{"SW_APPEAR":"@goomba.SW_DEAD"},"as":"oneup"}]})",
                   sx + 300, sy, sz, sx + 600, sy, sz);
     Value linked = lv.call("apply", parse(buf));
     check(ok(linked, "linked switches"), "add a Goomba and a mushroom linked by a switch");
-    check(call(lv, "get", R"({"ref":"@goomba"})")["switches"]["SW_DEAD"].asInt() == call(lv, "get", R"({"ref":"@oneup"})")["switches"]["SW_APPEAR"].asInt(),
+    check(call(lv, "get", R"({"ref":"@goomba"})")["switches"]["SW_DEAD"].asInt() ==
+              call(lv, "get", R"({"ref":"@oneup"})")["switches"]["SW_APPEAR"].asInt(),
           "the mushroom reads the Goomba's switch");
     check(linked["checks_introduced"].items().size() == 0, "a written-and-read switch is no problem");
     Value lonely = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"set","ref":"@oneup","switches":{"SW_APPEAR":"new"}}]})");
     check(lonely["checks_introduced"].items().size() >= 1, "a switch nothing writes is reported");
 
     // Paths: a smooth 3-point rail, and a Launch Star added on it.
-    std::snprintf(buf, sizeof(buf), R"({"ops":[{"op":"path","points":[[%.1f,%.1f,%.1f],[%.1f,%.1f,%.1f],[%.1f,%.1f,%.1f]],"as":"flight"},{"op":"add","class":"SuperSpinDriver","pos":[%.1f,%.1f,%.1f],"path":"@flight","as":"launch"}]})",
+    std::snprintf(
+        buf, sizeof(buf),
+        R"({"ops":[{"op":"path","points":[[%.1f,%.1f,%.1f],[%.1f,%.1f,%.1f],[%.1f,%.1f,%.1f]],"as":"flight"},{"op":"add","class":"SuperSpinDriver","pos":[%.1f,%.1f,%.1f],"path":"@flight","as":"launch"}]})",
                   sx, sy + 200, sz, sx + 1500, sy + 2500, sz, sx + 3000, sy + 200, sz, sx, sy + 200, sz);
     Value flight = lv.call("apply", parse(buf));
     check(ok(flight, "path"), "a path and a Launch Star on it");
     Value launch = call(lv, "get", R"({"ref":"@launch"})");
     Value rail = call(lv, "get", R"({"ref":"@flight"})");
-    check(launch["links"]["CommonPath_ID"].asInt(-1) == rail["fields"]["l_id"].asInt(-2) && rail["fields"]["num_pnt"].asInt() == 3, "the Launch Star flies the new path");
+    check(launch["links"]["CommonPath_ID"].asInt(-1) == rail["fields"]["l_id"].asInt(-2) && rail["fields"]["num_pnt"].asInt() == 3,
+          "the Launch Star flies the new path");
     check(rail["points"].items().size() == 3 && std::fabs(rail["points"].items()[1]["pos"].items()[1].asNumber() - (sy + 2500)) < 1,
           "get on a rail lists its points in world space");
-    check(rail["points"].items()[1]["in"].items()[0].asNumber() < rail["points"].items()[1]["out"].items()[0].asNumber(), "smooth handles by default");
+    check(rail["points"].items()[1]["in"].items()[0].asNumber() < rail["points"].items()[1]["out"].items()[0].asNumber(),
+          "smooth handles by default");
     check(flight["created"].items()[0]["points"].asInt() == 3 && flight["created"].items()[0].has("pos"), "a created rail summarises its points");
-    std::snprintf(buf, sizeof(buf), R"({"dry_run":true,"ops":[{"op":"array","class":"Coin","shape":"line","start":[%.1f,%.1f,%.1f],"end":[%.1f,%.1f,%.1f],"count":4,"down":[0,-1,0]}]})",
+    std::snprintf(
+        buf, sizeof(buf),
+        R"({"dry_run":true,"ops":[{"op":"array","class":"Coin","shape":"line","start":[%.1f,%.1f,%.1f],"end":[%.1f,%.1f,%.1f],"count":4,"down":[0,-1,0]}]})",
                   sx, sy + 900, sz, sx + 600, sy + 900, sz);
     check(lv.call("apply", parse(buf))["created"].items().size() == 4, "array start/end (from/to stay aliases)");
     bool linkProblem = false;
-    for (const Value& c : flight["checks_introduced"].items()) linkProblem = linkProblem || c["key"].asString().find("link") != std::string::npos;
+    for (const Value& c : flight["checks_introduced"].items())
+        linkProblem = linkProblem || c["key"].asString().find("link") != std::string::npos;
     check(!linkProblem, "a linked Launch Star raises no link check");
     Value unlinked = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"add","class":"SuperSpinDriver","pos":[0,0,0]}]})");
     check(unlinked["checks_introduced"].items().size() >= 1, "a Launch Star without a path is reported");
@@ -298,6 +436,7 @@ int main() {
         check(stars["total"].asInt() == 1, "the saved star is in the modded galaxy");
     }
 
+    testPathEdits(options);
     fs::remove_all(user);
     std::printf("petari_level: %d checks passed\n", sChecks);
     return 0;

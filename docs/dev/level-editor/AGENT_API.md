@@ -341,3 +341,22 @@ each class's collision once per process.
 - Mission names come from ScenarioData (Japanese, internal); the pause-menu names need the game's messages.
 - The workspace's base is the disc (plus the user's enabled mods with `--user-mods`): saving into a
   mod that is also enabled in the base mixes the two, as in the game.
+
+### Editing and sampling existing rails
+
+`get` on a rail lists stable point refs and world `pos`, `in`, and `out` coordinates. `get` on one of those refs reports `kind: "path-point"` and the parent `path`. Move a point with `move-point` (both handles move with it), or one absolute handle with `move-handle`, `handle: "in" | "out"`. Give exactly one of world `pos`, world delta `by`, or `zone_pos`.
+
+```json
+{"ops":[{"op":"insert-point","path":"@flight","segment":0,"t":0.5,"as":"mid"},{"op":"move-point","ref":"@mid","by":[0,100,0]},{"op":"move-handle","ref":"@mid","handle":"out","by":[100,0,0]}]}
+```
+
+`insert-point` splits the zero-based segment with the editor's de Casteljau helper, preserving the curve (`t` in 0.01..0.99). `delete-point` retains at least two points. Mixed edits remain one undo transaction, including their point-table ordering.
+
+`array` accepts `along: "@flight"` with `spacing` or `count`; omit `points` and `closed`, which come from the rail. It samples each Bezier segment 256 times and walks the resulting world-space polyline by distance. Spacing stays K units across segment boundaries; an open end is included only when it falls at a spacing interval. Closed rails do not repeat the first placement. Sampling is approximate, limited to 500 copies. Python exposes `Batch.move_point`, `move_handle`, `insert_point`, `delete_point`, and `along`.
+
+```python
+with lv.batch(label="Rail coins") as b:
+    b.along("Coin", "@flight", spacing=200, label="route_coins")
+```
+
+Low-level journal adds include `at` (the ordered table insertion index; absent means append). Float cells outside the standard transform columns carry `{ "type": "float", "value": ... }`, so integer-valued path coordinates retain their type when replay creates a new point table.

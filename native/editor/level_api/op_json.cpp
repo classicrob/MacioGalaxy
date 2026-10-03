@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 namespace PetariEditor::LevelApi {
 
@@ -44,9 +45,17 @@ namespace {
         return -1;
     }
 
-    Json::Value cellJson(const Cell& cell) {
+    bool isFloatName(const std::string& name);
+
+    Json::Value cellJson(const Cell& cell, const std::string& name) {
         switch (cell.type) {
         case CellType::Float:
+            if (!isFloatName(name)) {
+                Json::Value typed = Json::Value::object();
+                typed.set("type", "float");
+                typed.set("value", static_cast< double >(cell.f));
+                return typed;
+            }
             return Json::Value(static_cast< double >(cell.f));
         case CellType::String:
         case CellType::StringOffset:
@@ -61,32 +70,43 @@ namespace {
     }
 
     std::optional< CellType > typeFromName(const std::string& type) {
-        if (type == "float") return CellType::Float;
-        if (type == "long" || type == "int" || type == "long2") return CellType::Int;
-        if (type == "short") return CellType::Short;
-        if (type == "byte") return CellType::Byte;
-        if (type == "string") return CellType::String;
-        if (type == "stringOffset") return CellType::StringOffset;
+        if (type == "float")
+            return CellType::Float;
+        if (type == "long" || type == "int" || type == "long2")
+            return CellType::Int;
+        if (type == "short")
+            return CellType::Short;
+        if (type == "byte")
+            return CellType::Byte;
+        if (type == "string")
+            return CellType::String;
+        if (type == "stringOffset")
+            return CellType::StringOffset;
         return std::nullopt;
     }
 }  // namespace
 
 std::string shortTablePath(const std::string& path) {
-    if (path.rfind("jmp/placement/", 0) == 0) return path.substr(14);
-    if (path.rfind("jmp/", 0) == 0) return path.substr(4);
+    if (path.rfind("jmp/placement/", 0) == 0)
+        return path.substr(14);
+    if (path.rfind("jmp/", 0) == 0)
+        return path.substr(4);
     return path;
 }
 
 std::string lower(std::string s) {
-    for (char& c : s) c = static_cast< char >(std::tolower(static_cast< unsigned char >(c)));
+    for (char& c : s)
+        c = static_cast< char >(std::tolower(static_cast< unsigned char >(c)));
     return s;
 }
 
 std::string columnLabel(std::uint32_t hash) {
-    if (const char* pName = knownColumnName(hash)) return pName;
+    if (const char* pName = knownColumnName(hash))
+        return pName;
     // Path table columns the decompilation's literals don't name (Paths writes them by these names).
     for (const char* pName : {"num_pnt", "no", "closed", "type", "usage", "id"}) {
-        if (columnHash(pName) == hash) return pName;
+        if (columnHash(pName) == hash)
+            return pName;
     }
     char text[16];
     std::snprintf(text, sizeof(text), "#%08x", hash);
@@ -94,7 +114,8 @@ std::string columnLabel(std::uint32_t hash) {
 }
 
 std::uint32_t columnHashOfName(const std::string& name) {
-    if (!name.empty() && name[0] == '#') return static_cast< std::uint32_t >(std::strtoul(name.c_str() + 1, nullptr, 16));
+    if (!name.empty() && name[0] == '#')
+        return static_cast< std::uint32_t >(std::strtoul(name.c_str() + 1, nullptr, 16));
     return columnHash(name.c_str());
 }
 
@@ -157,12 +178,14 @@ Json::Value opToJson(const ModelView& model, const Op& op) {
             a.set("id", rowRef(model, add.id));
             a.set("zone", model.zoneName(add.zone));
             a.set("table", add.table);
+            if (add.at >= 0)
+                a.set("at", add.at);
             if (add.copyOf.valid()) {
                 a.set("copyOf", rowRef(model, add.copyOf));
             }
             Json::Value cells = Json::Value::object();
             for (const AddRow::Value& v : add.cells) {
-                cells.set(columnLabel(v.column), cellJson(v.value));
+                cells.set(columnLabel(v.column), cellJson(v.value, columnLabel(v.column)));
             }
             a.set("cells", std::move(cells));
             adds.push(std::move(a));
@@ -182,7 +205,7 @@ Json::Value opToJson(const ModelView& model, const Op& op) {
             Json::Value cells = Json::Value::object();
             for (const SetCell& s : op.sets) {
                 if (s.row == row) {
-                    cells.set(columnLabel(s.column), cellJson(s.after));
+                    cells.set(columnLabel(s.column), cellJson(s.after, columnLabel(s.column)));
                 }
             }
             Json::Value set = Json::Value::object();
@@ -307,6 +330,15 @@ bool opFromJson(const ModelView& model, const Json::Value& json, Op* pOp, std::s
             return false;
         }
         add.table = a["table"].asString();
+        if (a.has("at")) {
+            const double at = a["at"].asNumber();
+            if (a["at"].type() != Json::Value::Type::Number || !std::isfinite(at) || std::floor(at) != at || at < -1 ||
+                at > std::numeric_limits< int >::max()) {
+                *pError = "adds: at must be an integer index >= -1 (-1 appends)";
+                return false;
+            }
+            add.at = static_cast< int >(at);
+        }
         if (a.has("copyOf")) {
             add.copyOf = parseRowRef(model, a["copyOf"].asString());
         }

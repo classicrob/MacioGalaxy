@@ -19,11 +19,14 @@ Json::Value Error::toJson() const {
     Json::Value e = Json::Value::object();
     e.set("code", code);
     e.set("message", message);
-    if (!hint.empty()) e.set("hint", hint);
-    if (!where.empty()) e.set("where", where);
+    if (!hint.empty())
+        e.set("hint", hint);
+    if (!where.empty())
+        e.set("where", where);
     if (!candidates.empty()) {
         Json::Value list = Json::Value::array();
-        for (const std::string& c : candidates) list.push(c);
+        for (const std::string& c : candidates)
+            list.push(c);
         e.set("candidates", std::move(list));
     }
     return e;
@@ -105,7 +108,8 @@ std::vector< RowId > Level::Impl::allRows() const {
     for (int z = 0; z < model->zoneCount(); z++) {
         for (int t = 0; t < model->tableCount(z); t++) {
             model->forEachRow(z, t, [&](RowId row) {
-                if (model->state(row) != RowState::Deleted) rows.push_back(row);
+                if (model->state(row) != RowState::Deleted)
+                    rows.push_back(row);
             });
         }
     }
@@ -114,7 +118,8 @@ std::vector< RowId > Level::Impl::allRows() const {
 
 std::string Level::Impl::labelOf(RowId row) const {
     for (const auto& [name, id] : labels) {
-        if (id == row) return name;
+        if (id == row)
+            return name;
     }
     return "";
 }
@@ -148,30 +153,34 @@ RowId Level::Impl::resolveRef(const Json::Value& ref, const std::string& where) 
         const int nth = ref.has("nth") ? ref["nth"].asInt() : -1;
         if (nth >= 0) {
             if (nth >= static_cast< int >(rows.size())) {
-                fail("bad-ref", where + ": the selector matches " + std::to_string(rows.size()) + " rows, nth " + std::to_string(nth) + " is past the end",
+                fail("bad-ref",
+                     where + ": the selector matches " + std::to_string(rows.size()) + " rows, nth " + std::to_string(nth) + " is past the end",
                      "", {}, where);
             }
             return rows[nth];
         }
         if (rows.size() != 1) {
             std::vector< std::string > candidates;
-            for (std::size_t i = 0; i < rows.size() && i < 8; i++) candidates.push_back(describe(*this, rows[i]));
+            for (std::size_t i = 0; i < rows.size() && i < 8; i++)
+                candidates.push_back(describe(*this, rows[i]));
             fail(rows.empty() ? "bad-ref" : "ambiguous-ref",
                  where + ": the selector matches " + std::to_string(rows.size()) + " rows (want exactly 1)",
-                 rows.empty() ? "loosen the selector, or list objects with `list`" : "add \"nth\": i, \"near\": [x,y,z] or use a ref", candidates, where);
+                 rows.empty() ? "loosen the selector, or list objects with `list`" : "add \"nth\": i, \"near\": [x,y,z] or use a ref", candidates,
+                 where);
         }
         return rows[0];
     }
     if (ref.type() != Json::Value::Type::String || ref.asString().empty()) {
-        fail("bad-ref", where + " must be a ref string or a selector object", "refs look like \"EggStarGalaxy:common/objinfo:12\", \"new:3\" or \"@label\"",
-             {}, where);
+        fail("bad-ref", where + " must be a ref string or a selector object",
+             "refs look like \"EggStarGalaxy:common/objinfo:12\", \"new:3\" or \"@label\"", {}, where);
     }
     const std::string text = ref.asString();
     if (text[0] == '@') {
         auto it = labels.find(text.substr(1));
         if (it == labels.end()) {
             std::vector< std::string > candidates;
-            for (const auto& [name, id] : labels) candidates.push_back("@" + name);
+            for (const auto& [name, id] : labels)
+                candidates.push_back("@" + name);
             fail("bad-ref", where + ": no label " + text, "labels are set with \"as\" on add/duplicate or the label op", candidates, where);
         }
         if (!liveRow(*model, it->second)) {
@@ -190,27 +199,32 @@ RowId Level::Impl::resolveRef(const Json::Value& ref, const std::string& where) 
     const RowId row = parseRowRef(*model, text);
     if (!row.valid()) {
         std::vector< std::string > zones;
-        for (int z = 0; z < model->zoneCount(); z++) zones.push_back(model->zoneName(z));
-        fail("bad-ref", where + ": '" + text + "' is not a ref", "refs: \"<Zone>:<table>:<index>\", \"new:<n>\", \"@label\" or \"<Class>#<n>\"; zones are listed",
-             zones, where);
+        for (int z = 0; z < model->zoneCount(); z++)
+            zones.push_back(model->zoneName(z));
+        fail("bad-ref", where + ": '" + text + "' is not a ref",
+             "refs: \"<Zone>:<table>:<index>\", \"new:<n>\", \"@label\" or \"<Class>#<n>\"; zones are listed", zones, where);
     }
     if (!liveRow(*model, row)) {
-        fail("bad-ref", where + ": " + text + (model->state(row) == RowState::Deleted ? " was deleted" : " names no row"), "list objects with `list`", {}, where);
+        fail("bad-ref", where + ": " + text + (model->state(row) == RowState::Deleted ? " was deleted" : " names no row"),
+             "list objects with `list`", {}, where);
     }
     return row;
 }
 
 std::vector< RowId > Level::Impl::resolveTargets(const Json::Value& op, const std::string& where) const {
     std::vector< RowId > rows;
-    if (op.has("ref")) rows.push_back(resolveRef(op["ref"], where + ".ref"));
+    if (op.has("ref"))
+        rows.push_back(resolveRef(op["ref"], where + ".ref"));
     if (op.has("refs")) {
         int i = 0;
-        for (const Json::Value& r : op["refs"].items()) rows.push_back(resolveRef(r, where + ".refs[" + std::to_string(i++) + "]"));
+        for (const Json::Value& r : op["refs"].items())
+            rows.push_back(resolveRef(r, where + ".refs[" + std::to_string(i++) + "]"));
     }
     if (op.has("select")) {
         std::vector< RowId > picked = select(op["select"], where + ".select");
         if (op["select"].has("expect") && static_cast< int >(picked.size()) != op["select"]["expect"].asInt()) {
-            fail("bad-ref", where + ".select matches " + std::to_string(picked.size()) + " rows, expected " + std::to_string(op["select"]["expect"].asInt()),
+            fail("bad-ref",
+                 where + ".select matches " + std::to_string(picked.size()) + " rows, expected " + std::to_string(op["select"]["expect"].asInt()),
                  "", {}, where + ".select");
         }
         rows.insert(rows.end(), picked.begin(), picked.end());
@@ -224,24 +238,30 @@ std::vector< RowId > Level::Impl::resolveTargets(const Json::Value& op, const st
 }
 
 const Catalog::ClassInfo* Level::Impl::resolveClass(const std::string& name, bool required, const std::string& where) const {
-    if (const Catalog::ClassInfo* p = Catalog::find(name.c_str())) return p;
+    if (const Catalog::ClassInfo* p = Catalog::find(name.c_str()))
+        return p;
     const std::string want = lower(name);
     for (const Catalog::ClassInfo& c : Catalog::classes()) {
-        if (lower(c.displayName) == want) return &c;
+        if (lower(c.displayName) == want)
+            return &c;
     }
     for (const Catalog::ClassInfo& c : Catalog::classes()) {
         for (const std::string& a : c.aliases) {
-            if (lower(a) == want) return &c;
+            if (lower(a) == want)
+                return &c;
         }
     }
-    if (!required) return nullptr;
+    if (!required)
+        return nullptr;
     std::vector< std::string > candidates;
-    for (const Catalog::ClassInfo* c : Catalog::search(name, 6)) candidates.push_back(c->name + " (" + c->displayName + ")");
+    for (const Catalog::ClassInfo* c : Catalog::search(name, 6))
+        candidates.push_back(c->name + " (" + c->displayName + ")");
     if (candidates.empty()) {
         // Typos: the names (class, display, alias) nearest by edit distance.
         auto distance = [](const std::string& a, const std::string& b) {
             std::vector< int > row(b.size() + 1);
-            for (std::size_t j = 0; j <= b.size(); j++) row[j] = static_cast< int >(j);
+            for (std::size_t j = 0; j <= b.size(); j++)
+                row[j] = static_cast< int >(j);
             for (std::size_t i = 1; i <= a.size(); i++) {
                 int diagonal = row[0];
                 row[0] = static_cast< int >(i);
@@ -255,23 +275,28 @@ const Catalog::ClassInfo* Level::Impl::resolveClass(const std::string& name, boo
         };
         std::vector< std::pair< int, const Catalog::ClassInfo* > > scored;
         for (const Catalog::ClassInfo& c : Catalog::classes()) {
-            if (!c.placeable) continue;
+            if (!c.placeable)
+                continue;
             int best = std::min(distance(want, lower(c.name)), distance(want, lower(c.displayName)));
-            for (const std::string& a : c.aliases) best = std::min(best, distance(want, lower(a)));
+            for (const std::string& a : c.aliases)
+                best = std::min(best, distance(want, lower(a)));
             scored.push_back({best, &c});
         }
         std::stable_sort(scored.begin(), scored.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
-        for (std::size_t i = 0; i < scored.size() && i < 5; i++) candidates.push_back(scored[i].second->name + " (" + scored[i].second->displayName + ")");
+        for (std::size_t i = 0; i < scored.size() && i < 5; i++)
+            candidates.push_back(scored[i].second->name + " (" + scored[i].second->displayName + ")");
     }
     fail("unknown-class", where + ": no class '" + name + "'", "search the catalog: `catalog --query <words>`", candidates, where);
 }
 
 std::vector< RowId > Level::Impl::select(const Json::Value& filter, const std::string& where) const {
-    if (!filter.isObject()) fail("bad-args", where + " must be an object", "e.g. {\"class\": \"Coin\", \"zone\": \"EggStarGalaxy\"}", {}, where);
+    if (!filter.isObject())
+        fail("bad-args", where + " must be an object", "e.g. {\"class\": \"Coin\", \"zone\": \"EggStarGalaxy\"}", {}, where);
     std::set< std::string > classes;
     if (filter.has("class")) {
         const std::string want = filter["class"].asString();
-        if (const Catalog::ClassInfo* info = resolveClass(want, false, where)) classes.insert(lower(info->name));
+        if (const Catalog::ClassInfo* info = resolveClass(want, false, where))
+            classes.insert(lower(info->name));
         classes.insert(lower(want));
     }
     const Catalog::Category* pCategory = nullptr;
@@ -289,18 +314,22 @@ std::vector< RowId > Level::Impl::select(const Json::Value& filter, const std::s
                 break;
             }
         }
-        if (!found) fail("bad-value", where + ".category: no category '" + want + "'", "", names, where + ".category");
+        if (!found)
+            fail("bad-value", where + ".category: no category '" + want + "'", "", names, where + ".category");
         pCategory = &category;
     }
     int zone = -1;
     if (filter.has("zone")) {
-        const std::string want = filter["zone"].type() == Json::Value::Type::Number ? std::to_string(filter["zone"].asInt()) : filter["zone"].asString();
+        const std::string want =
+            filter["zone"].type() == Json::Value::Type::Number ? std::to_string(filter["zone"].asInt()) : filter["zone"].asString();
         for (int z = 0; z < model->zoneCount(); z++) {
-            if (lower(model->zoneName(z)) == lower(want) || std::to_string(z) == want) zone = z;
+            if (lower(model->zoneName(z)) == lower(want) || std::to_string(z) == want)
+                zone = z;
         }
         if (zone < 0) {
             std::vector< std::string > zones;
-            for (int z = 0; z < model->zoneCount(); z++) zones.push_back(model->zoneName(z));
+            for (int z = 0; z < model->zoneCount(); z++)
+                zones.push_back(model->zoneName(z));
             fail("bad-value", where + ".zone: no zone '" + want + "'", "", zones, where + ".zone");
         }
     }
@@ -316,31 +345,40 @@ std::vector< RowId > Level::Impl::select(const Json::Value& filter, const std::s
     for (RowId row : allRows()) {
         int z = 0, t = 0;
         model->locate(row, &z, &t);
-        if (zone >= 0 && z != zone) continue;
+        if (zone >= 0 && z != zone)
+            continue;
         const char* pName = model->objectName(row);
         const std::string name = pName != nullptr ? pName : "";
-        if (!classes.empty() && !classes.count(lower(name))) continue;
+        if (!classes.empty() && !classes.count(lower(name)))
+            continue;
         const Catalog::ClassInfo* info = name.empty() ? nullptr : Catalog::find(name.c_str());
-        if (pCategory != nullptr && (info == nullptr || info->category != *pCategory)) continue;
-        if (mission > 0 && !(model->rowMissions(row) & (1u << (mission - 1)))) continue;
+        if (pCategory != nullptr && (info == nullptr || info->category != *pCategory))
+            continue;
+        if (mission > 0 && !(model->rowMissions(row) & (1u << (mission - 1))))
+            continue;
         if (!table.empty()) {
             const std::string path = model->tablePath(z, t);
-            if (path != table && shortTablePath(path) != table && shortTablePath(path).find(table) == std::string::npos) continue;
+            if (path != table && shortTablePath(path) != table && shortTablePath(path).find(table) == std::string::npos)
+                continue;
         }
         if (!state.empty()) {
             static const char* const kStates[] = {"original", "changed", "added", "deleted"};
-            if (state != kStates[static_cast< int >(model->state(row))]) continue;
+            if (state != kStates[static_cast< int >(model->state(row))])
+                continue;
         }
         if (!text.empty()) {
             const std::string display = info != nullptr ? lower(info->displayName) : "";
-            if (lower(name).find(text) == std::string::npos && display.find(text) == std::string::npos) continue;
+            if (lower(name).find(text) == std::string::npos && display.find(text) == std::string::npos)
+                continue;
         }
         float d = 0;
         if (hasNear) {
-            if (!model->hasTransform(row)) continue;
+            if (!model->hasTransform(row))
+                continue;
             const G::V3 p = toWorld(zoneFrame(*model, z), v3(model->transform(row).pos));
             d = G::length(p - near);
-            if (d > radius) continue;
+            if (d > radius)
+                continue;
         }
         hits.push_back({d, row});
     }
@@ -348,7 +386,8 @@ std::vector< RowId > Level::Impl::select(const Json::Value& filter, const std::s
         std::stable_sort(hits.begin(), hits.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
     }
     std::vector< RowId > rows;
-    for (const auto& h : hits) rows.push_back(h.second);
+    for (const auto& h : hits)
+        rows.push_back(h.second);
     return rows;
 }
 
@@ -379,23 +418,27 @@ namespace {
     }
 
     bool isLinkColumn(const std::string& name) {
-        static const char* const kLinks[] = {"CommonPath_ID", "GroupId", "ClippingGroupId", "ViewGroupId", "DemoGroupId", "CameraSetId", "MessageId",
-                                             "CastId", "ParentID", "MapParts_ID", "Obj_ID", "FollowId", "AreaShapeNo"};
+        static const char* const kLinks[] = {"CommonPath_ID", "GroupId",   "ClippingGroupId", "ViewGroupId", "DemoGroupId",
+                                             "CameraSetId",   "MessageId", "CastId",          "ParentID",    "MapParts_ID",
+                                             "Obj_ID",        "FollowId",  "AreaShapeNo"};
         for (const char* l : kLinks) {
-            if (name == l) return true;
+            if (name == l)
+                return true;
         }
         return false;
     }
 }  // namespace
 
 Json::Value argValueJson(const Catalog::Arg& arg, std::int32_t value) {
-    if (value == -1) return Json::Value();  // the class's default
+    if (value == -1)
+        return Json::Value();  // the class's default
     switch (arg.type) {
     case Catalog::ArgType::Bool:
         return Json::Value(true);  // the game's bool getter: anything but -1 is on
     case Catalog::ArgType::Enum:
         for (const Catalog::EnumChoice& c : arg.choices) {
-            if (c.value == value) return Json::Value(c.label);
+            if (c.value == value)
+                return Json::Value(c.label);
         }
         return Json::Value(static_cast< double >(value));
     default:
@@ -409,12 +452,14 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
     model->locate(row, &zone, &table);
     o.set("ref", rowRef(*model, row));
     const std::string label = labelOf(row);
-    if (!label.empty()) o.set("label", "@" + label);
+    if (!label.empty())
+        o.set("label", "@" + label);
     const char* pName = model->objectName(row);
     const std::string name = pName != nullptr ? pName : "";
     o.set("class", name);
     const Catalog::ClassInfo* info = name.empty() ? nullptr : Catalog::find(name.c_str());
-    if (info != nullptr && info->displayName != name) o.set("name", info->displayName);
+    if (info != nullptr && info->displayName != name)
+        o.set("name", info->displayName);
     o.set("zone", model->zoneName(zone));
     if (model->hasTransform(row)) {
         const RowTransform t = model->transform(row);
@@ -432,12 +477,32 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
             }
         }
     }
+    // A path point uses absolute pnt0/1/2 coordinates rather than object transforms.
+    if (std::string(model->tablePath(zone, table)).find("jmp/path/commonpathpointinfo.") == 0) {
+        for (const auto& rail : Paths::collect(*model)) {
+            for (const auto& point : rail.points) {
+                if (point.row != row)
+                    continue;
+                const Frame frame = zoneFrame(*model, zone);
+                o.set("kind", "path-point");
+                o.set("path", rowRef(*model, rail.row));
+                o.set("pos", vecJson(toWorld(frame, v3(point.position)), 3));
+                o.set("in", vecJson(toWorld(frame, v3(point.incoming)), 3));
+                o.set("out", vecJson(toWorld(frame, v3(point.outgoing)), 3));
+                if (full)
+                    o.set("zone_pos", vecJson(v3(point.position), 3));
+                break;
+            }
+        }
+    }
     // A rail (jmp/path/commonpathinfo): its points in world space (summaries: the count and the first point).
     if (std::string(model->tablePath(zone, table)) == "jmp/path/commonpathinfo") {
         for (const Paths::Rail& rail : Paths::collect(*model)) {
-            if (rail.row != row) continue;
+            if (rail.row != row)
+                continue;
             const Frame f = zoneFrame(*model, zone);
-            if (!rail.points.empty()) o.set("pos", vecJson(toWorld(f, v3(rail.points.front().position)), 1));
+            if (!rail.points.empty())
+                o.set("pos", vecJson(toWorld(f, v3(rail.points.front().position)), 1));
             o.set("rail_id", rail.id);
             if (!full) {
                 o.set("points", static_cast< int >(rail.points.size()));
@@ -460,15 +525,19 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
     Json::Value missions = Json::Value::array();
     const std::uint32_t mask = model->rowMissions(row);
     for (int m = 1; m <= model->missionCount(); m++) {
-        if (mask & (1u << (m - 1))) missions.push(m);
+        if (mask & (1u << (m - 1)))
+            missions.push(m);
     }
     o.set("missions", std::move(missions));
-    if (!full) return o;
+    if (!full)
+        return o;
 
-    if (info != nullptr) o.set("category", Catalog::categoryName(info->category));
+    if (info != nullptr)
+        o.set("category", Catalog::categoryName(info->category));
     o.set("table", shortTablePath(model->tablePath(zone, table)));
     const int layer = model->tableLayer(zone, table);
-    if (layer >= 0) o.set("layer", layerName(layer));
+    if (layer >= 0)
+        o.set("layer", layerName(layer));
     static const char* const kStates[] = {"original", "changed", "added", "deleted"};
     o.set("state", kStates[static_cast< int >(model->state(row))]);
 
@@ -479,7 +548,8 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
     Json::Value fields = Json::Value::object();
     for (const Column& c : model->columns(zone, table)) {
         const Cell* cell = model->cell(row, c.hash);
-        if (cell == nullptr) continue;
+        if (cell == nullptr)
+            continue;
         const std::string col = columnLabel(c.hash);
         fields.set(col, cellValue(*cell));
         if (col.rfind("Obj_arg", 0) == 0) {
@@ -487,7 +557,8 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
             const Catalog::Arg* arg = nullptr;
             if (info != nullptr) {
                 for (const Catalog::Arg& a : info->args) {
-                    if (a.index == index) arg = &a;
+                    if (a.index == index)
+                        arg = &a;
                 }
             }
             if (arg != nullptr && !arg->name.empty()) {
@@ -496,9 +567,11 @@ Json::Value Level::Impl::objectJson(RowId row, bool full) const {
                 args.set(col, Json::Value(static_cast< double >(cell->i)));
             }
         } else if (isSwitchColumn(col)) {
-            if (cell->i != -1) switches.set(col, Json::Value(static_cast< double >(cell->i)));
+            if (cell->i != -1)
+                switches.set(col, Json::Value(static_cast< double >(cell->i)));
         } else if (isLinkColumn(col)) {
-            if (cell->i != -1) links.set(col, Json::Value(static_cast< double >(cell->i)));
+            if (cell->i != -1)
+                links.set(col, Json::Value(static_cast< double >(cell->i)));
         }
     }
     o.set("args", std::move(args));

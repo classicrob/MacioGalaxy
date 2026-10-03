@@ -114,6 +114,29 @@ class Batch:
         self.ops.append({"op": "link", "ref": ref, "path": path})
         return self
 
+    def move_point(self, ref: Any, **kw: Any) -> "Batch":
+        """Move a rail point and its handles: exactly one of pos, zone_pos or by."""
+        return self.op(_clean({"op": "move-point", "ref": ref, **_vectors(kw)}))
+
+    def move_handle(self, ref: Any, handle: str, **kw: Any) -> "Batch":
+        """Move the absolute in/out handle: exactly one of pos, zone_pos or by."""
+        return self.op(_clean({"op": "move-handle", "ref": ref, "handle": handle, **_vectors(kw)}))
+
+    def insert_point(self, path: Any, segment: int, *, t: float = 0.5, label: Optional[str] = None) -> str:
+        """Split a Bezier segment, preserving its curve; return the new point's label."""
+        name = self._label(label)
+        self.ops.append({"op": "insert-point", "path": path, "segment": segment, "t": t, "as": name})
+        return "@" + name
+
+    def delete_point(self, ref: Any) -> "Batch":
+        """Delete one point; a rail must retain at least two."""
+        return self.op({"op": "delete-point", "ref": ref})
+
+    def along(self, cls: str, path: Any, *, spacing: Optional[float] = None, count: Optional[int] = None,
+              label: Optional[str] = None, **kw: Any) -> str:
+        """Copies sampled by distance along an existing rail; kw are the add keys."""
+        return self.array(cls, "path", label=label, along=path, spacing=spacing, count=count, **kw)
+
     def set(self, ref: Any, **kw: Any) -> "Batch":
         """Change a row (pos, by, rot, up, args, switches, links, fields, on_ground, ...)."""
         self.ops.append(_clean({"op": "set", "ref": ref, **kw}))
