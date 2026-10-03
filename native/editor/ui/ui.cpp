@@ -247,12 +247,28 @@ void drawToolbar(float width) {
     char reload[48];
     std::snprintf(reload, sizeof(reload), state.pendingCount > 0 ? "Reload  %d pending" : "Reload", state.pendingCount);
     const float right = width - 12.0f;
+    float leftEdge = right - 96.0f - 8.0f - 230.0f;  // the Reload button's left; Save and the badge go left of it
+    // Save (UX section 17): highlighted while there are unsaved edits; Cmd+S.
+    {
+        const char* label = state.unsaved ? "Save*###save" : "Save###save";
+        const float w = ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (state.unsaved) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.66f, 1.0f, 0.45f));
+        if (ImGui::Button(label)) requestSave(false);
+        if (state.unsaved) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            const std::string& mod = sessionModName();
+            ImGui::SetTooltip(mod.empty() ? "Save your edits as a mod (Cmd+S)" : "Save to mods/%s (Cmd+S; Cmd+Shift+S to change)", mod.c_str());
+        }
+    }
     // Checks badge (UX section 16): problems the edits introduced; opens the Checks tab.
     if (const CheckCounts counts = countChecks(checks()); counts.errors + counts.warnings > 0) {
         char badge[32];
         std::snprintf(badge, sizeof(badge), "     %d###checks", counts.errors + counts.warnings);  // room for the warning sign
         const float badgeWidth = ImGui::CalcTextSize(badge, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
-        ImGui::SetCursorPos(ImVec2(right - 96.0f - 8.0f - 230.0f - badgeWidth - 10.0f, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        leftEdge -= badgeWidth + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
         ImGui::PushStyleColor(ImGuiCol_Button, counts.errors > 0 ? ImVec4(0.85f, 0.25f, 0.20f, 0.85f) : ImVec4(0.90f, 0.65f, 0.15f, 0.80f));
         if (ImGui::Button(badge)) openTab("Checks");
         ImGui::PopStyleColor();
@@ -512,6 +528,7 @@ void drawFrame(float windowWidth, float windowHeight) {
 
     drawGalaxyWindow(kOutliner);
     drawInspectorWindow(kInspector);
+    drawSaveSheet();
 
     if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
                                                                         central->Size.y > 8.0f) {
