@@ -107,6 +107,8 @@ static bool loadAndCheck(const Bytes& model, const T::Mesh& mesh, const std::str
         // ... and is the only light: a vertex-coloured COLOR0 is not lit by the scene again.
         J3DColorChan* pChan = pMaterial != nullptr && pMaterial->getColorBlock() != nullptr ? pMaterial->getColorBlock()->getColorChan(0) : nullptr;
         expect(pChan == nullptr || pChan->getMatSrc() != GX_SRC_VTX || pChan->getEnable() == 0, "a vertex-coloured COLOR0 is unlit");
+        J3DColorChan* pAlpha = pMaterial != nullptr && pMaterial->getColorBlock() != nullptr ? pMaterial->getColorBlock()->getColorChan(1) : nullptr;
+        expect(pAlpha == nullptr || pAlpha->getEnable() == 0 || pMaterial->mMaterialMode != 1, "an opaque material's ALPHA0 is unlit (the bake is the only light)");
         const f32* pUvs = static_cast< const f32* >(pData->getVertexData().getVtxTexCoordArray(0));
         expect(pUvs != nullptr && pUvs[1] == mesh.uvs[1], "UVs (host order)");
         J3DShape* pShape = pData->getShapeNodePointer(0);
