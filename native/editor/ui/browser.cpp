@@ -330,9 +330,9 @@ void drawBrowser(const ModelView& model) {
     // Search: names, classes and the catalog's aliases ("goomba" finds Kuribo).
     char query[64];
     std::snprintf(query, sizeof(query), "%s", gQuery.c_str());
-    ImGui::SetNextItemWidth(-130.0f);
+    ImGui::SetNextItemWidth(-1.0f);
     if (ImGui::InputTextWithHint("##search", "Search objects (goomba, launch, coin...)", query, sizeof(query))) gQuery = query;
-    ImGui::SameLine(); if (ImGui::SmallButton("Import model...")) openImportSheet();  // M6 import
+    if (ImGui::SmallButton("Import model...")) openImportSheet();  // M6 import
     ImGui::SameLine(); if (ImGui::SmallButton("New path")) beginNewPath();  // M3 paths: draw a fresh rail.
     noteTestTarget("button:New path");
     // Categories present.
