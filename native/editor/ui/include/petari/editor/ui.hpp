@@ -44,6 +44,12 @@ void setSettingsFile(const char* path);
 // A mod zip dropped on the window (UX section 17, Installing): the Install sheet, in or out of Edit.
 void openInstallSheet(const char* zipPath);
 void submitInstallSheet();  // test drivers: press Install
+// Test drivers: the New Galaxy sheet (UX section 14) and its Create.
+void openNewGalaxySheetForTest();
+void submitNewGalaxySheet();
+
+// While a new galaxy opens after its restart: a "Creating <name>..." banner this frame (UX section 14).
+void showOpening(const char* title);
 
 // Test drivers: where a control was drawn last frame, in window points ("tab:Browser", "button:Cancel");
 // false if it wasn't drawn.

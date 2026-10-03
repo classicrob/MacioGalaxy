@@ -10,6 +10,7 @@
 
 #include "imgui.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <filesystem>
@@ -464,6 +465,171 @@ void drawInstallSheet() {
         std::fprintf(stderr, "[editor] install: %s\n", gInstall.installed.empty() ? error.c_str() : ("installed " + folder).c_str());
     }
     noteTestTarget("button:Install");
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel", ImVec2(110.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+    ImGui::EndPopup();
+}
+
+// ---- New galaxy (UX section 14; docs/dev/level-editor/new-galaxy-flow.md) ----
+
+namespace {
+bool gOpenNewGalaxy = false;
+bool gSubmitNewGalaxy = false;
+struct NewGalaxyFields {
+    char name[48] = {};
+    char internalName[64] = {};
+    bool internalEdited = false;
+    int from = 1;               // NewGalaxyRequest::From
+    char planetFilter[48] = {};
+    std::string planet;
+    std::string copyOf;
+    std::string music;
+    int missions = 1;
+    char missionNames[8][48] = {};
+    std::string sent;           // after Create: the name it was sent for
+} gNew;
+
+// A searchable list of choices; returns the chosen one (or keeps `current`).
+void choiceList(const char* id, const std::vector< std::string >& items, const char* filter, std::string* current, float height) {
+    ImGui::BeginChild(id, ImVec2(-1.0f, height), ImGuiChildFlags_Borders);
+    int shown = 0;
+    for (const std::string& item : items) {
+        if (filter != nullptr && !matchesQuery(item, filter)) continue;
+        if (ImGui::Selectable(item.c_str(), *current == item)) *current = item;
+        if (++shown > 400) break;
+    }
+    if (shown == 0) ImGui::TextDisabled(items.empty() ? "(the disc's list isn't ready yet)" : "Nothing matches.");
+    ImGui::EndChild();
+}
+}  // namespace
+
+void openNewGalaxySheet() { gOpenNewGalaxy = true; }
+void openNewGalaxySheetForTest() { openNewGalaxySheet(); }
+void submitNewGalaxySheet() { gSubmitNewGalaxy = true; }
+
+void drawNewGalaxySheet() {
+    if (gOpenNewGalaxy) {
+        gOpenNewGalaxy = false;
+        gNew = NewGalaxyFields{};
+        std::snprintf(gNew.name, sizeof(gNew.name), "%s", "My Galaxy");
+        const NewGalaxyChoices& choices = newGalaxyChoices();
+        if (!choices.planets.empty()) gNew.planet = choices.planets.front();
+        gNew.copyOf = std::find(choices.galaxies.begin(), choices.galaxies.end(), "EggStarGalaxy") != choices.galaxies.end()
+                          ? "EggStarGalaxy" : (choices.galaxies.empty() ? "" : choices.galaxies.front());
+        gNew.music = gNew.copyOf;
+        for (int m = 0; m < 8; m++) std::snprintf(gNew.missionNames[m], sizeof(gNew.missionNames[m]), "Mission %d", m + 1);
+        ImGui::OpenPopup("New galaxy");
+    }
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(560.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.02f, 0.20f, 0.31f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.40f, 0.86f, 1.0f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.06f, 0.12f, 0.72f));
+    ImGui::PushStyleVar(ImGuiStyleVar_PopupBorderSize, 1.5f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16.0f, 14.0f));
+    const bool open = ImGui::BeginPopupModal("New galaxy", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(3);
+    if (!open) return;
+    const NewGalaxyChoices& choices = newGalaxyChoices();
+    if (!gNew.sent.empty()) {
+        ImGui::TextWrapped("Creating %s... Petari restarts into it, in Edit, in about half a minute.", gNew.sent.c_str());
+        if (ImGui::Button("OK", ImVec2(110.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+        return;
+    }
+    // 1. Start from.
+    drawSection("1  Start from");
+    static const char* const kFrom[4] = {"Empty space", "One planet", "Brush skeleton", "Copy a galaxy"};
+    static const char* const kFromHelp[4] = {"A start point and nothing else.", "A planet from the game, with its gravity.",
+                                             "A checker box to stand on and a Power Star, ready for brushes.",
+                                             "A galaxy from the game, as your own copy (the original is untouched)."};
+    for (int i = 0; i < 4; i++) {
+        if (i > 0) ImGui::SameLine();
+        if (ImGui::RadioButton(kFrom[i], gNew.from == i)) gNew.from = i;
+    }
+    ImGui::TextColored(kDim, "%s", kFromHelp[gNew.from]);
+    if (gNew.from == 1) {
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputTextWithHint("##planet-filter", "Find a planet", gNew.planetFilter, sizeof(gNew.planetFilter));
+        choiceList("planets", choices.planets, gNew.planetFilter, &gNew.planet, 120.0f);
+    } else if (gNew.from == 3) {
+        choiceList("galaxies", choices.galaxies, nullptr, &gNew.copyOf, 120.0f);
+    }
+    // 2. Look and sound.
+    drawSection("2  Music");
+    ImGui::SetNextItemWidth(-1.0f);
+    if (ImGui::BeginCombo("##music", gNew.music.empty() ? "Good Egg's" : gNew.music.c_str())) {
+        for (const std::string& galaxy : choices.galaxies) {
+            if (ImGui::Selectable(galaxy.c_str(), gNew.music == galaxy)) gNew.music = galaxy;
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::TextColored(kDim, "Music and sound banks borrowed from that galaxy. Sky and lighting come later.");
+    // 3. Name and missions.
+    drawSection("3  Name and missions");
+    ImGui::TextUnformatted("Name");
+    ImGui::SameLine(110.0f);
+    ImGui::SetNextItemWidth(-1.0f);
+    ImGui::InputText("##name", gNew.name, sizeof(gNew.name));
+    if (!gNew.internalEdited) std::snprintf(gNew.internalName, sizeof(gNew.internalName), "%s", newGalaxyInternalName(gNew.name).c_str());
+    const std::string problem = checkNewGalaxyName(gNew.internalName);
+    if (ImGui::TreeNode("Advanced")) {
+        ImGui::TextUnformatted("Internal name");
+        ImGui::SameLine(110.0f);
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::InputText("##internal", gNew.internalName, sizeof(gNew.internalName))) gNew.internalEdited = true;
+        ImGui::TreePop();
+    }
+    ImGui::TextColored(problem.empty() ? kDim : kWarn, "%s", problem.empty() ? ("Stage " + std::string(gNew.internalName) + ", in Level Select's Mod galaxies").c_str() : problem.c_str());
+    ImGui::TextUnformatted("Missions");
+    ImGui::SameLine(110.0f);
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::SliderInt("##missions", &gNew.missions, 1, 8);
+    for (int m = 0; m < gNew.missions; m++) {
+        ImGui::PushID(m);
+        ImGui::SetCursorPosX(110.0f);
+        ImGui::SetNextItemWidth(-1.0f);
+        ImGui::InputText("##mission", gNew.missionNames[m], sizeof(gNew.missionNames[m]));
+        ImGui::PopID();
+    }
+    ImGui::TextColored(kDim, "Stars collected there are kept in the mod's own save, never in your game's save slots.");
+    ImGui::Separator();
+    // Create: the current galaxy's unsaved edits first.
+    const bool unsaved = status().unsaved;
+    bool discard = false;
+    if (unsaved) {
+        ImGui::TextColored(kWarn, "You have unsaved edits here. Save them first, or discard them to create.");
+        if (ImGui::Button("Save...", ImVec2(110.0f, 0.0f))) {
+            ImGui::CloseCurrentPopup();
+            requestSave(false);
+        }
+        ImGui::SameLine();
+        discard = ImGui::Button("Discard and create", ImVec2(160.0f, 0.0f));
+        ImGui::SameLine();
+    }
+    const bool ready = problem.empty() && gNew.name[0] != '\0' && (gNew.from != 1 || !gNew.planet.empty()) && (gNew.from != 3 || !gNew.copyOf.empty());
+    ImGui::BeginDisabled(!ready || unsaved);
+    const bool create = ImGui::Button("Create", ImVec2(110.0f, 0.0f));
+    ImGui::EndDisabled();
+    noteTestTarget("button:Create");
+    if (ready && (create || discard || gSubmitNewGalaxy)) {
+        gSubmitNewGalaxy = false;
+        Command command{Command::Kind::NewGalaxy};
+        command.newGalaxy.name = gNew.name;
+        command.newGalaxy.internalName = gNew.internalName;
+        command.newGalaxy.from = static_cast< NewGalaxyRequest::From >(gNew.from);
+        command.newGalaxy.planet = gNew.planet;
+        command.newGalaxy.copyOf = gNew.copyOf;
+        command.newGalaxy.musicFrom = gNew.music;
+        for (int m = 0; m < gNew.missions; m++) command.newGalaxy.missions.push_back(gNew.missionNames[m]);
+        command.newGalaxy.discardUnsaved = discard || (gSubmitNewGalaxy && unsaved);
+        enqueue(std::move(command));
+        gNew.sent = gNew.name;
+        std::fprintf(stderr, "[editor] new galaxy: %s (%s, from %s)\n", gNew.name, gNew.internalName, kFrom[gNew.from]);
+    }
     ImGui::SameLine();
     if (ImGui::Button("Cancel", ImVec2(110.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) ImGui::CloseCurrentPopup();
     ImGui::EndPopup();

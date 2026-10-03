@@ -336,6 +336,22 @@ App::FrameStats::Phase framePhaseForPipelines() {
         }
         testWarp.clear();
     }
+#ifdef PETARI_EDITOR_UI
+    // A new galaxy's first start (PETARI_OPEN_EDIT=1, after New galaxy's restart): into Edit on the first playable
+    // frames, as a Tab tap would; the "Creating <name>..." banner until then (UX section 14).
+    static long openEditFrames = 0;
+    if (PetariNative::PlayerLaunch::openEdit) {
+        if (PetariNative::EditorSettings::active()) {
+            std::fprintf(stderr, "[editor] opened %s in Edit\n", PetariNative::PlayerLaunch::openTitle.c_str());
+            PetariNative::PlayerLaunch::openEdit = false;
+        } else {
+            PetariEditor::Ui::showOpening(PetariNative::PlayerLaunch::openTitle.c_str());
+            if (gameplay && (++openEditFrames == 10 || (openEditFrames > 10 && openEditFrames % 60 == 0 && openEditFrames < 600))) {
+                PetariNative::EditorSettings::toggle();
+            }
+        }
+    }
+#endif
     // Test driver (PETARI_CAMERA_TEST=1, with the Odyssey camera mod on), counted only
     // while the orbit is active (scripted cameras leave it alone): first a collision
     // sweep (farthest zoom, camera below Mario, one full turn: the line of sight must
@@ -679,6 +695,8 @@ App::FrameStats::Phase framePhaseForPipelines() {
                 }
 #endif
 #ifdef PETARI_EDITOR_UI
+                // PETARI_EDITOR_TEST_NEWGALAXY=1: open the New Galaxy sheet (not Create: that restarts the app).
+                if (t == 196 && std::getenv("PETARI_EDITOR_TEST_NEWGALAXY") != nullptr) PetariEditor::Ui::openNewGalaxySheetForTest();
                 // PETARI_EDITOR_TEST_SHARE=1 (UX section 17): save the mod, export it with the Share sheet into
                 // PETARI_EDITOR_SHARE_DIR, then install that zip through the Install sheet (it is installed already,
                 // so the second press replaces it). The log shows each step.
