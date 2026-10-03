@@ -18,8 +18,8 @@ std::optional< Formats::Bytes > readMounted(const std::string& path);
 /// The same file from the disc itself (no mods): the base of patches and of "Changed".
 std::optional< Formats::Bytes > readUnmodded(const std::string& path);
 
-/// The catalog (shipped + <userDirectory>/editor/catalog), classes other modules define
-/// (`registerClasses`, may be empty: terrain's brush), the disc's planets, then the model of
+/// The catalog (shipped + <userDirectory>/editor/catalog), the terrain brush class and checks,
+/// classes other modules define (`registerClasses`, may be empty), the disc's planets, then the model of
 /// `galaxy` mission `scenario`. Null and *pError when the galaxy can't be read; a catalog problem
 /// is only reported (*pCatalogError) and the model still loads.
 std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const std::string& userDirectory,

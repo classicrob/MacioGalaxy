@@ -72,7 +72,8 @@ target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 if(TARGET petari_platform_dvd)
     add_library(petari_editor_save STATIC runtime/model_io.cpp)
     target_include_directories(petari_editor_save PUBLIC include runtime)
-    target_link_libraries(petari_editor_save PUBLIC petari_editor_model petari_editor_core petari_editor_terrain petari_platform_dvd
+    target_link_libraries(petari_editor_save PUBLIC petari_editor_model petari_editor_core petari_editor_terrain petari_editor_terrain_catalog
+        petari_platform_dvd
         petari_native_config)
 endif()
 
