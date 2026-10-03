@@ -540,17 +540,17 @@ def parse_tpl_links(text):
 class Bisect:
     """Required-links search for one failing class on one stage, as rounds of jobs that all classes run together.
 
-    1. template stage: if the stage has a row of the class, try mode keep (its links as they are); if that passes, drop
-       one kept link per round while the class still passes. What is left is required.
-    2. provision stage: otherwise (or if keep fails) give every link field a real id harvested from the stage, then drop
-       fields one per round while it passes.
-    Verdict: required (fields), none (passes with empty links), unresolved (no combination passed)."""
+    1. keep: create it from the stage's own row of the class with all its links. If the stage has such a row (the log says
+       row=cloned) and it passes, the links in that row are the candidates: drop one per round while the class still passes;
+       what is left is required. Passing with a synthesized row says nothing (those links belong to another object).
+    2. provision: give every link field a real id harvested from the stage, then drop fields one per round while it passes.
+    Verdict: required (fields, source drop-keep or drop-provision) or unresolved (no combination passed)."""
 
     def __init__(self, record, harvest, base_overrides):
         self.cls = record["class"]
         self.base = base_overrides
         self.harvest = harvest
-        self.tpl = parse_tpl_links((record.get("metrics") or {}).get("tpl_links", "-"))
+        self.tpl = {}
         self.phase = "start"
         self.keep = []       # fields currently kept/provisioned
         self.values = {}     # provisioned values
@@ -563,9 +563,7 @@ class Bisect:
         if self.verdict:
             return None
         if self.phase == "start":
-            if self.tpl:
-                return self._job("keep", [])
-            self.phase = "provision-all"
+            return self._job("keep", [])
         if self.phase == "provision-all":
             self.values = {f: v[0] for f, v in self.harvest.items()}
             self.keep = sorted(self.values)
@@ -599,7 +597,9 @@ class Bisect:
         ok = record["status"] in PASS
         self.tested.append({"mode": self.current["mode"], "overrides": self.current["overrides"], "status": record["status"]})
         if self.phase == "start":
-            if ok:
+            metrics = record.get("metrics") or {}
+            if ok and metrics.get("row") == "cloned":
+                self.tpl = parse_tpl_links(metrics.get("tpl_links", "-"))
                 self.phase = "drop-keep"
                 self.keep = sorted(self.tpl)
                 self.next_drop = 0
