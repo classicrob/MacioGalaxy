@@ -78,6 +78,7 @@ namespace EditorPlaytest {
     void init() {
         static bool registered = false;
         if (!registered) {
+            PetariNative::HostAllocationScope host;
             Runtime::registerPlayListener(event);
             registered = true;
         }
