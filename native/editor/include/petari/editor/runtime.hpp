@@ -1,6 +1,11 @@
 #pragma once
 // The level editor runtime's entry point in the frame (TECH.md 2.10, 10).
 
+#include <petari/editor/edit_api.hpp>
+
+class LiveActor;
+class JMapInfoIter;
+
 namespace PetariEditor::Runtime {
 
 /// GameScene::update, every frame, before the scene's nerves (CPU baton held). Loads the
@@ -19,5 +24,23 @@ void tick(bool playable);
 bool reloadScene(bool fromStart);
 /// True from reloadScene() (or the editor's Reload) until the new scene is playable.
 bool reloading();
+
+// ---- SceneSync extensions (M3: gravity, paths). Register once at start-up; game thread. ----------
+
+/// A drag preview for classes whose look isn't just the actor's transform (a gravity field's
+/// shape is baked at init). Asked in order before the generic poke, for Preview and EndPreview
+/// (`t` in the row's zone space); true: handled, the generic poke is skipped.
+using PreviewHandler = bool (*)(LiveActor* pActor, int zoneId, const RowTransform& t);
+void registerPreviewHandler(PreviewHandler handler);
+
+/// An in-place update instead of a re-create (gravity: no new manager slot). Asked in order when a
+/// row with a live actor changed, with the new row; true: the actor now matches the row (it stays
+/// bound); false: re-create it.
+using LiveUpdater = bool (*)(RowId row, LiveActor* pCurrent, const JMapInfoIter& newRow);
+void registerLiveUpdater(LiveUpdater updater);
+
+/// Recomputes the Checks on the next tick without changing their baseline (a check provider's
+/// live inputs changed: gravity samples).
+void invalidateChecks();
 
 }  // namespace PetariEditor::Runtime
