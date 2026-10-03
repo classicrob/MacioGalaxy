@@ -26,6 +26,8 @@ namespace PetariEditor::Runtime {
         static RowId row;
         static LiveActor* actor = nullptr;
         static LiveActor* visual = nullptr;
+        static LiveActor* previous = nullptr;
+        static std::string importedClass;
         static std::uint32_t serial = 0;
         if (!output || done) {
             return;
@@ -118,6 +120,94 @@ namespace PetariEditor::Runtime {
                 return finish("FAIL: redo did not restore reusable imported part");
             }
             std::fprintf(stderr, "[editor-import] undo retires model/collision; redo reuses part PASS\n");
+            importedClass = m->objectName(row);
+            visual = static_cast< EditorTerrain::Part* >(actor)->mModel;
+            Command change{Command::Kind::Apply};
+            change.op.label = "Transition import to Coin";
+            change.op.sets.push_back({row, columnHash("name"), Cell{CellType::StringOffset, 0, 0, "Coin"}});
+            enqueue(std::move(change));
+            step = 5;
+            wait = 0;
+        }
+        auto inactive = [](LiveActor* old) { return old && MR::isDead(old) && !EditorScene::isConnectedToDraw(old); };
+        auto changeClass = [&](const std::string& name, bool brush) {
+            Command change{Command::Kind::Apply};
+            change.op.label = "Change generated row provider";
+            change.op.sets.push_back({row, columnHash("name"), Cell{CellType::StringOffset, 0, 0, name}});
+            if (brush) {
+                for (const char* field : {"Obj_arg0", "Obj_arg1", "Obj_arg2", "Obj_arg3"}) {
+                    change.op.sets.push_back({row, columnHash(field), Cell{CellType::Int, 0, 0, {}}});
+                }
+            }
+            enqueue(std::move(change));
+        };
+        if (step == 5 && ++wait == 5) {
+            previous = actorForRow(row);
+            if (!previous || previous == actor || !inactive(actor) || !inactive(visual)) {
+                return finish("FAIL: import to ordinary actor left old geometry alive");
+            }
+            enqueue(Command{Command::Kind::Undo});
+            step = 6;
+            wait = 0;
+        }
+        if (step == 6 && ++wait == 5) {
+            if (actorForRow(row) != actor || MR::isDead(actor) || !inactive(previous)) {
+                return finish("FAIL: ordinary actor to import undo did not retire prior owner");
+            }
+            visual = static_cast< EditorTerrain::Part* >(actor)->mModel;
+            changeClass("EditorBrush", true);
+            step = 7;
+            wait = 0;
+        }
+        if (step == 7 && ++wait == 5) {
+            previous = actorForRow(row);
+            if (!previous || previous == actor || !inactive(actor) || !inactive(visual)) {
+                return finish("FAIL: import to brush left prior owner alive");
+            }
+            enqueue(Command{Command::Kind::Undo});
+            step = 8;
+            wait = 0;
+        }
+        if (step == 8 && ++wait == 5) {
+            if (actorForRow(row) != actor || MR::isDead(actor) || !inactive(previous)) {
+                return finish("FAIL: brush to import undo left brush alive");
+            }
+            enqueue(Command{Command::Kind::Redo});
+            step = 9;
+            wait = 0;
+        }
+        if (step == 9 && ++wait == 5) {
+            previous = actorForRow(row);
+            if (!previous || previous == actor || !inactive(actor)) {
+                return finish("FAIL: provider transition redo");
+            }
+            changeClass(importedClass, false);
+            step = 10;
+            wait = 0;
+        }
+        if (step == 10 && ++wait == 5) {
+            if (actorForRow(row) != actor || MR::isDead(actor) || !inactive(previous)) {
+                return finish("FAIL: direct brush to import left brush alive");
+            }
+            enqueue(Command{Command::Kind::Undo});
+            step = 11;
+            wait = 0;
+        }
+        if (step == 11 && ++wait == 5) {
+            previous = actorForRow(row);
+            if (!previous || previous == actor || !inactive(actor)) {
+                return finish("FAIL: direct transition undo");
+            }
+            enqueue(Command{Command::Kind::Undo});
+            step = 12;
+            wait = 0;
+        }
+        if (step == 12 && ++wait == 5) {
+            if (actorForRow(row) != actor || MR::isDead(actor) || !inactive(previous) || m->historyCursor() != cursor + 1 ||
+                Hooks::sceneSerial() != serial) {
+                return finish("FAIL: provider transition restore/history/reload");
+            }
+            std::fprintf(stderr, "[editor-import] ordinary/import/brush transitions + undo/redo retire every prior owner PASS\n");
             std::string error, summary;
             const auto* edit = dynamic_cast< const EditModel* >(m);
             const auto root = std::filesystem::path(output) / "user" / "mods" / "ImportedFixture";

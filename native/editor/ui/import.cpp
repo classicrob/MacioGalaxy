@@ -45,6 +45,9 @@ namespace PetariEditor::Ui {
             }
         }
         void loadPath(std::string path, bool collision) {
+            if (mode() != Mode::Editing || !model()) {
+                return;
+            }
             if (gJob.valid()) {
                 gError = "Wait for the current import to finish before choosing another file.";
                 return;
@@ -54,6 +57,9 @@ namespace PetariEditor::Ui {
             } else {
                 gPath = path;
                 gScene.reset();
+                gCollision.reset();
+                gCollisionPath.clear();
+                gDirty = false;
                 gAsset.reset();
                 gOptions = I::Options{};
             }
@@ -250,6 +256,9 @@ namespace PetariEditor::Ui {
         }
     }  // namespace
     void openImportSheet(const char* path) {
+        if (mode() != Mode::Editing || !model()) {
+            return;
+        }
         gOpen = true;
         if (path && *path) {
             loadPath(path, false);

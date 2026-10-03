@@ -70,6 +70,7 @@ namespace {
         std::uint32_t boundScene = 0;
         std::map< const void*, std::map< int, RowId > > placementRows;
         std::map< RowId, std::vector< LiveActor* > > actors;  // every actor a row made, first first
+        std::map< RowId, bool (*)(const char*) > generatedOwners;
         std::set< RowId > pending;                             // edits that need a reload
         std::vector< std::unique_ptr< LiveRow > > liveRows;
         std::set< RowId > previewing;
@@ -149,6 +150,7 @@ namespace {
         }
         s.suspectNotices.clear();
         s.actors.clear();
+        s.generatedOwners.clear();
         s.placementRows.clear();
         s.pending.clear();
         s.boundScene = 0;
@@ -298,6 +300,7 @@ namespace {
         Session& s = session();
         s.scenePlayed = false;
         s.actors.clear();
+        s.generatedOwners.clear();
         s.placementRows.clear();
         s.liveRows.clear();
         Hooks::clearRailTables();
@@ -368,6 +371,7 @@ namespace {
                     }
                     for (const auto& provider : gGeneratedProviders) {
                         if (provider.owns(model.objectName(id))) {
+                            s.generatedOwners[id] = provider.owns;
                             provider.sync(model, id);
                             break;
                         }
@@ -386,6 +390,7 @@ namespace {
             provider.retire(id);
         }
         Session& s = session();
+        s.generatedOwners.erase(id);
         auto it = s.actors.find(id);
         if (it != s.actors.end()) {
             for (LiveActor* pActor : it->second) {
@@ -448,12 +453,20 @@ namespace {
             const bool shown = m.state(id) != RowState::Deleted && m.zonePlaced(zone) && layer >= 0 &&
                                (m.activeLayers(zone, m.scenario()) & (1u << layer));
             if (shown) {
+                const auto previous = s.generatedOwners.find(id);
+                if (previous == s.generatedOwners.end() || previous->second != provider.owns) {
+                    retireRow(id);
+                }
+                s.generatedOwners[id] = provider.owns;
                 provider.sync(m, id);
             } else {
                 retireRow(id);
             }
             s.pending.erase(id);
             return;
+        }
+        if (s.generatedOwners.count(id)) {
+            retireRow(id);
         }
         const bool gravity = isGravityTable(path);
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
