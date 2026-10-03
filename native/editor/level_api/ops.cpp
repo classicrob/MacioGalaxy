@@ -771,6 +771,36 @@ namespace {
                  {}, where);
         }
 
+        // A Launch or Sling Star flies its rail from where it is placed but draws facing its own rotation: face it
+        // along the rail's first segment, as the core check's fix does (launch-star-facing: pitch and yaw, no roll).
+        void facePath(RowId row, const std::string& where) {
+            const char* pName = model.objectName(row);
+            const std::string name = pName != nullptr ? pName : "";
+            if (name.rfind("SuperSpinDriver", 0) != 0 && name != "SpinDriver")
+                return;
+            const Cell* rail = model.cell(row, columnHash("CommonPath_ID"));
+            int zone = 0, table = 0;
+            model.locate(row, &zone, &table);
+            for (const Paths::Rail& r : Paths::collect(model)) {
+                if (rail == nullptr || r.zone != zone || r.id != rail->i || r.points.size() < 2)
+                    continue;
+                const Vec3 a = r.points[0].position, b = r.points[1].position;
+                G::V3 t{b.x - a.x, b.y - a.y, b.z - a.z};
+                if (G::length(t) < 0.001f)
+                    return;
+                t = G::normalized(t);
+                const float pitch = -std::asin(std::clamp(t.y, -1.0f, 1.0f)) / G::kDeg;
+                const float yaw = std::atan2(t.x, t.z) / G::kDeg;
+                Op face;
+                face.label = "Face along the path";
+                face.sets.push_back({row, columnHash("dir_x"), floatCell(pitch)});
+                face.sets.push_back({row, columnHash("dir_y"), floatCell(yaw)});
+                face.sets.push_back({row, columnHash("dir_z"), floatCell(0.0f)});
+                apply(face, where);
+                return;
+            }
+        }
+
         void label(RowId row, const Json::Value& op, const std::string& where) {
             if (!op.has("as"))
                 return;
@@ -805,7 +835,7 @@ namespace {
         void run(const Json::Value& op, const std::string& where) {
             const std::string kind = lower(op["op"].asString());
             if (kind == "add") {
-                checkKeys(op, with({"op", "class", "zone", "layer", "missions", "like", "preset", "as", "force", "path"}, kEditKeys), where);
+                checkKeys(op, with({"op", "class", "zone", "layer", "missions", "like", "preset", "as", "force", "path", "face_path"}, kEditKeys), where);
                 if (!op.has("class") && !op.has("like"))
                     fail("bad-args", where + ": add needs \"class\" (or \"like\": a row to copy)", "", {}, where);
                 const Catalog::ClassInfo* info =
@@ -859,8 +889,13 @@ namespace {
                     edits.set("args", std::move(args));
                 }
                 edit(row, edits, where);
-                if (op.has("path"))
+                if (op.has("path")) {
                     linkRail(row, op["path"], where + ".path");
+                    // Facing the path is the default unless the op orients the star itself.
+                    const bool oriented = op.has("rot") || op.has("zone_rot") || op.has("up") || op.has("front") || op.has("turn");
+                    if (op.has("face_path") ? op["face_path"].asBool() : !oriented)
+                        facePath(row, where + ".path");
+                }
                 label(row, op, where);
             } else if (kind == "gravity-shape" || kind == "gravity-values") {
                 checkKeys(op, kind == "gravity-shape" ? std::vector<std::string>{"op", "ref", "refs", "select", "shape", "bound"} :
@@ -1025,11 +1060,14 @@ namespace {
                 created.push_back(fresh);
                 label(fresh, op, where);
             } else if (kind == "link") {
-                checkKeys(op, {"op", "ref", "refs", "select", "path"}, where);
+                checkKeys(op, {"op", "ref", "refs", "select", "path", "face_path"}, where);
                 if (!op.has("path"))
                     fail("bad-args", where + ": link needs \"path\": a path ref", "", {}, where);
-                for (RowId row : impl.resolveTargets(op, where))
+                for (RowId row : impl.resolveTargets(op, where)) {
                     linkRail(row, op["path"], where + ".path");
+                    if (op["face_path"].asBool())
+                        facePath(row, where + ".path");
+                }
             } else if (kind == "array" || kind == "ground_array") {
                 checkKeys(op,
                           with({"op",          "class",  "zone",  "layer",  "missions", "like",  "preset",  "as",     "force",

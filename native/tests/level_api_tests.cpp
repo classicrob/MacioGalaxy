@@ -578,6 +578,15 @@ int main() {
     for (const Value& c : flight["checks_introduced"].items())
         linkProblem = linkProblem || c["key"].asString().find("link") != std::string::npos;
     check(!linkProblem, "a linked Launch Star raises no link check");
+    bool facing = false;
+    for (const Value& c : flight["checks_introduced"].items()) facing = facing || c["key"].asString().rfind("launch-star-facing", 0) == 0;
+    check(!facing, "a Launch Star added on a path faces along it (no launch-star-facing check)");
+    std::snprintf(buf, sizeof(buf), R"({"dry_run":true,"ops":[{"op":"add","class":"SuperSpinDriver","pos":[%.1f,%.1f,%.1f],"path":"@flight","face_path":false}]})",
+                  sx, sy + 200, sz);
+    Value unfaced = lv.call("apply", parse(buf));
+    facing = false;
+    for (const Value& c : unfaced["checks_introduced"].items()) facing = facing || c["key"].asString().rfind("launch-star-facing", 0) == 0;
+    check(facing, "face_path false leaves it facing away, and the core check says so");
     Value unlinked = call(lv, "apply", R"({"dry_run":true,"ops":[{"op":"add","class":"SuperSpinDriver","pos":[0,0,0]}]})");
     check(unlinked["checks_introduced"].items().size() >= 1, "a Launch Star without a path is reported");
 

@@ -119,7 +119,7 @@ row in the zone uses; `"@goomba.SW_DEAD"` takes another row's switch (in the sam
 | `delete`, `revert` | delete rows; put rows back to the disc |
 | `array` | many adds along a `line`/`arc` (`start`, `end`; `from`/`to` also accepted), `ring`, `grid` or `path` (polyline) |
 | `path` | a rail from world points (`Paths::addRail`): smooth Catmull-Rom handles unless given, `closed`, `on_ground`; label it |
-| `link` | objects' `CommonPath_ID` to a path (`Paths::linkPath`: same zone); `add` takes `"path": "@flight"` too |
+| `link` | objects' `CommonPath_ID` to a path (`Paths::linkPath`: same zone); `add` takes `"path": "@flight"` too, and then faces a Launch or Sling Star along the path's first segment (as the `launch-star-facing` check's fix; `face_path: false` or an explicit `rot`/`up`/`front` opts out) |
 | `fix` | apply a check's automatic fix: `{"op": "fix", "check": "<key from checks>"}` |
 | `label` | name an existing row |
 | `raw` | a low-level op (the journal's format) |
