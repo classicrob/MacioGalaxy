@@ -399,10 +399,13 @@ namespace PetariEditor::Ui {
             if (!view.message.empty()) {
                 hint = view.message;
             }
-            const auto size = ImGui::CalcTextSize(hint.c_str());
-            list->AddRectFilled(ImVec2(x + 12, y + 12), ImVec2(x + std::min(width - 12, size.x + 32), y + 65), IM_COL32(4, 20, 32, 235), 8);
+            const float wrap = std::max(80.0f, width - 44);
+            const auto size = ImGui::CalcTextSize(hint.c_str(), nullptr, false, wrap);
+            const float line = ImGui::GetFontSize();
+            list->AddRectFilled(ImVec2(x + 12, y + 12), ImVec2(x + std::min(width - 12, size.x + 32), y + 36 + line + size.y),
+                                IM_COL32(4, 20, 32, 235), 8);
             list->AddText(ImVec2(x + 22, y + 19), IM_COL32(250, 204, 56, 255), title.c_str());
-            list->AddText(ImVec2(x + 22, y + 42), IM_COL32_WHITE, hint.c_str());
+            list->AddText(nullptr, 0, ImVec2(x + 22, y + 25 + line), IM_COL32_WHITE, hint.c_str(), nullptr, wrap);
             list->PopClipRect();
             return true;
         }

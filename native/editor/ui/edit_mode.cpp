@@ -365,7 +365,7 @@ void updateEditMode(float windowWidth, float windowHeight) {
     drawGravityOverlay(area.x, area.y, area.w, area.h);  // M3 gravity: probe and shortcut.
     const bool arrayConsumed = drawArrayOverlay(area.x, area.y, area.w, area.h);  // Array: handles precede picking.
     const bool toolConsumed =
-        drawPathsViewport(area.x, area.y, area.w, area.h) || areasConsumed || arrayConsumed;  // M3 paths: handles precede picking.
+        drawStyledOverlay([&] { return drawPathsViewport(area.x, area.y, area.w, area.h); }) || areasConsumed || arrayConsumed;  // M3 paths: handles precede picking.
     cameraInput(area, toolConsumed);
     drawPickMarks(area);
     drawGizmo(area);
