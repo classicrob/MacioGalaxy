@@ -7,6 +7,8 @@
 #include <petari/editor/catalog.hpp>
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <map>
 #include <set>
@@ -109,6 +111,24 @@ std::vector< Check > computeChecks(const ModelView& m) {
                                         "\"" + name + "\" is not an object the game knows; it will not appear", {row}, "", Op{}, ""});
                 }
                 if (const int lid = intCell(m, row, "l_id"); lid >= 0) lids[lid].push_back(row);
+
+                // Collision can't stretch (CollisionParts::makeEqualScale): a solid object scaled
+                // unevenly draws stretched but collides with one scale on every axis.
+                // (Not terrain brushes: their scale goes into the mesh they bake, a planet at scale 1.)
+                if (pInfo != nullptr && pInfo->hasCollision && name != "EditorBrush") {
+                    const RowTransform t = m.transform(row);
+                    const float x = t.scale.x;
+                    if (std::fabs(t.scale.y - x) > 0.001f || std::fabs(t.scale.z - x) > 0.001f) {
+                        Op fix;
+                        fix.label = "Make the scale even";
+                        fix.sets.push_back(SetCell{row, columnHash("scale_y"), Cell{CellType::Float, 0, x, {}}});
+                        fix.sets.push_back(SetCell{row, columnHash("scale_z"), Cell{CellType::Float, 0, x, {}}});
+                        char text[160];
+                        std::snprintf(text, sizeof(text), "%s is scaled unevenly (%.2g, %.2g, %.2g): it draws stretched but collides as if %.2g on every axis",
+                                      who.c_str(), x, t.scale.y, t.scale.z, x);
+                        out.push_back(Check{"uneven-collision:" + key, Severity::Warning, text, {row}, fix.label, fix, ""});
+                    }
+                }
 
                 // Links the class needs, and links pointing nowhere.
                 const int rail = intCell(m, row, "CommonPath_ID");

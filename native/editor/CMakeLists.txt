@@ -44,10 +44,13 @@ add_custom_command(OUTPUT ${_petari_catalog_cpp}
     COMMENT "Embedding the editor catalog")
 
 # Terrain (TECH.md section 6): meshes and brushes, the KCL + .pa writer, the J3D model writer. Pure C++ (no game code).
-add_library(petari_editor_terrain STATIC terrain/mesh.cpp terrain/brush.cpp terrain/kcl_writer.cpp terrain/model_writer.cpp terrain/bake.cpp)
+add_library(petari_editor_terrain STATIC terrain/mesh.cpp terrain/brush.cpp terrain/kcl_writer.cpp terrain/kcl_reader.cpp terrain/model_writer.cpp terrain/bake.cpp)
 target_include_directories(petari_editor_terrain PUBLIC include)
 target_link_libraries(petari_editor_terrain PUBLIC petari_editor_formats petari_editor_patch)
 target_compile_features(petari_editor_terrain PUBLIC cxx_std_17)
+# The brush class and its Checks from rows (no runtime, no game): the in-game editor and headless tools.
+add_library(petari_editor_terrain_catalog STATIC terrain/brush_catalog.cpp)
+target_link_libraries(petari_editor_terrain_catalog PUBLIC petari_editor_terrain petari_editor_core petari_editor_model)
 # Bakes brushes into a Full-archive mod (planet archives, PlanetMapDataTable, placement rows).
 add_executable(petari_terrain_bake tools/terrain_bake.cpp)
 target_link_libraries(petari_terrain_bake PRIVATE petari_editor_terrain)
@@ -67,7 +70,8 @@ target_compile_features(petari_editor_core PUBLIC cxx_std_17)
 if(TARGET petari_platform_dvd)
     add_library(petari_editor_save STATIC runtime/model_io.cpp)
     target_include_directories(petari_editor_save PUBLIC include runtime)
-    target_link_libraries(petari_editor_save PUBLIC petari_editor_model petari_editor_core petari_editor_terrain petari_platform_dvd
+    target_link_libraries(petari_editor_save PUBLIC petari_editor_model petari_editor_core petari_editor_terrain petari_editor_terrain_catalog
+        petari_platform_dvd
         petari_native_config)
 endif()
 
@@ -81,7 +85,7 @@ endif()
 add_library(petari_editor_runtime STATIC runtime/session.cpp runtime/terrain_sync.cpp runtime/save_mod.cpp runtime/sync_test.cpp runtime/reload_test.cpp runtime/save_test.cpp
     runtime/redraw_test.cpp runtime/ensure_test.cpp runtime/brush_test.cpp runtime/paths_test.cpp)
 target_include_directories(petari_editor_runtime PUBLIC include PRIVATE runtime)
-target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_native_config)
+target_link_libraries(petari_editor_runtime PUBLIC petari_editor_core petari_editor_model petari_editor_terrain petari_editor_terrain_catalog petari_native_config)
 if(TARGET petari_platform_dvd)
     target_link_libraries(petari_editor_runtime PRIVATE petari_platform_dvd PUBLIC petari_editor_save)
 endif()
@@ -113,7 +117,7 @@ if(BUILD_TESTING)
     add_test(NAME native_editor_formats COMMAND petari_editor_formats_tests)
 
     add_executable(petari_editor_catalog_tests ${PETARI_REPO_ROOT}/native/tests/editor_catalog_tests.cpp)
-    target_link_libraries(petari_editor_catalog_tests PRIVATE petari_editor_core)
+    target_link_libraries(petari_editor_catalog_tests PRIVATE petari_editor_core petari_editor_terrain_catalog)
     add_test(NAME native_editor_catalog COMMAND petari_editor_catalog_tests)
 
     if(TARGET petari_editor_save)

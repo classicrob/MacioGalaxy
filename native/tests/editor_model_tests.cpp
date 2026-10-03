@@ -115,6 +115,15 @@ void testSynthetic() {
     check(m->columns(1, 0).size() == 6 && std::string(m->columns(1, 0)[2].name) == "pos_x", "columns named");
     check(m->transform(kuribo).pos.y == 20.0f && m->transform(kuribo).scale.x == 1.0f, "transform with default scale");
     check(m->state(kuribo) == E::RowState::Original && m->changedArchives().empty() && !m->unsaved(), "pristine");
+    // A string edit undone leaves the table as loaded (its string stays in the pool): no changed archive.
+    {
+        const E::RowId any = findRow(*m, 1, "jmp/placement/layera/objinfo", "Kuribo");
+        check(m->apply(E::Op{"rename", {E::SetCell{any, E::columnHash("name"), E::Cell{E::CellType::StringOffset, 0, 0, "SomethingLong"}}}, {}},
+                       &error),
+              error);
+        m->undo();
+        check(m->changedArchives().empty(), "an undone rename leaves no changed archive");
+    }
 
     E::Op move{"Move Goomba", {setFloat(kuribo, "pos_y", 25.0f)}, {}};
     check(m->apply(move, &error), "apply");
@@ -307,6 +316,30 @@ void testChecks() {
     check(find(checks, "duplicate-lid:") != nullptr, "duplicate link ids");
     check(checks.front().severity == E::Severity::Error, "errors first");
     check(m->apply(path->fix, &error) && !find(E::computeChecks(*m), "dangling-path:"), "the fix clears it");
+    // A solid object scaled unevenly collides with one scale (CollisionParts::makeEqualScale).
+    {
+        const E::RowId solid = findRow(*m, 1, "jmp/placement/layera/objinfo", "Kuribo");
+        setName(solid, "StrongBlock");
+        set(solid, "scale_x", 0);  // adds the column (Int here; overwritten below as a float)
+        check(m->apply(E::Op{"scale", {setFloat(solid, "scale_x", 3.0f)}, {}}, &error), error);
+        const std::vector< E::Check > scaled = E::computeChecks(*m);
+        const E::Check* uneven = find(scaled, "uneven-collision:");
+        check(uneven && !uneven->fix.sets.empty(), "uneven scale on a solid object, with a fix");
+        check(m->apply(uneven->fix, &error) && !find(E::computeChecks(*m), "uneven-collision:"), "the fix makes it even");
+        PetariEditor::Catalog::ClassInfo brush;  // terrain's brush: its scale is baked into the mesh
+        brush.name = "EditorBrush";
+        brush.hasCollision = true;
+        PetariEditor::Catalog::addClass(brush);
+        setName(solid, "EditorBrush");
+        check(m->apply(E::Op{"scale", {setFloat(solid, "scale_y", 0.08f)}, {}}, &error) && !find(E::computeChecks(*m), "uneven-collision:"),
+              "terrain brushes are exempt");
+        m->undo();
+        m->undo();
+        m->undo();
+        m->undo();
+        m->undo();
+        m->undo();
+    }
     set(kuribo, "SW_B", 500);
     check(find(E::computeChecks(*m), "switch-range:") != nullptr, "a switch id out of range");
     setName(coin, "NoSuchObjectClass");
@@ -365,6 +398,25 @@ void testModOverDisc() {
     std::unique_ptr< E::EditModel > plain = E::EditModel::load("TestGalaxy", 1, from(modded), &error);
     check(plain->state(findRow(*plain, 1, "jmp/placement/layera/objinfo", "Kuribo")) == E::RowState::Original,
           "without the disc source the loaded data is the original");
+
+    // A mod that added a row (row counts differ): matched to the disc as the patch writer does,
+    // so the mod's row reads Added, the moved Kuribo Changed, and Changes isn't empty on open.
+    std::map< std::string, F::Bytes > grown = disc;
+    grown["/StageData/TestZone.arc"] = F::Archive::create(
+        "stage", {{"jmp/Placement/LayerA/ObjInfo", table(kObj, {{str("Kuribo"), i32(5), f32(10), f32(99), f32(30), i32(2)},
+                                                                 {str("StrongBlock"), i32(9), f32(5), f32(5), f32(5), i32(-1)},
+                                                                 {str("Coin"), i32(6), f32(0), f32(0), f32(0), i32(-1)}})},
+                  {"jmp/Placement/LayerB/ObjInfo", table(kObj, {{str("Takobo"), i32(7), f32(0), f32(0), f32(0), i32(-1)}})}})
+                                           .build();
+    std::unique_ptr< E::EditModel > g = E::EditModel::load("TestGalaxy", 1, from(grown), &error, from(disc));
+    const E::RowId block = findRow(*g, 1, "jmp/placement/layera/objinfo", "StrongBlock");
+    const E::RowId kuriboG = findRow(*g, 1, "jmp/placement/layera/objinfo", "Kuribo");
+    const E::RowId coinG = findRow(*g, 1, "jmp/placement/layera/objinfo", "Coin");
+    check(g->state(block) == E::RowState::Added && g->state(kuriboG) == E::RowState::Changed && g->state(coinG) == E::RowState::Original,
+          "the mod's row is Added, its edit Changed, the rest Original");
+    check(g->originalCell(kuriboG, E::columnHash("pos_y"))->f == 20.0f, "originals from the matched disc rows");
+    const std::string grownPatch = g->patch().json;
+    check(grownPatch.find("\"op\": \"add\"") != std::string::npos && grownPatch.find("StrongBlock") != std::string::npos, "and the patch adds it");
 }
 
 // Two archives hold the same tables (row order, every cell by column) and the same other files.

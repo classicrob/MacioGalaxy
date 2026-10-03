@@ -29,6 +29,8 @@ const std::string& sessionModName();  // empty until the first save
 std::string modNameFrom(const std::string& text);
 std::string defaultModName(const char* galaxy);  // "CosmosGardenGalaxy" -> "CosmosGarden edit"
 
+// A case-insensitive "contains" (the Outliner's Find; empty matches all).
+bool matchesQuery(const std::string& text, const std::string& query);
 // Bring a Galaxy tab forward ("Checks": the toolbar's badge).
 void openTab(const char* name);
 struct CheckCounts {
@@ -96,14 +98,21 @@ struct BrowserEntry {
     std::vector< std::string > aliases;
     int count = 0;            // placed in this galaxy
     std::vector< RowId > examples;  // some of those placements (the first is what Place copies)
+    std::string key;                // unique per card: the class, or "<class>#<preset>"
+    std::vector< std::pair< int, std::int32_t > > presetArgs;  // a catalog preset's args (Obj_arg index, value)
 };
 // Every class placed in the galaxy, plus the catalog's placeable classes, by display name.
 std::vector< BrowserEntry > collectBrowserEntries(const ModelView& model);
 // Matching a search and a category (empty: all): names first, then contains; this galaxy's first.
 std::vector< const BrowserEntry* > filterEntries(const std::vector< BrowserEntry >& entries, const std::string& query, const std::string& category);
 void drawBrowser(const ModelView& model);
-// Stamp mode: the example row each click in the viewport places (0: off).
+// Stamp mode: what each click in the viewport places (0: off): an example row, or a class token (high bit set:
+// a class with no example, placed new from the catalog; EP-005).
 std::uint64_t armedPlacement();
+// Places what a token names on the ground under the cursor (an example's copy, or a new row of a class).
+void placeToken(std::uint64_t token);
+constexpr std::uint64_t kClassTokenBit = 1ull << 63;
+inline bool isClassToken(std::uint64_t token) { return (token & kClassTokenBit) != 0; }
 void disarmPlacement();
 extern const char* const kPlacePayload;
 // A card's name on at most two lines of `width`: split after a space or at a CamelCase boundary, the second

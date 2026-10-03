@@ -26,6 +26,11 @@ struct MaterialClone {
     std::string name;
     Formats::Bytes mat3;
     Formats::Bytes tex1;
+    /// The donor's vertex colour on this material's lit faces (the 90th percentile of its shapes'
+    /// CLR0, 0..1 per channel; 1 when it has none). Planet materials are made for their own
+    /// painted (pre-lit) vertex colours, often with a TEV scale of 2 or a bias, so the baked light
+    /// is scaled by it to look like the planet.
+    Vec3 vertexTint{1.0f, 1.0f, 1.0f};
 };
 
 /// The material names of a .bdl/.bmd (big-endian, as on the disc), in order; empty when it is

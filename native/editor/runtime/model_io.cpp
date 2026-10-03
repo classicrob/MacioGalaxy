@@ -5,11 +5,18 @@
 #include <petari/editor/check_providers.hpp>
 #include <petari/editor/paths.hpp>
 #include <petari/editor/terrain/bake.hpp>
+#include <petari/editor/terrain/brush_catalog.hpp>
+#include <petari/editor/patch.hpp>
+#include <petari/platform/mod_folder.hpp>
 #include <petari/platform/dvd.hpp>
 #include <revolution/dvd.h>
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <map>
+#include <memory>
+#include <sstream>
 #include <set>
 #include <system_error>
 #include <vector>
@@ -79,12 +86,43 @@ std::optional< Formats::Bytes > readUnmodded(const std::string& path) {
     return Formats::Bytes(std::istreambuf_iterator< char >(in), {});
 }
 
+FileSource editingSource(const FileSource& mounted, const FileSource& unmodded, const std::vector< std::pair< std::string, std::string > >& patches,
+                         const std::function< bool(const std::string& path) >& builtFromPatch) {
+    if (patches.empty()) {
+        return mounted;
+    }
+    // Built once, on the first archive asked for, then kept with the source.
+    auto unbaked = std::make_shared< std::optional< std::map< std::string, Formats::Bytes > > >();
+    return [=](const std::string& path) -> std::optional< Formats::Bytes > {
+        if (path.rfind("/StageData/", 0) == 0 && builtFromPatch(path)) {
+            if (!*unbaked) {
+                std::vector< Patch::Source > sources;
+                for (const auto& [mod, text] : patches) {
+                    sources.push_back({mod, text});
+                }
+                std::map< std::string, Formats::Bytes > built;
+                for (Patch::Built& b : Patch::build(sources, [&](const std::string& p) { return unmodded("/" + p); }, nullptr)) {
+                    built["/" + b.path] = std::move(b.bytes);
+                }
+                *unbaked = std::move(built);
+            }
+            auto it = (*unbaked)->find(path);
+            if (it != (*unbaked)->end()) {
+                return it->second;
+            }
+        }
+        return mounted(path);
+    };
+}
+
 std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const std::string& userDirectory,
                                   const std::function< void() >& registerClasses, std::string* pError, std::string* pCatalogError,
                                   const FileSource& mounted, const FileSource& unmodded) {
     if (!Catalog::loadWithUser(userDirectory, pCatalogError)) {
         // Reported by the caller; the galaxy still loads (checks then know fewer classes).
     }
+    Terrain::registerBrushClass();   // the terrain brush is a class headless tools know too
+    Terrain::registerBrushChecks();
     if (registerClasses) {
         registerClasses();
     }
@@ -103,7 +141,30 @@ std::unique_ptr< EditModel > load(const std::string& galaxy, int scenario, const
             }
         }
     }
-    return EditModel::load(galaxy, scenario, mounted, pError, unmodded);
+    // Archives the loader built from patch mods (served from <user>/mods-cache): the editor reads
+    // them rebuilt from the row edits alone (editingSource).
+    std::vector< std::pair< std::string, std::string > > patches;
+    std::vector< fs::path > roots = PetariNative::Platform::ModFolder::enabledRoots(userDirectory);
+    std::reverse(roots.begin(), roots.end());  // lowest priority first, as the loader applies them
+    for (const fs::path& root : roots) {
+        std::error_code ec;
+        std::vector< fs::path > files;
+        for (fs::directory_iterator it(root / "edits", ec), end; !ec && it != end; it.increment(ec)) {
+            if (it->path().extension() == ".json") files.push_back(it->path());
+        }
+        std::sort(files.begin(), files.end());
+        for (const fs::path& file : files) {
+            std::ifstream in(file, std::ios::binary);
+            std::ostringstream text;
+            text << in.rdbuf();
+            patches.emplace_back(root.filename().string(), text.str());
+        }
+    }
+    const FileSource source = editingSource(mounted, unmodded, patches, [](const std::string& path) {
+        const s32 entry = DVDConvertPathToEntrynum(path.c_str());
+        return entry >= 0 && PetariNative::Platform::DVD::hostPathForEntry(entry).generic_string().find("/mods-cache/") != std::string::npos;
+    });
+    return EditModel::load(galaxy, scenario, source, pError, unmodded);
 }
 
 bool validModName(const std::string& name) {

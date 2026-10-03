@@ -15,6 +15,8 @@
 #include "imgui_internal.h"  // GetTopMostPopupModal
 
 #include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -127,10 +129,10 @@ void cameraInput(const Area& area, bool toolConsumed) {
     bool placed = false;
     if (inside && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         if (const ImGuiPayload* payload = ImGui::GetDragDropPayload(); payload != nullptr && payload->IsDataType(kPlacePayload)) {
-            Pick::place(*static_cast<const std::uint64_t*>(payload->Data));
+            placeToken(*static_cast<const std::uint64_t*>(payload->Data));
             placed = true;
         } else if (armedPlacement() != 0 && !io.KeyAlt) {
-            Pick::place(armedPlacement());
+            placeToken(armedPlacement());
             placed = true;
         }
     }
@@ -151,6 +153,11 @@ void cameraInput(const Area& area, bool toolConsumed) {
                 ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y * ImGui::GetMouseDragDelta(ImGuiMouseButton_Left).y <
             16.0f) {
         Pick::click(io.KeyShift ? Pick::Click::Add : (io.KeyCtrl || io.KeySuper) ? Pick::Click::Toggle : Pick::Click::Replace);
+        static const bool trace = std::getenv("PETARI_EDITOR_PICK_TRACE") != nullptr;
+        if (trace) {
+            std::fprintf(stderr, "[editor] ui click: mouse (%.1f, %.1f) viewport (%.1f, %.1f %.1fx%.1f) cursor (%.3f, %.3f)\n", io.MousePos.x, io.MousePos.y,
+                         area.x, area.y, area.w, area.h, (io.MousePos.x - area.x) / area.w * 2.0f - 1.0f, 1.0f - (io.MousePos.y - area.y) / area.h * 2.0f);
+        }
     }
     if (!toolConsumed && !escapeDisarms && !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_Escape, false))
         Pick::clearSelection();

@@ -183,11 +183,10 @@ def main():
             if not found:
                 continue
             entry["sweep"] = found.get("summary", "untested")
-            required = set()
-            for result in found.get("results", {}).values():
-                for field, verdict in (result.get("links") or {}).items():
-                    if verdict is True or (isinstance(verdict, str) and verdict.startswith("required")):
-                        required.add(field)
+            # safe | suspect | unverified | unsafe | unmeasured (class_sweep.py live_recreate_verdict): the editor falls back
+            # to the reload path only for "unsafe".
+            entry["live_recreate"] = found.get("live_recreate", "unmeasured")
+            required = set(found.get("needs_links") or {})
             for field in sorted(required):
                 link = next((l for l in entry["links"] if l["field"] == field), None)
                 if link is None:
@@ -198,10 +197,14 @@ def main():
     # Where each class is placed on the disc (gen_class_tables.py): the table the editor adds new rows to.
     tables_path = ROOT / "native/editor/catalog/tables.json"
     if tables_path.is_file():
-        tables = json.loads(tables_path.read_text())["tables"]
+        doc = json.loads(tables_path.read_text())
+        tables, collision = doc["tables"], {a.lower() for a in doc.get("collision", [])}
         for entry in out:
             if entry["name"] in tables:
                 entry["table"] = tables[entry["name"]]
+            # Collision when one of its archives (or the name's own) holds a .kcl.
+            if any(a.lower() in collision for a in entry["archives"] + [entry["name"]]):
+                entry["hasCollision"] = True
     target = ROOT / "native/editor/catalog/generated.json"
     target.parent.mkdir(parents=True, exist_ok=True)
     lines = [json.dumps(c, separators=(",", ":"), ensure_ascii=False) for c in out]
