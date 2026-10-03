@@ -541,6 +541,25 @@ RowState EditModel::state(RowId id) const {
     return RowState::Original;
 }
 
+int EditModel::discRowIndex(RowId id) const {
+    if (id.v >> 63) {
+        return -1;
+    }
+    int zone = 0, table = 0;
+    if (!locate(id, &zone, &table)) {
+        return -1;
+    }
+    const TableModel& model = mZones[zone].tables[table];
+    const int source = static_cast<int>(id.v & kField) - 1;
+    if (source < 0) {
+        return -1;
+    }
+    if (!model.sourceToDisc.empty()) {
+        return source < static_cast<int>(model.sourceToDisc.size()) ? model.sourceToDisc[source] : -1;
+    }
+    return source < model.original.rowCount() ? source : -1;
+}
+
 const Cell* EditModel::cell(RowId id, std::uint32_t column) const {
     int zone, table, row;
     if (!unpack(id, &zone, &table, &row)) {

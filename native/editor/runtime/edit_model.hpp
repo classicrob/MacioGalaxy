@@ -100,6 +100,8 @@ public:
     std::int32_t zoneId(int zone) const;
     /// The id of row `row` of a table (invalid when out of range).
     RowId rowAt(int zone, int table, int row) const;
+    /// The row's load-time index in the pristine disc table; -1 for session additions or mod-only rows.
+    int discRowIndex(RowId row) const;
     /// A table's layer: 0 = Common, 1..16 = LayerA..P, -1 = not layered.
     int tableLayer(int zone, int table) const;
 
