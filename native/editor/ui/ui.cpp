@@ -1,3 +1,4 @@
+#include "areas.hpp"
 // The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
 #include <petari/editor/ui.hpp>
 
@@ -242,6 +243,7 @@ void drawToolbar(float width) {
         if (ImGui::Checkbox("Others", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Show the objects of the other missions as ghosts");
         drawPathsToggle();  // M3 paths: selection/all/none.
+        drawAreasToggle();  // M3 areas: bounds visibility.
         ImGui::SameLine(0.0f, 10.0f);
         bool gravity = Gravity::visible();  // M3 gravity: view toggle.
         if (ImGui::Checkbox("Gravity", &gravity)) Gravity::setVisible(gravity);

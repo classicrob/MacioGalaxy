@@ -40,6 +40,8 @@ namespace {
     constexpr s32 kGravityLimit = 128;  // PlanetGravityManager's array
     std::vector< PreviewHandler > gPreviewHandlers;
     std::vector< LiveUpdater > gLiveUpdaters;
+    std::vector< RowPreviewHandler > gRowPreviewHandlers;
+    std::vector< RowUpdater > gRowUpdaters;
     bool gChecksInvalid = false;
 
     // A gravity field's row (PlanetObjInfo: the Global*Gravity classes): the manager's 128 slots
@@ -359,6 +361,31 @@ namespace {
         const bool live = endsWith(path, "/objinfo") || endsWith(path, "/mappartsinfo") || gravity;
 
         if (!live) {
+            if (!gRowUpdaters.empty()) {
+                std::unique_ptr< LiveRow > row;
+                if (m.state(id) != RowState::Deleted) {
+                    int rowIndex = 0;
+                    const auto* tableData = m.rowTable(id, &rowIndex);
+                    if (tableData) {
+                        PetariNative::HostAllocationScope host;
+                        row = std::make_unique< LiveRow >();
+                        row->bytes = tableData->buildSingleRow(rowIndex);
+                        row->info.attach(row->bytes.data());
+                        Hooks::registerRows(row->bytes.data(), row->bytes.size(), m.zoneId(zone));
+                    }
+                }
+                const auto iter = row ? JMapInfoIter(&row->info, 0) : JMapInfoIter();
+                for (RowUpdater updater : gRowUpdaters) {
+                    if (updater(id, iter)) {
+                        s.pending.erase(id);
+                        if (row)
+                            s.liveRows.push_back(std::move(row));
+                        return;
+                    }
+                }
+                if (row)
+                    Hooks::unregisterRows(row->bytes.data());
+            }
             if (endsWith(path, "/childobjinfo")) {
                 Core::reportNotice("Child objects must be rebuilt with their parent; Reload to apply this change");
             }
@@ -466,27 +493,31 @@ namespace {
         s.liveRows.push_back(std::move(row));
     }
 
+    bool previewRow(RowId row, int zone, const RowTransform& transform) {
+        for (RowPreviewHandler handler : gRowPreviewHandlers)
+            if (handler(row, zone, transform))
+                return true;
+        if (auto* actor = actorForRow(row)) {
+            pokeTransform(actor, zone, transform);
+            return true;
+        }
+        return false;
+    }
     void preview(const Command& command) {
         Session& s = session();
         for (size_t i = 0; i < command.rows.size() && i < command.previews.size(); i++) {
-            LiveActor* pActor = actorForRow(command.rows[i]);
             int zone = 0, table = 0;
-            if (pActor == nullptr || !s.model->locate(command.rows[i], &zone, &table)) {
-                continue;
-            }
-            pokeTransform(pActor, s.model->zoneId(zone), command.previews[i]);
-            s.previewing.insert(command.rows[i]);
+            if (s.model->locate(command.rows[i], &zone, &table) && previewRow(command.rows[i], s.model->zoneId(zone), command.previews[i]))
+                s.previewing.insert(command.rows[i]);
         }
     }
 
     void endPreview(const std::vector< RowId >& rows) {
         Session& s = session();
         for (RowId id : rows) {
-            LiveActor* pActor = actorForRow(id);
             int zone = 0, table = 0;
-            if (pActor != nullptr && s.previewing.count(id) && s.model->locate(id, &zone, &table)) {
-                pokeTransform(pActor, s.model->zoneId(zone), s.model->transform(id));
-            }
+            if (s.previewing.count(id) && s.model->locate(id, &zone, &table))
+                previewRow(id, s.model->zoneId(zone), s.model->transform(id));
             s.previewing.erase(id);
         }
     }
@@ -665,6 +696,7 @@ void reloadTestTick();  // reload_test.cpp: the reload and Play live check (PETA
 void saveTestTick();    // save_test.cpp: the save-as-mod live check (PETARI_EDITOR_SAVE_TEST)
 void brushTestTick();   // brush_test.cpp: the terrain brush live check (PETARI_EDITOR_BRUSH_TEST)
 void redrawTestTick();  // redraw_test.cpp: a re-create draws once (PETARI_EDITOR_REDRAW_TEST=<name>)
+void areasTestTick();
 void pathsTestTick();   // paths_test.cpp: rail commit and undo re-create riders without a reload
 
 bool reloadScene(bool fromStart) {
@@ -693,8 +725,35 @@ void registerLiveUpdater(LiveUpdater updater) {
     if (std::find(gLiveUpdaters.begin(), gLiveUpdaters.end(), updater) == gLiveUpdaters.end()) gLiveUpdaters.push_back(updater);
 }
 
+void registerRowPreviewHandler(RowPreviewHandler handler) {
+    if (std::find(gRowPreviewHandlers.begin(), gRowPreviewHandlers.end(), handler) == gRowPreviewHandlers.end())
+        gRowPreviewHandlers.push_back(handler);
+}
+void registerRowUpdater(RowUpdater updater) {
+    if (std::find(gRowUpdaters.begin(), gRowUpdaters.end(), updater) == gRowUpdaters.end())
+        gRowUpdaters.push_back(updater);
+}
+RowId rowForPlacement(const void* data, int index) {
+    const auto* m = session().model.get();
+    if (!m || !data)
+        return {};
+    for (int z = 0; z < m->zoneCount(); ++z)
+        for (int t = 0; t < m->tableCount(z); ++t)
+            if (EditorScene::tableData(m->zoneId(z), m->tablePath(z, t)) == data)
+                return m->rowAt(z, t, index);
+    return {};
+}
+
 void invalidateChecks() {
     gChecksInvalid = true;
+}
+
+bool playMarker(Vec3* position) {
+    if (!session().hasMarker)
+        return false;
+    if (position)
+        *position = session().playMarker;
+    return true;
 }
 
 bool reloading() {
@@ -720,6 +779,7 @@ void tick(bool playable) {
     brushTestTick();
     redrawTestTick();
     pathsTestTick();
+    areasTestTick();
     Session& s = session();
     const char* pStage = EditorScene::stageName();
     // (Not while reloading: a mission switch sets the model's scenario before the scene has it.)

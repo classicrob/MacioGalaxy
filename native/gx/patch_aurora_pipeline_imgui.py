@@ -109,7 +109,8 @@ if __name__ == '__main__':
         raise SystemExit('usage: patch_aurora_pipeline_imgui.py SOURCE OUTPUT')
     source, output = map(Path, sys.argv[1:])
     try:
-        result = patch(source.read_text())
+        from patch_aurora_imgui_texture import patch as texture_patch
+        result = texture_patch(patch(source.read_text()))
     except ValueError as error:
         raise SystemExit(str(error))
     output.parent.mkdir(parents=True, exist_ok=True)

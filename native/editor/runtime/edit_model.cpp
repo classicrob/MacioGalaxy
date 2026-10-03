@@ -250,7 +250,7 @@ std::unique_ptr< EditModel > EditModel::load(const std::string& galaxy, int scen
             zone.onDisc = disc.has_value();
         }
         for (const std::string& file : zone.archive.files()) {
-            if (file.rfind("jmp/", 0) != 0) {
+            if (file.rfind("jmp/", 0) != 0 && file != "camera/cameraparam.bcam") {
                 continue;
             }
             std::optional< Formats::Table > table = Formats::Table::parse(*zone.archive.file(file));

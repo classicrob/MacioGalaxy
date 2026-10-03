@@ -25,7 +25,8 @@ bool focusMode();
 // (aurora_imgui_add_texture). Unset: the cards keep their initials tiles.
 using ThumbnailReadback = int (*)(const void* copy, unsigned char* rgba, unsigned capacity, unsigned* width, unsigned* height);
 using ThumbnailTexture = unsigned long long (*)(unsigned width, unsigned height, const void* rgba);  // an ImTextureID
-void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture);
+using ThumbnailTextureUpdate = bool (*)(unsigned long long texture, unsigned width, unsigned height, const void* rgba);
+void setThumbnailHost(ThumbnailReadback readback, ThumbnailTexture texture, ThumbnailTextureUpdate update = nullptr);
 
 // Draws the editor frame: toolbar, dock (Outliner, Inspector) and footer. Call between
 // aurora_begin_frame and aurora_end_frame, before the Home menu overlay, every frame.

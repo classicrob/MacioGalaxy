@@ -24,6 +24,8 @@ void tick(bool playable);
 bool reloadScene(bool fromStart);
 /// True from reloadScene() (or the editor's Reload) until the new scene is playable.
 bool reloading();
+/// Current editor play marker, in world space.
+bool playMarker(Vec3* position);
 
 // ---- SceneSync extensions (M3: gravity, paths). Register once at start-up; game thread. ----------
 
@@ -38,6 +40,14 @@ void registerPreviewHandler(PreviewHandler handler);
 /// bound); false: re-create it.
 using LiveUpdater = bool (*)(RowId row, LiveActor* pCurrent, const JMapInfoIter& newRow);
 void registerLiveUpdater(LiveUpdater updater);
+
+// Non-actor placements (areas). Row handlers run before any LiveActor lookup.
+using RowPreviewHandler = bool (*)(RowId row, int zoneId, const RowTransform& transform);
+using RowUpdater = bool (*)(RowId row, const JMapInfoIter& newRow);
+void registerRowPreviewHandler(RowPreviewHandler handler);
+void registerRowUpdater(RowUpdater updater);
+// Resolve an engine placement table/ordinal to this scene's current model row.
+RowId rowForPlacement(const void* table, int index);
 
 /// Recomputes the Checks on the next tick without changing their baseline (a check provider's
 /// live inputs changed: gravity samples).

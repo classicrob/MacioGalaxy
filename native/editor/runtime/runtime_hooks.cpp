@@ -77,6 +77,10 @@ std::int32_t findSyntheticZone(std::uintptr_t rowAddress) {
 }
 
 namespace {
+    std::vector< Placed >& areaList() {
+        static std::vector< Placed > result;
+        return result;
+    }
     std::vector< Placed >& placedList() {
         static std::vector< Placed > sPlaced;
         return sPlaced;
@@ -86,6 +90,15 @@ namespace {
 void notePlaced(const void* pTableData, int row, void* pActor) {
     PetariNative::HostAllocationScope host;  // editor bookkeeping, called from game code
     placedList().push_back({pTableData, row, pActor});
+}
+
+void noteArea(const void* table, int row, void* area) {
+    PetariNative::HostAllocationScope host;
+    if (enabled())
+        areaList().push_back({table, row, area});
+}
+const std::vector< Placed >& areas() {
+    return areaList();
 }
 
 const std::vector< Placed >& placed() {
@@ -176,6 +189,7 @@ void sceneDestroyed() {
     clearRailTables();
     ranges().clear();
     placedList().clear();
+    areaList().clear();
     gSceneSerial++;
 }
 
