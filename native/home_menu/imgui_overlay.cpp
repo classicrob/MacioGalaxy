@@ -619,8 +619,16 @@ void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, 
     list->PopClipRect();
 }
 
+#ifdef PETARI_HOME_MENU_INPUT
+extern "C" bool petari_point_move_cue(float*, float*, float*, float*);  // native/input/point_move.cpp
+#endif
+
 namespace {
+#ifdef PETARI_HOME_MENU_INPUT
+std::atomic<SteerCueFn> gSteerCue{&petari_point_move_cue};
+#else
 std::atomic<SteerCueFn> gSteerCue{nullptr};
+#endif
 }  // namespace
 
 void setSteerCueSource(SteerCueFn source) {

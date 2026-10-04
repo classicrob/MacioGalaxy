@@ -479,7 +479,8 @@ void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, 
 // faint arrow from Mario toward the pointer shows where he is headed. The overlay asks this once per
 // frame while the menu is hidden. It returns true only while the cue is active and fills Mario's
 // and the pointer's positions in KPAD space (-1..1 across the game image, y down). The app points it
-// at the input layer's source when the mod is built in (see imgui_overlay.cpp); null disables the cue.
+// at petari_point_move_cue (native/include/petari/point_move.hpp) by default when the input layer is in
+// the build; null disables the cue.
 using SteerCueFn = bool (*)(float* marioX, float* marioY, float* pointerX, float* pointerY);
 void setSteerCueSource(SteerCueFn source);
 // Draws the cue (used by drawImGuiOverlay; exposed for the render tool and tests).
