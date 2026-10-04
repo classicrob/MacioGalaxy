@@ -2182,6 +2182,33 @@ void testSkipThroughKpad() {
     lift(In::Key::Space);
     rig.frames_(6);
 
+    // A yes/no choice appears while the skip runs: the skip ends, and the
+    // latching hold never becomes the A press the choice's buttons wait for
+    // (ButtonPaneController::trySelect needs an A trigger); only a fresh
+    // press after the release can answer.
+    petari_skip_set_context(Skip::kSkippable);
+    press(In::Key::Space);
+    rig.frames_(Skip::kHoldFrames + 5);
+    check(petari_skip_active(), "second skip latched");
+    petari_skip_set_context(Skip::kChoice);
+    bool answered = false;
+    for (int i = 0; i < 120; ++i) {
+        rig.frame();
+        answered = answered || button->testTriggerA() || button->testButtonA();
+    }
+    check(!petari_skip_active() && !answered, "a choice ends the skip; the held Space never answers it");
+    lift(In::Key::Space);
+    for (int i = 0; i < 6; ++i) {
+        rig.frame();
+        answered = answered || button->isChangeAnyState() || button->testButtonA();
+    }
+    check(!answered, "nor does its release");
+    press(In::Key::Space);
+    rig.frame();
+    check(button->testTriggerA() && !petari_skip_active(), "a fresh press reaches the choice (the player answers)");
+    lift(In::Key::Space);
+    rig.frames_(6);
+
     // Mod off: a long hold in a cutscene is only A.
     PetariNative::Mods::setEnabled(PetariNative::Mods::Mod::SkipCutscenes, false);
     petari_skip_set_context(Skip::kSkippable);
