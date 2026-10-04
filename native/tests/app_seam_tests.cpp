@@ -174,6 +174,9 @@ Observation observeGame(bool wantPlayer, bool) {
 bool skipProbeFrame() {
     return false;
 }
+bool skipProbeAnswerPointer(float*, float*) {
+    return false;
+}
 PointProbeStep pointProbeFrame() {
     return {};
 }

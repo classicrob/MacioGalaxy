@@ -465,6 +465,9 @@ bool warpPlayer(const Step& step);
 // dialogue to prove the hold-to-skip mod; once per frame at the seam, before the script.
 // True while it holds Space (the script's A presses are then dropped).
 bool skipProbeFrame();
+// PETARI_SKIP_PROBE_ANSWER=yes: where the probe wants the pointer this frame (normalised over the
+// game image) while it answers a yes/no Yes after a skip; false otherwise.
+bool skipProbeAnswerPointer(float* u, float* v);
 // point_probe.cpp (SDK side): PETARI_POINT_PROBE, drives the mouse to prove the Point to move
 // mod. Once per frame at the seam; while active, the script's presses are dropped.
 struct PointProbeStep {
