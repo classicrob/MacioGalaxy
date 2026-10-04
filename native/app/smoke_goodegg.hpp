@@ -58,6 +58,10 @@ namespace PetariNative::App::Smoke {
 
 struct GoodEggConfig {
     bool synthetic = false;  // the stage fixture's entry instead of the galaxy route
+    // PETARI_GOODEGG_WARP=dino (synthetic only): once the mission is ready, a TEST WARP above Dino
+    // Piranha's planet, so the fight, the Power Star, its celebration and the save prompt come
+    // without the route (for the skip playtest). The result says so.
+    bool warpToDino = false;
 };
 
 // PETARI_SMOKE=goodegg1. Synthetic when PETARI_STAGE is set (the app has
@@ -143,6 +147,7 @@ private:
 
     Driver mBoot;
     GoodEggConfig mConfig;
+    bool mDinoWarped = false;
     unsigned long mFrameLimit;
     unsigned long mFrame = 0;
     unsigned long mPhaseFrames = 0;

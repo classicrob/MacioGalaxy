@@ -2311,6 +2311,11 @@ void testPointMoveThroughKpad() {
         sawB = sawB || button->testButtonB() || button->testTriggerB();
     }
     check(!sawB && petari_point_move_claimed(), "mod on: a left press in normal play sends no B");
+    float cue[4] = {};
+    check(!petari_point_move_cue(&cue[0], &cue[1], &cue[2], &cue[3]), "no cue before the game publishes the points");
+    petari_point_move_publish_points(0.1f, 0.2f, 0.5f, -0.4f);
+    check(petari_point_move_cue(&cue[0], &cue[1], &cue[2], &cue[3]) && cue[0] == 0.1f && cue[3] == -0.4f,
+          "the cue gives Mario's and the pointer's points while steering");
     check(stickX() > 0.4f && stickY() > 0.6f && near(stickX() / stickY(), 0.75f, 0.1f),
           "the stick follows the pointer direction (0.6, 0.8): " + std::to_string(stickX()) + ", " + std::to_string(stickY()));
     petari_point_move_publish(true, -1.0f, 0.0f);
@@ -2334,6 +2339,7 @@ void testPointMoveThroughKpad() {
         sawB = sawB || button->isChangeAnyState();
     }
     check(!sawB && near(stickX(), 0.0f, 0.01f) && near(stickY(), 0.0f, 0.01f), "release: Mario stops, no B on release");
+    check(!petari_point_move_cue(&cue[0], &cue[1], &cue[2], &cue[3]), "no cue after the release");
 
     // Outside normal play (a menu): left click is B as before.
     petari_point_move_publish(false, 0.0f, 0.0f);

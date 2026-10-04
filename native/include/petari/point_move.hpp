@@ -39,6 +39,12 @@ extern "C" {
 void petari_point_move_publish(bool steerable, float stickX, float stickY);
 // The left button is held and claimed (the smoke probe).
 bool petari_point_move_claimed(void);
+// Game side, with petari_point_move_publish while steerable: Mario's projected
+// point and the pointer, in KPAD space (-1..1 across the game image, y down).
+void petari_point_move_publish_points(float marioX, float marioY, float pointerX, float pointerY);
+// Any thread (the steering cue in the overlay): true while the left button is
+// held, claimed and Mario steerable, with the two points of the last publish.
+bool petari_point_move_cue(float* marioX, float* marioY, float* pointerX, float* pointerY);
 
 #ifdef __cplusplus
 }

@@ -494,6 +494,8 @@ bool goodEggEnabledFromEnvironment(GoodEggConfig* config) {
     }
     const char* stage = std::getenv("PETARI_STAGE");
     config->synthetic = stage != nullptr && stage[0] != '\0';
+    const char* warp = std::getenv("PETARI_GOODEGG_WARP");
+    config->warpToDino = config->synthetic && warp != nullptr && std::strcmp(warp, "dino") == 0;
     if (config->synthetic) {
         const char* scenario = std::getenv("PETARI_SCENARIO");
         if (std::strcmp(stage, "EggStarGalaxy") != 0 || scenario == nullptr || std::strcmp(scenario, "1") != 0) {
@@ -843,6 +845,21 @@ void GoodEggDriver::mission(const Observation& o, Step& step) {
         return;
     }
     if (!o.playerValid) {
+        steer({}, step);
+        return;
+    }
+    if (mConfig.warpToDino && !mDinoWarped) {
+        if (!o.pausePermitted || o.demoActive || !o.playerOnGround) {
+            steer({}, step);
+            return;
+        }
+        mDinoWarped = true;
+        step.warp = true;
+        step.warpX = kDinoCentre.x;
+        step.warpY = kDinoCentre.y + 1900.0f;  // 300 above the top of the planet (radius 1600)
+        step.warpZ = kDinoCentre.z;
+        note("TEST WARP (PETARI_GOODEGG_WARP=dino, not gameplay) from " + text(Vec{o.playerX, o.playerY, o.playerZ}) +
+             " to above Dino Piranha's planet");
         steer({}, step);
         return;
     }
@@ -1535,6 +1552,7 @@ void GoodEggDriver::returnToDome(const Observation& o, Step& step) {
                    step);
         } else {
             finish(Result::Pass,
+                   std::string(mDinoWarped ? "TEST WARP to Dino Piranha's planet; " : "") +
                    "Good Egg mission 1: Dino Piranha defeated (" + std::to_string(mDinoHits) + " tail hits seen, " +
                        std::to_string(mDeaths) + " death" + (mDeaths == 1 ? "" : "s") + " and restarts), " +
                        "Power Star collected, returned to " + o.stage + ", saved (System_Save00 yes, System_Save02), " +

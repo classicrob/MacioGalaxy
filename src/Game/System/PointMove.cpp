@@ -55,12 +55,22 @@ namespace PointMove {
         float x = 0.0f;
         float y = 0.0f;
 
-        if (MR::calcScreenPosition(&mario, *MR::getPlayerCenterPos())) {
-            const TVec2f* pPointer = MR::getStarPointerScreenPosition(WPAD_CHAN0);
-            PetariNative::PointMove::stickFor(pPointer->x - mario.x, pPointer->y - mario.y, static_cast< float >(MR::getScreenHeight()), &x, &y);
+        const float width = static_cast< float >(MR::getScreenWidth());
+        const float height = static_cast< float >(MR::getScreenHeight());
+        const bool seen = MR::calcScreenPosition(&mario, *MR::getPlayerCenterPos());
+        const TVec2f* pPointer = MR::getStarPointerScreenPosition(WPAD_CHAN0);
+
+        if (seen) {
+            PetariNative::PointMove::stickFor(pPointer->x - mario.x, pPointer->y - mario.y, height, &x, &y);
         }
 
         petari_point_move_publish(true, x, y);
+
+        // For the overlay's steering cue: both points in KPAD space (-1..1 across the image, y down).
+        if (seen) {
+            petari_point_move_publish_points(mario.x / width * 2.0f - 1.0f, mario.y / height * 2.0f - 1.0f, pPointer->x / width * 2.0f - 1.0f,
+                                             pPointer->y / height * 2.0f - 1.0f);
+        }
     }
 }  // namespace PointMove
 
