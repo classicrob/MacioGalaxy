@@ -58,6 +58,7 @@ struct Probe {
     unsigned long releaseAt = 0;  // the answering tap's release
     bool wantPointer = false;
     float pointerU = 0.0f, pointerV = 0.0f;
+    std::string shown;  // what the game showed at the last logged change during a skip
     float startX = 0.0f, startY = 0.0f, startZ = 0.0f;
     float maxRise = 0.0f;
     int groundFrames = 0;
@@ -204,6 +205,11 @@ bool skipProbeFrame() {
         ++p.heldFrames;
         if (gameSeesA()) ++p.heldGameA;
         if (p.phase == Phase::Latched) {
+            // Each change of what is on screen while the skip runs (demo names, talks, movies).
+            if (p.shown != CutsceneSkip::describe()) {
+                p.shown = CutsceneSkip::describe();
+                say(p, "now showing");
+            }
             if (p.phaseFrames % 120 == 0) say(p, "still skipping");
             if (!active) {
                 char text[64];
