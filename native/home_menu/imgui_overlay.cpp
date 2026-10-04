@@ -575,8 +575,16 @@ void drawProgressBadges(float imageX, float imageY, float imageWidth, float imag
     list->PopClipRect();
 }
 
+#ifdef PETARI_HOME_MENU_INPUT
+extern "C" float petari_skip_progress(void);  // native/input/skip.cpp: the hold-to-skip mod's progress
+#endif
+
 namespace {
+#ifdef PETARI_HOME_MENU_INPUT
+std::atomic<HoldProgressFn> gHoldProgress{&petari_skip_progress};
+#else
 std::atomic<HoldProgressFn> gHoldProgress{nullptr};
+#endif
 }  // namespace
 
 void setHoldProgressSource(HoldProgressFn source) {
