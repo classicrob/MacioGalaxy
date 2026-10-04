@@ -57,11 +57,12 @@ struct StageConfig {
     bool warp = false;
     std::string warpName;
     float warpX = 0.0f, warpY = 0.0f, warpZ = 0.0f;
-    // "x,y,z;x,y,z;...": further warps, each at least 90 frames after the previous one and once
+    // "x,y,z;x,y,z;..." (each also "name:<GeneralPos>"): further warps, each at least 90 frames after the previous one and once
     // gameplay is back (no demo, pausing permitted; 2 min at most): a route through triggers,
     // e.g. a boss's appear switch, then its arena.
     struct WarpPoint {
         float x, y, z;
+        std::string name;  // "name:<GeneralPos>" instead of x,y,z
     };
     std::vector<WarpPoint> moreWarps;
     // PETARI_STAGE_HOME_TOUR=1: after the pause checks, open the native Home menu (Home) and visit

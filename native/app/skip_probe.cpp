@@ -11,7 +11,9 @@
 // latch, when the skip ends and after the watch. PETARI_SKIP_PROBE_MAX=<n>
 // stops after n skips. PETARI_SKIP_PROBE_ANSWER=yes: a yes/no left on screen by a
 // skip is answered Yes once Space is released (pointer on the game's Prompt.Yes, then
-// A), e.g. to let the save after a star write the file. Needs the mod on (PETARI_MODS=SkipCutscenes), or, for the
+// A), e.g. to let the save after a star write the file. PETARI_SKIP_PROBE_MOVIE=FinalBattle:
+// a TEST START of the final-battle movie once normal play has lasted 60 frames (the
+// observatory, late save; its MovieStarter needs Rosalina's pre-final talk). Needs the mod on (PETARI_MODS=SkipCutscenes), or, for the
 // mod-off check, PETARI_SKIP_OBSERVE_WHEN_OFF=1 with the mod off: the probe then
 // holds in cutscenes, nothing latches, and the NO LATCH line counts the frames the
 // game saw A (all of them: with the mod off a long hold is plain A). Each hold
@@ -23,6 +25,8 @@
 #include <string>
 
 #include "Game/System/CutsceneSkip.hpp"
+#include "Game/Scene/SceneObjHolder.hpp"
+#include "Game/Screen/MoviePlayingSequence.hpp"
 #include "Game/Util/GamePadUtil.hpp"
 #include "petari/efb_dump_mark.hpp"
 #include "petari/input.hpp"
@@ -58,6 +62,11 @@ struct Probe {
     unsigned long releaseAt = 0;  // the answering tap's release
     bool wantPointer = false;
     float pointerU = 0.0f, pointerV = 0.0f;
+    std::string shown;  // what the game showed at the last logged change during a skip
+    // PETARI_SKIP_PROBE_MOVIE=FinalBattle: TEST START of that movie (MR::startMovie, as its
+    // MovieStarter does) after 60 frames of normal play, once; the movie and its end are the game's.
+    bool startFinalBattle = false;
+    int gameplayFrames = 0;
     float startX = 0.0f, startY = 0.0f, startZ = 0.0f;
     float maxRise = 0.0f;
     int groundFrames = 0;
@@ -73,6 +82,7 @@ Probe& probe() {
         if (const char* v = std::getenv("PETARI_SKIP_PROBE_MAX")) p.max = std::atoi(v);
         if (const char* v = std::getenv("PETARI_SKIP_PROBE_SHOTS")) p.shots = v;
         if (const char* v = std::getenv("PETARI_SKIP_PROBE_ANSWER")) p.answerYes = std::string(v) == "yes";
+        if (const char* v = std::getenv("PETARI_SKIP_PROBE_MOVIE")) p.startFinalBattle = std::string(v) == "FinalBattle";
         if (p.enabled) {
             std::fprintf(stderr, "[skip-probe] on: delay %d, tail %d, max %d, shots %s\n", p.delay, p.tail, p.max,
                          p.shots.empty() ? "off" : p.shots.c_str());
@@ -160,6 +170,14 @@ bool skipProbeFrame() {
     ++p.phaseFrames;
     const unsigned context = petari_skip_context();
     if (p.answerYes && (p.phase == Phase::Idle || p.phase == Phase::Watch)) answer(p, context);
+    if (p.startFinalBattle) {
+        p.gameplayFrames = (context & PetariNative::Skip::kGameplay) != 0 ? p.gameplayFrames + 1 : 0;
+        if (p.gameplayFrames >= 60 && MR::isExistSceneObj(SceneObj_MoviePlayingSequenceHolder)) {
+            p.startFinalBattle = false;
+            say(p, "TEST START (not gameplay): MR::startMovie(FinalBattle)");
+            MR::startMovie(MoviePlayingSequence::MovieType_FinalBattle);
+        }
+    }
     const bool skippable = (context & PetariNative::Skip::kSkippable) != 0;
     const bool active = petari_skip_active();
 
@@ -204,6 +222,11 @@ bool skipProbeFrame() {
         ++p.heldFrames;
         if (gameSeesA()) ++p.heldGameA;
         if (p.phase == Phase::Latched) {
+            // Each change of what is on screen while the skip runs (demo names, talks, movies).
+            if (p.shown != CutsceneSkip::describe()) {
+                p.shown = CutsceneSkip::describe();
+                say(p, "now showing");
+            }
             if (p.phaseFrames % 120 == 0) say(p, "still skipping");
             if (!active) {
                 char text[64];
