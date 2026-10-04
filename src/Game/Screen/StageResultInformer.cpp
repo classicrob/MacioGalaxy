@@ -17,6 +17,22 @@
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StringUtil.hpp"
 
+#ifdef PETARI_NATIVE
+// Hold-to-skip mod: the result's "press A" waits continue while a skip runs.
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
+namespace {
+    bool isDecide() {
+#ifdef PETARI_NATIVE
+        if (CutsceneSkip::isActive()) {
+            return true;
+        }
+#endif
+        return MR::testSystemPadTriggerDecide();
+    }
+}  // namespace
+
 namespace {
     const char cMessageIdGetNormalStar[] = "System_Result000";
     const char cMessageIdGetHiddenStar[] = "System_Result003";
@@ -81,7 +97,7 @@ void DisplayInformationForResult::exeAppear() {
 }
 
 void DisplayInformationForResult::exeDisplay() {
-    if (MR::testSystemPadTriggerDecide()) {
+    if (::isDecide()) {
         MR::startSystemSE("SE_SY_TALK_OK");
         MR::startCSSound("CS_CLICK_CLOSE", nullptr, 0);
         setNerve(GET_NERVE_ANON(DisplayInformationForResultDisappear));
@@ -173,7 +189,7 @@ void StageResultInformer::exeCountUpPowerStar() {
         MR::emitEffect(this, "ResultStarCounter");
     }
 
-    if (MR::testSystemPadTriggerDecide()) {
+    if (::isDecide()) {
         _30 = true;
     }
 
@@ -289,7 +305,7 @@ void StageResultInformer::exeDisplayGetStarPiece() {
         MR::startAnim(this, "Flash", 0);
     }
 
-    if (MR::testSystemPadTriggerDecide()) {
+    if (::isDecide()) {
         MR::startSystemSE("SE_SY_TALK_OK");
 
         if (hasStarPiece) {
@@ -420,7 +436,7 @@ void StageResultInformer::decideNextNerve() {
 }
 
 bool StageResultInformer::tryWaitSystemPadTriggerDecide(const Nerve* pNerve) {
-    if (MR::testSystemPadTriggerDecide() || _30) {
+    if (::isDecide() || _30) {
         _30 = false;
 
         setNerve(pNerve);
@@ -433,7 +449,7 @@ bool StageResultInformer::tryWaitSystemPadTriggerDecide(const Nerve* pNerve) {
 }
 
 bool StageResultInformer::tryWaitIntervalBeforeKeyWait(const Nerve* pNerve, int step) {
-    if (MR::testSystemPadTriggerDecide()) {
+    if (::isDecide()) {
         _30 = true;
     }
 
