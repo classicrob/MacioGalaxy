@@ -5,8 +5,8 @@
 // and logs "[point-probe] <check>: ok|FAIL ..." lines:
 //   up / right / down-left: the pointer kept 28% of the screen height from Mario
 //     in that screen direction, left held 75 frames; Mario must move at least 100
-//     units, and his movement seen on screen (start and end projected with the
-//     same camera) must point the same way (cosine at least 0.7).
+//     units, and his movement seen on screen (each frame's step projected with
+//     that frame's camera, summed) must point the same way (cosine at least 0.7).
 //   stop: 20..40 frames after the release he moves under 15 units.
 //   jump: running up, Space tapped mid-hold; he must rise at least 60 units and
 //     keep moving up the screen.
@@ -48,7 +48,8 @@ struct Probe {
     int steady = 0;
     int check = 0;
     int frames = 0;
-    TVec3f start{0, 0, 0}, releasePos{0, 0, 0}, stopFrom{0, 0, 0};
+    TVec3f start{0, 0, 0}, releasePos{0, 0, 0}, stopFrom{0, 0, 0}, previous{0, 0, 0};
+    float screenX = 0.0f, screenY = 0.0f;  // Mario's summed on-screen motion
     float maxRise = 0.0f;
     int ok = 0, fail = 0;
 };
@@ -118,6 +119,8 @@ PointProbeStep pointProbeFrame() {
         aim(c.dx, c.dy);
         if (p.frames == 2) {
             p.start = *MR::getPlayerPos();
+            p.previous = p.start;
+            p.screenX = p.screenY = 0.0f;
             p.maxRise = 0.0f;
             left(true);
         }
@@ -125,15 +128,20 @@ PointProbeStep pointProbeFrame() {
         if (c.jump && p.frames == 52) Input::keyEvent(Input::Key::Space, false, false);
         if (p.frames > 2) {
             const TVec3f& pos = *MR::getPlayerPos();
+            TVec2f a, b;
+            if (screenOf(p.previous, &a) && screenOf(pos, &b)) {
+                p.screenX += b.x - a.x;
+                p.screenY += b.y - a.y;
+            }
+            p.previous = pos;
             const float rise = -((pos.x - p.start.x) * o.gravityX + (pos.y - p.start.y) * o.gravityY + (pos.z - p.start.z) * o.gravityZ);
             if (rise > p.maxRise) p.maxRise = rise;
         }
         if (p.frames == 2 + kHold) {
             const TVec3f end = *MR::getPlayerPos();
             left(false);
-            TVec2f s0, s1;
-            const bool seen = screenOf(p.start, &s0) && screenOf(end, &s1);
-            const float mx = s1.x - s0.x, my = s1.y - s0.y;
+            const bool seen = true;
+            const float mx = p.screenX, my = p.screenY;
             const float ml = std::sqrt(mx * mx + my * my);
             const float cosine = ml > 0.0f ? (mx * c.dx + my * c.dy) / ml : 0.0f;
             const float moved = length(end, p.start);
