@@ -8,6 +8,14 @@
 #include <JSystem/JAudio2/JAISound.hpp>
 #include <JSystem/JGadget/hashcode.hpp>
 
+#ifdef PETARI_NATIVE
+// Hold-to-skip mod: game sound effects are muted while a skipped demo fast-forwards.
+#include "Game/System/CutsceneSkip.hpp"
+#define PETARI_SKIP_MUTED() CutsceneSkip::isMutingSE()
+#else
+#define PETARI_SKIP_MUTED() false
+#endif
+
 void AudSoundObject_FORCE_MATCH_SDATA2() {
     f32 f1 = 1.0f;
 }
@@ -95,7 +103,7 @@ JAISoundHandle* AudSoundObject::startSound(JAISoundID soundID) {
         return nullptr;
     }
 
-    if (AudWrap::getSystem()->_82B && soundID.getGroupID() != SE_HOME_BUTTON_MENU && soundID.getGroupID() != SE_SYSTEM) {
+    if ((AudWrap::getSystem()->_82B || PETARI_SKIP_MUTED()) && soundID.getGroupID() != SE_HOME_BUTTON_MENU && soundID.getGroupID() != SE_SYSTEM) {
         return nullptr;
     }
 
@@ -119,7 +127,7 @@ JAISoundHandle* AudSoundObject::startLevelSound(JAISoundID soundID) {
         return nullptr;
     }
 
-    if (AudWrap::getSystem()->_82C && soundID.getGroupID() != SE_HOME_BUTTON_MENU && soundID.getGroupID() != SE_SYSTEM) {
+    if ((AudWrap::getSystem()->_82C || PETARI_SKIP_MUTED()) && soundID.getGroupID() != SE_HOME_BUTTON_MENU && soundID.getGroupID() != SE_SYSTEM) {
         return nullptr;
     }
 

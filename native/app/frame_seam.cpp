@@ -339,7 +339,7 @@ void startSmoke() {
 // Game state is read here, before the seam releases the CPU, while this
 // thread owns the game. Driver is Smoke::Driver or Smoke::StageDriver.
 template <class Driver>
-void runSmoke(Driver* driver) {
+void runSmoke(Driver* driver, bool probeHoldsA) {
     Smoke::Observation observation = Smoke::observeGame(driver->wantsPlayer());
     observation.physical = Events::physicalInputs();
     const Smoke::Step step = driver->step(observation);
@@ -358,6 +358,9 @@ void runSmoke(Driver* driver) {
                             gLastImage.y + step.pointerV * gLastImage.height);
     }
     for (const Smoke::Press& press : step.presses) {
+        if (probeHoldsA && press.button == Smoke::Button::A) {
+            continue;  // PETARI_SKIP_PROBE holds Space: the script's A would release it
+        }
         Events::pressButton(static_cast<int>(press.button), press.down);
     }
     if (step.menuWheel != 0.0f) {
@@ -614,20 +617,21 @@ extern "C" void petari_host_frame_seam(void) {
     observeProgressFrame();
     // Game state is readable here, before the CPU is released.
     recordFrame(entry, gTiming.probe != nullptr ? gTiming.probe() : FrameStats::Phase::Gameplay);
+    const bool probeHoldsA = Smoke::skipProbeFrame();
     if (gSmoke != nullptr) {
-        runSmoke(gSmoke);
+        runSmoke(gSmoke, probeHoldsA);
     } else if (gStage != nullptr) {
-        runSmoke(gStage);
+        runSmoke(gStage, probeHoldsA);
     } else if (gSoak != nullptr) {
-        runSmoke(gSoak);
+        runSmoke(gSoak, probeHoldsA);
     } else if (gGoodEgg != nullptr) {
-        runSmoke(gGoodEgg);
+        runSmoke(gGoodEgg, probeHoldsA);
     } else if (gDomes != nullptr) {
-        runSmoke(gDomes);
+        runSmoke(gDomes, probeHoldsA);
     } else if (gReplay != nullptr) {
-        runSmoke(gReplay);
+        runSmoke(gReplay, probeHoldsA);
     } else if (gMovement != nullptr) {
-        runSmoke(gMovement);
+        runSmoke(gMovement, probeHoldsA);
     }
     if (Soak::telemetryActive()) {  // PETARI_SOAK_CSV: frame times and, periodically, the JKR heaps
         static unsigned long frames = 0;

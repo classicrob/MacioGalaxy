@@ -37,6 +37,7 @@
 #include "Game/Util/TriggerChecker.hpp"
 #include "petari/input.hpp"
 #include "petari/mods.hpp"
+#include "petari/skip.hpp"
 #include "petari/camera_settings.hpp"
 #include "petari/camera_input.h"
 #include "petari/platform/sc.hpp"
@@ -2061,6 +2062,139 @@ void testSdl3() {
 // Cappy mod (docs/dev/CAPPY.md): R and RB throw; while the mod is active RB
 // throws and does not spin (F and the left button still spin), and the game
 // reads whether the throw is held.
+// --- Hold-to-skip mod (petari/skip.hpp) ------------------------------------
+
+void testSkipMachine() {
+    namespace Skip = PetariNative::Skip;
+    constexpr unsigned kSkippable = Skip::kSkippable, kGameplay = Skip::kGameplay, kChoice = Skip::kChoice;
+    auto holdFor = [](Skip::Machine& m, int frames, unsigned context, bool enabled = true) {
+        unsigned hidden = 0;
+        for (int i = 0; i < frames; ++i) hidden |= m.frame(true, context, enabled);
+        return hidden;
+    };
+
+    {
+        Skip::Machine m;
+        check(holdFor(m, 200, kSkippable, false) == 0 && !m.latched(), "mod off: a hold never skips");
+    }
+    {
+        Skip::Machine m;
+        check(holdFor(m, Skip::kHoldFrames - 1, kSkippable) == 0 && !m.latched(), "89 frames held: no skip, A reaches the game");
+        check(m.progress() > 0.98f && m.progress() < 1.0f, "progress climbs toward the skip");
+        check(m.frame(true, kSkippable, true) == Skip::kButtonA && m.latched() && m.justLatched(), "the 90th frame latches and hides A");
+        check(m.frame(true, kSkippable, true) == Skip::kButtonA && !m.justLatched(), "the latching hold stays hidden");
+        check(m.frame(false, kSkippable, true) == Skip::kButtonA && !m.swallowing(), "its release frame is hidden too");
+        check(m.frame(true, kSkippable, true) == 0 && m.latched(), "a new press while latched reaches the game (a choice needs it)");
+        m.frame(false, kSkippable, true);
+        for (int i = 0; i < Skip::kSettleFrames - 1; ++i) m.frame(false, kGameplay, true);
+        check(m.latched(), "gameplay for 9 frames: still skipping");
+        m.frame(false, kGameplay, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Gameplay, "gameplay for 10 frames in a row ends the skip");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, 60, 0);
+        check(holdFor(m, Skip::kHoldFrames - 1, kSkippable) == 0 && !m.latched(), "frames held before the cutscene do not count");
+        m.frame(true, kSkippable, true);
+        check(m.latched(), "the hold counts from when the cutscene appears");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, 50, kSkippable);
+        m.frame(false, kSkippable, true);
+        check(holdFor(m, Skip::kHoldFrames - 1, kSkippable) == 0 && !m.latched(), "a release restarts the count");
+        holdFor(m, 30, kSkippable | kChoice);
+        check(!m.latched() && m.holdFrames() == 0, "a hold during a choice does not count");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        m.frame(true, kSkippable | kChoice, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Choice, "a choice ends the skip (it is never answered)");
+        check(m.frame(true, kChoice, true) == Skip::kButtonA, "the hold stays hidden after the skip ends");
+        m.frame(false, kChoice, true);
+        check(m.frame(true, kChoice, true) == 0, "a fresh press after the release answers the choice");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        m.frame(true, kSkippable | Skip::kNewStage, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Stage, "a stage change ends the skip");
+        check(holdFor(m, 300, kGameplay) == Skip::kButtonA && !m.latched(),
+              "holding on into gameplay: A stays hidden (no jump) and no new skip starts");
+        check(m.frame(false, kGameplay, true) == Skip::kButtonA, "hidden until released");
+        check(m.frame(true, kGameplay, true) == 0, "then A is a jump again");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        m.frame(false, kSkippable, true);
+        for (int i = 1; i < Skip::kTimeoutFrames - 1 && m.latched(); ++i) m.frame(false, kSkippable, true);
+        check(m.latched(), "still skipping just before the timeout");
+        m.frame(false, kSkippable, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Timeout, "a skip that never reaches gameplay gives up after 60 s");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        check(m.frame(true, kSkippable, false) == 0 && !m.latched() && m.justEnded() == Skip::End::Disabled,
+              "turning the mod off ends the skip and stops hiding A");
+    }
+}
+
+void testSkipThroughKpad() {
+    // The game's own WPadButton on channel 0 (WPadButton::update calls petari_skip_pad).
+    namespace Skip = PetariNative::Skip;
+    Rig rig;
+    PetariNative::Mods::resetForTesting();
+    Skip::resetForTesting();
+    PetariNative::Mods::setEnabled(PetariNative::Mods::Mod::SkipCutscenes, true);
+    WPadButton* button = rig.pad->mButton;
+
+    petari_skip_set_context(Skip::kSkippable);
+    press(In::Key::Space);
+    rig.frame();
+    check(button->testTriggerA() && button->testButtonA(), "Space in a cutscene: the game sees A at once (taps advance text)");
+    for (int i = 0; i < Skip::kHoldFrames - 2; ++i) rig.frame();
+    check(button->testButtonA() && !petari_skip_active(), "held 89 frames: A still held for the game, no skip yet");
+    rig.frame();
+    check(petari_skip_active() && !button->testButtonA() && !button->testTriggerA(), "90 frames: the skip latches and A disappears");
+    check(petari_skip_progress() == 1.0f, "progress is full while latched");
+
+    // The cutscene ends and gameplay resumes with Space still down: no jump.
+    petari_skip_set_context(Skip::kGameplay);
+    bool sawA = false;
+    for (int i = 0; i < 40; ++i) {
+        rig.frame();
+        sawA = sawA || button->testButtonA() || button->testTriggerA();
+    }
+    check(!petari_skip_active() && !sawA, "gameplay resumes with Space held: the skip ends and A never reaches the game");
+    lift(In::Key::Space);
+    bool changed = false;
+    for (int i = 0; i < 6; ++i) {
+        rig.frame();
+        changed = changed || button->isChangeAnyState() || button->testButtonA();
+    }
+    check(!changed, "its release is hidden too");
+    press(In::Key::Space);
+    rig.frame();
+    check(button->testTriggerA(), "the next Space press is a jump");
+    lift(In::Key::Space);
+    rig.frames_(6);
+
+    // Mod off: a long hold in a cutscene is only A.
+    PetariNative::Mods::setEnabled(PetariNative::Mods::Mod::SkipCutscenes, false);
+    petari_skip_set_context(Skip::kSkippable);
+    press(In::Key::Space);
+    rig.frames_(200);
+    check(button->testButtonA() && !petari_skip_active(), "mod off: holding Space is A, never a skip");
+    lift(In::Key::Space);
+    rig.frames_(6);
+    petari_skip_set_context(0);
+    Skip::resetForTesting();
+    PetariNative::Mods::resetForTesting();
+}
+
 void testCappyInput() {
     namespace Mods = PetariNative::Mods;
     using In::PadButton;
@@ -2405,6 +2539,8 @@ int main() {
     testPhotoMode();
     testMods();
     testCappyInput();
+    testSkipMachine();
+    testSkipThroughKpad();
 #ifdef PETARI_INPUT_TEST_SDL3
     testSdl3();
 #endif

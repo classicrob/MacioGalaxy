@@ -171,6 +171,9 @@ Observation observeGame(bool wantPlayer) {
     hostCall("observe");
     return smokeObservation;
 }
+bool skipProbeFrame() {
+    return false;
+}
 bool warpPlayer(const Step&) {
     hostCall("warp");
     return true;

@@ -14,6 +14,12 @@ public:
     /// @brief Updates the state of the Wii Remote's buttons.
     void update();
 
+#ifdef PETARI_NATIVE
+    // Hold-to-skip mod's fast-forward (Game/System/CutsceneSkip.hpp): the extra
+    // scene updates of one frame see the held buttons but no new presses.
+    void clearEdges();
+#endif
+
     /// @brief Determines if up on the +Control Pad is pressed.
     /// @return `true` if up is pressed, `false` otherwise.
     bool testButtonUp() const;

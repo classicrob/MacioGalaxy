@@ -7,6 +7,10 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 
+#ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
 namespace NrvPeachLetter {
     NEW_NERVE(PeachLetterNrvAppear, PeachLetter, Appear);
     NEW_NERVE(PeachLetterNrvWait, PeachLetter, Wait);
@@ -58,7 +62,12 @@ void PeachLetter::exeWait() {
         mAButtonIcon->openWithoutMessage();
     }
 
-    if (mAButtonIcon->isWait() && MR::testCorePadTriggerA(WPAD_CHAN0)) {
+    bool isDecide = MR::testCorePadTriggerA(WPAD_CHAN0);
+#ifdef PETARI_NATIVE
+    isDecide = isDecide || CutsceneSkip::isActive();  // hold-to-skip mod: close the letter
+#endif
+
+    if (mAButtonIcon->isWait() && isDecide) {
         MR::startSystemSE("SE_SY_TALK_OK");
         setNerve(GET_NERVE(PeachLetter, PeachLetterNrvEnd));
     }

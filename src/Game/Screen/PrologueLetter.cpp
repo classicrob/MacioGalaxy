@@ -14,6 +14,10 @@
 #include "Game/Util/ObjUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 
+#ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
 namespace {
     NEW_NERVE(PrologueLetterNrvAppear, PrologueLetter, Appear);
     NEW_NERVE(PrologueLetterNrvWait, PrologueLetter, Wait);
@@ -71,7 +75,12 @@ void PrologueLetter::exeWait() {
         mAButtonIcon->openWithoutMessage();
     }
 
-    if (MR::testSystemPadTriggerDecide()) {
+    bool isDecide = MR::testSystemPadTriggerDecide();
+#ifdef PETARI_NATIVE
+    isDecide = isDecide || CutsceneSkip::isActive();  // hold-to-skip mod: close the letter
+#endif
+
+    if (isDecide) {
         MR::startSystemSE("SE_SY_TALK_OK");
         setNerve(GET_NERVE_ANON(PrologueLetterNrvDisappear));
     }

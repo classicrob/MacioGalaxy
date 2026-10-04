@@ -14,6 +14,10 @@
 #include "Game/Util/SoundUtil.hpp"
 #include "Game/Util/StarPointerUtil.hpp"
 
+#ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
 namespace {
     NEW_NERVE(GameSceneScenarioOpeningCameraStateWait, GameSceneScenarioOpeningCameraState, Wait);
     NEW_NERVE(GameSceneScenarioOpeningCameraStatePlay, GameSceneScenarioOpeningCameraState, Play);
@@ -97,6 +101,14 @@ bool GameSceneScenarioOpeningCameraState::trySkipTrigger() const {
     if (MR::isFirstStep(this)) {
         return false;
     }
+
+#ifdef PETARI_NATIVE
+    // Hold-to-skip mod: the game's own skip, also on a first visit.
+    if (CutsceneSkip::isActive()) {
+        OSReport("[skip] galaxy-entry camera: skipped at step %d\n", getNerveStep());
+        return true;
+    }
+#endif
 
     return !MR::isAlreadyVisitedCurrentStageAndScenario() ? false : MR::testSystemPadTriggerDecide();
 }

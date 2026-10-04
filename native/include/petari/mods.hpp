@@ -19,6 +19,7 @@ enum class Mod : int {
     OdysseyMovement,  // Mario moves with Super Mario Odyssey's physics (docs/dev/ODYSSEY_MOVEMENT.md); no button
     Cappy,            // Odyssey's cap throw and cap bounce (docs/dev/CAPPY.md); needs OdysseyMovement
     OdysseyJumpDive,  // with OdysseyMovement: pressing Jump in the air dives; ON unless turned off
+    SkipCutscenes,    // hold A (Space) 1.5 s to skip cutscenes and dialogue (petari/skip.hpp); no button of its own
     Count
 };
 

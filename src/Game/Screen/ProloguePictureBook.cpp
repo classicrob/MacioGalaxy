@@ -10,6 +10,8 @@
 #ifdef PETARI_NATIVE
 // Progress telemetry and the automated smoke run (native/app); observation only.
 #include <petari/milestone.hpp>
+// Hold-to-skip mod: turns the pages.
+#include "Game/System/CutsceneSkip.hpp"
 #define NATIVE_MILESTONE(name) petari_milestone(name)
 #else
 #define NATIVE_MILESTONE(name)
@@ -93,7 +95,12 @@ void ProloguePictureBook::exeKeyWait() {
         animCtrl->setRate(0.0f);
     }
 
-    if (MR::testCorePadTriggerA(WPAD_CHAN0)) {
+    bool isDecide = MR::testCorePadTriggerA(WPAD_CHAN0);
+#ifdef PETARI_NATIVE
+    isDecide = isDecide || CutsceneSkip::isActive();  // hold-to-skip mod: turn the page
+#endif
+
+    if (isDecide) {
         MR::startSystemSE("SE_SY_TALK_FOCUS_ITEM");
         mIconAButton->term();
 

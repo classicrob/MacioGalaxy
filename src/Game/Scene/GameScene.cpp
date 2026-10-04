@@ -631,6 +631,10 @@ void GameScene::exeSceneAction() {
 }
 
 #ifdef PETARI_NATIVE
+bool GameScene::isNativeSceneAction() const {
+    return isNerve(GET_NERVE(GameScene, GameSceneAction));
+}
+
 // Photo mode: like the pause menu, nothing moves; the free camera sets the view.
 void GameScene::exePhotoMode() {
     if (PhotoCamera::update()) {
