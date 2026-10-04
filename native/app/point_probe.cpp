@@ -14,7 +14,8 @@
 //     keep moving up the screen.
 //   menu: the pause menu open (Escape held), a left press is B for the game and
 //     is not claimed.
-// While it runs, the smoke script's own presses are dropped.
+// While it runs, the smoke script's own presses are dropped. Each left press starts the
+// image-dump phase "point-hold" (petari/efb_dump_mark.hpp).
 
 #include <cmath>
 #include <cstdio>
@@ -25,6 +26,7 @@
 #include "Game/Util/GamePadUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
+#include "petari/efb_dump_mark.hpp"
 #include "petari/input.hpp"
 #include "petari/point_move.hpp"
 #include "smoke.hpp"
@@ -128,7 +130,18 @@ PointProbeStep pointProbeFrame() {
             p.previous = p.start;
             p.screenX = p.screenY = 0.0f;
             p.maxRise = 0.0f;
+            PetariNative::EfbDump::mark("point-hold");  // image dumps (PETARI_SURFACE_DUMP_LABELS=point-hold)
             left(true);
+        }
+        if (p.check == 0 && p.frames == 30) {
+            // The overlay's steering cue: the pointer point equals where the probe put the cursor.
+            float mx = 0.0f, my = 0.0f, px = 0.0f, py = 0.0f;
+            const bool cue = petari_point_move_cue(&mx, &my, &px, &py);
+            const float ex = step.u * 2.0f - 1.0f, ey = step.v * 2.0f - 1.0f;
+            char text[160];
+            std::snprintf(text, sizeof(text), "cue %s: Mario (%.2f, %.2f), pointer (%.2f, %.2f), cursor set to (%.2f, %.2f)",
+                          cue ? "shown" : "MISSING", mx, my, px, py, ex, ey);
+            report(p, "cue", cue && std::fabs(px - ex) < 0.08f && std::fabs(py - ey) < 0.08f && py < my, text);
         }
         if (c.jump && p.frames == 40) Input::keyEvent(Input::Key::Space, true, false);
         if (c.jump && p.frames == 52) Input::keyEvent(Input::Key::Space, false, false);
