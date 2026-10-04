@@ -467,12 +467,14 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
 // menu is hidden: 0 or less draws nothing, 0..1 fills a ring in the top right corner (1.5 s of
 // holding = 1), 1 while a skip runs shows it full. The app points it at petari_skip_progress
 // (native/include/petari/skip.hpp) by default when the input layer is in the build, else null (no
-// ring); pass null to disable it. Any thread, set once.
+// ring); pass null to disable it. With the input layer the ring names the key bound to A
+// (Space by default) rather than showing the A icon. Any thread, set once.
 using HoldProgressFn = float (*)();
 void setHoldProgressSource(HoldProgressFn source);
 // Draws the ring for `progress` (used by drawImGuiOverlay; exposed for the render tool and tests).
-// Same thread and frame rules as drawImGuiOverlay.
-void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight);
+// `key` is the name of the key being held ("Space"), shown in the ring; null or "" shows the
+// controller's A icon. Same thread and frame rules as drawImGuiOverlay.
+void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight, const char* key = nullptr);
 // The title screen's keyboard hint (ASCII), in a bar across the top of the
 // image, above the logo. drawImGuiOverlay draws it while the input layer
 // reports the title's "press A and B" prompt and the menu is hidden, when

@@ -1070,6 +1070,21 @@ Bounds drawOverlay(float x, float y, float w, float h) {
     return bounds;
 }
 
+// The hold ring drawn directly with a key name (drawImGuiOverlay passes the bound key when the
+// input layer is built; this test build has none).
+int ringVertices(float progress, const char* key) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1280.0f, 800.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    ImGui::NewFrame();
+    HM::drawHoldRing(progress, 160.0f, 40.0f, 960.0f, 720.0f, key);
+    ImGui::Render();
+    int count = 0;
+    const ImDrawData* data = ImGui::GetDrawData();
+    for (int i = 0; i < data->CmdListsCount; i++) count += data->CmdLists[i]->VtxBuffer.Size;
+    return count;
+}
+
 void testImGuiOverlay() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -1101,6 +1116,11 @@ void testImGuiOverlay() {
     check(fullRing.vertices >= half.vertices, "a full ring draws at least the half ring's geometry");
     sHold = 7.0f;
     check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == fullRing.vertices, "progress past 1 is clamped");
+    const int icon = ringVertices(0.5f, nullptr), spaceKey = ringVertices(0.5f, "Space"), shiftKey = ringVertices(0.5f, "Left Shift");
+    check(icon > 50 && spaceKey > 50 && shiftKey > 50, "the ring draws with the A icon and with a key name");
+    check(ringVertices(0.5f, "") == icon, "an empty key name falls back to the A icon");
+    check(spaceKey != icon || shiftKey != spaceKey, "the key name is drawn in place of the icon");
+    check(ringVertices(0.0f, "Space") == 0, "no ring at 0 even with a key name");
     HM::Menu menu = newMenu();
     openToList(menu);
     HM::publish(menu.view());

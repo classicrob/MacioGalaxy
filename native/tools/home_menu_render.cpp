@@ -327,6 +327,32 @@ int main(int argc, char** argv) {
         ringProgress = p;
         shot(p < 0.5f ? "skip-ring-third" : p < 1.0f ? "skip-ring-twothirds" : "skip-ring-full");
     }
+    // The same ring for a keyboard player (the key bound to A) and a long key name.
+    {
+        menuHidden = true;
+        ringProgress = 0.66f;
+        auto keyShot = [&](const char* name, const char* key) {
+            io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+            io.DeltaTime = 1.0f / 60.0f;
+            HM::publish(HM::View{});
+            ImGui::NewFrame();
+            HM::drawHoldRing(ringProgress, imageX, imageY, imageW, imageH, key);
+            ImGui::Render();
+            Canvas canvas;
+            canvas.width = width;
+            canvas.height = height;
+            canvas.rgb.assign(static_cast<size_t>(width) * height * 3, 0.0f);
+            fillBackground(canvas, backgroundRgb, bw, bh);
+            rasterize(canvas, texture);
+            std::vector<unsigned char> rgb(canvas.rgb.size());
+            for (size_t i = 0; i < rgb.size(); ++i) rgb[i] = static_cast<unsigned char>(std::clamp(canvas.rgb[i], 0.0f, 1.0f) * 255.0f + 0.5f);
+            PetariNative::writePngRgb(out + "/" + name + ".png", static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
+                                      rgb.data());
+            std::printf("%s/%s.png\n", out.c_str(), name);
+        };
+        keyShot("skip-ring-key-space", "Space");
+        keyShot("skip-ring-key-shift", "Left Shift");
+    }
     ImGui::DestroyContext();
     return 0;
 }
