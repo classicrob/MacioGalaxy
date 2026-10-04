@@ -81,10 +81,11 @@ constexpr TourEntry kHomeTour[] = {
     {Button::A, "home-remap-done"}, {Button::Plus, nullptr},
     {Button::StickDown, nullptr}, {Button::A, nullptr},  // Mods
     {Button::A, "home-mods"},
-    // To Back (focus clamps there), then up: Mod folder, Level Select, Odyssey camera.
+    // To Back (focus clamps there; one Down per row: 6 mods, Odyssey camera, Level Select,
+    // Mod folder), then up: Mod folder, Level Select, Odyssey camera.
     {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
     {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
-    {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
     {Button::StickUp, nullptr},   {Button::A, nullptr},  // Mod folder
     {Button::A, "home-modfolder"}, {Button::Plus, nullptr},
     {Button::StickUp, nullptr},   {Button::A, nullptr},  // Level Select
