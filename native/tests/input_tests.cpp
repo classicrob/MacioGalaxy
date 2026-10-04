@@ -2276,9 +2276,11 @@ void testPointMoveStick() {
     PM::stickFor(0.0f, -456.0f * 0.20f, 456.0f, &x, &y);
     check(near(x, 0.0f, 1e-5f) && near(y, 1.0f, 1e-4f), "20% of the screen above Mario: full stick up");
     PM::stickFor(456.0f, 0.0f, 456.0f, &x, &y);
-    check(near(x, 1.0f, 1e-5f) && near(y, 0.0f, 1e-5f), "far right: full stick right (clamped)");
-    PM::stickFor(0.0f, 456.0f * 0.115f, 456.0f, &x, &y);
-    check(near(y, -0.5f, 1e-3f), "halfway along the ramp, below Mario: half stick down");
+    check(near(x, 1.0f, 1e-5f) && near(y, 0.0f, 1e-5f), "far right: full stick right");
+    PM::stickFor(0.0f, 456.0f * 0.04f, 456.0f, &x, &y);
+    check(near(x, 0.0f, 1e-5f) && near(y, -1.0f, 1e-4f), "always run: just outside the dead zone, below Mario: full stick down");
+    PM::stickFor(30.0f, -40.0f, 456.0f, &x, &y);
+    check(near(x, 0.6f, 1e-4f) && near(y, 0.8f, 1e-4f), "always run: full length, the pointer's direction");
 }
 
 void testPointMoveThroughKpad() {

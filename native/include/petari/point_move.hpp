@@ -9,11 +9,11 @@
 #ifdef __cplusplus
 namespace PetariNative::PointMove {
 
-// Screen distance from Mario to the pointer, in screen heights.
-constexpr float kDeadZone = 0.03f;  // closer: no movement
-constexpr float kFullStick = 0.20f; // farther: full stick (run)
+// Screen distance from Mario to the pointer, in screen heights: closer gives no
+// movement; anywhere farther, Mario always runs (full stick toward the pointer).
+constexpr float kDeadZone = 0.03f;
 
-// The stick (x right, y up, length 0..1) for a pointer dx, dy (screen units,
+// The stick (x right, y up, length 0 or 1) for a pointer dx, dy (screen units,
 // y down) away from Mario on a screen screenHeight units tall.
 void stickFor(float dx, float dy, float screenHeight, float* x, float* y);
 
