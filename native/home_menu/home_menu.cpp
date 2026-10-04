@@ -749,7 +749,7 @@ Rect Menu::itemRect(int index) const {
     float height = dense ? 0.135f : compact ? 0.16f : kItemHeight;
     if (dense) {
         constexpr float kDenseTop = -0.46f;
-        constexpr float kDenseBottom = 0.90f;
+        constexpr float kDenseBottom = 0.855f;  // the panel adds kPanelBottomMargin below this
         constexpr float kHeightShare = 0.82f;
         const float fit = (kDenseBottom - kDenseTop) / (static_cast<float>(count - 1) + kHeightShare);
         if (fit < spacing) {

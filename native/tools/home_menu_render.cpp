@@ -238,9 +238,14 @@ int main(int argc, char** argv) {
         {PETARI_ICON_HOME " This menu", "F1 / `", "Guide"},
     };
     menu.setControls(controls, static_cast<int>(sizeof(controls) / sizeof(controls[0])));
-    HM::ModsEntry mods[4] = {{"Collect Star Bits (G)", false}, {"Shoot nearest enemy (V)", false},
-                             {"Odyssey movement", true}, {"Cappy (R)", false, 2}};
-    menu.setMods(mods, 4);
+    // Every slot filled, with the Mod folder entry below: the page at its tallest (12 rows).
+    HM::ModsEntry mods[HM::kMaxMods] = {{"Collect Star Bits (G)", false}, {"Shoot nearest enemy (V)", false},
+                                        {"Odyssey movement", true}, {"Cappy (R)", false, 2},
+                                        {"Skip cutscenes", false}};
+    for (int i = 5; i < HM::kMaxMods; ++i) {
+        std::snprintf(mods[i].label, sizeof(mods[i].label), "Spare mod %d", i + 1);
+    }
+    menu.setMods(mods, HM::kMaxMods);
     HM::FolderModEntry folder[2] = {{"Coin ring (3 files)", true}, {"Retexture pack (40 files)", false}};
     menu.setFolderMods(folder, 2);
     menu.setFooterKeys("Space", "Escape", "F1", "\xE2\x86\x90/\xE2\x86\x92");
