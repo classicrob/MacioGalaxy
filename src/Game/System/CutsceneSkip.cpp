@@ -16,6 +16,7 @@
 #include "Game/System/WPadButton.hpp"
 #include "Game/System/WPadHolder.hpp"
 #include "Game/Util/DemoUtil.hpp"
+#include "Game/Util/SceneUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
 #include <petari/skip.hpp>
