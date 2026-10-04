@@ -422,7 +422,7 @@ void drawRemapTable(ImDrawList* list, ImFont* font, const ImageSpace& image, con
     }
 
     const float pulse = 0.65f + 0.35f * std::sin(static_cast<float>(ImGui::GetTime()) * 6.0f);
-    for (int r = 0; r < remap.rowCount; r++) {
+    for (int r = 0; r < std::clamp(remap.rowCount, 0, kRemapVisibleRows); r++) {
         const RemapRow& row = remap.rows[r];
         const float top = areaMin.y + rowHeight * static_cast<float>(r + 1);
         const float middle = top + rowHeight * 0.5f;
@@ -645,23 +645,25 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
 
         // Controls page: action names on the left, inputs on the right, one
         // row each, with a light band on every other row for reading across.
-        if (view.lineCount > 0) {
+        // Clamped to the array: a corrupt count must not read past View::lines.
+        const int lineCount = std::clamp(view.lineCount, 0, kMaxControls);
+        if (lineCount > 0) {
             const ImVec2 areaMin = image.point(view.linesArea.x0, view.linesArea.y0);
             const ImVec2 areaMax = image.point(view.linesArea.x1, view.linesArea.y1);
             // Few lines keep a normal row height from the top rather than stretching.
-            const float rowHeight = std::min((areaMax.y - areaMin.y) / static_cast<float>(view.lineCount), imageHeight * 0.064f);
+            const float rowHeight = std::min((areaMax.y - areaMin.y) / static_cast<float>(lineCount), imageHeight * 0.064f);
             const float areaWidth = areaMax.x - areaMin.x;
             const float textSize = std::min(rowHeight * 0.78f, imageHeight * 0.036f);
             const float pad = areaWidth * 0.02f;
             bool padColumn = false;
-            for (int i = 0; i < view.lineCount; i++) {
+            for (int i = 0; i < lineCount; i++) {
                 padColumn = padColumn || view.lines[i].pad[0] != '\0';
             }
             // Action | keyboard and mouse [| controller].
             const float split = areaMin.x + areaWidth * (padColumn ? 0.3f : 0.42f);
             const float split2 = padColumn ? areaMin.x + areaWidth * 0.69f : areaMax.x;
             const float bandRounding = rowHeight * 0.3f;
-            for (int i = 0; i < view.lineCount; i++) {
+            for (int i = 0; i < lineCount; i++) {
                 const float top = areaMin.y + rowHeight * static_cast<float>(i);
                 const float middle = top + rowHeight * 0.5f;
                 const bool header = view.lines[i].action[0] == '\0';
@@ -688,7 +690,7 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
             drawRemapTable(list, font, image, view.remap, unit, alpha);
         }
 
-        for (int i = 0; i < view.itemCount; i++) {
+        for (int i = 0; i < std::clamp(view.itemCount, 0, kMaxItems); i++) {
             const ViewItem& item = view.items[i];
             galaxyButton(list, font, itemSize, image.point(item.rect.x0, item.rect.y0), image.point(item.rect.x1, item.rect.y1),
                          item.focused, unit, alpha, item.label);

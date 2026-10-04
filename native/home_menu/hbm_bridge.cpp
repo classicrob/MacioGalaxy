@@ -350,6 +350,9 @@ private:
 
 InputControls gInputControls;
 
+// The Mods page has one toggle per mod; raise kMaxMods (home_menu.hpp) when adding past it.
+static_assert(static_cast<int>(Mods::Mod::Count) <= kMaxMods, "more Mods::Mod entries than the Mods page can list");
+
 // The Mods page toggles, from the mod settings in effect now.
 void refreshMods() {
     ModsEntry entries[kMaxMods];
