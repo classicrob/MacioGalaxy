@@ -338,6 +338,8 @@ void startSmoke() {
 
 // Game state is read here, before the seam releases the CPU, while this
 // thread owns the game. Driver is Smoke::Driver or Smoke::StageDriver.
+long gQuitDelayFrames = 0;  // PETARI_SMOKE_QUIT_DELAY frames left before the power button
+
 template <class Driver>
 void runSmoke(Driver* driver, bool probeHoldsA) {
     Smoke::Observation observation = Smoke::observeGame(driver->wantsPlayer());
@@ -392,11 +394,26 @@ void runSmoke(Driver* driver, bool probeHoldsA) {
                       " pipeline manifest read failure(s) (see [gx stage prep] manifest read failed)";
         }
         Smoke::setProcessResult(result);
-        Smoke::noteQuitRequested(observation.saveSequence);
-        std::fprintf(stderr, "PETARI SMOKE RESULT: %s (%s); pressing the power button%s\n",
+        // PETARI_SMOKE_QUIT_DELAY=<frames>: keep the game running that long after the result
+        // (e.g. so PETARI_SKIP_PROBE sees what follows a story route's end), then power off.
+        static const long quitDelay = [] {
+            const char* value = std::getenv("PETARI_SMOKE_QUIT_DELAY");
+            return value != nullptr ? std::atol(value) : 0L;
+        }();
+        std::fprintf(stderr, "PETARI SMOKE RESULT: %s (%s); pressing the power button%s%s\n",
                      Smoke::resultName(result), reason.c_str(),
-                     observation.saveSequence ? " while the save-data sequence is active" : "");
+                     observation.saveSequence ? " while the save-data sequence is active" : "",
+                     quitDelay > 0 ? " after PETARI_SMOKE_QUIT_DELAY" : "");
         std::fflush(stderr);
+        if (quitDelay > 0) {
+            gQuitDelayFrames = quitDelay;
+        } else {
+            Smoke::noteQuitRequested(observation.saveSequence);
+            Host::requestQuit();
+        }
+    }
+    if (gQuitDelayFrames > 0 && --gQuitDelayFrames == 0) {
+        Smoke::noteQuitRequested(observation.saveSequence);
         Host::requestQuit();
     }
 }

@@ -198,6 +198,8 @@ conversation inside a cutscene. It stops early:
 - **At a choice.** A yes/no question (a talk's choice, the save prompt) is never
   answered for you. The game has no default answer for these (you point at one),
   so the skip ends there. Answer it, then hold again to skip what follows.
+- When a menu opens that waits for you: the galaxy map (Rosalina's "Would you
+  like to see the map?") or the pause menu.
 - At a stage change (a movie that leads to a new galaxy, a star that takes you
   back to the observatory). Hold again on the new stage.
 - After 60 seconds without reaching gameplay (logged; a safety net).

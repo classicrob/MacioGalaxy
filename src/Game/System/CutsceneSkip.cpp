@@ -39,7 +39,7 @@ namespace {
         bool demo = false;
         bool talk = false;
         bool stageClear = false;
-        bool choice = false;
+        bool choice = false;  // a yes/no, the save prompt or a menu (galaxy map, pause) waits for the player
         bool gameplay = false;
     };
 
@@ -78,7 +78,7 @@ namespace {
         shown.demo = MR::isExistSceneObj(SceneObj_DemoDirector) && MR::isDemoActive();
         shown.talk = MR::isSystemTalking();
         shown.stageClear = pScene->isExecStageClearDemo();
-        shown.choice = isChoiceShown();
+        shown.choice = isChoiceShown() || pScene->isNativeMenuOpen();
         const bool opening = pScene->isExecScenarioOpeningCamera() || pScene->isExecScenarioStarter();
         const bool wipe = MR::isExistSceneObj(SceneObj_SceneWipeHolder) && MR::isWipeActive();
         shown.gameplay = pScene->isNativeSceneAction() && !shown.demo && !shown.talk && !shown.movie && !opening && !wipe;
@@ -218,6 +218,9 @@ namespace CutsceneSkip {
         }
         if (pScene->isExecScenarioStarter()) {
             add(" spin-driver-launch");
+        }
+        if (pScene->isNativeMenuOpen()) {
+            add(" menu");
         }
         if (gShown.choice) {
             add(" choice");
