@@ -353,6 +353,20 @@ int main(int argc, char** argv) {
         keyShot("skip-ring-key-space", "Space");
         keyShot("skip-ring-key-shift", "Left Shift");
     }
+    // The Point-to-move steering cue: Mario at the lower middle, the pointer up and to the right.
+    {
+        menuHidden = true;
+        ringProgress = 0.0f;
+        static float cuePointer[2] = {0.65f, -0.35f};
+        HM::setSteerCueSource([](float* mx, float* my, float* px, float* py) {
+            *mx = 0.0f; *my = 0.35f; *px = cuePointer[0]; *py = cuePointer[1];
+            return true;
+        });
+        shot("steer-cue-far");
+        cuePointer[0] = 0.12f; cuePointer[1] = 0.20f;
+        shot("steer-cue-near");
+        HM::setSteerCueSource(nullptr);
+    }
     ImGui::DestroyContext();
     return 0;
 }

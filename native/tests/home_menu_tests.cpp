@@ -1085,6 +1085,19 @@ int ringVertices(float progress, const char* key) {
     return count;
 }
 
+int cueVertices(float mx, float my, float px, float py) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1280.0f, 800.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    ImGui::NewFrame();
+    HM::drawSteerCue(mx, my, px, py, 160.0f, 40.0f, 960.0f, 720.0f);
+    ImGui::Render();
+    int count = 0;
+    const ImDrawData* data = ImGui::GetDrawData();
+    for (int i = 0; i < data->CmdListsCount; i++) count += data->CmdLists[i]->VtxBuffer.Size;
+    return count;
+}
+
 void testImGuiOverlay() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -1116,6 +1129,33 @@ void testImGuiOverlay() {
     check(fullRing.vertices >= half.vertices, "a full ring draws at least the half ring's geometry");
     sHold = 7.0f;
     check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == fullRing.vertices, "progress past 1 is clamped");
+    // The Point-to-move steering cue: nothing inside Mario's dead zone or with bad numbers, an arrow
+    // otherwise, and a source that says "inactive" draws nothing.
+    HM::setHoldProgressSource(nullptr);  // the ring's test source must not draw in these frames
+    check(cueVertices(0.0f, 0.0f, 0.0f, 0.0f) == 0, "pointer on Mario: no cue");
+    check(cueVertices(0.0f, 0.0f, 0.03f, 0.0f) == 0, "pointer inside the dead zone: no cue");
+    check(cueVertices(0.0f, 0.0f, 0.8f, -0.4f) >= 10, "pointer far away: an arrow is drawn");
+    check(cueVertices(0.0f, 0.0f, std::nanf(""), 0.0f) == 0, "a NaN pointer draws nothing");
+    check(cueVertices(0.0f, 0.0f, 0.8f, 0.0f) == cueVertices(0.0f, 0.0f, -0.8f, 0.0f), "the arrow has the same geometry in any direction");
+    static bool sActive = false;
+    HM::setSteerCueSource([](float* mx, float* my, float* px, float* py) {
+        *mx = 0.0f; *my = 0.2f; *px = 0.7f; *py = -0.3f;
+        return sActive;
+    });
+    HM::publish(HM::View{});
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "cue source inactive: nothing drawn");
+    sActive = true;
+    const Bounds cue = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(cue.vertices >= 10 && cue.x0 >= 160.0f - 0.5f && cue.x1 <= 1120.0f + 0.5f && cue.y0 >= 40.0f - 0.5f && cue.y1 <= 760.0f + 0.5f,
+          "active cue draws an arrow inside the image");
+    HM::Menu cueMenu = newMenu();
+    openToList(cueMenu);
+    HM::publish(cueMenu.view());
+    const int withMenu = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices;
+    sActive = false;
+    check(withMenu == drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices, "the cue is hidden while the menu is open");
+    HM::setSteerCueSource(nullptr);
+    HM::publish(HM::View{});
     const int icon = ringVertices(0.5f, nullptr), spaceKey = ringVertices(0.5f, "Space"), shiftKey = ringVertices(0.5f, "Left Shift");
     check(icon > 50 && spaceKey > 50 && shiftKey > 50, "the ring draws with the A icon and with a key name");
     check(ringVertices(0.5f, "") == icon, "an empty key name falls back to the A icon");
