@@ -174,8 +174,11 @@ bool stageEnabledFromEnvironment(StageConfig* config) {
             config->warp = true;
             for (const char* more = std::strchr(warp, ';'); more != nullptr; more = std::strchr(more + 1, ';')) {
                 StageConfig::WarpPoint point{};
-                if (std::sscanf(more + 1, "%f,%f,%f", &point.x, &point.y, &point.z) != 3) {
-                    std::fprintf(stderr, "PETARI SMOKE: PETARI_STAGE_WARP \"%s\": every warp after ';' must be x,y,z; not running\n", warp);
+                if (std::strncmp(more + 1, "name:", 5) == 0) {
+                    const char* end = std::strchr(more + 1, ';');
+                    point.name.assign(more + 6, end != nullptr ? static_cast<size_t>(end - more - 6) : std::strlen(more + 6));
+                } else if (std::sscanf(more + 1, "%f,%f,%f", &point.x, &point.y, &point.z) != 3) {
+                    std::fprintf(stderr, "PETARI SMOKE: PETARI_STAGE_WARP \"%s\": every warp after ';' must be x,y,z or name:<GeneralPos>; not running\n", warp);
                     return false;
                 }
                 config->moreWarps.push_back(point);
@@ -693,11 +696,12 @@ void StageDriver::exercise(const Observation& o, Step& step) {
             // The next warp once gameplay is back (a warp into a trigger may start a demo).
             const StageConfig::WarpPoint& point = mConfig.moreWarps[mWarpIndex++];
             step.warp = true;
+            step.warpName = point.name;
             step.warpX = point.x;
             step.warpY = point.y;
             step.warpZ = point.z;
             note("TEST WARP " + std::to_string(mWarpIndex + 1) + " (not gameplay) from " + text(pos) + " to " +
-                 text({point.x, point.y, point.z}));
+                 (point.name.empty() ? text({point.x, point.y, point.z}) : "GeneralPos " + point.name));
             mPhaseFrames = 0;
         } else if (mPhaseFrames >= kWarpSettle && mWarpIndex >= mConfig.moreWarps.size()) {
             const std::string distance = mConfig.warpName.empty()
