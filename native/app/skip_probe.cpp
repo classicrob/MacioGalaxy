@@ -9,7 +9,9 @@
 // while the latching hold was down (it must not: no jump) and how far Mario
 // rose. PETARI_SKIP_PROBE_SHOTS=<dir>: screenshots before the hold, at the
 // latch, when the skip ends and after the watch. PETARI_SKIP_PROBE_MAX=<n>
-// stops after n skips. Needs the mod on (PETARI_MODS=SkipCutscenes), or, for the
+// stops after n skips. PETARI_SKIP_PROBE_ANSWER=yes: a yes/no left on screen by a
+// skip is answered Yes once Space is released (pointer on the game's Prompt.Yes, then
+// A), e.g. to let the save after a star write the file. Needs the mod on (PETARI_MODS=SkipCutscenes), or, for the
 // mod-off check, PETARI_SKIP_OBSERVE_WHEN_OFF=1 with the mod off: the probe then
 // holds in cutscenes, nothing latches, and the NO LATCH line counts the frames the
 // game saw A (all of them: with the mod off a long hold is plain A). Each hold
@@ -49,6 +51,13 @@ struct Probe {
     int heldGameA = 0;     // frames the game saw A while the latching hold was down
     int heldFrames = 0;
     bool watchStarted = false;
+    // PETARI_SKIP_PROBE_ANSWER=yes: a yes/no left by a skip is answered Yes, with Space released.
+    bool answerYes = false;
+    bool answered = false;        // this prompt's Yes was pressed
+    int pointing = 0;             // frames the pointer has been over Prompt.Yes
+    unsigned long releaseAt = 0;  // the answering tap's release
+    bool wantPointer = false;
+    float pointerU = 0.0f, pointerV = 0.0f;
     float startX = 0.0f, startY = 0.0f, startZ = 0.0f;
     float maxRise = 0.0f;
     int groundFrames = 0;
@@ -63,6 +72,7 @@ Probe& probe() {
         if (const char* v = std::getenv("PETARI_SKIP_PROBE_TAIL")) p.tail = std::atoi(v);
         if (const char* v = std::getenv("PETARI_SKIP_PROBE_MAX")) p.max = std::atoi(v);
         if (const char* v = std::getenv("PETARI_SKIP_PROBE_SHOTS")) p.shots = v;
+        if (const char* v = std::getenv("PETARI_SKIP_PROBE_ANSWER")) p.answerYes = std::string(v) == "yes";
         if (p.enabled) {
             std::fprintf(stderr, "[skip-probe] on: delay %d, tail %d, max %d, shots %s\n", p.delay, p.tail, p.max,
                          p.shots.empty() ? "off" : p.shots.c_str());
@@ -102,7 +112,46 @@ void next(Probe& p, Phase phase) {
     p.phaseFrames = 0;
 }
 
+// A yes/no on screen with Space released (PETARI_SKIP_PROBE_ANSWER=yes): point at the game's
+// published Prompt.Yes and tap A once it is under the pointer, as a player answers.
+void answer(Probe& p, unsigned context) {
+    p.wantPointer = false;
+    if (p.releaseAt != 0 && p.frame >= p.releaseAt) {
+        space(false);
+        p.releaseAt = 0;
+    }
+    if ((context & PetariNative::Skip::kChoice) == 0) {
+        p.answered = false;
+        p.pointing = 0;
+        return;
+    }
+    if (p.answered) return;
+    const Observation o = observeGame(true, true);  // takes the UI targets (the script is done by now)
+    for (const Observation::Target& target : o.targets) {
+        if (target.id != "Prompt.Yes" || (target.flags & kTargetSelectable) == 0) continue;
+        p.wantPointer = true;
+        p.pointerU = target.u;
+        p.pointerV = target.v;
+        p.pointing = (target.flags & kTargetPointing) != 0 ? p.pointing + 1 : 0;
+        if (p.pointing >= 10) {
+            say(p, "answering the yes/no: Yes (A), Space released before");
+            space(true);
+            p.releaseAt = p.frame + 6;
+            p.answered = true;
+        }
+        return;
+    }
+}
+
 }  // namespace
+
+bool skipProbeAnswerPointer(float* u, float* v) {
+    const Probe& p = probe();
+    if (!p.enabled || !p.wantPointer) return false;
+    *u = p.pointerU;
+    *v = p.pointerV;
+    return true;
+}
 
 bool skipProbeFrame() {
     Probe& p = probe();
@@ -110,6 +159,7 @@ bool skipProbeFrame() {
     ++p.frame;
     ++p.phaseFrames;
     const unsigned context = petari_skip_context();
+    if (p.answerYes && (p.phase == Phase::Idle || p.phase == Phase::Watch)) answer(p, context);
     const bool skippable = (context & PetariNative::Skip::kSkippable) != 0;
     const bool active = petari_skip_active();
 
