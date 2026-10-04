@@ -22,10 +22,14 @@
 #include <cstdlib>
 #include <string>
 
+#include "Game/Scene/SceneObjHolder.hpp"
+#include "Game/System/GameSystem.hpp"
+#include "Game/System/GameSystemSceneController.hpp"
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/GamePadUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
+#include "Game/Util/SingletonHolder.hpp"
 #include "petari/efb_dump_mark.hpp"
 #include "petari/input.hpp"
 #include "petari/point_move.hpp"
@@ -88,6 +92,14 @@ float length(const TVec3f& a, const TVec3f& b) {
     return std::sqrt(x * x + y * y + z * z);
 }
 
+// The scene and Mario can be read (not while a scene changes or the app shuts down).
+bool sceneReadable() {
+    GameSystem* pSystem = SingletonHolder< GameSystem >::get();
+    if (pSystem == nullptr || pSystem->mSceneController == nullptr) return false;
+    if (!pSystem->mSceneController->isSceneInitializeState(SceneInitializeState_End)) return false;
+    return MR::isExistSceneObj(SceneObj_MarioHolder) && MR::isExistMario();
+}
+
 void left(bool down) {
     Input::focusChanged(true);
     Input::mouseButtonEvent(Input::MouseButton::Left, down);
@@ -99,6 +111,18 @@ PointProbeStep pointProbeFrame() {
     PointProbeStep step;
     Probe& p = probe();
     if (!p.enabled || p.phase == Phase::Done) return step;
+    if (!sceneReadable()) {
+        // A scene change or the shutdown: Mario's state is gone. Mid-probe, let go and stop.
+        if (p.phase != Phase::Wait) {
+            left(false);
+            Input::keyEvent(Input::Key::Space, false, false);
+            Input::keyEvent(Input::Key::Escape, false, false);
+            std::fprintf(stderr, "[point-probe] the scene went away during the probe; stopped (%d ok, %d FAIL)\n", p.ok, p.fail);
+            p.phase = Phase::Done;
+        }
+        p.steady = 0;
+        return step;
+    }
     const Observation o = observeGame(true, false);
     const bool play = o.playerValid && o.pausePermitted && !o.demoActive && !o.talkActive && MR::isExistMario();
     const float height = static_cast<float>(MR::getScreenHeight());
