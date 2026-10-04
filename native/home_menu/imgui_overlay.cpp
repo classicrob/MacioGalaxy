@@ -22,6 +22,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <vector>
 #include <array>
 #include <cfloat>
@@ -574,8 +575,44 @@ void drawProgressBadges(float imageX, float imageY, float imageWidth, float imag
     list->PopClipRect();
 }
 
+namespace {
+std::atomic<HoldProgressFn> gHoldProgress{nullptr};
+}  // namespace
+
+void setHoldProgressSource(HoldProgressFn source) {
+    gHoldProgress.store(source, std::memory_order_relaxed);
+}
+
+void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight) {
+    if (!(progress > 0.0f) || !(imageWidth > 0.0f) || !(imageHeight > 0.0f) || !ImGui::GetCurrentContext()) {
+        return;
+    }
+    progress = std::min(progress, 1.0f);
+    const ImageSpace image{imageX, imageY, imageWidth, imageHeight};
+    const float unit = imageHeight / 720.0f;
+    // A tap in a cutscene barely shows: the ring fades in over the first tenth of the hold.
+    const float alpha = std::clamp(progress / 0.1f, 0.0f, 1.0f);
+    const float radius = unit * 30.0f;
+    const ImVec2 center = image.point(0.92f, -0.80f);
+    const bool full = progress >= 1.0f;
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    list->PushClipRect(image.point(-1.0f, -1.0f), image.point(1.0f, 1.0f), false);
+    list->AddCircleFilled(center, radius + unit * 5.0f, color(0.0f, 0.10f, 0.18f, 0.62f * alpha), 48);
+    list->AddCircle(center, radius, color(0.55f, 0.85f, 1.0f, 0.28f * alpha), 48, unit * 5.0f);
+    const float start = -1.5707963f;  // twelve o'clock
+    list->PathArcTo(center, radius, start, start + 6.2831853f * progress, 48);
+    list->PathStroke(full ? color(1.0f, 0.92f, 0.45f, alpha) : color(0.40f, 0.86f, 1.0f, alpha), 0, unit * 5.0f);
+    centeredText(list, textFont(), unit * 30.0f, radius * 1.6f, center, color(1.0f, 1.0f, 1.0f, 0.95f * alpha), PETARI_ICON_A);
+    list->PopClipRect();
+}
+
 void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageHeight) {
     const View view = publishedView();
+    if (!view.visible) {
+        if (const HoldProgressFn source = gHoldProgress.load(std::memory_order_relaxed)) {
+            drawHoldRing(source(), imageX, imageY, imageWidth, imageHeight);
+        }
+    }
 #ifdef PETARI_HOME_MENU_INPUT
     // The title's "press A and B": say which keys do that. The text is built
     // from the bindings each time the prompt appears.

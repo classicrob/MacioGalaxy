@@ -463,6 +463,15 @@ bool galaxyFontsInstalled();
 // coordinates. Draws nothing while the menu is hidden. The overlay window
 // takes no input, so ImGui never captures the game's keyboard or mouse.
 void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageHeight);
+// The hold-to-skip ring (Mods::Mod::SkipCutscenes). The overlay asks this once per frame while the
+// menu is hidden: 0 or less draws nothing, 0..1 fills a ring in the top right corner (1.5 s of
+// holding = 1), 1 while a skip runs shows it full. The app points it at petari_skip_progress
+// (native/include/petari/skip.hpp); null (the default) disables the ring. Any thread, set once.
+using HoldProgressFn = float (*)();
+void setHoldProgressSource(HoldProgressFn source);
+// Draws the ring for `progress` (used by drawImGuiOverlay; exposed for the render tool and tests).
+// Same thread and frame rules as drawImGuiOverlay.
+void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight);
 // The title screen's keyboard hint (ASCII), in a bar across the top of the
 // image, above the logo. drawImGuiOverlay draws it while the input layer
 // reports the title's "press A and B" prompt and the menu is hidden, when

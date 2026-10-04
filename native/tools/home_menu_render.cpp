@@ -253,8 +253,9 @@ int main(int argc, char** argv) {
     auto settle = [&] {
         for (int i = 0; i < 12; ++i) menu.update(HM::FrameInput{});
     };
+    bool menuHidden = false;  // the hold ring shots: the game scene with no menu
     auto shot = [&](const char* name) {
-        HM::publish(menu.view());
+        HM::publish(menuHidden ? HM::View{} : menu.view());
         io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
         io.DeltaTime = 1.0f / 60.0f;
         ImGui::NewFrame();
@@ -318,6 +319,14 @@ int main(int argc, char** argv) {
     menu.update(press(Down));
     menu.update(press(A));
     shot("confirm");
+    // The hold-to-skip ring while Space is held: a third, two thirds, and the skip running.
+    static float ringProgress = 0.0f;
+    HM::setHoldProgressSource([]() { return ringProgress; });
+    menuHidden = true;
+    for (const float p : {0.33f, 0.66f, 1.0f}) {
+        ringProgress = p;
+        shot(p < 0.5f ? "skip-ring-third" : p < 1.0f ? "skip-ring-twothirds" : "skip-ring-full");
+    }
     ImGui::DestroyContext();
     return 0;
 }
