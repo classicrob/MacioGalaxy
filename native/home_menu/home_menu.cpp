@@ -345,7 +345,7 @@ std::uint64_t Menu::takeFolderToggles() {
 
 void Menu::refreshFolderLabels() {
     for (int i = 0; i < folderShown(); i++) {
-        const FolderModEntry& mod = mFolderMods[mFolderPageIndex * kFolderPageSize + i];
+        const FolderModEntry& mod = mFolderMods[mFolderPageIndex * kFolderPageSize + i];  // audit-ok: i < folderShown(), which stops at mFolderCount <= kMaxFolderMods
         std::snprintf(mFolderLabels[i], sizeof(mFolderLabels[i]), "%s: %s", mod.label, mod.on ? "On" : "Off");
     }
     if (mFolderCount == 0) {
@@ -554,7 +554,7 @@ View Menu::view() const {
         remap.firstRow = mRemapTop;
         remap.rowCount = std::clamp(mRemapRowCount - mRemapTop, 0, kRemapVisibleRows);
         for (int i = 0; i < remap.rowCount; i++) {
-            remap.rows[i] = mRemapRows[mRemapTop + i];
+            remap.rows[i] = mRemapRows[mRemapTop + i];  // audit-ok: i < rowCount = clamp(mRemapRowCount - mRemapTop, 0, kRemapVisibleRows)
         }
         const bool rowShown = mRemapRow >= mRemapTop && mRemapRow < mRemapTop + remap.rowCount;
         remap.focusRow = !mRemapOnButtons && rowShown ? mRemapRow - mRemapTop : -1;
