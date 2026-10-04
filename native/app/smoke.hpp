@@ -455,7 +455,9 @@ namespace PetariNative::App::Smoke {
 // smoke_game.cpp (SDK side): what the game shows now, and the milestones
 // recorded since the previous call. Main thread, at the seam, while it holds
 // the CPU (before the seam releases it).
-Observation observeGame(bool wantPlayer);
+// takeEvents false (the probes): the state only, leaving milestones, prompts, targets
+// and actors for the script's own call.
+Observation observeGame(bool wantPlayer, bool takeEvents = true);
 // Applies a Step's warp (SDK side, main thread at the seam while it holds the CPU). False when
 // there is no Mario to move.
 bool warpPlayer(const Step& step);

@@ -90,7 +90,7 @@ PointProbeStep pointProbeFrame() {
     PointProbeStep step;
     Probe& p = probe();
     if (!p.enabled || p.phase == Phase::Done) return step;
-    const Observation o = observeGame(true);
+    const Observation o = observeGame(true, false);
     const bool play = o.playerValid && o.pausePermitted && !o.demoActive && !o.talkActive && MR::isExistMario();
     const float height = static_cast<float>(MR::getScreenHeight());
     const float width = static_cast<float>(MR::getScreenWidth());
