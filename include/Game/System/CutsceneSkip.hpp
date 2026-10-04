@@ -21,6 +21,9 @@ namespace CutsceneSkip {
     void beginFastForwardStep();
     // Game sound effects (not system sounds) are muted while demos fast-forward.
     bool isMutingSE();
+    // AudSystem/AudSoundObject: a sound effect start was refused by the mute (counted,
+    // and logged when the skip ends).
+    void noteMutedSE();
     // A menu that waits for the player (pointer choices with no A default, e.g.
     // the storybook's chapter list) is on screen this update: ends a skip like a choice.
     void noteWaitingForPlayer();

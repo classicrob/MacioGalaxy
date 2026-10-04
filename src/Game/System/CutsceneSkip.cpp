@@ -52,6 +52,7 @@ namespace {
     std::chrono::steady_clock::time_point gFastForwardStart;
     int gFastForwardSteps = 0;
     unsigned long gFastForwardTotal = 0;  // extra updates in this skip, for the log
+    unsigned long gMutedSE = 0;           // sound effect starts refused by the mute in this skip
 
     bool isChoiceShown() {
         if (GameSequenceFunction::isActiveSaveDataHandleSequence()) {
@@ -132,9 +133,11 @@ namespace CutsceneSkip {
 
         petari_skip_set_context(context);
 
-        if (!petari_skip_active() && gFastForwardTotal != 0) {
-            std::fprintf(stderr, "[skip] fast-forward ran %lu extra scene updates\n", gFastForwardTotal);
+        if (!petari_skip_active() && (gFastForwardTotal != 0 || gMutedSE != 0)) {
+            std::fprintf(stderr, "[skip] fast-forward ran %lu extra scene updates; %lu sound effect starts muted\n", gFastForwardTotal,
+                         gMutedSE);
             gFastForwardTotal = 0;
+            gMutedSE = 0;
         }
 
         gMuting = petari_skip_active() && gShown.game && !gShown.movie && (gShown.demo || gShown.talk || gShown.stageClear);
@@ -190,6 +193,10 @@ namespace CutsceneSkip {
 
     bool isMutingSE() {
         return gMuting;
+    }
+
+    void noteMutedSE() {
+        ++gMutedSE;
     }
 
     void noteWaitingForPlayer() {

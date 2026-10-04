@@ -699,7 +699,7 @@ void StageDriver::exercise(const Observation& o, Step& step) {
             note("TEST WARP " + std::to_string(mWarpIndex + 1) + " (not gameplay) from " + text(pos) + " to " +
                  text({point.x, point.y, point.z}));
             mPhaseFrames = 0;
-        } else if (mPhaseFrames >= kWarpSettle) {
+        } else if (mPhaseFrames >= kWarpSettle && mWarpIndex >= mConfig.moreWarps.size()) {
             const std::string distance = mConfig.warpName.empty()
                 ? ", " + number(length(sub(pos, mConfig.moreWarps.empty()
                                                        ? Vec{mConfig.warpX, mConfig.warpY, mConfig.warpZ}
