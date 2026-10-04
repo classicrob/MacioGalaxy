@@ -341,7 +341,7 @@ void startSmoke() {
 long gQuitDelayFrames = 0;  // PETARI_SMOKE_QUIT_DELAY frames left before the power button
 
 template <class Driver>
-void runSmoke(Driver* driver, bool probeHoldsA) {
+void runSmoke(Driver* driver, bool probeHoldsA, bool probeOwnsInput) {
     Smoke::Observation observation = Smoke::observeGame(driver->wantsPlayer());
     observation.physical = Events::physicalInputs();
     const Smoke::Step step = driver->step(observation);
@@ -360,8 +360,8 @@ void runSmoke(Driver* driver, bool probeHoldsA) {
                             gLastImage.y + step.pointerV * gLastImage.height);
     }
     for (const Smoke::Press& press : step.presses) {
-        if (probeHoldsA && press.button == Smoke::Button::A) {
-            continue;  // PETARI_SKIP_PROBE holds Space: the script's A would release it
+        if ((probeOwnsInput && press.down) || (probeHoldsA && press.button == Smoke::Button::A)) {
+            continue;  // PETARI_SKIP_PROBE holds Space (the script's A would release it); PETARI_POINT_PROBE drives
         }
         Events::pressButton(static_cast<int>(press.button), press.down);
     }
@@ -635,20 +635,24 @@ extern "C" void petari_host_frame_seam(void) {
     // Game state is readable here, before the CPU is released.
     recordFrame(entry, gTiming.probe != nullptr ? gTiming.probe() : FrameStats::Phase::Gameplay);
     const bool probeHoldsA = Smoke::skipProbeFrame();
+    const Smoke::PointProbeStep point = Smoke::pointProbeFrame();
+    if (point.pointer) {
+        Events::movePointer(gLastImage.x + point.u * gLastImage.width, gLastImage.y + point.v * gLastImage.height);
+    }
     if (gSmoke != nullptr) {
-        runSmoke(gSmoke, probeHoldsA);
+        runSmoke(gSmoke, probeHoldsA, point.active);
     } else if (gStage != nullptr) {
-        runSmoke(gStage, probeHoldsA);
+        runSmoke(gStage, probeHoldsA, point.active);
     } else if (gSoak != nullptr) {
-        runSmoke(gSoak, probeHoldsA);
+        runSmoke(gSoak, probeHoldsA, point.active);
     } else if (gGoodEgg != nullptr) {
-        runSmoke(gGoodEgg, probeHoldsA);
+        runSmoke(gGoodEgg, probeHoldsA, point.active);
     } else if (gDomes != nullptr) {
-        runSmoke(gDomes, probeHoldsA);
+        runSmoke(gDomes, probeHoldsA, point.active);
     } else if (gReplay != nullptr) {
-        runSmoke(gReplay, probeHoldsA);
+        runSmoke(gReplay, probeHoldsA, point.active);
     } else if (gMovement != nullptr) {
-        runSmoke(gMovement, probeHoldsA);
+        runSmoke(gMovement, probeHoldsA, point.active);
     }
     if (Soak::telemetryActive()) {  // PETARI_SOAK_CSV: frame times and, periodically, the JKR heaps
         static unsigned long frames = 0;

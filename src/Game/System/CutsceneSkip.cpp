@@ -24,6 +24,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 namespace {
@@ -93,8 +94,13 @@ namespace CutsceneSkip {
     void noteFrame() {
         GameSystemSceneController* pController = SingletonHolder< GameSystem >::get()->mSceneController;
 
-        // Mod off: the game state is not read at all.
-        if (pController == nullptr || !PetariNative::Mods::enabled(PetariNative::Mods::Mod::SkipCutscenes)) {
+        // Mod off: the game state is not read at all (unless PETARI_SKIP_OBSERVE_WHEN_OFF, for the
+        // skip probe's mod-off check: the context is then published, and nothing else changes).
+        static const bool sObserveWhenOff = [] {
+            const char* value = std::getenv("PETARI_SKIP_OBSERVE_WHEN_OFF");
+            return value != nullptr && value[0] != '\0' && value[0] != '0';
+        }();
+        if (pController == nullptr || (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::SkipCutscenes) && !sObserveWhenOff)) {
             gShown = Shown();
             gMuting = false;
             gWaitingForPlayer = false;

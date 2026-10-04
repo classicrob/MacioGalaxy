@@ -106,6 +106,7 @@ add_library(petari_input STATIC
     camera_input.cpp
     mods.cpp
     remap.cpp
+    point_move.cpp
     remote_model.cpp
     skip.cpp
     wpad_host.cpp

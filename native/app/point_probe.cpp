@@ -1,0 +1,213 @@
+// PETARI_POINT_PROBE=1: proof runs for the Point to move mod (native/MODS.md
+// "Point to move"), next to any smoke script; needs PETARI_MODS=PointToMove.
+// Once normal play has been steady for 90 frames, it drives the real mouse
+// path (pointer motion and the left button through the native input layer)
+// and logs "[point-probe] <check>: ok|FAIL ..." lines:
+//   up / right / down-left: the pointer kept 28% of the screen height from Mario
+//     in that screen direction, left held 75 frames; Mario must move at least 100
+//     units, and his movement seen on screen (each frame's step projected with
+//     that frame's camera, summed) must point the same way (cosine at least 0.7).
+//   stop: 20..40 frames after the release he moves under 15 units.
+//   jump: running up, Space tapped mid-hold; he must rise at least 60 units and
+//     keep moving up the screen.
+//   menu: the pause menu open (Escape held), a left press is B for the game and
+//     is not claimed.
+// While it runs, the smoke script's own presses are dropped.
+
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
+#include "Game/Util/CameraUtil.hpp"
+#include "Game/Util/GamePadUtil.hpp"
+#include "Game/Util/PlayerUtil.hpp"
+#include "Game/Util/ScreenUtil.hpp"
+#include "petari/input.hpp"
+#include "petari/point_move.hpp"
+#include "smoke.hpp"
+
+namespace PetariNative::App::Smoke {
+namespace {
+
+struct Check {
+    const char* name;
+    float dx, dy;  // screen direction (y down)
+    bool jump;
+};
+constexpr Check kChecks[] = {{"up", 0.0f, -1.0f, false}, {"right", 1.0f, 0.0f, false}, {"down-left", -0.7071f, 0.7071f, false},
+                             {"jump", 0.0f, -1.0f, true}};
+constexpr int kCheckCount = sizeof(kChecks) / sizeof(kChecks[0]);
+constexpr int kHold = 75;
+
+enum class Phase { Wait, Run, Stop, MenuOpen, MenuPress, MenuClose, Done };
+
+struct Probe {
+    bool enabled = false;
+    Phase phase = Phase::Wait;
+    int steady = 0;
+    int check = 0;
+    int frames = 0;
+    TVec3f start{0, 0, 0}, releasePos{0, 0, 0}, stopFrom{0, 0, 0}, previous{0, 0, 0};
+    float screenX = 0.0f, screenY = 0.0f;  // Mario's summed on-screen motion
+    float maxRise = 0.0f;
+    int ok = 0, fail = 0;
+};
+
+Probe& probe() {
+    static Probe p = [] {
+        Probe p;
+        const char* on = std::getenv("PETARI_POINT_PROBE");
+        p.enabled = on != nullptr && on[0] != '\0' && on[0] != '0';
+        if (p.enabled) std::fprintf(stderr, "[point-probe] on\n");
+        return p;
+    }();
+    return p;
+}
+
+void report(Probe& p, const char* name, bool good, const std::string& detail) {
+    (good ? p.ok : p.fail)++;
+    std::fprintf(stderr, "[point-probe] %s: %s %s\n", name, good ? "ok" : "FAIL", detail.c_str());
+    std::fflush(stderr);
+}
+
+bool screenOf(const TVec3f& world, TVec2f* out) {
+    return MR::calcScreenPosition(out, world);
+}
+
+float length(const TVec3f& a, const TVec3f& b) {
+    const float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
+    return std::sqrt(x * x + y * y + z * z);
+}
+
+void left(bool down) {
+    Input::focusChanged(true);
+    Input::mouseButtonEvent(Input::MouseButton::Left, down);
+}
+
+}  // namespace
+
+PointProbeStep pointProbeFrame() {
+    PointProbeStep step;
+    Probe& p = probe();
+    if (!p.enabled || p.phase == Phase::Done) return step;
+    const Observation o = observeGame(true, false);
+    const bool play = o.playerValid && o.pausePermitted && !o.demoActive && !o.talkActive && MR::isExistMario();
+    const float height = static_cast<float>(MR::getScreenHeight());
+    const float width = static_cast<float>(MR::getScreenWidth());
+    ++p.frames;
+
+    auto aim = [&](float dx, float dy) {
+        TVec2f mario;
+        if (!screenOf(*MR::getPlayerCenterPos(), &mario)) return;
+        step.pointer = true;
+        step.u = (mario.x + dx * 0.28f * height) / width;
+        step.v = (mario.y + dy * 0.28f * height) / height;
+    };
+
+    switch (p.phase) {
+    case Phase::Wait:
+        p.steady = play ? p.steady + 1 : 0;
+        if (p.steady >= 90) {
+            p.phase = Phase::Run;
+            p.frames = 0;
+            std::fprintf(stderr, "[point-probe] normal play steady; starting at (%.1f, %.1f, %.1f)\n", o.playerX, o.playerY, o.playerZ);
+        }
+        break;
+    case Phase::Run: {
+        const Check& c = kChecks[p.check];
+        aim(c.dx, c.dy);
+        if (p.frames == 2) {
+            p.start = *MR::getPlayerPos();
+            p.previous = p.start;
+            p.screenX = p.screenY = 0.0f;
+            p.maxRise = 0.0f;
+            left(true);
+        }
+        if (c.jump && p.frames == 40) Input::keyEvent(Input::Key::Space, true, false);
+        if (c.jump && p.frames == 52) Input::keyEvent(Input::Key::Space, false, false);
+        if (p.frames > 2) {
+            const TVec3f& pos = *MR::getPlayerPos();
+            TVec2f a, b;
+            if (screenOf(p.previous, &a) && screenOf(pos, &b)) {
+                p.screenX += b.x - a.x;
+                p.screenY += b.y - a.y;
+            }
+            p.previous = pos;
+            const float rise = -((pos.x - p.start.x) * o.gravityX + (pos.y - p.start.y) * o.gravityY + (pos.z - p.start.z) * o.gravityZ);
+            if (rise > p.maxRise) p.maxRise = rise;
+        }
+        if (p.frames == 2 + kHold) {
+            const TVec3f end = *MR::getPlayerPos();
+            left(false);
+            const bool seen = true;
+            const float mx = p.screenX, my = p.screenY;
+            const float ml = std::sqrt(mx * mx + my * my);
+            const float cosine = ml > 0.0f ? (mx * c.dx + my * c.dy) / ml : 0.0f;
+            const float moved = length(end, p.start);
+            char text[200];
+            std::snprintf(text, sizeof(text), "moved %.0f units, on-screen direction cosine %.2f (screen move %.0f, %.0f)%s%s", moved,
+                          cosine, mx, my, c.jump ? ", max rise " : "", c.jump ? std::to_string(static_cast<int>(p.maxRise)).c_str() : "");
+            bool good = seen && moved >= 100.0f && cosine >= (c.jump ? 0.5f : 0.7f);
+            if (c.jump) good = good && p.maxRise >= 60.0f;
+            report(p, c.name, good, text);
+            p.releasePos = end;
+            p.phase = Phase::Stop;
+            p.frames = 0;
+        }
+        break;
+    }
+    case Phase::Stop:
+        if (p.frames == 20) p.stopFrom = *MR::getPlayerPos();
+        if (p.frames == 40) {
+            const float drift = length(*MR::getPlayerPos(), p.stopFrom);
+            char text[120];
+            std::snprintf(text, sizeof(text), "after releasing (%s): moved %.1f units in frames 20..40", kChecks[p.check].name, drift);
+            if (!kChecks[p.check].jump) report(p, "stop", drift < 15.0f, text);
+        }
+        if (p.frames >= 90 && play) {
+            p.frames = 0;
+            p.phase = ++p.check < kCheckCount ? Phase::Run : Phase::MenuOpen;
+        }
+        break;
+    case Phase::MenuOpen:
+        if (p.frames == 1) Input::keyEvent(Input::Key::Escape, true, false);
+        if (p.frames == 19) Input::keyEvent(Input::Key::Escape, false, false);
+        if (p.frames == 80) {
+            p.phase = Phase::MenuPress;
+            p.frames = 0;
+        }
+        break;
+    case Phase::MenuPress:
+        step.pointer = true;
+        step.u = 0.5f;
+        step.v = 0.9f;
+        if (p.frames == 2) left(true);
+        if (p.frames == 8) {
+            const bool b = MR::testCorePadButtonB(WPAD_CHAN0);
+            report(p, "menu", !o.pausePermitted && b && !petari_point_move_claimed(),
+                   std::string("pause menu ") + (o.pausePermitted ? "NOT open" : "open") + ", left press is " + (b ? "B" : "not B") +
+                       (petari_point_move_claimed() ? ", claimed" : ", not claimed"));
+            left(false);
+        }
+        if (p.frames == 30) {
+            p.phase = Phase::MenuClose;
+            p.frames = 0;
+        }
+        break;
+    case Phase::MenuClose:
+        if (p.frames == 1) Input::keyEvent(Input::Key::Escape, true, false);
+        if (p.frames == 6) Input::keyEvent(Input::Key::Escape, false, false);
+        if (p.frames == 60) {
+            std::fprintf(stderr, "[point-probe] done: %d ok, %d FAIL\n", p.ok, p.fail);
+            p.phase = Phase::Done;
+        }
+        break;
+    case Phase::Done:
+        break;
+    }
+    step.active = p.phase != Phase::Wait && p.phase != Phase::Done;
+    return step;
+}
+
+}  // namespace PetariNative::App::Smoke

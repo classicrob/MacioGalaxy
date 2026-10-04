@@ -9,6 +9,7 @@ unmodified game and every test run behave exactly as before.
 | Fire a Star Bit at the nearest enemy (`ShootEnemy`) | V (no controller default) | Shoots one Star Bit at the nearest enemy on screen |
 | Odyssey movement (`OdysseyMovement`) | none (a mode; it uses the normal Jump, Crouch and Spin buttons) | Mario moves with Super Mario Odyssey's physics and moveset: see "Odyssey movement" below. |
 | Cappy (`Cappy`) | R, controller RB | Super Mario Odyssey's cap throw and cap bounce; needs Odyssey movement: see "Cappy" below. |
+| Point to move (`PointToMove`) | hold the left mouse button | Mario runs toward the point under the cursor while you hold it; keys still jump, spin and crouch: see "Point to move" below. |
 | Hold Space to skip cutscenes and dialogue (`SkipCutscenes`) | none (hold Jump/A: Space, controller bottom button) | Holding A for 1.5 s skips the cutscene or dialogue on screen, and everything after it until you have control again: see "Skip cutscenes and dialogue" below. |
 
 ## Turning mods on
@@ -182,6 +183,43 @@ leave. Objects the game had hidden because they were out of its camera's view
 stay hidden while you fly. `PhotoMode` and `PhotoShot` are remappable in
 `controls.txt`. The other photo controls follow the bindings they share with play
 (the stick keys, A, NunchukZ, the camera keys, TiltHold, Walk, Start, Plus).
+
+## Point to move
+
+Turn on "Point to move (hold left click)" (`PointToMove=on`). Then, in normal
+play, **hold the left mouse button**: Mario runs toward the point under the
+cursor, and stops when you let go, as if the stick were released. Point close to
+Mario to walk, farther away to run: nothing within 3% of the screen height of
+him, full speed from 20%. The direction follows the cursor and Mario every
+frame. Your keys keep their jobs while you steer: Space jumps (in the direction
+you are running), F spins, Shift crouches or ground-pounds (a long jump is
+Shift, then Space while running), Left Alt walks.
+
+- **It is the stick.** The pointer's direction from Mario on the screen becomes
+  the Nunchuk stick, so the game moves him exactly as with the stick: on round
+  planets, upside down, in water, and as Bee, Boo, Spring, Ice and Fire Mario.
+  WASD (or a controller stick), when held, wins over the pointer. The Star Ball
+  and the Ray (Manta) steer by tilting the remote, not the stick, so the pointer
+  does not steer them; use the keys there as before.
+- **Shooting Star Bits.** While the mod is on, a left press in normal play steers
+  and sends no B, from press to release. Shoot with the **B key** instead (the
+  Wii B: it shoots a Star Bit at the pointer, and holding it strokes the pointer
+  objects that need "hold B", such as turning platforms). The B key works with
+  the mod off too. The Shoot Enemy (V) and Collect Star Bits (G) mods work as
+  before.
+- **Only in normal play.** Outside it (menus, mission select, the pause menu,
+  cutscenes, conversations, the Home menu and the editor) left click is B as
+  always. A hold that started in normal play stays a steering hold until you let
+  go: if a cutscene starts meanwhile, Mario just stops, and no B reaches it.
+- Right click (Pull Stars, pointer grabs) is unchanged.
+
+Test: `native_input` checks the stick's dead zone and ramp, that a claimed press
+sends no B, WASD wins, release stops, and that left click stays B outside
+normal play. `PETARI_POINT_PROBE=1` (native/app/point_probe.cpp, with
+`PETARI_MODS=PointToMove`) drives the real mouse path next to any smoke script
+and logs `[point-probe]` checks: Mario's movement on screen follows the pointer
+up, right and down-left, he stops on release, Space jumps mid-run, and in the
+pause menu left click is B.
 
 ## Skip cutscenes and dialogue
 

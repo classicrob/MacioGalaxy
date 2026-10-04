@@ -9,7 +9,10 @@
 // while the latching hold was down (it must not: no jump) and how far Mario
 // rose. PETARI_SKIP_PROBE_SHOTS=<dir>: screenshots before the hold, at the
 // latch, when the skip ends and after the watch. PETARI_SKIP_PROBE_MAX=<n>
-// stops after n skips. Needs the mod on (PETARI_MODS=SkipCutscenes). Each hold
+// stops after n skips. Needs the mod on (PETARI_MODS=SkipCutscenes), or, for the
+// mod-off check, PETARI_SKIP_OBSERVE_WHEN_OFF=1 with the mod off: the probe then
+// holds in cutscenes, nothing latches, and the NO LATCH line counts the frames the
+// game saw A (all of them: with the mod off a long hold is plain A). Each hold
 // starts the image-dump phase "skip-hold" (petari/efb_dump_mark.hpp), so
 // PETARI_SURFACE_DUMP_LABELS=skip-hold (or the XFB/EFB dumps) capture the hold.
 
@@ -124,14 +127,20 @@ bool skipProbeFrame() {
         }
         break;
     case Phase::Holding:
+        ++p.heldFrames;
+        if (gameSeesA()) ++p.heldGameA;
         if (active) {
             char text[64];
             std::snprintf(text, sizeof(text), "skip latched after %d frames held", p.phaseFrames);
             say(p, text);
             shot(p, "latched");
+            p.heldGameA = 0;
+            p.heldFrames = 0;
             next(p, Phase::Latched);
         } else if (p.phaseFrames > PetariNative::Skip::kHoldFrames + 60) {
-            say(p, "NO LATCH: released");
+            char text[96];
+            std::snprintf(text, sizeof(text), "NO LATCH: released; the game saw A on %d of %d held frames", p.heldGameA, p.heldFrames);
+            say(p, text);
             space(false);
             p.skippableFrames = 0;
             ++p.skips;
@@ -163,7 +172,7 @@ bool skipProbeFrame() {
         break;
     }
     case Phase::Watch: {
-        const Observation o = observeGame(true);
+        const Observation o = observeGame(true, false);
         if (p.phaseFrames <= 6) {  // the release reaches the game within a few reports
             ++p.heldFrames;
             if (gameSeesA()) ++p.heldGameA;

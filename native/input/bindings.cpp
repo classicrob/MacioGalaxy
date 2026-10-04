@@ -294,6 +294,7 @@ Bindings Bindings::defaults() {
     b.bind(Action::A, Binding::key(Key::Space));
     b.bind(Action::A, Binding::mouse(MouseButton::Right));  // Pull Stars (GCapture) and pointer grabs use A
     b.bind(Action::B, Binding::mouse(MouseButton::Left));   // Star Bits
+    b.bind(Action::B, Binding::key(Key::B));  // Star Bits too; with Point to move, left click steers (native/MODS.md)
     b.bind(Action::Shake, Binding::key(Key::F));
     b.bind(Action::NunchukZ, Binding::key(Key::LeftShift));
     b.bind(Action::NunchukZ, Binding::key(Key::RightShift));
