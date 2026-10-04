@@ -119,6 +119,46 @@ def classify(base_lines, index_lines):
     return ("VAR", size)
 
 
+def loop_bound(for_lines, name):
+    """The bound of `for (... name = ...; name < BOUND; ...)`: ("const", value|None) for literals and sizeof,
+    ("named", names) for a named constant, ("runtime", names) for a variable or member; None if the loop's
+    header does not have that shape."""
+    # init: a VarDecl of this name near the top of the ForStmt
+    if not any(re.search(r"VarDecl [^\n]*\b" + re.escape(name) + r"\b", l) for _, l in for_lines[:6]):
+        return None
+    for i, (d, raw) in enumerate(for_lines):
+        if re.search(r"BinaryOperator [^\n]*'(<|<=|!=)'", raw):
+            sub = [x for x in for_lines[i + 1:]]
+            kids, cur = [], None
+            cd = None
+            for dd, rr in sub:
+                if dd <= d:
+                    break
+                if cd is None:
+                    cd = dd
+                if dd == cd:
+                    cur = []
+                    kids.append(cur)
+                cur.append(rr)
+            if len(kids) < 2:
+                return None
+            rhs = kids[1]
+            text = "\n".join(rhs)
+            if re.search(r"MemberExpr|CallExpr|ParmVar", text) or re.search(r"DeclRefExpr[^\n]*'(?!const )[^']*' lvalue Var", text) and \
+                    not re.search(r"'const [^']*'", text):
+                names = re.findall(r"MemberExpr [^\n]*?(?:->|\.)(\w+) 0x", text) + re.findall(r"DeclRefExpr[^\n]*(?:Var|ParmVar) 0x[0-9a-f]+ '([^']+)'", text)
+                calls = re.findall(r"(?:CXXMemberCallExpr|CallExpr)", text)
+                return ("runtime", names or (["<call>"] if calls else ["?"]))
+            if re.search(r"DeclRefExpr[^\n]*Var", text):
+                if "ConstantExpr" in text and re.search(r"value: Int (-?\d+)", text):
+                    return ("const", int(re.search(r"value: Int (-?\d+)", text).group(1)))
+                names = re.findall(r"DeclRefExpr[^\n]*Var 0x[0-9a-f]+ '([^']+)'", text)
+                return ("named", names or ["?"])
+            v = re.search(r"IntegerLiteral [^']*'[^']*' (-?\d+)", text) or re.search(r"value: Int (-?\d+)", text)
+            return ("const", int(v.group(1)) if v else None)
+    return None
+
+
 def scan(entry, want_tests):
     path = Path(entry["file"])
     args = compile_args(entry)
@@ -127,9 +167,9 @@ def scan(entry, want_tests):
                               errors="replace", timeout=900)
     except subprocess.TimeoutExpired:
         return path, [], "timeout"
-    findings = []
+    finished = []  # closed subscripts: (file, line, lines, for_loops)
     cur_file, cur_line = None, 0
-    stack = None  # (depth, file, line, lines)
+    open_nodes = []  # entries: dict(kind, depth, file, line, lines, fors)
     for raw in proc.stdout.splitlines():
         m = NODE.match(raw)
         if not m:
@@ -147,22 +187,22 @@ def scan(entry, want_tests):
                     cur_line = l
                 if i == 0:
                     node_file, node_line = cur_file, cur_line
-        if stack is not None and depth <= stack[0]:
-            findings.append(stack)
-            stack = None
-        if stack is not None:
-            stack[3].append((depth, raw))
-        if kind == "ArraySubscriptExpr" and node_file and f"{ROOT}/native/" in str(Path(node_file).resolve()
-                                                                                  if node_file.startswith(".") else node_file):
-            if want_tests or "/native/tests/" not in node_file:
-                if stack is not None:
-                    findings.append(stack)
-                stack = (depth, node_file, node_line, [(depth, raw)])
-    if stack is not None:
-        findings.append(stack)
+        while open_nodes and depth <= open_nodes[-1]["depth"]:
+            n = open_nodes.pop()
+            if n["kind"] == "ArraySubscriptExpr":
+                finished.append(n)
+        for n in open_nodes:
+            n["lines"].append((depth, raw))
+        interesting = kind == "ForStmt" or (kind == "ArraySubscriptExpr" and node_file and
+                                            f"{ROOT}/native/" in str(Path(node_file).resolve() if node_file.startswith(".") else node_file)
+                                            and (want_tests or "/native/tests/" not in node_file))
+        if interesting:
+            fors = [list(n["lines"]) for n in open_nodes if n["kind"] == "ForStmt"] if kind == "ArraySubscriptExpr" else []
+            open_nodes.append({"kind": kind, "depth": depth, "file": node_file, "line": node_line, "lines": [(depth, raw)], "fors": fors})
+    finished.extend(n for n in open_nodes if n["kind"] == "ArraySubscriptExpr")
     out = []
-    for depth, f, line, lines in findings:
-        # children of the subscript: first = base, second = index (depth = prefix width, children are deeper by 2)
+    for n in finished:
+        depth, f, line, lines = n["depth"], n["file"], n["line"], n["lines"]
         child_depth = min((d for d, _ in lines[1:]), default=None)
         if child_depth is None:
             continue
@@ -180,7 +220,17 @@ def scan(entry, want_tests):
             continue
         kind, size = result
         base_type = re.findall(r"'([^']*\[\d+\][^']*)'", " ".join(children[0]))
-        out.append({"file": f, "line": line, "class": kind, "size": size, "type": base_type[0] if base_type else "?"})
+        row = {"file": f, "line": line, "class": kind, "size": size, "type": base_type[0] if base_type else "?"}
+        if kind == "VAR":
+            var = re.search(r"DeclRefExpr[^\n]*Var 0x[0-9a-f]+ '([^']+)'", "\n".join(children[1]))
+            row["loop"] = None
+            if var and "MemberExpr" not in "".join(children[1]):
+                for for_lines in reversed(n["fors"]):  # innermost first
+                    bound = loop_bound(for_lines, var.group(1))
+                    if bound:
+                        row["loop"] = bound
+                        break
+        out.append(row)
     return path, out, None
 
 
@@ -199,6 +249,23 @@ def allowlist():
     return allowed
 
 
+def guard_hint(file, line, bound):
+    """Is the loop's bound clamped or asserted in the 80 source lines above? (a hint for review, not a proof)"""
+    try:
+        lines = Path(file).read_text(errors="replace").splitlines()
+    except Exception:
+        return False
+    window = "\n".join(lines[max(0, line - 81):line])
+    for name in bound:
+        if name in ("?", "<call>"):
+            continue
+        n = re.escape(name)
+        if re.search(rf"(min|clamp)\s*\([^;]*\b{n}\b|\b{n}\b\s*=\s*std::(min|clamp)|\b{n}\b[^;\n]*(min|clamp)\s*\(|"
+                     rf"\b{n}\b\s*(<|<=)\s*k\w+|k\w+\s*(>|>=)\s*\b{n}\b|assert[^;]*\b{n}\b|\b{n}\b\s*=\s*[^;]*\bk[A-Z]\w+", window):
+            return True
+    return False
+
+
 def source_line(file, line):
     try:
         lines = Path(file).read_text(errors="replace").splitlines()
@@ -214,8 +281,14 @@ def selftest():
     got = sorted((r["class"], r["line"]) for r in found)
     lines = fixture.read_text().splitlines()
     want = sorted((cls, n + 1) for n, l in enumerate(lines) for cls in ("COMPUTED", "CONST-OOB", "VAR") if f"EXPECT {cls}" in l or
-                  (cls == "VAR" and "VAR: counted" in l))
+                  (cls == "VAR" and ("VAR: counted" in l or "EXPECT LOOP-" in l)))
     ok = [g for g in got if g[0] != "CONST"] == want
+    # the loop classes of the VAR findings
+    for tag, kind in (("LOOP-RUNTIME", "runtime"), ("LOOP-CONST", "const")):
+        for n, l in enumerate(lines):
+            if f"EXPECT {tag}" in l:
+                row = [r for r in found if r["line"] == n + 1 and r["class"] == "VAR"]
+                ok = ok and bool(row) and bool(row[0].get("loop")) and row[0]["loop"][0] == kind
     print("selftest", "PASS" if ok else f"FAIL\n  got  {got}\n  want {want}")
     return 0 if ok else 1
 
@@ -227,6 +300,7 @@ def main():
     ap.add_argument("--filter", default="", help="only translation units whose path contains this")
     ap.add_argument("--all", action="store_true", help="also list CALL and VAR findings")
     ap.add_argument("--tests", action="store_true", help="include native/tests")
+    ap.add_argument("--loops", action="store_true", help="list loop-indexed hits whose runtime bound has no clamp nearby")
     ap.add_argument("--json", type=Path)
     ap.add_argument("--selftest", action="store_true", help="check the detector against array_index_audit_fixture.cpp")
     args = ap.parse_args()
@@ -261,16 +335,25 @@ def main():
         r["source"] = text
         rel_path = str(Path(r["file"]).relative_to(ROOT)) if str(r["file"]).startswith(str(ROOT)) else r["file"]
         r["suppressed"] = "audit-ok:" in text or "audit-ok:" in above or (rel_path, text) in allowed
-        key = (r["class"], "suppressed" if r["suppressed"] else "open")
+        loop = r.get("loop")
+        sub = r["class"]
+        if r["class"] == "VAR":
+            sub = "VAR/loop-" + loop[0] if loop else "VAR/other"
+            if loop and loop[0] == "runtime":
+                r["hint"] = guard_hint(r["file"], r["line"], loop[1])
+                sub += "/guard-hint" if r["hint"] else "/NO-HINT"
+        r["sub"] = sub
+        key = (sub, "suppressed" if r["suppressed"] else "open")
         counts[key] = counts.get(key, 0) + 1
-        if r["class"] in ("CONST-OOB", "COMPUTED") or args.all:
+        if r["class"] in ("CONST-OOB", "COMPUTED") or args.all or (args.loops and r["sub"] == "VAR/loop-runtime/NO-HINT"):
             shown.append(r)
     for r in shown:
         if r["class"] in ("CONST", ) and not args.all:
             continue
         rel = str(Path(r["file"]).relative_to(ROOT)) if str(r["file"]).startswith(str(ROOT)) else r["file"]
         mark = "ok " if r["suppressed"] else "   "
-        print(f"{mark}{r['class']:<9} {rel}:{r['line']}  [{r['type']}]  {r['source'][:110]}")
+        loop = f"  (loop < {'/'.join(r['loop'][1]) if r.get('loop') and isinstance(r['loop'][1], list) else r['loop'][1] if r.get('loop') else ''})" if r.get("loop") else ""
+        print(f"{mark}{r['class']:<9} {rel}:{r['line']}  [{r['type']}]  {r['source'][:110]}{loop}")
     print("\nsummary (class, state): count")
     for key in sorted(counts):
         print(f"  {key[0]:<9} {key[1]:<10} {counts[key]}")

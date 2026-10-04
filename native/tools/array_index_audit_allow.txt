@@ -17,3 +17,7 @@ native/movie/thp_video_check.cpp :: if (dc > 1 || ac > 1 || !c.huffman[dc * 2].v
 native/platform/audio/dsp_renderer.cpp :: deltas[i + 1] = static_cast<std::int16_t>(static_cast<std::int16_t>(src[0] << 12) >> 1); :: i < 16 in steps of 2 (i + 1 <= 15) / steps of 4 with k < 4 (i + k <= 15)
 native/platform/audio/dsp_renderer.cpp :: deltas[i + k] = static_cast<std::int16_t>(static_cast<std::int16_t>(bits << 14) >> 1); :: i < 16 in steps of 2 (i + 1 <= 15) / steps of 4 with k < 4 (i + k <= 15)
 native/platform/nand/nand_host.cpp :: return ERRMAP[i + 1]; :: i steps by 2 over an even-length table of pairs, so i + 1 < size
+native/movie/thp_video_check.cpp :: const std::uint16_t entry = symbols.lookup[index][peek >> (16 - kLookupBits)]; :: peek16() is masked to 16 bits, so peek >> (16 - kLookupBits) < 512; index = id * 2 + class <= 3 (parseHuffman rejects id/class > 1)
+native/movie/thp_video_check.cpp :: *symbol = symbols.values[index][symbols.offsets[index][length] + code - table.firstCodes[length]]; :: a validated DHT (parseHuffman): sum of counts <= 256 and code - firstCodes[length] < counts[length]
+native/movie/thp_video_check.cpp :: (length << 8) | symbols.values[index][symbols.offsets[index][length] + k]); :: a validated DHT (parseHuffman): offsets[length] + k < the table total, which is <= 256
+native/movie/thp_video_check.cpp :: symbols.lookup[index][(code << shift) | fill] = entry; :: parseHuffman rejects oversubscribed codes: (code << shift) | fill < 1 << kLookupBits (512)

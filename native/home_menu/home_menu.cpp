@@ -599,7 +599,7 @@ View Menu::view() const {
         view.title = "Mods";
         view.message = "Off by default. Saved in mods.txt; change their keys on the Controls page.";
         for (int i = 0; i < mModCount; i++) {
-            setItem(i, mModLabels[i]);
+            setItem(i, mModLabels[i]);  // audit-ok: i < mModCount <= kMaxMods (setMods clamps)
         }
         setItem(mModCount, "Odyssey camera...");
         setItem(mModCount + 1, "Level Select");

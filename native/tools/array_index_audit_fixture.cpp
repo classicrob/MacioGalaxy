@@ -12,5 +12,8 @@ int expectCompute(View& view, int mods, int i, int* table) {
     char name[16];
     name[sizeof(name) - 1] = '\0';            // sizeof is constant: not reported
     table[mods + 1] = 0;                      // pointer base: size unknown, not reported
+    for (int k = 0; k < mods; ++k) view.items[k].label = "loop";  // EXPECT LOOP-RUNTIME (VAR, bound is a runtime value)
+    for (int k = 0; k < 8; ++k) view.items[k].label = "const";    // EXPECT LOOP-CONST (VAR, literal bound)
+    view.items[table[0] + view.items[0].label[0]].label = "n";   // EXPECT COMPUTED (nested subscript inside an index)
     return view.items[mods + 1].label[0];     // audit-ok: fixture, shows a suppression  (EXPECT COMPUTED, suppressed)
 }
