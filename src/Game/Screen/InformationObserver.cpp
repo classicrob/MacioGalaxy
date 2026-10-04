@@ -19,6 +19,10 @@
 #define NATIVE_MILESTONE(name)
 #endif
 
+#ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
 struct InformationObserverAttribute {
     /* 0x00 */ const char* mMessageId;
     /* 0x04 */ bool _4;
@@ -105,7 +109,12 @@ void InformationObserver::exeDisp() {
         mDisplayFrame--;
     }
 
-    if (!MR::testCorePadTriggerA(WPAD_CHAN0) || mDisplayFrame >= 0) {
+    bool isDecide = MR::testCorePadTriggerA(WPAD_CHAN0);
+#ifdef PETARI_NATIVE
+    isDecide = isDecide || CutsceneSkip::isActive();  // hold-to-skip mod: close the notice
+#endif
+
+    if (!isDecide || mDisplayFrame >= 0) {
         return;
     }
 
