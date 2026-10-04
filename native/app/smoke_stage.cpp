@@ -688,7 +688,9 @@ void StageDriver::exercise(const Observation& o, Step& step) {
                  (mConfig.warpName.empty() ? text({mConfig.warpX, mConfig.warpY, mConfig.warpZ})
                                            : "GeneralPos " + mConfig.warpName));
             mPhaseFrames = 0;
-        } else if (mPhaseFrames >= kWarpSettle && mWarpIndex < mConfig.moreWarps.size()) {
+        } else if (mPhaseFrames >= kWarpSettle && mWarpIndex < mConfig.moreWarps.size() &&
+                   ((!o.demoActive && o.pausePermitted) || mPhaseFrames >= 7200)) {
+            // The next warp once gameplay is back (a warp into a trigger may start a demo).
             const StageConfig::WarpPoint& point = mConfig.moreWarps[mWarpIndex++];
             step.warp = true;
             step.warpX = point.x;
