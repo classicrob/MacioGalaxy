@@ -118,4 +118,24 @@ if(BUILD_TESTING)
     add_executable(petari_progress_tests ${PETARI_REPO_ROOT}/native/tests/progress_tests.cpp)
     target_link_libraries(petari_progress_tests PRIVATE petari_home_menu)
     add_test(NAME native_progress COMMAND petari_progress_tests)
+
+    # The fixed-array index audit (native/tools/array_index_audit.py): the gate against the
+    # F1 -> Mods crash class. Fails on a constant index past an array's end or a computed index
+    # (`items[count + 2]`) that nobody has reviewed (an `audit-ok:` comment or a row in
+    # array_index_audit_allow.txt). The full run re-parses every native/ translation unit with
+    # clang (minutes), so both tests carry the `audit` label: skip them with `ctest -LE audit`.
+    # The full one is skipped by itself when there is no compile_commands.json.
+    if(NOT _petari_home_menu_standalone)
+        find_program(PETARI_PYTHON3 python3)
+        if(PETARI_PYTHON3)
+            add_test(NAME native_array_index_audit_selftest
+                COMMAND ${PETARI_PYTHON3} ${PETARI_REPO_ROOT}/native/tools/array_index_audit.py --selftest)
+            add_test(NAME native_array_index_audit
+                COMMAND ${PETARI_PYTHON3} ${PETARI_REPO_ROOT}/native/tools/array_index_audit.py
+                        --build ${CMAKE_BINARY_DIR} --jobs 4)
+            set_tests_properties(native_array_index_audit_selftest PROPERTIES LABELS audit)
+            set_tests_properties(native_array_index_audit PROPERTIES LABELS "audit;slow" TIMEOUT 1800
+                SKIP_RETURN_CODE 77)
+        endif()
+    endif()
 endif()
