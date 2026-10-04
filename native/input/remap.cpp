@@ -77,6 +77,20 @@ std::vector<Action> conflicts(const Bindings& bindings, Action action, Binding i
     return result;
 }
 
+// Files saved before the B key became a default (2026-10-04, the Point to move mod) list
+// B as the old default. Such a line gets the B key, unless the player bound it elsewhere.
+void migrateBKey(Bindings& bindings) {
+    const std::vector<Binding> oldDefault = {Binding::mouse(MouseButton::Left), Binding::key(Key::Backspace),
+                                             Binding::pad(PadButton::East), Binding::pad(PadButton::RightTrigger)};
+    if (bindings.inputs(Action::B) != oldDefault) return;
+    for (int i = 0; i < static_cast<int>(Action::Count); ++i) {
+        for (const Binding& input : bindings.inputs(static_cast<Action>(i))) {
+            if (input == Binding::key(Key::B)) return;
+        }
+    }
+    setInputs(bindings, Action::B, Bindings::defaults().inputs(Action::B));
+}
+
 bool homeReachable(const Bindings& bindings) {
     for (const Binding& input : bindings.inputs(Action::Home)) {
         if (!isPad(input)) return true;
@@ -172,6 +186,7 @@ bool load(const std::filesystem::path& path, Bindings* bindings, std::string* me
         gReplaceBad = true;
         return false;
     }
+    migrateBKey(parsed);
     if (!homeReachable(parsed)) {
         const Bindings defaults = Bindings::defaults();
         for (const Binding& input : defaults.inputs(Action::Home)) {
