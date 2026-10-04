@@ -247,6 +247,17 @@ int main() {
         expect(world.warps == 1, "the warp is requested exactly once: " + std::to_string(world.warps));
     }
     {
+        // PETARI_STAGE_WARP "a;b;c": a chain of warps 90 frames apart, ending at the last.
+        World world;
+        StageConfig config{"EggStarGalaxy", 2, 100};
+        config.warp = true;
+        config.warpX = 1000.0f;
+        config.moreWarps = {{2000.0f, 0.0f, 0.0f}, {3000.0f, 0.0f, -500.0f}};
+        const StageDriver driver = run(world, config);
+        expect(driver.result() == Result::Pass, "a chained warp run passes: " + driver.reason());
+        expect(world.warps == 3, "each warp of the chain is requested once: " + std::to_string(world.warps));
+    }
+    {
         MechanicRun bee(*findMechanic("bee"));
         Observation o;
         o.playerValid = true;

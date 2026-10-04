@@ -2092,6 +2092,27 @@ void testSkipMachine() {
         check(!m.latched() && m.justEnded() == Skip::End::Gameplay, "gameplay for 10 frames in a row ends the skip");
     }
     {
+        // The user's 1.5 s holds also when the game runs slowly: at 8 frames a
+        // second, 12 held frames (1.5 s) latch.
+        Skip::Machine m;
+        for (int i = 0; i < 11; ++i) m.frame(true, kSkippable, true, 0.125);
+        check(!m.latched() && m.progress() > 0.9f, "8 fps: 11 frames (1.375 s) do not latch");
+        m.frame(true, kSkippable, true, 0.125);
+        check(m.latched(), "8 fps: 12 frames (1.5 s) latch");
+    }
+    {
+        // A stall (a load) counts at most 0.25 s per frame and needs 10 held frames.
+        Skip::Machine m;
+        m.frame(true, kSkippable, true, 3.0);
+        check(!m.latched(), "one 3 s frame does not latch");
+        for (int i = 0; i < 5; ++i) m.frame(true, kSkippable, true, 3.0);
+        check(!m.latched(), "six long frames (1.5 s counted) do not latch");
+        for (int i = 0; i < 3; ++i) m.frame(true, kSkippable, true, 1.0 / 60.0);
+        check(!m.latched(), "nine frames do not latch, however long");
+        m.frame(true, kSkippable, true, 1.0 / 60.0);
+        check(m.latched(), "the tenth held frame past 1.5 s latches");
+    }
+    {
         Skip::Machine m;
         holdFor(m, 60, 0);
         check(holdFor(m, Skip::kHoldFrames - 1, kSkippable) == 0 && !m.latched(), "frames held before the cutscene do not count");

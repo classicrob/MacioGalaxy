@@ -11,6 +11,12 @@
 namespace PetariNative::Skip {
 
 constexpr int kHoldFrames = 90;       // 1.5 s at 60 frames a second
+// Or 1.5 s of held time when the game runs slower than 60 frames a second, after at
+// least kMinHoldFrames frames; one frame counts for at most kMaxFrameSeconds, so a
+// single stall (a load) cannot latch a skip by itself.
+constexpr double kHoldSeconds = 1.5;
+constexpr int kMinHoldFrames = 10;
+constexpr double kMaxFrameSeconds = 0.25;
 constexpr int kSettleFrames = 10;     // gameplay this many frames in a row ends a skip
 constexpr int kTimeoutFrames = 3600;  // a skip that has not ended after 60 s gives up
 constexpr unsigned kButtonA = 0x0800; // WPAD_BUTTON_A, as KPAD reports it
@@ -27,9 +33,10 @@ enum class End { None, Gameplay, Choice, Stage, Timeout, Disabled };
 
 class Machine {
 public:
-    // One game frame. aHeld: A as the remote reports it, before any filtering.
-    // Returns the buttons to hide from the game this frame (kButtonA or 0).
-    unsigned frame(bool aHeld, unsigned context, bool enabled);
+    // One game frame. aHeld: A as the remote reports it, before any filtering;
+    // frameSeconds: the time since the previous frame. Returns the buttons to hide
+    // from the game this frame (kButtonA or 0).
+    unsigned frame(bool aHeld, unsigned context, bool enabled, double frameSeconds = 1.0 / 60.0);
 
     bool latched() const { return mLatched; }
     bool swallowing() const { return mSwallow; }
@@ -46,6 +53,7 @@ private:
     void end(End reason);
 
     int mHold = 0;
+    double mHoldSeconds = 0.0;
     bool mLatched = false;
     bool mSwallow = false;
     int mSettle = 0;
@@ -56,7 +64,8 @@ private:
 
 const char* endName(End reason);
 
-// The game's machine (petari_skip_* below). Tests only: a fresh one.
+// The game's machine (petari_skip_* below). Tests only: a fresh one, whose
+// frames each count 1/60 s whatever the wall clock says.
 Machine& machine();
 void resetForTesting();
 
