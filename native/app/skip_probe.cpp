@@ -9,7 +9,9 @@
 // while the latching hold was down (it must not: no jump) and how far Mario
 // rose. PETARI_SKIP_PROBE_SHOTS=<dir>: screenshots before the hold, at the
 // latch, when the skip ends and after the watch. PETARI_SKIP_PROBE_MAX=<n>
-// stops after n skips. Needs the mod on (PETARI_MODS=SkipCutscenes).
+// stops after n skips. Needs the mod on (PETARI_MODS=SkipCutscenes). Each hold
+// starts the image-dump phase "skip-hold" (petari/efb_dump_mark.hpp), so
+// PETARI_SURFACE_DUMP_LABELS=skip-hold (or the XFB/EFB dumps) capture the hold.
 
 #include <cstdio>
 #include <cstdlib>
@@ -17,6 +19,7 @@
 
 #include "Game/System/CutsceneSkip.hpp"
 #include "Game/Util/GamePadUtil.hpp"
+#include "petari/efb_dump_mark.hpp"
 #include "petari/input.hpp"
 #include "petari/screenshot.hpp"
 #include "petari/skip.hpp"
@@ -113,6 +116,7 @@ bool skipProbeFrame() {
         if (p.skippableFrames >= p.delay) {
             say(p, "holding Space");
             shot(p, "before");
+            PetariNative::EfbDump::mark("skip-hold");
             space(true);
             p.heldGameA = 0;
             p.heldFrames = 0;
