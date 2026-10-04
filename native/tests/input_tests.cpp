@@ -38,6 +38,7 @@
 #include "petari/input.hpp"
 #include "petari/mods.hpp"
 #include "petari/skip.hpp"
+#include "petari/point_move.hpp"
 #include "petari/camera_settings.hpp"
 #include "petari/camera_input.h"
 #include "petari/platform/sc.hpp"
@@ -242,7 +243,7 @@ void testControlsSummary() {
         {"Cap throw (Cappy mod)", "R", "RB"},
         {"Crouch / ground pound", "Shift", "LT"},
         {"Star Pointer", "Mouse", "right stick (R3: center)"},
-        {"Shoot Star Bits / back", "Left mouse / Backspace", "right / RT"},
+        {"Shoot Star Bits / back", "Left mouse / B / Backspace", "right / RT"},
         {"Grab (Pull Stars)", "Hold Space / Right mouse on the target", "hold bottom"},
         {"Rotate camera", "Q / E", "D-pad left / D-pad right"},
         {"Recenter camera", "C", "LB"},
@@ -298,7 +299,7 @@ void testControlsSummary() {
           "title hint: " + In::titleHint(In::Bindings::defaults()));
     In::Bindings noStart = In::Bindings::defaults();
     check(noStart.parse("Start=\nHome=\n", &error), "unbind Start and Home");
-    check(In::titleHint(noStart) == "Keyboard: hold Space, then press Backspace to start",
+    check(In::titleHint(noStart) == "Keyboard: hold Space, then press B to start",
           "title hint without Start names keyboard keys: " + In::titleHint(noStart));
     In::Bindings mouseOnly = In::Bindings::defaults();
     check(mouseOnly.parse("Start=Mouse:Middle\n", &error), "Start on a mouse button");
@@ -2265,6 +2266,91 @@ void testSkipThroughKpad() {
     PetariNative::Mods::resetForTesting();
 }
 
+// --- Point to move mod (petari/point_move.hpp) ------------------------------
+
+void testPointMoveStick() {
+    namespace PM = PetariNative::PointMove;
+    float x = 1.0f, y = 1.0f;
+    PM::stickFor(10.0f, 0.0f, 456.0f, &x, &y);
+    check(x == 0.0f && y == 0.0f, "inside the 3% dead zone: no stick");
+    PM::stickFor(0.0f, -456.0f * 0.20f, 456.0f, &x, &y);
+    check(near(x, 0.0f, 1e-5f) && near(y, 1.0f, 1e-4f), "20% of the screen above Mario: full stick up");
+    PM::stickFor(456.0f, 0.0f, 456.0f, &x, &y);
+    check(near(x, 1.0f, 1e-5f) && near(y, 0.0f, 1e-5f), "far right: full stick right (clamped)");
+    PM::stickFor(0.0f, 456.0f * 0.115f, 456.0f, &x, &y);
+    check(near(y, -0.5f, 1e-3f), "halfway along the ramp, below Mario: half stick down");
+}
+
+void testPointMoveThroughKpad() {
+    namespace PM = PetariNative::PointMove;
+    namespace Mods = PetariNative::Mods;
+    Rig rig;
+    Mods::resetForTesting();
+    PM::resetForTesting();
+    WPadButton* button = rig.pad->mButton;
+    auto stickX = [&] { return rig.pad->mStick->mStick.x; };
+    auto stickY = [&] { return rig.pad->mStick->mStick.y; };
+
+    // Mod off: left click is B, the stick stays centered.
+    petari_point_move_publish(true, 1.0f, 0.0f);
+    In::mouseButtonEvent(In::MouseButton::Left, true);
+    rig.frames_(3);
+    check(button->testButtonB() && near(stickX(), 0.0f, 0.01f), "mod off: left click is B (Star Bits)");
+    In::mouseButtonEvent(In::MouseButton::Left, false);
+    rig.frames_(6);
+
+    // Mod on, normal play: left steers, no B.
+    Mods::setEnabled(Mods::Mod::PointToMove, true);
+    petari_point_move_publish(true, 0.6f, 0.8f);
+    In::mouseButtonEvent(In::MouseButton::Left, true);
+    bool sawB = false;
+    for (int i = 0; i < 10; ++i) {
+        rig.frame();
+        sawB = sawB || button->testButtonB() || button->testTriggerB();
+    }
+    check(!sawB && petari_point_move_claimed(), "mod on: a left press in normal play sends no B");
+    check(stickX() > 0.4f && stickY() > 0.6f && near(stickX() / stickY(), 0.75f, 0.1f),
+          "the stick follows the pointer direction (0.6, 0.8): " + std::to_string(stickX()) + ", " + std::to_string(stickY()));
+    petari_point_move_publish(true, -1.0f, 0.0f);
+    rig.frames_(3);
+    check(stickX() < -0.9f, "recomputed every frame: the stick turns left");
+    press(In::Key::S);
+    rig.frames_(3);
+    check(stickY() < -0.9f && near(stickX(), 0.0f, 0.05f), "a stick key (S) overrides the pointer");
+    lift(In::Key::S);
+    rig.frames_(3);
+    // A demo starts mid-hold: no movement and still no B.
+    petari_point_move_publish(false, 0.0f, 0.0f);
+    for (int i = 0; i < 5; ++i) {
+        rig.frame();
+        sawB = sawB || button->testButtonB();
+    }
+    check(!sawB && near(stickX(), 0.0f, 0.05f), "normal play pauses mid-hold: stick centered, no B");
+    In::mouseButtonEvent(In::MouseButton::Left, false);
+    for (int i = 0; i < 6; ++i) {
+        rig.frame();
+        sawB = sawB || button->isChangeAnyState();
+    }
+    check(!sawB && near(stickX(), 0.0f, 0.01f) && near(stickY(), 0.0f, 0.01f), "release: Mario stops, no B on release");
+
+    // Outside normal play (a menu): left click is B as before.
+    petari_point_move_publish(false, 0.0f, 0.0f);
+    In::mouseButtonEvent(In::MouseButton::Left, true);
+    rig.frames_(3);
+    check(button->testButtonB() && !petari_point_move_claimed(), "menus: left click is still B");
+    In::mouseButtonEvent(In::MouseButton::Left, false);
+    rig.frames_(6);
+
+    // The B key is Wii B (Star Bits at the pointer) with the mod on.
+    press(In::Key::B);
+    rig.frames_(3);
+    check(button->testButtonB(), "the B key sends B");
+    lift(In::Key::B);
+    rig.frames_(6);
+    Mods::resetForTesting();
+    PM::resetForTesting();
+}
+
 void testCappyInput() {
     namespace Mods = PetariNative::Mods;
     using In::PadButton;
@@ -2611,6 +2697,8 @@ int main() {
     testMods();
     testCappyInput();
     testSkipMachine();
+    testPointMoveStick();
+    testPointMoveThroughKpad();
     testSkipThroughKpad();
 #ifdef PETARI_INPUT_TEST_SDL3
     testSdl3();

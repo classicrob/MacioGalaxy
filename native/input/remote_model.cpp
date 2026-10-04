@@ -1,6 +1,7 @@
 #include "remote_model.hpp"
 
 #include "petari/mods.hpp"
+#include "petari/point_move.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -188,9 +189,12 @@ std::uint32_t RemoteModel::heldBits() const {
     // Cappy mod (docs/dev/CAPPY.md): while it is active, an input bound to both
     // Shake and the cap throw (RB by default) throws only.
     const bool cappyClaims = Mods::enabled(Mods::Mod::Cappy) && Mods::enabled(Mods::Mod::OdysseyMovement);
+    // Point to move mod: a left press it claimed steers Mario and is not B (or anything else).
+    const bool pointClaims = PointMove::claimsLeft();
     for (int i = 0; i < static_cast<int>(Action::Count); ++i) {
         const Action action = static_cast<Action>(i);
         for (const Binding& input : mBindings.inputs(action)) {
+            if (pointClaims && input == Binding::mouse(MouseButton::Left)) continue;
             if (cappyClaims && action == Action::Shake) {
                 const auto& cap = mBindings.inputs(Action::ModCappyThrow);
                 if (std::find(cap.begin(), cap.end(), input) != cap.end()) continue;
@@ -245,6 +249,9 @@ void RemoteModel::inputChanged(Binding input, bool down) {
     case Binding::Device::Key: mKeys[input.code] = down; break;
     case Binding::Device::Mouse: mMouse[input.code] = down; break;
     case Binding::Device::Pad: mPad[input.code] = down; break;
+    }
+    if (input == Binding::mouse(MouseButton::Left)) {
+        PointMove::leftButton(down);
     }
     if (refreshRaw() != 0) {
         mActivity = true;
@@ -460,8 +467,11 @@ void RemoteModel::stickVector(float* x, float* y) const {
         *y *= kDiagonal;
     }
     if (*x == 0.0f && *y == 0.0f && mFocused) {
-        // No stick keys: a controller's left stick, analog.
-        padStick(PadAxis::LeftX, PadAxis::LeftY, x, y);
+        // No stick keys: the Point to move mod's pointer steering while it holds the
+        // left button, else a controller's left stick, analog.
+        if (!PointMove::stick(mMouse[static_cast<int>(MouseButton::Left)], x, y)) {
+            padStick(PadAxis::LeftX, PadAxis::LeftY, x, y);
+        }
     }
     if ((mOutput & kBitWalk) != 0) {
         const float scale = std::clamp(mSettings.walkStickScale, 0.0f, 1.0f);
