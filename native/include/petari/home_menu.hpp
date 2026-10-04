@@ -475,6 +475,16 @@ void setHoldProgressSource(HoldProgressFn source);
 // `key` is the name of the key being held ("Space"), shown in the ring; null or "" shows the
 // controller's A icon. Same thread and frame rules as drawImGuiOverlay.
 void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight, const char* key = nullptr);
+// The Point-to-move steering cue (Mods::Mod::PointToMove): while the left button steers Mario, a
+// faint arrow from Mario toward the pointer shows where he is headed. The overlay asks this once per
+// frame while the menu is hidden. It returns true only while the cue is active and fills Mario's
+// and the pointer's positions in KPAD space (-1..1 across the game image, y down). The app points it
+// at the input layer's source when the mod is built in (see imgui_overlay.cpp); null disables the cue.
+using SteerCueFn = bool (*)(float* marioX, float* marioY, float* pointerX, float* pointerY);
+void setSteerCueSource(SteerCueFn source);
+// Draws the cue (used by drawImGuiOverlay; exposed for the render tool and tests).
+void drawSteerCue(float marioX, float marioY, float pointerX, float pointerY, float imageX, float imageY, float imageWidth,
+                  float imageHeight);
 // The title screen's keyboard hint (ASCII), in a bar across the top of the
 // image, above the logo. drawImGuiOverlay draws it while the input layer
 // reports the title's "press A and B" prompt and the menu is hidden, when

@@ -619,9 +619,68 @@ void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, 
     list->PopClipRect();
 }
 
+namespace {
+std::atomic<SteerCueFn> gSteerCue{nullptr};
+}  // namespace
+
+void setSteerCueSource(SteerCueFn source) {
+    gSteerCue.store(source, std::memory_order_relaxed);
+}
+
+void drawSteerCue(float marioX, float marioY, float pointerX, float pointerY, float imageX, float imageY, float imageWidth,
+                  float imageHeight) {
+    if (!(imageWidth > 0.0f) || !(imageHeight > 0.0f) || !ImGui::GetCurrentContext() || !std::isfinite(marioX) ||
+        !std::isfinite(marioY) || !std::isfinite(pointerX) || !std::isfinite(pointerY)) {
+        return;
+    }
+    const ImageSpace image{imageX, imageY, imageWidth, imageHeight};
+    const float unit = imageHeight / 720.0f;
+    const ImVec2 from = image.point(marioX, marioY);
+    const ImVec2 to = image.point(pointerX, pointerY);
+    const float dx = to.x - from.x, dy = to.y - from.y;
+    const float distance = std::sqrt(dx * dx + dy * dy);
+    // Inside Mario's dead zone (3% of the screen height) he does not move: no cue. The cue fades in
+    // over the next few percent so it never pops.
+    const float deadZone = imageHeight * 0.03f;
+    const float alpha = std::clamp((distance - deadZone) / (imageHeight * 0.04f), 0.0f, 1.0f);
+    if (alpha <= 0.0f) {
+        return;
+    }
+    const ImVec2 dir(dx / distance, dy / distance);
+    const ImVec2 side(-dir.y, dir.x);
+    // From a little ahead of Mario, up to a fifth of the screen toward the pointer.
+    const float start = unit * 34.0f;
+    const float length = std::clamp(distance - start - unit * 10.0f, 0.0f, imageHeight * 0.2f);
+    if (length < unit * 12.0f) {
+        return;
+    }
+    const ImVec2 a(from.x + dir.x * start, from.y + dir.y * start);
+    const ImVec2 tip(a.x + dir.x * length, a.y + dir.y * length);
+    const float head = unit * 18.0f;
+    const ImVec2 base(tip.x - dir.x * head, tip.y - dir.y * head);
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    list->PushClipRect(image.point(-1.0f, -1.0f), image.point(1.0f, 1.0f), false);
+    // A dark underlay keeps it readable on light ground; the light arrow itself stays translucent.
+    for (const bool shadow : {true, false}) {
+        const float grow = shadow ? unit * 2.0f : 0.0f;
+        const ImU32 col = shadow ? color(0.0f, 0.05f, 0.1f, 0.35f * alpha) : color(1.0f, 1.0f, 1.0f, 0.62f * alpha);
+        list->AddLine(a, base, col, unit * 5.0f + grow * 2.0f);
+        list->AddTriangleFilled(ImVec2(tip.x + dir.x * grow, tip.y + dir.y * grow),
+                                ImVec2(base.x + side.x * (head * 0.62f + grow), base.y + side.y * (head * 0.62f + grow)),
+                                ImVec2(base.x - side.x * (head * 0.62f + grow), base.y - side.y * (head * 0.62f + grow)), col);
+    }
+    list->PopClipRect();
+}
+
 void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageHeight) {
     const View view = publishedView();
     if (!view.visible) {
+        if (const SteerCueFn source = gSteerCue.load(std::memory_order_relaxed)) {
+            float mx = 0.0f, my = 0.0f, px = 0.0f, py = 0.0f;
+            if (source(&mx, &my, &px, &py)) {
+                drawSteerCue(mx, my, px, py, imageX, imageY, imageWidth, imageHeight);
+            }
+        }
         if (const HoldProgressFn source = gHoldProgress.load(std::memory_order_relaxed)) {
             const float progress = source();
             const char* key = nullptr;
