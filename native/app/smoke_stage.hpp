@@ -57,6 +57,13 @@ struct StageConfig {
     bool warp = false;
     std::string warpName;
     float warpX = 0.0f, warpY = 0.0f, warpZ = 0.0f;
+    // "x,y,z;x,y,z;...": further warps, each at least 90 frames after the previous one and once
+    // gameplay is back (no demo, pausing permitted; 2 min at most): a route through triggers,
+    // e.g. a boss's appear switch, then its arena.
+    struct WarpPoint {
+        float x, y, z;
+    };
+    std::vector<WarpPoint> moreWarps;
     // PETARI_STAGE_HOME_TOUR=1: after the pause checks, open the native Home menu (Home) and visit
     // every page (list, Controls, Mods, Odyssey camera, Level Select, Mod folder, My Progress, the
     // Restart confirmation), marking "home-<page>" on each for the image dumps (PETARI_SURFACE_DUMP),
@@ -123,6 +130,7 @@ private:
     unsigned long mTalkTapAt = 0;
     unsigned long mTalkFrames = 0;
     unsigned long mLockFrames = 0;
+    size_t mWarpIndex = 0;            // moreWarps done
     bool mWarped = false;             // the warp was requested (once per run)   // consecutive exercise frames with player control off
     unsigned long mLoadStartFrame = 0, mReadyFrame = 0;
     int mStep = 0;                   // walk direction / camera direction index

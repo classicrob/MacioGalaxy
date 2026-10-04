@@ -12,8 +12,12 @@
 // Hold-to-skip mod: game sound effects are muted while a skipped demo fast-forwards.
 #include "Game/System/CutsceneSkip.hpp"
 #define PETARI_SKIP_MUTED() CutsceneSkip::isMutingSE()
+// Counts a refusal that only the mod's mute caused (the game's own blocks are not counted).
+#define PETARI_SKIP_NOTE_MUTED(gameBlocked) \
+    if (!(gameBlocked)) CutsceneSkip::noteMutedSE()
 #else
 #define PETARI_SKIP_MUTED() false
+#define PETARI_SKIP_NOTE_MUTED(gameBlocked)
 #endif
 
 void AudSoundObject_FORCE_MATCH_SDATA2() {
@@ -104,6 +108,7 @@ JAISoundHandle* AudSoundObject::startSound(JAISoundID soundID) {
     }
 
     if ((AudWrap::getSystem()->_82B || PETARI_SKIP_MUTED()) && soundID.getGroupID() != SE_HOME_BUTTON_MENU && soundID.getGroupID() != SE_SYSTEM) {
+        PETARI_SKIP_NOTE_MUTED(AudWrap::getSystem()->_82B);
         return nullptr;
     }
 
@@ -128,6 +133,7 @@ JAISoundHandle* AudSoundObject::startLevelSound(JAISoundID soundID) {
     }
 
     if ((AudWrap::getSystem()->_82C || PETARI_SKIP_MUTED()) && soundID.getGroupID() != SE_HOME_BUTTON_MENU && soundID.getGroupID() != SE_SYSTEM) {
+        PETARI_SKIP_NOTE_MUTED(AudWrap::getSystem()->_82C);
         return nullptr;
     }
 

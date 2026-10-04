@@ -36,6 +36,9 @@ struct World {
     bool promptAt = false;
     unsigned long physicalAt = 0;
     bool noMove = false;
+    // A demo for this many frames after the first warp (a warp into a boss trigger).
+    unsigned long demoAfterWarp = 0, demoUntil = 0;
+    std::vector<unsigned long> warpFrames;
     // Player control off (a scripted intro) from lockFrom for lockFrames frames (0: never ends).
     unsigned long lockFrom = 0, lockFrames = 0;
     bool locked() const { return lockFrom != 0 && frame >= lockFrom && (lockFrames == 0 || frame < lockFrom + lockFrames); }
@@ -62,7 +65,8 @@ struct World {
         o.playerY = y;
         o.playerZ = z;
         o.playerOnGround = y <= 0.0f;
-        o.pausePermitted = !paused;
+        o.demoActive = frame < demoUntil;
+        o.pausePermitted = !paused && !o.demoActive;
         o.playerDead = dieAt && frame >= dieFrame;
         if (promptAt && frame == loadFrames + 100) o.prompts.push_back({"System_Test", 2});
         if (physicalAt != 0 && frame >= physicalAt) o.physical.gameplay = 1;
@@ -80,6 +84,8 @@ struct World {
     void apply(const Step& step) {
         if (step.warp) {
             ++warps;
+            warpFrames.push_back(frame);
+            if (warps == 1 && demoAfterWarp != 0) demoUntil = frame + demoAfterWarp;
             x = step.warpX;
             y = step.warpY;
             z = step.warpZ;
@@ -245,6 +251,30 @@ int main() {
         const StageDriver driver = run(world, config);
         expect(driver.result() == Result::Pass, "a warped run passes: " + driver.reason());
         expect(world.warps == 1, "the warp is requested exactly once: " + std::to_string(world.warps));
+    }
+    {
+        // PETARI_STAGE_WARP "a;b;c": a chain of warps 90 frames apart, ending at the last.
+        World world;
+        StageConfig config{"EggStarGalaxy", 2, 100};
+        config.warp = true;
+        config.warpX = 1000.0f;
+        config.moreWarps = {{2000.0f, 0.0f, 0.0f}, {3000.0f, 0.0f, -500.0f}};
+        const StageDriver driver = run(world, config);
+        expect(driver.result() == Result::Pass, "a chained warp run passes: " + driver.reason());
+        expect(world.warps == 3, "each warp of the chain is requested once: " + std::to_string(world.warps));
+    }
+    {
+        // A demo started by the first warp: the next warp waits until gameplay is back.
+        World world;
+        world.demoAfterWarp = 300;
+        StageConfig config{"EggStarGalaxy", 2, 100};
+        config.warp = true;
+        config.warpX = 1000.0f;
+        config.moreWarps = {{2000.0f, 0.0f, 0.0f}};
+        const StageDriver driver = run(world, config);
+        expect(driver.result() == Result::Pass, "a chain through a demo passes: " + driver.reason());
+        expect(world.warps == 2 && world.warpFrames[1] >= world.warpFrames[0] + 300,
+               "the second warp waits for the demo to end: " + std::to_string(world.warps) + " warps");
     }
     {
         MechanicRun bee(*findMechanic("bee"));
