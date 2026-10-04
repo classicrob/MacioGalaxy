@@ -174,6 +174,9 @@ Observation observeGame(bool wantPlayer) {
 bool skipProbeFrame() {
     return false;
 }
+PointProbeStep pointProbeFrame() {
+    return {};
+}
 bool warpPlayer(const Step&) {
     hostCall("warp");
     return true;
