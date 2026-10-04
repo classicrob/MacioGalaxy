@@ -591,7 +591,7 @@ void setHoldProgressSource(HoldProgressFn source) {
     gHoldProgress.store(source, std::memory_order_relaxed);
 }
 
-void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight) {
+void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight, const char* key) {
     if (!(progress > 0.0f) || !(imageWidth > 0.0f) || !(imageHeight > 0.0f) || !ImGui::GetCurrentContext()) {
         return;
     }
@@ -610,7 +610,12 @@ void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, 
     const float start = -1.5707963f;  // twelve o'clock
     list->PathArcTo(center, radius, start, start + 6.2831853f * progress, 48);
     list->PathStroke(full ? color(1.0f, 0.92f, 0.45f, alpha) : color(0.40f, 0.86f, 1.0f, alpha), 0, unit * 5.0f);
-    centeredText(list, textFont(), unit * 30.0f, radius * 1.6f, center, color(1.0f, 1.0f, 1.0f, 0.95f * alpha), PETARI_ICON_A);
+    if (key != nullptr && key[0] != '\0') {
+        // A keycap's worth of text inside the ring: shrinks to fit longer names ("Left Shift").
+        centeredText(list, textFont(), unit * 17.0f, radius * 1.65f, center, color(1.0f, 1.0f, 1.0f, 0.95f * alpha), key);
+    } else {
+        centeredText(list, textFont(), unit * 30.0f, radius * 1.6f, center, color(1.0f, 1.0f, 1.0f, 0.95f * alpha), PETARI_ICON_A);
+    }
     list->PopClipRect();
 }
 
@@ -618,7 +623,27 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
     const View view = publishedView();
     if (!view.visible) {
         if (const HoldProgressFn source = gHoldProgress.load(std::memory_order_relaxed)) {
-            drawHoldRing(source(), imageX, imageY, imageWidth, imageHeight);
+            const float progress = source();
+            const char* key = nullptr;
+#ifdef PETARI_HOME_MENU_INPUT
+            // The key bound to A (Space by default), looked up when a hold starts.
+            static bool sHolding = false;
+            static std::string sKey;
+            if (progress > 0.0f && !sHolding) {
+                HostAllocationScope scope;  // this may be a game thread
+                sKey.clear();
+                const Input::Bindings bindings = Input::bindings();  // a copy: keep it alive through the loop
+                for (const Input::Binding& input : bindings.inputs(Input::Action::A)) {
+                    if (input.device == Input::Binding::Device::Key) {
+                        sKey = Input::displayName(input);
+                        break;
+                    }
+                }
+            }
+            sHolding = progress > 0.0f;
+            key = sKey.c_str();
+#endif
+            drawHoldRing(progress, imageX, imageY, imageWidth, imageHeight, key);
         }
     }
 #ifdef PETARI_HOME_MENU_INPUT
