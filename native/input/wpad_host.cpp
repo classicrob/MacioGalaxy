@@ -782,8 +782,14 @@ CaptureState captureState(Binding* input) {
     return state;
 }
 
+static std::atomic<std::uint8_t> gLastDevice{static_cast<std::uint8_t>(Binding::Device::Key)};
+static void noteDevice(Binding::Device device) { gLastDevice.store(static_cast<std::uint8_t>(device), std::memory_order_relaxed); }
+
+Binding::Device lastDevice() { return static_cast<Binding::Device>(gLastDevice.load(std::memory_order_relaxed)); }
+
 void keyEvent(KeyCode code, bool down, bool repeat) {
     gHostActivity = true;
+    if (down) noteDevice(Binding::Device::Key);
     std::lock_guard<std::mutex> lock(gHostMutex);
     if (captureEvent(Binding::key(code), down, repeat)) return;
     if (down && (code == kPageUp || code == kPageDown)) {
@@ -801,6 +807,7 @@ void keyEvent(KeyCode code, bool down, bool repeat) {
 
 void mouseButtonEvent(MouseButton button, bool down) {
     gHostActivity = true;
+    if (down) noteDevice(Binding::Device::Mouse);
     std::lock_guard<std::mutex> lock(gHostMutex);
     if (captureEvent(Binding::mouse(button), down, false)) return;
     if (down) {
@@ -814,6 +821,7 @@ void mouseButtonEvent(MouseButton button, bool down) {
 
 void padButtonEvent(PadButton button, bool down) {
     gHostActivity = true;
+    if (down) noteDevice(Binding::Device::Pad);
     std::lock_guard<std::mutex> lock(gHostMutex);
     if (captureEvent(Binding::pad(button), down, false)) return;
     if (down) {
@@ -829,6 +837,7 @@ void padAxisEvent(PadAxis axis, float value) {
     // A resting stick's noise is not activity; a deliberate push is.
     if (std::fabs(value) > 0.25f) {
         gHostActivity = true;
+        noteDevice(Binding::Device::Pad);
     }
     std::lock_guard<std::mutex> lock(gHostMutex);
     if (CameraSettings::photoEnabled() && CameraSettings::photoCapturing()) {
@@ -1014,6 +1023,7 @@ void pumpReports(int count) {
 }
 
 void resetForTesting() {
+    noteDevice(Binding::Device::Key);
     {
         std::lock_guard<std::mutex> lock(gHostMutex);
         gCapture = CaptureState::Idle;

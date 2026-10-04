@@ -641,7 +641,8 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
                 }
             }
             sHolding = progress > 0.0f;
-            key = sKey.c_str();
+            // A player on the controller sees the A icon, not the keyboard's key.
+            key = Input::lastDevice() == Input::Binding::Device::Pad ? nullptr : sKey.c_str();
 #endif
             drawHoldRing(progress, imageX, imageY, imageWidth, imageHeight, key);
         }

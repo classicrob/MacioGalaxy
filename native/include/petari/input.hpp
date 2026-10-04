@@ -242,6 +242,10 @@ Bindings bindings();
 void setSettings(const Settings& settings);
 Settings settings();
 
+// The device of the latest press (a deliberate stick push counts as the pad): Key by default.
+// For hints that name the input the player is using. Any thread.
+Binding::Device lastDevice();
+
 // repeat: the OS auto-repeat flag. Repeats are ignored; the game's KPAD
 // button repeat applies instead.
 void keyEvent(KeyCode code, bool down, bool repeat);

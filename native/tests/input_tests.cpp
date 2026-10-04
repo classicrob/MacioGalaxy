@@ -392,6 +392,28 @@ void testConnection() {
 
 // --- Buttons --------------------------------------------------------------
 
+void testLastDevice() {
+    In::resetForTesting();
+    check(In::lastDevice() == In::Binding::Device::Key, "the last device starts as the keyboard");
+    In::padButtonEvent(In::PadButton::South, true);
+    check(In::lastDevice() == In::Binding::Device::Pad, "a pad press makes the pad the last device");
+    In::padButtonEvent(In::PadButton::South, false);
+    In::keyEvent(In::Key::Space, false, false);
+    check(In::lastDevice() == In::Binding::Device::Pad, "a release does not change it");
+    In::keyEvent(In::Key::Space, true, false);
+    check(In::lastDevice() == In::Binding::Device::Key, "a key press flips it back to the keyboard");
+    In::mouseButtonEvent(In::MouseButton::Right, true);
+    check(In::lastDevice() == In::Binding::Device::Mouse, "a mouse press reports the mouse");
+    In::padAxisEvent(In::PadAxis::LeftX, 0.05f);
+    check(In::lastDevice() == In::Binding::Device::Mouse, "stick noise is not a device change");
+    In::padAxisEvent(In::PadAxis::LeftX, 0.9f);
+    check(In::lastDevice() == In::Binding::Device::Pad, "a deliberate stick push is the pad");
+    In::padAxisEvent(In::PadAxis::LeftX, 0.0f);
+    In::keyEvent(In::Key::Space, false, false);
+    In::mouseButtonEvent(In::MouseButton::Right, false);
+    In::resetForTesting();
+}
+
 void testButtons() {
     Rig rig;
     WPadButton& button = *rig.pad->mButton;
@@ -2568,6 +2590,7 @@ int main() {
     testBindings();
     testControlsSummary();
     testConnection();
+    testLastDevice();
     testButtons();
     testStart();
     testStick();
