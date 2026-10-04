@@ -459,6 +459,10 @@ Observation observeGame(bool wantPlayer);
 // Applies a Step's warp (SDK side, main thread at the seam while it holds the CPU). False when
 // there is no Mario to move.
 bool warpPlayer(const Step& step);
+// skip_probe.cpp (SDK side): PETARI_SKIP_PROBE, holds Space through each cutscene and
+// dialogue to prove the hold-to-skip mod; once per frame at the seam, before the script.
+// True while it holds Space (the script's A presses are then dropped).
+bool skipProbeFrame();
 // collision_probe.cpp (SDK side): PETARI_COLLISION_PROBE, a read-only map
 // collision survey for offline route planning; stepped by observeGame.
 bool collisionProbeActive();

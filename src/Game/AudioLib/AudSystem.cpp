@@ -40,6 +40,14 @@
 #include <revolution/sc.h>
 #include <revolution/vi/vifuncs.h>
 
+#ifdef PETARI_NATIVE
+// Hold-to-skip mod: game sound effects are muted while a skipped demo fast-forwards.
+#include "Game/System/CutsceneSkip.hpp"
+#define PETARI_SKIP_MUTED() CutsceneSkip::isMutingSE()
+#else
+#define PETARI_SKIP_MUTED() false
+#endif
+
 const char sAudioResFile[] = "/AudioRes/SMR.szs";
 const char sJaiSeqArc[] = "/AudioRes/Seqs/JaiSeq.arc";
 const char sJaiChordArc[] = "/AudioRes/Info/JaiChord.arc";
@@ -307,7 +315,7 @@ bool AudSystem::startSound(JAISoundID soundID, JAISoundHandle* pHandle, const TV
         return false;
     }
 
-    if (_82B && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
+    if ((_82B || PETARI_SKIP_MUTED()) && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
         return false;
     }
 
@@ -348,7 +356,7 @@ bool AudSystem::startLevelSound(JAISoundID soundID, JAISoundHandle* pHandle, con
         return false;
     }
 
-    if (_82C && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
+    if ((_82C || PETARI_SKIP_MUTED()) && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
         return false;
     }
 

@@ -9,6 +9,10 @@
 #include "Game/Util/SoundUtil.hpp"
 #include <cstdio>
 
+#ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
 namespace NrvLuigiLetter {
     NEW_NERVE(HostTypeNrvAppear, LuigiLetter, Appear);
     NEW_NERVE(HostTypeNrvWait, LuigiLetter, Wait);
@@ -75,7 +79,12 @@ void LuigiLetter::exeWait() {
         mAButtonIcon->openWithoutMessage();
     }
 
-    if (mAButtonIcon->isWait() && MR::testCorePadButtonA(WPAD_CHAN0)) {
+    bool isDecide = MR::testCorePadButtonA(WPAD_CHAN0);
+#ifdef PETARI_NATIVE
+    isDecide = isDecide || CutsceneSkip::isActive();  // hold-to-skip mod: close the letter
+#endif
+
+    if (mAButtonIcon->isWait() && isDecide) {
         MR::startSystemSE("SE_SY_TALK_OK");
         setNerve(GET_NERVE(LuigiLetter, HostTypeNrvEnd));
     }

@@ -36,6 +36,7 @@
 #define GX_FIFO_SIZE 0x80000
 
 #ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
 #include <JSystem/JKernel/JKRSolidHeap.hpp>
 #include <petari/app.hpp>
 // native/platform/gx_sync (GXSync::waitTokensDelivered)
@@ -324,6 +325,19 @@ void GameSystem::frameLoop() {
     MainLoopFramework::sManager->endRender();
     update();
     calcAnim();
+#ifdef PETARI_NATIVE
+    // Hold-to-skip mod: while a skip is latched, demos run the game's own
+    // scene update several times a frame until they end (Game/System/CutsceneSkip.hpp).
+    CutsceneSkip::noteFrame();
+    if (isNerve(GET_NERVE(GameSystem, GameSystemNormal))) {
+        for (bool first = true; CutsceneSkip::continueFastForward(first); first = false) {
+            CutsceneSkip::beginFastForwardStep();
+            updateSceneController();
+            calcAnim();
+            CutsceneSkip::noteFrame();
+        }
+    }
+#endif
     mObjHolder->captureIfAllowForScreenPreserver();
 #ifdef PETARI_NATIVE
     petari_host_frame_mark(PETARI_FRAME_MARK_END_FRAME);  // frame-time statistics

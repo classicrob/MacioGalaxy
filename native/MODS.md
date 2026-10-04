@@ -9,6 +9,7 @@ unmodified game and every test run behave exactly as before.
 | Fire a Star Bit at the nearest enemy (`ShootEnemy`) | V (no controller default) | Shoots one Star Bit at the nearest enemy on screen |
 | Odyssey movement (`OdysseyMovement`) | none (a mode; it uses the normal Jump, Crouch and Spin buttons) | Mario moves with Super Mario Odyssey's physics and moveset: see "Odyssey movement" below. |
 | Cappy (`Cappy`) | R, controller RB | Super Mario Odyssey's cap throw and cap bounce; needs Odyssey movement: see "Cappy" below. |
+| Hold Space to skip cutscenes and dialogue (`SkipCutscenes`) | none (hold Jump/A: Space, controller bottom button) | Holding A for 1.5 s skips the cutscene or dialogue on screen, and everything after it until you have control again: see "Skip cutscenes and dialogue" below. |
 
 ## Turning mods on
 
@@ -181,6 +182,55 @@ leave. Objects the game had hidden because they were out of its camera's view
 stay hidden while you fly. `PhotoMode` and `PhotoShot` are remappable in
 `controls.txt`. The other photo controls follow the bindings they share with play
 (the stick keys, A, NunchukZ, the camera keys, TiltHold, Walk, Start, Plus).
+
+## Skip cutscenes and dialogue
+
+Turn on "Hold Space to skip cutscenes and dialogue" (`SkipCutscenes=on`). Then,
+while a cutscene, a movie or a conversation is on screen, hold Space (anything
+bound to A: Space, the controller's bottom button, the right mouse button,
+Return) for 1.5 seconds (90 game frames). Taps still work as before (A shows
+the text and turns the page); only a long hold skips.
+
+Once a hold skips, the skip goes on until you have control of Mario again:
+every remaining page of the conversation, any cutscene that follows it, and any
+conversation inside a cutscene. It stops early:
+
+- **At a choice.** A yes/no question (a talk's choice, the save prompt) is never
+  answered for you. The game has no default answer for these (you point at one),
+  so the skip ends there. Answer it, then hold again to skip what follows.
+- When a menu opens that waits for you: the galaxy map (Rosalina's "Would you
+  like to see the map?") or the pause menu.
+- At a stage change (a movie that leads to a new galaxy, a star that takes you
+  back to the observatory). Hold again on the new stage.
+- After 60 seconds without reaching gameplay (logged; a safety net).
+
+The hold that skipped never reaches the game: the A button stays released for
+the game until you let go of Space, so it doesn't become a jump, a talk or a
+menu choice afterwards. Let go and press again to jump.
+
+How each kind ends. It always goes through the game's own end path, so every
+flag, camera reset, music change and scene change still happens:
+
+| What is on screen | What the skip does |
+| --- | --- |
+| A movie (the prologue's two, the final battle, epilogue, ending) | The game's own movie skip (on the Wii only the final battle had one, after a visit): stop the movie, close the wipe, then its normal end (music, the next stage). |
+| The camera fly-around entering a galaxy | The game's own skip of it, also on a first visit. |
+| The launch star flight into a galaxy | The game's own skip of it, also on a first visit. |
+| A conversation page | The page is shown whole and turned, as an A press would (no A is sent). The last page before a choice goes to the choice. |
+| The prologue's storybook and Peach's letter, Peach's and Luigi's letters in the observatory, Rosalina's storybook pages | Turned and closed as an A press would. The storybook's chapter list waits for you (it ends the skip). |
+| Any other cutscene (story scenes, boss introductions, a star appearing, the star-get celebration, Rosalina and the Lumas, ...) | Fast-forward: the game runs its own update several times per drawn frame (up to 15, about 10 ms of extra work a frame) until the cutscene ends. Nothing is jumped over, so each step of the cutscene runs in order, with its sound effects muted. |
+
+The log shows `[skip] ...` lines: when a skip latches and ends (and why), each
+movie, camera, launch and page it ends, and how many extra updates the
+fast-forward ran.
+
+Tests: `native_input` checks the hold count, the latch, the end conditions and
+that the hold never reaches the game (through the game's own `WPadButton`).
+`PETARI_SKIP_PROBE=1` (with `PETARI_MODS=SkipCutscenes`) is the in-game proof:
+next to any smoke script, it holds Space through each cutscene and dialogue and
+logs `[skip-probe]` lines (what was on screen, the latch, the end, whether the
+game saw A, Mario afterwards). `PETARI_SKIP_PROBE_SHOTS=<dir>` adds
+screenshots. See native/app/skip_probe.cpp.
 
 ## How they follow the game's rules
 
