@@ -145,9 +145,16 @@ struct Rect {
     bool contains(float x, float y) const { return x >= x0 && x < x1 && y >= y0 && y < y1; }
 };
 
-constexpr int kMaxItems = 8;
+constexpr int kMaxMods = 8;          // Mods::Mod::Count must stay <= this (the Mods page has one toggle each)
+// The Mods page lists every mod toggle, then Odyssey camera, Level Select, Mod folder and Back.
+constexpr int kModsPageExtraItems = 4;
+// Sized from the worst page (the Mods page); other pages use at most 6 items. View::items
+// must never be indexed past this: a write past it lands on View::lineCount.
+constexpr int kMaxItems = kMaxMods + kModsPageExtraItems;
+static_assert(kMaxItems >= kMaxMods + kModsPageExtraItems, "the Mods page must fit in View::items");
 constexpr int kMaxControls = 20;
-constexpr int kMaxMods = 5;
+constexpr int kMaxProgressLines = 8;   // the My Progress page: a header and up to 7 missions; <= kMaxControls
+static_assert(kMaxProgressLines <= kMaxControls, "the progress lines are shown through View::lines");
 constexpr int kMaxFolderMods = 64;   // detected disc-file mods (native/MODS.md)
 constexpr int kFolderPageSize = 3;   // toggles per page of the Mod folder page
 
@@ -330,7 +337,8 @@ public:
     View view() const;
 
 private:
-    int itemCount() const;
+    int itemCount() const;      // the page's item count, capped at kMaxItems
+    int pageItemCount() const;  // uncapped
     Rect itemRect(int index) const;
     float adjustX() const { return mWidescreen ? mConfig.widescreenAdjustX : 1.0f; }
     void play(int num) const;
@@ -376,12 +384,12 @@ private:
     bool mProgressResetArmed = false;
     char mProgressLabels[4][96] = {};
     char mProgressMessage[160] = {};
-    ControlsEntry mProgressLines[8];
+    ControlsEntry mProgressLines[kMaxProgressLines];
     int mProgressLineCount = 0;
     void refreshProgress();
     void changeProgressGalaxy(int delta);
     int folderPages() const { return (mFolderCount + kFolderPageSize - 1) / kFolderPageSize; }
-    int folderShown() const { return std::min(kFolderPageSize, mFolderCount - mFolderPageIndex * kFolderPageSize); }
+    int folderShown() const { return std::clamp(mFolderCount - mFolderPageIndex * kFolderPageSize, 0, kFolderPageSize); }
     int modsBackIndex() const { return mModCount + (mFolderPage ? 3 : 2); }
     void refreshFolderLabels();
     int mLevelGalaxy = 0;   // index into LaunchStage::galaxies

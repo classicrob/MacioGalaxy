@@ -55,6 +55,24 @@ constexpr int kListRestart = 4;
 constexpr int kListQuit = 5;
 constexpr int kConfirmAccept = 0;
 constexpr int kConfirmCancel = 1;
+// Every other page's item count; View::items has to hold the largest.
+constexpr int kProgressItems = 4;
+constexpr int kCameraItems = 6;
+constexpr int kLevelItems = 4;
+constexpr int kFolderMaxItems = kFolderPageSize + 2;  // the page's toggles, Next page, Back
+static_assert(kMaxItems >= kListCount, "View::items must hold the pause list");
+static_assert(kMaxItems >= kProgressItems && kMaxItems >= kCameraItems && kMaxItems >= kLevelItems, "View::items too small");
+static_assert(kMaxItems >= kFolderMaxItems, "View::items must hold a Mod folder page");
+static_assert(kMaxItems >= 4, "the remapper's buttons");
+static_assert(kMaxControls >= 8, "the progress page's lines");
+
+// Reports a clamped out-of-range write to View::items / View::lines once per process.
+void overflowOnce(const char* what, int index, int limit) {
+    static std::once_flag once;
+    std::call_once(once, [&] {
+        std::fprintf(stderr, "petari: home menu: %s index %d past its capacity %d; clamped\n", what, index, limit);
+    });
+}
 
 float progress(float time, float length) {
     return std::clamp(time / length, 0.0f, 1.0f);
@@ -367,7 +385,7 @@ void Menu::refreshProgress() {
     std::memset(&header, 0, sizeof(header));
     std::snprintf(header.inputs, sizeof(header.inputs), "Best time / deaths / coins / Star Bits");
     std::snprintf(header.pad, sizeof(header.pad), "Clears, first clear");
-    for (int mission = 1; mission <= galaxy.missions && mProgressLineCount < 8; mission++) {
+    for (int mission = 1; mission <= galaxy.missions && mProgressLineCount < kMaxProgressLines; mission++) {
         ControlsEntry& line = mProgressLines[mProgressLineCount++];
         std::memset(&line, 0, sizeof(line));
         std::snprintf(line.action, sizeof(line.action), "Mission %d%s", mission, missionKind(galaxy, mission));
@@ -475,6 +493,24 @@ void Menu::startBlackOut() {
 View Menu::view() const {
     View view;
     view.phase = mPhase;
+    // Every write into View::items goes through here: past the end it is dropped (and logged
+    // once) rather than landing on View::lineCount and the arrays after it.
+    auto setItem = [&view](int index, const char* label) {
+        if (index < 0 || index >= kMaxItems) {
+            overflowOnce("item", index, kMaxItems);
+            return;
+        }
+        view.items[index].label = label;
+    };
+    auto copyLines = [&view](const ControlsEntry* source, int count) {
+        if (count > kMaxControls) {
+            overflowOnce("line", count, kMaxControls);
+        }
+        view.lineCount = std::clamp(count, 0, kMaxControls);
+        for (int i = 0; i < view.lineCount; i++) {
+            view.lines[i] = source[i];
+        }
+    };
     switch (mPhase) {
     case Phase::Closed:
     case Phase::Finished:
@@ -535,87 +571,81 @@ View Menu::view() const {
         scrollbarRects(&remap.upArrow, &remap.downArrow, &remap.track, &remap.thumb);
         remap.dragging = mThumbDragging;
         if (mRemapMode == RemapMode::Conflict) {
-            view.items[0].label = "Swap";
-            view.items[1].label = "Keep both";
-            view.items[2].label = "Cancel";
+            setItem(0, "Swap");
+            setItem(1, "Keep both");
+            setItem(2, "Cancel");
         } else {
-            view.items[0].label = "Clear slot";
-            view.items[1].label = "Reset action";
-            view.items[2].label = mResetAllArmed ? "A again: reset all" : "Reset all";
-            view.items[3].label = "Back";
+            setItem(0, "Clear slot");
+            setItem(1, "Reset action");
+            setItem(2, mResetAllArmed ? "A again: reset all" : "Reset all");
+            setItem(3, "Back");
         }
     } else if (controls) {
         view.title = "Controls";
         view.message = "Change them in controls.txt in the game's user folder.";
-        view.items[0].label = "Back";
-        view.lineCount = mControlCount;
-        for (int i = 0; i < mControlCount; i++) {
-            view.lines[i] = mControls[i];
-        }
+        setItem(0, "Back");
+        copyLines(mControls, mControlCount);
         view.linesArea = {-kControlsLinesHalfWidth / ax, kControlsLinesTop, kControlsLinesHalfWidth / ax,
                           kControlsLinesBottom};
     } else if (mPhase == Phase::Progress) {
         view.title = "My Progress";
         view.message = mProgressMessage;
-        for (int i = 0; i < 4; i++) {
-            view.items[i].label = mProgressLabels[i];
+        for (int i = 0; i < kProgressItems; i++) {
+            setItem(i, mProgressLabels[i]);
         }
-        view.lineCount = mProgressLineCount;
-        for (int i = 0; i < mProgressLineCount; i++) {
-            view.lines[i] = mProgressLines[i];
-        }
+        copyLines(mProgressLines, mProgressLineCount);
         view.linesArea = {-kControlsLinesHalfWidth / ax, kControlsLinesTop + 0.2f, kControlsLinesHalfWidth / ax, 0.42f};
     } else if (mPhase == Phase::Mods) {
         view.title = "Mods";
         view.message = "Off by default. Saved in mods.txt; change their keys on the Controls page.";
         for (int i = 0; i < mModCount; i++) {
-            view.items[i].label = mModLabels[i];
+            setItem(i, mModLabels[i]);
         }
-        view.items[mModCount].label = "Odyssey camera...";
-        view.items[mModCount + 1].label = "Level Select";
+        setItem(mModCount, "Odyssey camera...");
+        setItem(mModCount + 1, "Level Select");
         if (mFolderPage) {
-            view.items[mModCount + 2].label = "Mod folder...";
+            setItem(mModCount + 2, "Mod folder...");
         }
-        view.items[modsBackIndex()].label = "Back";
+        setItem(modsBackIndex(), "Back");
     } else if (mPhase == Phase::ModFolder) {
         view.title = "Mod folder";
         view.message = mFolderMessage;
         const int shown = folderShown();
         for (int i = 0; i < shown; i++) {
-            view.items[i].label = mFolderLabels[i];
+            setItem(i, mFolderLabels[i]);
         }
         if (folderPages() > 1) {
-            view.items[shown].label = "Next page";
+            setItem(shown, "Next page");
         }
-        view.items[shown + (folderPages() > 1 ? 1 : 0)].label = "Back";
+        setItem(shown + (folderPages() > 1 ? 1 : 0), "Back");
     } else if (mPhase == Phase::Camera) {
         view.title = "Odyssey camera";
         view.message = "Right stick or middle-drag orbits; wheel or Z/X zooms; C recentres. P: photo mode.";
         for (int i = 0; i < 5; i++) {
-            view.items[i].label = mCameraLabels[i];
+            setItem(i, mCameraLabels[i]);
         }
-        view.items[5].label = "Back";
+        setItem(5, "Back");
     } else if (mPhase == Phase::Levels) {
         view.title = "Level Select";
         view.message = mLevelMessage;
-        view.items[0].label = mLevelLabels[0];
-        view.items[1].label = mLevelLabels[1];
-        view.items[2].label = "Go";
-        view.items[3].label = "Back";
+        setItem(0, mLevelLabels[0]);
+        setItem(1, mLevelLabels[1]);
+        setItem(2, "Go");
+        setItem(3, "Back");
     } else if (!confirm) {
         view.bands = true;
         view.title = "Super Mario Galaxy";
         view.message = "Paused";
         for (int i = 0; i < kListCount; i++) {
-            view.items[i].label = kListLabels[i];
+            setItem(i, kListLabels[i]);
         }
     } else {
         view.bands = true;
         const bool restart = mConfirming == Selection::Restart;
         view.title = restart ? "Restart from the title screen?" : "Quit Super Mario Galaxy?";
         view.message = "Progress since your last save will be lost.";
-        view.items[kConfirmAccept].label = restart ? "Restart" : "Quit";
-        view.items[kConfirmCancel].label = "Cancel";
+        setItem(kConfirmAccept, restart ? "Restart" : "Quit");
+        setItem(kConfirmCancel, "Cancel");
     }
     // "<icon> <key>: <what>" for each button that works here.
     const bool changes = mPhase == Phase::Levels || mPhase == Phase::Camera || progressPage;
@@ -630,7 +660,7 @@ View Menu::view() const {
     hint(PETARI_ICON_A, mFooterKeys[0], "choose");
     hint(PETARI_ICON_PLUS, mFooterKeys[1], "back");
     hint(PETARI_ICON_HOME, mFooterKeys[2], "close");
-    view.itemCount = itemCount();
+    view.itemCount = std::clamp(itemCount(), 0, kMaxItems);
     if (controls || progressPage) {
         view.panel = {-kControlsHalfWidth / ax, kControlsTop, kControlsHalfWidth / ax,
                       itemRect(progressPage ? 3 : 0).y1 + kPanelBottomMargin};
@@ -665,6 +695,10 @@ View Menu::view() const {
 }
 
 int Menu::itemCount() const {
+    return std::min(pageItemCount(), kMaxItems);
+}
+
+int Menu::pageItemCount() const {
     if (mPhase == Phase::Controls) {
         return mBackend == nullptr ? 1 : mRemapMode == RemapMode::Conflict ? 3 : 4;
     }
@@ -675,13 +709,13 @@ int Menu::itemCount() const {
         return folderShown() + (folderPages() > 1 ? 1 : 0) + 1;
     }
     if (mPhase == Phase::Progress) {
-        return 4;
+        return kProgressItems;
     }
     if (mPhase == Phase::Camera) {
-        return 6;
+        return kCameraItems;
     }
     if (mPhase == Phase::Levels) {
-        return 4;
+        return kLevelItems;
     }
     return mConfirming != Selection::None ? 2 : kListCount;
 }
@@ -706,12 +740,25 @@ Rect Menu::itemRect(int index) const {
         return {left / ax, 0.52f, (left + 0.5f) / ax, 0.67f};
     }
     // Six or more items (the Mods page) use a tighter column so they fit.
-    const bool compact = itemCount() > 5;
-    const bool dense = itemCount() > 6;  // seven items: the Mods page with a Mod folder entry
-    // The dense column ends above the footer band (View::footer, from y 0.915).
-    const float spacing = dense ? 0.165f : compact ? 0.2f : kItemSpacing;
+    const int count = itemCount();
+    const bool compact = count > 5;
+    const bool dense = count > 6;  // the Mods page with a Mod folder entry, or more mods
+    // The dense column ends above the footer band (View::footer, from y 0.915). With many
+    // mods the spacing shrinks to keep every row on screen.
+    float spacing = dense ? 0.165f : compact ? 0.2f : kItemSpacing;
+    float height = dense ? 0.135f : compact ? 0.16f : kItemHeight;
+    if (dense) {
+        constexpr float kDenseTop = -0.46f;
+        constexpr float kDenseBottom = 0.90f;
+        constexpr float kHeightShare = 0.82f;
+        const float fit = (kDenseBottom - kDenseTop) / (static_cast<float>(count - 1) + kHeightShare);
+        if (fit < spacing) {
+            spacing = fit;
+            height = fit * kHeightShare;
+        }
+    }
     const float top = (dense ? -0.46f : compact ? -0.32f : kItemTop) + spacing * static_cast<float>(index);
-    return {-kItemHalfWidth / ax, top, kItemHalfWidth / ax, top + (dense ? 0.135f : compact ? 0.16f : kItemHeight)};
+    return {-kItemHalfWidth / ax, top, kItemHalfWidth / ax, top + height};
 }
 
 int Menu::itemAt(float x, float y) const {

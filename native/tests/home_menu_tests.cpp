@@ -1302,6 +1302,54 @@ void testModsPage() {
     check(std::strcmp(menu.view().items[0].label, "Collect visible Star Bits: On") == 0, "state kept on reopen");
 }
 
+// Regression: with every mod slot filled and the Mod folder page present, the Mods page
+// needs kMaxMods + 4 items. It once held 8 for 5 mods (9 items), and items[8] overwrote
+// View::lineCount, so the overlay's Controls loop read off the stack (SIGSEGV on F1 -> Mods).
+void testModsPageCapacity() {
+    HM::Menu menu = newMenu();
+    HM::ModsEntry entries[HM::kMaxMods];
+    for (int i = 0; i < HM::kMaxMods; ++i) {
+        std::snprintf(entries[i].label, sizeof(entries[i].label), "Mod %d", i);
+    }
+    menu.setMods(entries, HM::kMaxMods);
+    HM::FolderModEntry folder[2];
+    std::strcpy(folder[0].label, "Folder mod");
+    menu.setFolderMods(folder, 1);
+    openToList(menu);
+    menu.update(press(Down));
+    menu.update(press(Down));
+    menu.update(press(A));
+    check(menu.phase() == HM::Phase::Mods, "full Mods page opens");
+    const HM::View view = menu.view();
+    check(view.itemCount == HM::kMaxMods + 4 && view.itemCount <= HM::kMaxItems, "Mods page item count fits View::items");
+    check(view.lineCount == 0, "Mods page has no Controls lines (items must not overwrite lineCount)");
+    bool labels = true;
+    bool onScreen = true;
+    for (int i = 0; i < view.itemCount; ++i) {
+        labels = labels && view.items[i].label != nullptr && view.items[i].label[0] != '\0';
+        onScreen = onScreen && view.items[i].rect.y0 >= -1.0f && view.items[i].rect.y1 <= 0.915f;
+    }
+    check(labels, "every Mods page item has a label");
+    check(onScreen, "every Mods page item sits above the footer");
+    check(std::strcmp(view.items[HM::kMaxMods].label, "Odyssey camera...") == 0 &&
+              std::strcmp(view.items[HM::kMaxMods + 1].label, "Level Select") == 0 &&
+              std::strcmp(view.items[HM::kMaxMods + 2].label, "Mod folder...") == 0 &&
+              std::strcmp(view.items[HM::kMaxMods + 3].label, "Back") == 0,
+          "the fixed rows follow the last mod toggle");
+    // The last toggle works, and Back is reachable and leaves the page.
+    for (int i = 0; i < HM::kMaxMods - 1; ++i) menu.update(press(Down));
+    menu.update(press(A));
+    check(menu.takeModToggles() == (1u << (HM::kMaxMods - 1)), "the last mod toggle works");
+    for (int i = 0; i < 20; ++i) menu.update(press(Down));
+    check(menu.focus() == view.itemCount - 1, "focus reaches the last item");
+    menu.update(press(A));
+    check(menu.phase() == HM::Phase::List && menu.focus() == 2, "Back is reachable on a full Mods page");
+    // Escape leaves it too.
+    menu.update(press(A));
+    menu.update(press(Plus | B));
+    check(menu.phase() == HM::Phase::List, "Escape leaves a full Mods page");
+}
+
 void testModFolderPage() {
     HM::Menu menu = newMenu();
     HM::ModsEntry entries[1];
@@ -1598,6 +1646,7 @@ int main() {
     testRemapper();
     testRemapperScrolling();
     testModsPage();
+    testModsPageCapacity();
     testModFolderPage();
     testProgressPage();
     testLevelSelect();
