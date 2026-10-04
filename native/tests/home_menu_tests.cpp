@@ -1083,10 +1083,32 @@ void testImGuiOverlay() {
     HM::publish(HM::View{});
     check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "hidden menu draws nothing");
 
+    // The hold-to-skip ring: nothing without a source or at 0, a ring in the top right corner when
+    // held, nothing while the menu itself is up.
+    static float sHold = 0.0f;
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "no hold source: no ring");
+    HM::setHoldProgressSource([]() { return sHold; });
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "hold progress 0: no ring");
+    sHold = -1.0f;
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "inactive (negative) hold: no ring");
+    sHold = 0.5f;
+    const Bounds half = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(half.vertices > 50 && half.x0 > 160.0f + 960.0f * 0.5f && half.y1 < 40.0f + 720.0f * 0.5f &&
+              half.x1 <= 1120.0f + 0.5f && half.y0 >= 40.0f - 0.5f,
+          "half-held ring sits in the image's top right corner");
+    sHold = 1.0f;
+    const Bounds fullRing = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(fullRing.vertices >= half.vertices, "a full ring draws at least the half ring's geometry");
+    sHold = 7.0f;
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == fullRing.vertices, "progress past 1 is clamped");
     HM::Menu menu = newMenu();
     openToList(menu);
     HM::publish(menu.view());
     const Bounds list = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    sHold = 0.0f;
+    const Bounds listNoRing = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(list.vertices == listNoRing.vertices, "the ring is hidden while the menu is open");
+    HM::setHoldProgressSource(nullptr);
     check(list.vertices > 100, "list draws the dim, panel, items, and text");
     check(list.x0 >= 160.0f - 0.5f && list.x1 <= 1120.0f + 0.5f && list.y0 >= 40.0f - 0.5f && list.y1 <= 760.0f + 0.5f,
           "drawing stays inside the game image");
