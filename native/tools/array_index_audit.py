@@ -26,6 +26,7 @@ Exit status 1 when an unsuppressed CONST-OOB or COMPUTED finding exists.
 """
 import argparse
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -35,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 LOC = re.compile(r"<(?P<inner>[^>]*)>")
-NODE = re.compile(r"^(?P<prefix>[\s|`\-]*)(?P<kind>[A-Za-z]+)\s")
+NODE = re.compile(r"^(?P<prefix>[\s|`\-]*)(?P<kind>[A-Za-z]+:?)\s")  # also `value: Int 6` lines of constant initialisers
 DIM = re.compile(r"\[(\d+)\]")
 
 
@@ -91,7 +92,9 @@ def drop_sizeof(lines):
 def classify(base_lines, index_lines):
     index_lines = drop_sizeof(index_lines)
     base_text = " ".join(base_lines)
-    m = DIM.search(base_text)
+    # The array's own type (`char[3][96]`), not the decayed pointer's (`char (*)[96]`): the first
+    # dimension is the one being indexed.
+    m = re.search(r"'(?:const |volatile )*[A-Za-z_][^'()*]*?\[(\d+)\]", base_text)
     if not m:
         return None  # pointer or unknown-size base
     size = int(m.group(1))
@@ -119,7 +122,7 @@ def classify(base_lines, index_lines):
     return ("VAR", size)
 
 
-def loop_bound(for_lines, name):
+def loop_bound(for_lines, name, values=None):
     """The bound of `for (... name = ...; name < BOUND; ...)`: ("const", value|None) for literals and sizeof,
     ("named", names) for a named constant, ("runtime", names) for a variable or member; None if the loop's
     header does not have that shape."""
@@ -149,11 +152,21 @@ def loop_bound(for_lines, name):
                 names = re.findall(r"MemberExpr [^\n]*?(?:->|\.)(\w+) 0x", text) + re.findall(r"DeclRefExpr[^\n]*(?:Var|ParmVar) 0x[0-9a-f]+ '([^']+)'", text)
                 calls = re.findall(r"(?:CXXMemberCallExpr|CallExpr)", text)
                 return ("runtime", names or (["<call>"] if calls else ["?"]))
+            if "UnaryExprOrTypeTraitExpr" in text:
+                return ("sizeof", None)
+            enum = re.search(r"DeclRefExpr[^\n]*EnumConstant (0x[0-9a-f]+) '([^']+)'", text)
+            if enum and values and enum.group(1) in values and not re.search(r"MemberExpr|CallExpr", text):
+                return ("named", [enum.group(2)], values[enum.group(1)])
+            if not re.search(r"MemberExpr|CallExpr|DeclRefExpr", text) and re.search(r"value: Int (-?\d+)", text):
+                return ("const", int(re.search(r"value: Int (-?\d+)", text).group(1)))  # sizeof(x) / sizeof(x[0]) and std::size(x): the array's own size, not compared
             if re.search(r"DeclRefExpr[^\n]*Var", text):
                 if "ConstantExpr" in text and re.search(r"value: Int (-?\d+)", text):
                     return ("const", int(re.search(r"value: Int (-?\d+)", text).group(1)))
                 names = re.findall(r"DeclRefExpr[^\n]*Var 0x[0-9a-f]+ '([^']+)'", text)
-                return ("named", names or ["?"])
+                addr = re.search(r"DeclRefExpr[^\n]*Var (0x[0-9a-f]+) '", text)
+                if addr and values and addr.group(1) in values:
+                    return ("named", names or ["?"], values[addr.group(1)])
+                return ("named", names or ["?"], None)
             v = re.search(r"IntegerLiteral [^']*'[^']*' (-?\d+)", text) or re.search(r"value: Int (-?\d+)", text)
             return ("const", int(v.group(1)) if v else None)
     return None
@@ -168,6 +181,8 @@ def scan(entry, want_tests):
     except subprocess.TimeoutExpired:
         return path, [], "timeout"
     finished = []  # closed subscripts: (file, line, lines, for_loops)
+    enum_next = [0]  # the value the next implicitly-numbered enumerator takes
+    values = {}  # address of a constant VarDecl -> its integer value (to resolve `i < kMaxFoo`)
     cur_file, cur_line = None, 0
     open_nodes = []  # entries: dict(kind, depth, file, line, lines, fors)
     for raw in proc.stdout.splitlines():
@@ -187,13 +202,29 @@ def scan(entry, want_tests):
                     cur_line = l
                 if i == 0:
                     node_file, node_line = cur_file, cur_line
+        if kind == "EnumDecl":
+            enum_next[0] = 0
         while open_nodes and depth <= open_nodes[-1]["depth"]:
             n = open_nodes.pop()
             if n["kind"] == "ArraySubscriptExpr":
                 finished.append(n)
+            elif n["kind"] == "EnumConstantDecl":
+                a = re.search(r"EnumConstantDecl (0x[0-9a-f]+) ", n["lines"][0][1])
+                v = re.search(r"value: Int (-?\d+)", "\n".join(r for _, r in n["lines"][1:4]))
+                enum_next[0] = int(v.group(1)) if v else enum_next[0]  # implicit enumerators count up from the last
+                if a:
+                    values[a.group(1)] = enum_next[0]
+                enum_next[0] += 1
+            elif n["kind"] == "VarDecl":
+                head = n["lines"][0][1]
+                v = re.search(r"value: Int (-?\d+)", "\n".join(r for _, r in n["lines"][1:4])) or \
+                    re.search(r"IntegerLiteral [^']*'[^']*' (-?\d+)", "\n".join(r for _, r in n["lines"][1:4]))
+                a = re.search(r"VarDecl (0x[0-9a-f]+) ", head)
+                if v and a and re.search(r"'const [^']*'|constexpr", head):
+                    values[a.group(1)] = int(v.group(1))
         for n in open_nodes:
             n["lines"].append((depth, raw))
-        interesting = kind == "ForStmt" or (kind == "ArraySubscriptExpr" and node_file and
+        interesting = kind == "ForStmt" or (kind == "VarDecl" and ("const" in raw)) or kind == "EnumConstantDecl" or (kind == "ArraySubscriptExpr" and node_file and
                                             f"{ROOT}/native/" in str(Path(node_file).resolve() if node_file.startswith(".") else node_file)
                                             and (want_tests or "/native/tests/" not in node_file))
         if interesting:
@@ -219,14 +250,15 @@ def scan(entry, want_tests):
         if result is None:
             continue
         kind, size = result
-        base_type = re.findall(r"'([^']*\[\d+\][^']*)'", " ".join(children[0]))
+        base_type = re.findall(r"'((?:const |volatile )*[A-Za-z_][^'()*]*?\[\d+\][^'()*]*)'", " ".join(children[0]))
         row = {"file": f, "line": line, "class": kind, "size": size, "type": base_type[0] if base_type else "?"}
         if kind == "VAR":
             var = re.search(r"DeclRefExpr[^\n]*Var 0x[0-9a-f]+ '([^']+)'", "\n".join(children[1]))
             row["loop"] = None
+            row["array_size"] = size
             if var and "MemberExpr" not in "".join(children[1]):
                 for for_lines in reversed(n["fors"]):  # innermost first
-                    bound = loop_bound(for_lines, var.group(1))
+                    bound = loop_bound(for_lines, var.group(1), values)
                     if bound:
                         row["loop"] = bound
                         break
@@ -234,7 +266,7 @@ def scan(entry, want_tests):
     return path, out, None
 
 
-ALLOW = Path(__file__).with_name("array_index_audit_allow.txt")
+ALLOW = Path(os.environ.get("PETARI_AUDIT_ALLOW") or Path(__file__).with_name("array_index_audit_allow.txt"))  # env: tests only
 
 
 def allowlist():
@@ -307,6 +339,9 @@ def main():
     if args.selftest:
         return selftest()
 
+    if not (args.build / "compile_commands.json").exists():
+        print(f"array_index_audit: no {args.build}/compile_commands.json; skipping", file=sys.stderr)
+        return 77  # ctest SKIP_RETURN_CODE
     db = json.loads((args.build / "compile_commands.json").read_text())
     root_native = f"{ROOT}/native/"
     entries, seen = [], set()
@@ -338,21 +373,36 @@ def main():
         loop = r.get("loop")
         sub = r["class"]
         if r["class"] == "VAR":
-            sub = "VAR/loop-" + loop[0] if loop else "VAR/other"
-            if loop and loop[0] == "runtime":
+            if not loop:
+                sub = "VAR/other"
+            elif loop[0] == "runtime":
                 r["hint"] = guard_hint(r["file"], r["line"], loop[1])
-                sub += "/guard-hint" if r["hint"] else "/NO-HINT"
+                sub = "VAR/loop-runtime/" + ("guard-hint" if r["hint"] else "NO-HINT")
+            elif loop[0] == "sizeof":
+                sub = "VAR/loop-own-size"
+            else:
+                value = loop[2] if loop[0] == "named" else loop[1]
+                if value is None:
+                    sub = "VAR/loop-bound-UNRESOLVED"
+                elif value <= r["array_size"]:  # `i < value` never passes the end: proven
+                    sub = "VAR/loop-proven"
+                else:
+                    sub = "VAR/loop-bound-OVER-SIZE"
         r["sub"] = sub
         key = (sub, "suppressed" if r["suppressed"] else "open")
         counts[key] = counts.get(key, 0) + 1
-        if r["class"] in ("CONST-OOB", "COMPUTED") or args.all or (args.loops and r["sub"] == "VAR/loop-runtime/NO-HINT"):
+        if r["class"] in ("CONST-OOB", "COMPUTED") or args.all or (args.loops and r["sub"] in ("VAR/loop-runtime/NO-HINT", "VAR/loop-bound-UNRESOLVED", "VAR/loop-bound-OVER-SIZE")):
             shown.append(r)
     for r in shown:
         if r["class"] in ("CONST", ) and not args.all:
             continue
         rel = str(Path(r["file"]).relative_to(ROOT)) if str(r["file"]).startswith(str(ROOT)) else r["file"]
         mark = "ok " if r["suppressed"] else "   "
-        loop = f"  (loop < {'/'.join(r['loop'][1]) if r.get('loop') and isinstance(r['loop'][1], list) else r['loop'][1] if r.get('loop') else ''})" if r.get("loop") else ""
+        lp = r.get("loop")
+        loop = ""
+        if lp:
+            what = "/".join(lp[1]) if isinstance(lp[1], list) else lp[1]
+            loop = f"  (loop < {what}{'=' + str(lp[2]) if len(lp) > 2 and lp[2] is not None else ''}; array {r.get('array_size')})"
         print(f"{mark}{r['class']:<9} {rel}:{r['line']}  [{r['type']}]  {r['source'][:110]}{loop}")
     print("\nsummary (class, state): count")
     for key in sorted(counts):
