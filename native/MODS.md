@@ -217,7 +217,7 @@ flag, camera reset, music change and scene change still happens:
 | The camera fly-around entering a galaxy | The game's own skip of it, also on a first visit. |
 | The launch star flight into a galaxy | The game's own skip of it, also on a first visit. |
 | A conversation page | The page is shown whole and turned, as an A press would (no A is sent). The last page before a choice goes to the choice. |
-| The prologue's storybook and Peach's letter, Peach's and Luigi's letters in the observatory | Turned and closed as an A press would. |
+| The prologue's storybook and Peach's letter, Peach's and Luigi's letters in the observatory, Rosalina's storybook pages | Turned and closed as an A press would. The storybook's chapter list waits for you (it ends the skip). |
 | Any other cutscene (story scenes, boss introductions, a star appearing, the star-get celebration, Rosalina and the Lumas, ...) | Fast-forward: the game runs its own update several times per drawn frame (up to 15, about 10 ms of extra work a frame) until the cutscene ends. Nothing is jumped over, so each step of the cutscene runs in order, with its sound effects muted. |
 
 The log shows `[skip] ...` lines: when a skip latches and ends (and why), each

@@ -48,6 +48,7 @@ namespace {
     const void* gLastScene = nullptr;
     char gLastStage[64] = {};
     bool gMuting = false;
+    bool gWaitingForPlayer = false;  // noteWaitingForPlayer since the last noteFrame
     std::chrono::steady_clock::time_point gFastForwardStart;
     int gFastForwardSteps = 0;
     unsigned long gFastForwardTotal = 0;  // extra updates in this skip, for the log
@@ -95,6 +96,7 @@ namespace CutsceneSkip {
         if (pController == nullptr || !PetariNative::Mods::enabled(PetariNative::Mods::Mod::SkipCutscenes)) {
             gShown = Shown();
             gMuting = false;
+            gWaitingForPlayer = false;
             petari_skip_set_context(0);
             return;
         }
@@ -111,6 +113,8 @@ namespace CutsceneSkip {
         }
 
         gShown = observe(pController);
+        gShown.choice = gShown.choice || (gShown.game && gWaitingForPlayer);
+        gWaitingForPlayer = false;
         GameScene* pScene = gShown.game ? static_cast< GameScene* >(pController->mScene) : nullptr;
         const bool opening = pScene != nullptr && (pScene->isExecScenarioOpeningCamera() || pScene->isExecScenarioStarter());
 
@@ -186,6 +190,10 @@ namespace CutsceneSkip {
 
     bool isMutingSE() {
         return gMuting;
+    }
+
+    void noteWaitingForPlayer() {
+        gWaitingForPlayer = true;
     }
 
     const char* describe() {

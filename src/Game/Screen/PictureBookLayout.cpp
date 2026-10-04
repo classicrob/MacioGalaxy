@@ -12,6 +12,8 @@
 #ifdef PETARI_NATIVE
 // Progress telemetry and the automated smoke run (native/app); observation only.
 #include <petari/milestone.hpp>
+// Hold-to-skip mod: turns the pages; the chapter list waits for the player.
+#include "Game/System/CutsceneSkip.hpp"
 #define NATIVE_MILESTONE(name) petari_milestone(name)
 #else
 #define NATIVE_MILESTONE(name)
@@ -522,6 +524,10 @@ void PictureBookLayout::exeOpen() {
 }
 
 void PictureBookLayout::exeContentsSelect() {
+#ifdef PETARI_NATIVE
+    CutsceneSkip::noteWaitingForPlayer();
+#endif
+
     if (isValidCloseButton()) {
         MR::requestStarPointerModePictureBook(this);
     }
@@ -712,6 +718,9 @@ void PictureBookLayout::exeWaitWithText() {
     } else {
         bool isTriggerNextPage =
             MR::testCorePadTriggerA(WPAD_CHAN0) || MR::testCorePadTriggerRight(WPAD_CHAN0) || MR::testSubPadStickTriggerRight(WPAD_CHAN0);
+#ifdef PETARI_NATIVE
+        isTriggerNextPage = isTriggerNextPage || CutsceneSkip::isActive();  // hold-to-skip mod: next page
+#endif
 
         if (isTriggerNextPage) {
             MR::startSystemSE("SE_SY_TALK_FOCUS_ITEM");
