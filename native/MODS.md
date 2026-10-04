@@ -188,9 +188,10 @@ stay hidden while you fly. `PhotoMode` and `PhotoShot` are remappable in
 
 Turn on "Point to move (hold left click)" (`PointToMove=on`). Then, in normal
 play, **hold the left mouse button**: Mario runs toward the point under the
-cursor, and stops when you let go, as if the stick were released. Point close to
-Mario to walk, farther away to run: nothing within 3% of the screen height of
-him, full speed from 20%. The direction follows the cursor and Mario every
+cursor, and stops when you let go, as if the stick were released. He always
+runs, at full speed, wherever you point; only a small circle around him (3% of
+the screen height) does nothing, so he does not jitter with the cursor on him.
+(Hold Left Alt to walk.) The direction follows the cursor and Mario every
 frame. Your keys keep their jobs while you steer: Space jumps (in the direction
 you are running), F spins, Shift crouches or ground-pounds (a long jump is
 Shift, then Space while running), Left Alt walks.
@@ -213,12 +214,13 @@ Shift, then Space while running), Left Alt walks.
   go: if a cutscene starts meanwhile, Mario just stops, and no B reaches it.
 - Right click (Pull Stars, pointer grabs) is unchanged.
 
-Test: `native_input` checks the stick's dead zone and ramp, that a claimed press
+Test: `native_input` checks the stick's dead zone and that it is otherwise full, that a claimed press
 sends no B, WASD wins, release stops, and that left click stays B outside
 normal play. `PETARI_POINT_PROBE=1` (native/app/point_probe.cpp, with
 `PETARI_MODS=PointToMove`) drives the real mouse path next to any smoke script
 and logs `[point-probe]` checks: Mario's movement on screen follows the pointer
-up, right and down-left, he stops on release, Space jumps mid-run, and in the
+up, right and down-left, he runs with the pointer just outside the dead zone, he
+stops on release, Space jumps mid-run, and in the
 pause menu left click is B.
 
 ## Skip cutscenes and dialogue

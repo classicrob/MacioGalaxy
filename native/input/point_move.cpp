@@ -20,9 +20,8 @@ void stickFor(float dx, float dy, float screenHeight, float* x, float* y) {
     const float length = std::sqrt(dx * dx + dy * dy);
     const float distance = length / screenHeight;
     if (!(distance > kDeadZone)) return;
-    const float magnitude = std::fmin(1.0f, (distance - kDeadZone) / (kFullStick - kDeadZone));
-    *x = dx / length * magnitude;
-    *y = -dy / length * magnitude;  // screen up is stick up
+    *x = dx / length;
+    *y = -dy / length;  // screen up is stick up
 }
 
 void leftButton(bool down) {

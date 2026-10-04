@@ -3,6 +3,8 @@
 // Once normal play has been steady for 90 frames, it drives the real mouse
 // path (pointer motion and the left button through the native input layer)
 // and logs "[point-probe] <check>: ok|FAIL ..." lines:
+//   near-runs: the pointer 5% of the screen height above Mario (just outside the 3%
+//     dead zone): he must still run (at least 400 units in 75 frames).
 //   up / right / down-left: the pointer kept 28% of the screen height from Mario
 //     in that screen direction, left held 75 frames; Mario must move at least 100
 //     units, and his movement seen on screen (each frame's step projected with
@@ -34,9 +36,13 @@ struct Check {
     const char* name;
     float dx, dy;  // screen direction (y down)
     bool jump;
+    float distance;  // pointer distance from Mario, in screen heights
 };
-constexpr Check kChecks[] = {{"up", 0.0f, -1.0f, false}, {"right", 1.0f, 0.0f, false}, {"down-left", -0.7071f, 0.7071f, false},
-                             {"jump", 0.0f, -1.0f, true}};
+constexpr Check kChecks[] = {{"up", 0.0f, -1.0f, false, 0.28f},
+                             {"right", 1.0f, 0.0f, false, 0.28f},
+                             {"down-left", -0.7071f, 0.7071f, false, 0.28f},
+                             {"near-runs", 0.0f, -1.0f, false, 0.05f},
+                             {"jump", 0.0f, -1.0f, true, 0.28f}};
 constexpr int kCheckCount = sizeof(kChecks) / sizeof(kChecks[0]);
 constexpr int kHold = 75;
 
@@ -97,12 +103,12 @@ PointProbeStep pointProbeFrame() {
     const float width = static_cast<float>(MR::getScreenWidth());
     ++p.frames;
 
-    auto aim = [&](float dx, float dy) {
+    auto aim = [&](float dx, float dy, float distance) {
         TVec2f mario;
         if (!screenOf(*MR::getPlayerCenterPos(), &mario)) return;
         step.pointer = true;
-        step.u = (mario.x + dx * 0.28f * height) / width;
-        step.v = (mario.y + dy * 0.28f * height) / height;
+        step.u = (mario.x + dx * distance * height) / width;
+        step.v = (mario.y + dy * distance * height) / height;
     };
 
     switch (p.phase) {
@@ -116,7 +122,7 @@ PointProbeStep pointProbeFrame() {
         break;
     case Phase::Run: {
         const Check& c = kChecks[p.check];
-        aim(c.dx, c.dy);
+        aim(c.dx, c.dy, c.distance);
         if (p.frames == 2) {
             p.start = *MR::getPlayerPos();
             p.previous = p.start;
@@ -148,7 +154,8 @@ PointProbeStep pointProbeFrame() {
             char text[200];
             std::snprintf(text, sizeof(text), "moved %.0f units, on-screen direction cosine %.2f (screen move %.0f, %.0f)%s%s", moved,
                           cosine, mx, my, c.jump ? ", max rise " : "", c.jump ? std::to_string(static_cast<int>(p.maxRise)).c_str() : "");
-            bool good = seen && moved >= 100.0f && cosine >= (c.jump ? 0.5f : 0.7f);
+            const float minimum = c.distance < 0.1f ? 400.0f : 100.0f;  // near-runs: run distance, not a walk
+            bool good = seen && moved >= minimum && cosine >= (c.jump ? 0.5f : 0.7f);
             if (c.jump) good = good && p.maxRise >= 60.0f;
             report(p, c.name, good, text);
             p.releasePos = end;
