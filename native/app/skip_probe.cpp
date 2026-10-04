@@ -73,8 +73,9 @@ Probe& probe() {
 }
 
 void say(const Probe& p, const char* what) {
-    std::fprintf(stderr, "[skip-probe] frame %lu skip %d: %s | %s | context 0x%x\n", p.frame, p.skips + 1, what,
-                 CutsceneSkip::describe(), petari_skip_context());
+    const Observation o = observeGame(true, false);  // the state only: the script keeps its events
+    std::fprintf(stderr, "[skip-probe] frame %lu skip %d: %s | %s | context 0x%x | stars %d\n", p.frame, p.skips + 1, what,
+                 CutsceneSkip::describe(), petari_skip_context(), o.powerStars);
     std::fflush(stderr);
 }
 
