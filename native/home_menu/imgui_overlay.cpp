@@ -632,7 +632,8 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
             if (progress > 0.0f && !sHolding) {
                 HostAllocationScope scope;  // this may be a game thread
                 sKey.clear();
-                for (const Input::Binding& input : Input::bindings().inputs(Input::Action::A)) {
+                const Input::Bindings bindings = Input::bindings();  // a copy: keep it alive through the loop
+                for (const Input::Binding& input : bindings.inputs(Input::Action::A)) {
                     if (input.device == Input::Binding::Device::Key) {
                         sKey = Input::displayName(input);
                         break;
