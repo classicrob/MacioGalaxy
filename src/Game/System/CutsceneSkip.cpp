@@ -19,6 +19,7 @@
 #include "Game/Util/SceneUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
+#include <petari/mods.hpp>
 #include <petari/skip.hpp>
 
 #include <chrono>
@@ -90,7 +91,11 @@ namespace CutsceneSkip {
     void noteFrame() {
         GameSystemSceneController* pController = SingletonHolder< GameSystem >::get()->mSceneController;
 
-        if (pController == nullptr) {
+        // Mod off: the game state is not read at all.
+        if (pController == nullptr || !PetariNative::Mods::enabled(PetariNative::Mods::Mod::SkipCutscenes)) {
+            gShown = Shown();
+            gMuting = false;
+            petari_skip_set_context(0);
             return;
         }
 
