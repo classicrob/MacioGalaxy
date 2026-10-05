@@ -34,8 +34,9 @@ void resetForTesting();
 extern "C" {
 #endif
 
-// Game side, once per frame: whether Mario is in normal control with the
-// pointer on screen, and the stick toward the pointer (x right, y up).
+// Game side, once per frame: whether Mario is in normal control (a left press
+// is then claimed, wherever the pointer is), and the stick toward the pointer
+// (x right, y up; zero while the pointer is off the screen).
 void petari_point_move_publish(bool steerable, float stickX, float stickY);
 // The left button is held and claimed (the smoke probe).
 bool petari_point_move_claimed(void);
