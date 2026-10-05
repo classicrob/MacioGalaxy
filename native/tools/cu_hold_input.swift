@@ -69,19 +69,36 @@ func hidIdleSeconds() -> Double? {
     return value.doubleValue / 1_000_000_000
 }
 func cursor() -> CGPoint { return mouseAt ?? CGEvent(source: nil)?.location ?? .zero }
+var windowNumber: Int64 = 0  // the app's window, stamped on process-posted mouse events
 // The app's largest on-screen window, in global display points (top-left origin, as CGEvent).
 func windowBounds() -> CGRect? {
     guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else { return nil }
     var best: CGRect? = nil
     for info in list where (info[kCGWindowOwnerPID as String] as? Int) == rawPid && (info[kCGWindowLayer as String] as? Int) == 0 {
         guard let dict = info[kCGWindowBounds as String] as? NSDictionary, let rect = CGRect(dictionaryRepresentation: dict) else { continue }
-        if best == nil || rect.width * rect.height > best!.width * best!.height { best = rect }
+        if best == nil || rect.width * rect.height > best!.width * best!.height {
+            best = rect
+            windowNumber = Int64(info[kCGWindowNumber as String] as? Int ?? 0)
+        }
     }
     return best
 }
 func post(_ type: CGEventType, _ at: CGPoint) {
     let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: at, mouseButton: .left)
-    if hidMouse { event?.post(tap: .cghidEventTap) } else { event?.postToPid(pid_t(rawPid)) }
+    if hidMouse {
+        event?.post(tap: .cghidEventTap)
+    } else {
+        // AppKit routes a mouse button event by the window under it; a process-posted event
+        // carries none unless it is stamped.
+        if windowNumber != 0 {
+            event?.setIntegerValueField(.mouseEventWindowUnderMousePointer, value: windowNumber)
+            event?.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent, value: windowNumber)
+        }
+        if type == .leftMouseDown || type == .leftMouseUp || type == .leftMouseDragged {
+            event?.setIntegerValueField(.mouseEventClickState, value: 1)
+        }
+        event?.postToPid(pid_t(rawPid))
+    }
 }
 func log(_ action: String, key: CGKeyCode? = nil, details: [String: Any] = [:]) {
     var item: [String: Any] = ["utc":ISO8601DateFormatter().string(from: Date()), "action":action,
@@ -139,10 +156,12 @@ func release() {
             post(.leftMouseUp, at)
         }
         mouseHeld = false
-        if hidMouse, let saved = savedCursor {
-            CGWarpMouseCursorPosition(saved)
-            log("os-hid-cursor-restored", details: ["x": Double(saved.x), "y": Double(saved.y)])
-        }
+    }
+    if hidMouse, let saved = savedCursor {
+        // Always, also when the hold failed before the button went down.
+        CGWarpMouseCursorPosition(saved)
+        log("os-hid-cursor-restored", details: ["x": Double(saved.x), "y": Double(saved.y)])
+        savedCursor = nil
     }
 }
 let signalQueue = DispatchQueue(label:"cu-hold-input.signals")
@@ -181,6 +200,22 @@ for name in names {
             at = CGPoint(x: window.origin.x + xy[0], y: window.origin.y + xy[1])
             details = ["window_x": Double(window.origin.x), "window_y": Double(window.origin.y), "window_w": Double(window.width),
                        "window_h": Double(window.height), "in_window_x": xy[0], "in_window_y": xy[1]]
+            if hidMouse {
+                // The real cursor: warp it synchronously, then wait until it is really there
+                // before the button goes down and the activity guard starts.
+                CGWarpMouseCursorPosition(at)
+                CGAssociateMouseAndMouseCursorPosition(1)
+                var reached = false
+                let until = Date().addingTimeInterval(0.3)
+                while Date() < until {
+                    let now = CGEvent(source: nil)?.location ?? .zero
+                    if abs(now.x - at.x) <= 2 && abs(now.y - at.y) <= 2 { reached = true; break }
+                    Thread.sleep(forTimeInterval: 0.01)
+                }
+                guard reached else {
+                    eventLock.unlock(); release(); fail("hid-mouse-left: the cursor did not reach the target in 300 ms; nothing pressed")
+                }
+            }
             post(.mouseMoved, at)  // the game's pointer goes there first
         }
         mouseAt = at
