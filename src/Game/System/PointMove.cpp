@@ -22,7 +22,8 @@
 #include <cstdlib>
 
 namespace {
-    // Normal play: the Game scene in its action nerve with Mario present and in
+    // Normal play: the Game scene in its action nerve on a stage where the pause
+    // menu is allowed (not the title/file select), with Mario present and in
     // control, no demo, talk or movie. (Not the pointer: a click into the window
     // can come before a game frame has seen the pointer arrive; a pointer off the
     // screen only zeroes the stick.)
@@ -34,7 +35,7 @@ namespace {
             return false;
         }
 
-        if (!static_cast< GameScene* >(pController->mScene)->isNativeSceneAction()) {
+        if (!static_cast< GameScene* >(pController->mScene)->isNativeSceneAction() || MR::isStageDisablePauseMenu()) {
             return false;
         }
 
