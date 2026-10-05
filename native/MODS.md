@@ -9,6 +9,8 @@ unmodified game and every test run behave exactly as before.
 | Fire a Star Bit at the nearest enemy (`ShootEnemy`) | V (no controller default) | Shoots one Star Bit at the nearest enemy on screen |
 | Odyssey movement (`OdysseyMovement`) | none (a mode; it uses the normal Jump, Crouch and Spin buttons) | Mario moves with Super Mario Odyssey's physics and moveset: see "Odyssey movement" below. |
 | Cappy (`Cappy`) | R, controller RB | Super Mario Odyssey's cap throw and cap bounce; needs Odyssey movement: see "Cappy" below. |
+| Point to move (`PointToMove`) | hold the left mouse button | Mario runs toward the point under the cursor while you hold it; keys still jump, spin and crouch: see "Point to move" below. |
+| Hold Space to skip cutscenes and dialogue (`SkipCutscenes`) | none (hold Jump/A: Space, controller bottom button) | Holding A for 1.5 s skips the cutscene or dialogue on screen, and everything after it until you have control again: see "Skip cutscenes and dialogue" below. |
 | Level editor (`LevelEditor`) | a tap of Tab | Edit the galaxy you are in (docs/dev/level-editor/UX.md). A short tap of Tab, with nothing else pressed, freezes the game into Edit mode where the pause menu could open; another tap plays again. Holding Tab still tilts the remote. Remappable as `LevelEditor` in `controls.txt`. |
 
 ## Turning mods on
@@ -182,6 +184,97 @@ leave. Objects the game had hidden because they were out of its camera's view
 stay hidden while you fly. `PhotoMode` and `PhotoShot` are remappable in
 `controls.txt`. The other photo controls follow the bindings they share with play
 (the stick keys, A, NunchukZ, the camera keys, TiltHold, Walk, Start, Plus).
+
+## Point to move
+
+Turn on "Point to move (hold left click)" (`PointToMove=on`). Then, in normal
+play, **hold the left mouse button**: Mario runs toward the point under the
+cursor, and stops when you let go, as if the stick were released. He always
+runs, at full speed, wherever you point; only a small circle around him (3% of
+the screen height) does nothing, so he does not jitter with the cursor on him.
+(Hold Left Alt to walk.) The direction follows the cursor and Mario every
+frame. Your keys keep their jobs while you steer: Space jumps (in the direction
+you are running), F spins, Shift crouches or ground-pounds (a long jump is
+Shift, then Space while running), Left Alt walks.
+
+- **It is the stick.** The pointer's direction from Mario on the screen becomes
+  the Nunchuk stick, so the game moves him exactly as with the stick: on round
+  planets, upside down, in water, and as Bee, Boo, Spring, Ice and Fire Mario.
+  WASD (or a controller stick), when held, wins over the pointer. On the Star
+  Ball and the Ray (Manta), which steer by tilting the remote, the pointer tilts
+  it the way the stick keys do there (native/CONTROLS.md): the Star Ball rolls
+  toward the pointer, the Ray turns toward its side. Always at full tilt, as a
+  held key; let go to stop tilting.
+- **Shooting Star Bits.** While the mod is on, a left press in normal play steers
+  and sends no B, from press to release. Shoot with the **B key** instead (the
+  Wii B: it shoots a Star Bit at the pointer, and holding it strokes the pointer
+  objects that need "hold B", such as turning platforms). The B key works with
+  the mod off too. The Shoot Enemy (V) and Collect Star Bits (G) mods work as
+  before.
+- **Only in normal play.** Outside it (menus, mission select, the pause menu,
+  cutscenes, conversations, the Home menu and the editor) left click is B as
+  always. A hold that started in normal play stays a steering hold until you let
+  go: if a cutscene starts meanwhile, Mario just stops, and no B reaches it.
+- Right click (Pull Stars, pointer grabs) is unchanged.
+
+Test: `native_input` checks the stick's dead zone and that it is otherwise full, that a claimed press
+sends no B, WASD wins, release stops, and that left click stays B outside
+normal play. `PETARI_POINT_PROBE=1` (native/app/point_probe.cpp, with
+`PETARI_MODS=PointToMove`) drives the real mouse path next to any smoke script
+and logs `[point-probe]` checks: Mario's movement on screen follows the pointer
+up, right and down-left, he runs with the pointer just outside the dead zone, he
+stops on release, Space jumps mid-run, and in the
+pause menu left click is B.
+
+## Skip cutscenes and dialogue
+
+Turn on "Hold Space to skip cutscenes and dialogue" (`SkipCutscenes=on`). Then,
+while a cutscene, a movie or a conversation is on screen, hold Space (anything
+bound to A: Space, the controller's bottom button, the right mouse button,
+Return) for 1.5 seconds (90 game frames). Taps still work as before (A shows
+the text and turns the page); only a long hold skips.
+
+Once a hold skips, the skip goes on until you have control of Mario again:
+every remaining page of the conversation, any cutscene that follows it, and any
+conversation inside a cutscene. It stops early:
+
+- **At a choice.** A yes/no question (a talk's choice, the save prompt) is never
+  answered for you. The game has no default answer for these (you point at one),
+  so the skip ends there. Answer it, then hold again to skip what follows.
+- When a menu opens that waits for you: the galaxy map (Rosalina's "Would you
+  like to see the map?") or the pause menu.
+- At a stage change (a movie that leads to a new galaxy, a star that takes you
+  back to the observatory). Hold again on the new stage.
+- After 60 seconds without reaching gameplay (logged; a safety net).
+
+The hold that skipped never reaches the game: the A button stays released for
+the game until you let go of Space, so it doesn't become a jump, a talk or a
+menu choice afterwards. Let go and press again to jump.
+
+How each kind ends. It always goes through the game's own end path, so every
+flag, camera reset, music change and scene change still happens:
+
+| What is on screen | What the skip does |
+| --- | --- |
+| A movie (the prologue's two, the final battle, epilogue, ending) | The game's own movie skip (on the Wii only the final battle had one, after a visit): stop the movie, close the wipe, then its normal end (music, the next stage). |
+| The camera fly-around entering a galaxy | The game's own skip of it, also on a first visit. |
+| The launch star flight into a galaxy | The game's own skip of it, also on a first visit. |
+| A conversation page | The page is shown whole and turned, as an A press would (no A is sent). The last page before a choice goes to the choice. |
+| The prologue's storybook and Peach's letter, Peach's and Luigi's letters in the observatory, Rosalina's storybook pages | Turned and closed as an A press would. The storybook's chapter list waits for you (it ends the skip). |
+| After a star: the result screen (star count, best score, Star Bits), new-galaxy notices and map, first-time power-up notices | Continued as an A press would; the save prompt that follows is a choice, so the skip stops there. |
+| Any other cutscene (story scenes, boss introductions, a star appearing, the star-get celebration, Rosalina and the Lumas, ...) | Fast-forward: the game runs its own update several times per drawn frame (up to 15, about 10 ms of extra work a frame) until the cutscene ends. Nothing is jumped over, so each step of the cutscene runs in order, with its sound effects muted. |
+
+The log shows `[skip] ...` lines: when a skip latches and ends (and why), each
+movie, camera, launch and page it ends, and how many extra updates the
+fast-forward ran.
+
+Tests: `native_input` checks the hold count, the latch, the end conditions and
+that the hold never reaches the game (through the game's own `WPadButton`).
+`PETARI_SKIP_PROBE=1` (with `PETARI_MODS=SkipCutscenes`) is the in-game proof:
+next to any smoke script, it holds Space through each cutscene and dialogue and
+logs `[skip-probe]` lines (what was on screen, the latch, the end, whether the
+game saw A, Mario afterwards). `PETARI_SKIP_PROBE_SHOTS=<dir>` adds
+screenshots. See native/app/skip_probe.cpp.
 
 ## How they follow the game's rules
 

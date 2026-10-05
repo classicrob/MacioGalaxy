@@ -170,10 +170,19 @@ void setImage(const Rect& image, float width, float height) {
 namespace PetariNative::App::Smoke {
 Observation smokeObservation;
 bool wantedPlayer = false;
-Observation observeGame(bool wantPlayer) {
+Observation observeGame(bool wantPlayer, bool) {
     wantedPlayer = wantPlayer;
     hostCall("observe");
     return smokeObservation;
+}
+bool skipProbeFrame() {
+    return false;
+}
+bool skipProbeAnswerPointer(float*, float*) {
+    return false;
+}
+PointProbeStep pointProbeFrame() {
+    return {};
 }
 bool warpPlayer(const Step&) {
     hostCall("warp");

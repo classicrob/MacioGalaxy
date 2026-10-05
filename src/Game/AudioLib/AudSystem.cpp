@@ -40,6 +40,18 @@
 #include <revolution/sc.h>
 #include <revolution/vi/vifuncs.h>
 
+#ifdef PETARI_NATIVE
+// Hold-to-skip mod: game sound effects are muted while a skipped demo fast-forwards.
+#include "Game/System/CutsceneSkip.hpp"
+#define PETARI_SKIP_MUTED() CutsceneSkip::isMutingSE()
+// Counts a refusal that only the mod's mute caused (the game's own blocks are not counted).
+#define PETARI_SKIP_NOTE_MUTED(gameBlocked) \
+    if (!(gameBlocked)) CutsceneSkip::noteMutedSE()
+#else
+#define PETARI_SKIP_MUTED() false
+#define PETARI_SKIP_NOTE_MUTED(gameBlocked)
+#endif
+
 const char sAudioResFile[] = "/AudioRes/SMR.szs";
 const char sJaiSeqArc[] = "/AudioRes/Seqs/JaiSeq.arc";
 const char sJaiChordArc[] = "/AudioRes/Info/JaiChord.arc";
@@ -307,7 +319,8 @@ bool AudSystem::startSound(JAISoundID soundID, JAISoundHandle* pHandle, const TV
         return false;
     }
 
-    if (_82B && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
+    if ((_82B || PETARI_SKIP_MUTED()) && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
+        PETARI_SKIP_NOTE_MUTED(_82B);
         return false;
     }
 
@@ -348,7 +361,8 @@ bool AudSystem::startLevelSound(JAISoundID soundID, JAISoundHandle* pHandle, con
         return false;
     }
 
-    if (_82C && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
+    if ((_82C || PETARI_SKIP_MUTED()) && soundID.getGroupID() != 0xD && soundID.getGroupID() != 0x0) {  // HOMESE, SE_SY
+        PETARI_SKIP_NOTE_MUTED(_82C);
         return false;
     }
 

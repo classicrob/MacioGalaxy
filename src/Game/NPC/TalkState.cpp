@@ -1,4 +1,5 @@
 #ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
 #include <petari/ui_observe.hpp>
 #endif
 #include "Game/NPC/TalkState.hpp"
@@ -115,6 +116,30 @@ void TalkStateEvent::clos() {
 }
 
 bool TalkStateEvent::talk(const TalkMessageCtrl* pArg1) {
+#ifdef PETARI_NATIVE
+    // Hold-to-skip mod (Game/System/CutsceneSkip.hpp): show the whole page and
+    // turn it as an A press would. A choice's last page still goes to the
+    // director's yes/no, which the skip never answers.
+    if (CutsceneSkip::isActive()) {
+        for (int i = 0; i < 64 && !mBalloon->isTextAppearedAll(); i++) {
+            mBalloon->skipMessage();
+        }
+
+        if (!mBalloon->isTextAppearedAll()) {
+            return false;
+        }
+
+        if (TalkFunction::isSelectTalk(_04) && !mBalloon->hasNextPage()) {
+            OSReport("[skip] talk: stopped at a choice\n");
+            return true;
+        }
+
+        mPageCount++;
+        OSReport("[skip] talk: page %d turned\n", mPageCount);
+        return !mBalloon->turnPage();
+    }
+#endif
+
     if (MR::testCorePadButtonA(0)) {
         if (_10++ > 10) {
             for (int i = 0; i < 2; i++) {

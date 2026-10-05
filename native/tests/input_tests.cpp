@@ -41,6 +41,8 @@
 #include "Game/Util/TriggerChecker.hpp"
 #include "petari/input.hpp"
 #include "petari/mods.hpp"
+#include "petari/skip.hpp"
+#include "petari/point_move.hpp"
 #include "petari/camera_settings.hpp"
 #include "petari/camera_input.h"
 #include "petari/platform/sc.hpp"
@@ -245,7 +247,7 @@ void testControlsSummary() {
         {"Cap throw (Cappy mod)", "R", "RB"},
         {"Crouch / ground pound", "Shift", "LT"},
         {"Star Pointer", "Mouse", "right stick (R3: center)"},
-        {"Shoot Star Bits / back", "Left mouse / Backspace", "right / RT"},
+        {"Shoot Star Bits / back", "Left mouse / B / Backspace", "right / RT"},
         {"Grab (Pull Stars)", "Hold Space / Right mouse on the target", "hold bottom"},
         {"Rotate camera", "Q / E", "D-pad left / D-pad right"},
         {"Recenter camera", "C", "LB"},
@@ -301,7 +303,7 @@ void testControlsSummary() {
           "title hint: " + In::titleHint(In::Bindings::defaults()));
     In::Bindings noStart = In::Bindings::defaults();
     check(noStart.parse("Start=\nHome=\n", &error), "unbind Start and Home");
-    check(In::titleHint(noStart) == "Keyboard: hold Space, then press Backspace to start",
+    check(In::titleHint(noStart) == "Keyboard: hold Space, then press B to start",
           "title hint without Start names keyboard keys: " + In::titleHint(noStart));
     In::Bindings mouseOnly = In::Bindings::defaults();
     check(mouseOnly.parse("Start=Mouse:Middle\n", &error), "Start on a mouse button");
@@ -394,6 +396,28 @@ void testConnection() {
 }
 
 // --- Buttons --------------------------------------------------------------
+
+void testLastDevice() {
+    In::resetForTesting();
+    check(In::lastDevice() == In::Binding::Device::Key, "the last device starts as the keyboard");
+    In::padButtonEvent(In::PadButton::South, true);
+    check(In::lastDevice() == In::Binding::Device::Pad, "a pad press makes the pad the last device");
+    In::padButtonEvent(In::PadButton::South, false);
+    In::keyEvent(In::Key::Space, false, false);
+    check(In::lastDevice() == In::Binding::Device::Pad, "a release does not change it");
+    In::keyEvent(In::Key::Space, true, false);
+    check(In::lastDevice() == In::Binding::Device::Key, "a key press flips it back to the keyboard");
+    In::mouseButtonEvent(In::MouseButton::Right, true);
+    check(In::lastDevice() == In::Binding::Device::Mouse, "a mouse press reports the mouse");
+    In::padAxisEvent(In::PadAxis::LeftX, 0.05f);
+    check(In::lastDevice() == In::Binding::Device::Mouse, "stick noise is not a device change");
+    In::padAxisEvent(In::PadAxis::LeftX, 0.9f);
+    check(In::lastDevice() == In::Binding::Device::Pad, "a deliberate stick push is the pad");
+    In::padAxisEvent(In::PadAxis::LeftX, 0.0f);
+    In::keyEvent(In::Key::Space, false, false);
+    In::mouseButtonEvent(In::MouseButton::Right, false);
+    In::resetForTesting();
+}
 
 void testButtons() {
     Rig rig;
@@ -2065,6 +2089,280 @@ void testSdl3() {
 // Cappy mod (docs/dev/CAPPY.md): R and RB throw; while the mod is active RB
 // throws and does not spin (F and the left button still spin), and the game
 // reads whether the throw is held.
+// --- Hold-to-skip mod (petari/skip.hpp) ------------------------------------
+
+void testSkipMachine() {
+    namespace Skip = PetariNative::Skip;
+    constexpr unsigned kSkippable = Skip::kSkippable, kGameplay = Skip::kGameplay, kChoice = Skip::kChoice;
+    auto holdFor = [](Skip::Machine& m, int frames, unsigned context, bool enabled = true) {
+        unsigned hidden = 0;
+        for (int i = 0; i < frames; ++i) hidden |= m.frame(true, context, enabled);
+        return hidden;
+    };
+
+    {
+        Skip::Machine m;
+        check(holdFor(m, 200, kSkippable, false) == 0 && !m.latched(), "mod off: a hold never skips");
+    }
+    {
+        Skip::Machine m;
+        check(holdFor(m, Skip::kHoldFrames - 1, kSkippable) == 0 && !m.latched(), "89 frames held: no skip, A reaches the game");
+        check(m.progress() > 0.98f && m.progress() < 1.0f, "progress climbs toward the skip");
+        check(m.frame(true, kSkippable, true) == Skip::kButtonA && m.latched() && m.justLatched(), "the 90th frame latches and hides A");
+        check(m.frame(true, kSkippable, true) == Skip::kButtonA && !m.justLatched(), "the latching hold stays hidden");
+        check(m.frame(false, kSkippable, true) == Skip::kButtonA && !m.swallowing(), "its release frame is hidden too");
+        check(m.frame(true, kSkippable, true) == 0 && m.latched(), "a new press while latched reaches the game (a choice needs it)");
+        m.frame(false, kSkippable, true);
+        for (int i = 0; i < Skip::kSettleFrames - 1; ++i) m.frame(false, kGameplay, true);
+        check(m.latched(), "gameplay for 9 frames: still skipping");
+        m.frame(false, kGameplay, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Gameplay, "gameplay for 10 frames in a row ends the skip");
+    }
+    {
+        // The user's 1.5 s holds also when the game runs slowly: at 8 frames a
+        // second, 12 held frames (1.5 s) latch.
+        Skip::Machine m;
+        for (int i = 0; i < 11; ++i) m.frame(true, kSkippable, true, 0.125);
+        check(!m.latched() && m.progress() > 0.9f, "8 fps: 11 frames (1.375 s) do not latch");
+        m.frame(true, kSkippable, true, 0.125);
+        check(m.latched(), "8 fps: 12 frames (1.5 s) latch");
+    }
+    {
+        // A stall (a load) counts at most 0.25 s per frame and needs 10 held frames.
+        Skip::Machine m;
+        m.frame(true, kSkippable, true, 3.0);
+        check(!m.latched(), "one 3 s frame does not latch");
+        for (int i = 0; i < 5; ++i) m.frame(true, kSkippable, true, 3.0);
+        check(!m.latched(), "six long frames (1.5 s counted) do not latch");
+        for (int i = 0; i < 3; ++i) m.frame(true, kSkippable, true, 1.0 / 60.0);
+        check(!m.latched(), "nine frames do not latch, however long");
+        m.frame(true, kSkippable, true, 1.0 / 60.0);
+        check(m.latched(), "the tenth held frame past 1.5 s latches");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, 60, 0);
+        check(holdFor(m, Skip::kHoldFrames - 1, kSkippable) == 0 && !m.latched(), "frames held before the cutscene do not count");
+        m.frame(true, kSkippable, true);
+        check(m.latched(), "the hold counts from when the cutscene appears");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, 50, kSkippable);
+        m.frame(false, kSkippable, true);
+        check(holdFor(m, Skip::kHoldFrames - 1, kSkippable) == 0 && !m.latched(), "a release restarts the count");
+        holdFor(m, 30, kSkippable | kChoice);
+        check(!m.latched() && m.holdFrames() == 0, "a hold during a choice does not count");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        m.frame(true, kSkippable | kChoice, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Choice, "a choice ends the skip (it is never answered)");
+        check(m.frame(true, kChoice, true) == Skip::kButtonA, "the hold stays hidden after the skip ends");
+        m.frame(false, kChoice, true);
+        check(m.frame(true, kChoice, true) == 0, "a fresh press after the release answers the choice");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        m.frame(true, kSkippable | Skip::kNewStage, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Stage, "a stage change ends the skip");
+        check(holdFor(m, 300, kGameplay) == Skip::kButtonA && !m.latched(),
+              "holding on into gameplay: A stays hidden (no jump) and no new skip starts");
+        check(m.frame(false, kGameplay, true) == Skip::kButtonA, "hidden until released");
+        check(m.frame(true, kGameplay, true) == 0, "then A is a jump again");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        m.frame(false, kSkippable, true);
+        for (int i = 1; i < Skip::kTimeoutFrames - 1 && m.latched(); ++i) m.frame(false, kSkippable, true);
+        check(m.latched(), "still skipping just before the timeout");
+        m.frame(false, kSkippable, true);
+        check(!m.latched() && m.justEnded() == Skip::End::Timeout, "a skip that never reaches gameplay gives up after 60 s");
+    }
+    {
+        Skip::Machine m;
+        holdFor(m, Skip::kHoldFrames, kSkippable);
+        check(m.frame(true, kSkippable, false) == 0 && !m.latched() && m.justEnded() == Skip::End::Disabled,
+              "turning the mod off ends the skip and stops hiding A");
+    }
+}
+
+void testSkipThroughKpad() {
+    // The game's own WPadButton on channel 0 (WPadButton::update calls petari_skip_pad).
+    namespace Skip = PetariNative::Skip;
+    Rig rig;
+    PetariNative::Mods::resetForTesting();
+    Skip::resetForTesting();
+    PetariNative::Mods::setEnabled(PetariNative::Mods::Mod::SkipCutscenes, true);
+    WPadButton* button = rig.pad->mButton;
+
+    petari_skip_set_context(Skip::kSkippable);
+    press(In::Key::Space);
+    rig.frame();
+    check(button->testTriggerA() && button->testButtonA(), "Space in a cutscene: the game sees A at once (taps advance text)");
+    for (int i = 0; i < Skip::kHoldFrames - 2; ++i) rig.frame();
+    check(button->testButtonA() && !petari_skip_active(), "held 89 frames: A still held for the game, no skip yet");
+    rig.frame();
+    check(petari_skip_active() && !button->testButtonA() && !button->testTriggerA(), "90 frames: the skip latches and A disappears");
+    check(petari_skip_progress() == 1.0f, "progress is full while latched");
+
+    // The cutscene ends and gameplay resumes with Space still down: no jump.
+    petari_skip_set_context(Skip::kGameplay);
+    bool sawA = false;
+    for (int i = 0; i < 40; ++i) {
+        rig.frame();
+        sawA = sawA || button->testButtonA() || button->testTriggerA();
+    }
+    check(!petari_skip_active() && !sawA, "gameplay resumes with Space held: the skip ends and A never reaches the game");
+    lift(In::Key::Space);
+    bool changed = false;
+    for (int i = 0; i < 6; ++i) {
+        rig.frame();
+        changed = changed || button->isChangeAnyState() || button->testButtonA();
+    }
+    check(!changed, "its release is hidden too");
+    press(In::Key::Space);
+    rig.frame();
+    check(button->testTriggerA(), "the next Space press is a jump");
+    lift(In::Key::Space);
+    rig.frames_(6);
+
+    // A yes/no choice appears while the skip runs: the skip ends, and the
+    // latching hold never becomes the A press the choice's buttons wait for
+    // (ButtonPaneController::trySelect needs an A trigger); only a fresh
+    // press after the release can answer.
+    petari_skip_set_context(Skip::kSkippable);
+    press(In::Key::Space);
+    rig.frames_(Skip::kHoldFrames + 5);
+    check(petari_skip_active(), "second skip latched");
+    petari_skip_set_context(Skip::kChoice);
+    bool answered = false;
+    for (int i = 0; i < 120; ++i) {
+        rig.frame();
+        answered = answered || button->testTriggerA() || button->testButtonA();
+    }
+    check(!petari_skip_active() && !answered, "a choice ends the skip; the held Space never answers it");
+    lift(In::Key::Space);
+    for (int i = 0; i < 6; ++i) {
+        rig.frame();
+        answered = answered || button->isChangeAnyState() || button->testButtonA();
+    }
+    check(!answered, "nor does its release");
+    press(In::Key::Space);
+    rig.frame();
+    check(button->testTriggerA() && !petari_skip_active(), "a fresh press reaches the choice (the player answers)");
+    lift(In::Key::Space);
+    rig.frames_(6);
+
+    // Mod off: a long hold in a cutscene is only A.
+    PetariNative::Mods::setEnabled(PetariNative::Mods::Mod::SkipCutscenes, false);
+    petari_skip_set_context(Skip::kSkippable);
+    press(In::Key::Space);
+    rig.frames_(200);
+    check(button->testButtonA() && !petari_skip_active(), "mod off: holding Space is A, never a skip");
+    lift(In::Key::Space);
+    rig.frames_(6);
+    petari_skip_set_context(0);
+    Skip::resetForTesting();
+    PetariNative::Mods::resetForTesting();
+}
+
+// --- Point to move mod (petari/point_move.hpp) ------------------------------
+
+void testPointMoveStick() {
+    namespace PM = PetariNative::PointMove;
+    float x = 1.0f, y = 1.0f;
+    PM::stickFor(10.0f, 0.0f, 456.0f, &x, &y);
+    check(x == 0.0f && y == 0.0f, "inside the 3% dead zone: no stick");
+    PM::stickFor(0.0f, -456.0f * 0.20f, 456.0f, &x, &y);
+    check(near(x, 0.0f, 1e-5f) && near(y, 1.0f, 1e-4f), "20% of the screen above Mario: full stick up");
+    PM::stickFor(456.0f, 0.0f, 456.0f, &x, &y);
+    check(near(x, 1.0f, 1e-5f) && near(y, 0.0f, 1e-5f), "far right: full stick right");
+    PM::stickFor(0.0f, 456.0f * 0.04f, 456.0f, &x, &y);
+    check(near(x, 0.0f, 1e-5f) && near(y, -1.0f, 1e-4f), "always run: just outside the dead zone, below Mario: full stick down");
+    PM::stickFor(30.0f, -40.0f, 456.0f, &x, &y);
+    check(near(x, 0.6f, 1e-4f) && near(y, 0.8f, 1e-4f), "always run: full length, the pointer's direction");
+}
+
+void testPointMoveThroughKpad() {
+    namespace PM = PetariNative::PointMove;
+    namespace Mods = PetariNative::Mods;
+    Rig rig;
+    Mods::resetForTesting();
+    PM::resetForTesting();
+    WPadButton* button = rig.pad->mButton;
+    auto stickX = [&] { return rig.pad->mStick->mStick.x; };
+    auto stickY = [&] { return rig.pad->mStick->mStick.y; };
+
+    // Mod off: left click is B, the stick stays centered.
+    petari_point_move_publish(true, 1.0f, 0.0f);
+    In::mouseButtonEvent(In::MouseButton::Left, true);
+    rig.frames_(3);
+    check(button->testButtonB() && near(stickX(), 0.0f, 0.01f), "mod off: left click is B (Star Bits)");
+    In::mouseButtonEvent(In::MouseButton::Left, false);
+    rig.frames_(6);
+
+    // Mod on, normal play: left steers, no B.
+    Mods::setEnabled(Mods::Mod::PointToMove, true);
+    petari_point_move_publish(true, 0.6f, 0.8f);
+    In::mouseButtonEvent(In::MouseButton::Left, true);
+    bool sawB = false;
+    for (int i = 0; i < 10; ++i) {
+        rig.frame();
+        sawB = sawB || button->testButtonB() || button->testTriggerB();
+    }
+    check(!sawB && petari_point_move_claimed(), "mod on: a left press in normal play sends no B");
+    float cue[4] = {};
+    check(!petari_point_move_cue(&cue[0], &cue[1], &cue[2], &cue[3]), "no cue before the game publishes the points");
+    petari_point_move_publish_points(0.1f, 0.2f, 0.5f, -0.4f);
+    check(petari_point_move_cue(&cue[0], &cue[1], &cue[2], &cue[3]) && cue[0] == 0.1f && cue[3] == -0.4f,
+          "the cue gives Mario's and the pointer's points while steering");
+    check(stickX() > 0.4f && stickY() > 0.6f && near(stickX() / stickY(), 0.75f, 0.1f),
+          "the stick follows the pointer direction (0.6, 0.8): " + std::to_string(stickX()) + ", " + std::to_string(stickY()));
+    petari_point_move_publish(true, -1.0f, 0.0f);
+    rig.frames_(3);
+    check(stickX() < -0.9f, "recomputed every frame: the stick turns left");
+    press(In::Key::S);
+    rig.frames_(3);
+    check(stickY() < -0.9f && near(stickX(), 0.0f, 0.05f), "a stick key (S) overrides the pointer");
+    lift(In::Key::S);
+    rig.frames_(3);
+    // A demo starts mid-hold: no movement and still no B.
+    petari_point_move_publish(false, 0.0f, 0.0f);
+    for (int i = 0; i < 5; ++i) {
+        rig.frame();
+        sawB = sawB || button->testButtonB();
+    }
+    check(!sawB && near(stickX(), 0.0f, 0.05f), "normal play pauses mid-hold: stick centered, no B");
+    In::mouseButtonEvent(In::MouseButton::Left, false);
+    for (int i = 0; i < 6; ++i) {
+        rig.frame();
+        sawB = sawB || button->isChangeAnyState();
+    }
+    check(!sawB && near(stickX(), 0.0f, 0.01f) && near(stickY(), 0.0f, 0.01f), "release: Mario stops, no B on release");
+    check(!petari_point_move_cue(&cue[0], &cue[1], &cue[2], &cue[3]), "no cue after the release");
+
+    // Outside normal play (a menu): left click is B as before.
+    petari_point_move_publish(false, 0.0f, 0.0f);
+    In::mouseButtonEvent(In::MouseButton::Left, true);
+    rig.frames_(3);
+    check(button->testButtonB() && !petari_point_move_claimed(), "menus: left click is still B");
+    In::mouseButtonEvent(In::MouseButton::Left, false);
+    rig.frames_(6);
+
+    // The B key is Wii B (Star Bits at the pointer) with the mod on.
+    press(In::Key::B);
+    rig.frames_(3);
+    check(button->testButtonB(), "the B key sends B");
+    lift(In::Key::B);
+    rig.frames_(6);
+    Mods::resetForTesting();
+    PM::resetForTesting();
+}
+
 void testCappyInput() {
     namespace Mods = PetariNative::Mods;
     using In::PadButton;
@@ -2509,6 +2807,7 @@ int main() {
     testBindings();
     testControlsSummary();
     testConnection();
+    testLastDevice();
     testButtons();
     testStart();
     testStick();
@@ -2530,6 +2829,10 @@ int main() {
     testEditorPick();
     testMods();
     testCappyInput();
+    testSkipMachine();
+    testPointMoveStick();
+    testPointMoveThroughKpad();
+    testSkipThroughKpad();
 #ifdef PETARI_INPUT_TEST_SDL3
     testSdl3();
 #endif

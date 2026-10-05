@@ -24,6 +24,10 @@
 #include "Game/Util/SequenceUtil.hpp"
 #include "Game/Util/SoundUtil.hpp"
 
+#ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
 void ScenarioStarter_FORCE_MATCH_SDATA2() {
     (void)1.0f;
     (void)0.0f;
@@ -326,6 +330,16 @@ bool ScenarioStarter::receiveOtherMsg(u32 msg, HitSensor* pSender, HitSensor* pR
 }
 
 bool ScenarioStarter::trySkipTrigger() const {
+#ifdef PETARI_NATIVE
+    // Hold-to-skip mod: the game's own skip window, also on a first visit.
+    if (CutsceneSkip::isActive() && MR::isGreaterStep(this, 10) && MR::isLessStep(this, _F8)) {
+        if (!_124) {
+            OSReport("[skip] spin-driver launch: skipped at step %d\n", getNerveStep());
+        }
+        return true;
+    }
+#endif
+
     bool result;
     if (!MR::isAlreadyVisitedCurrentStageAndScenario()) {
         result = false;

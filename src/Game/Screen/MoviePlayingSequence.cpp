@@ -19,6 +19,8 @@
 #ifdef PETARI_NATIVE
 // Progress telemetry and the automated smoke run (native/app); observation only.
 #include <petari/milestone.hpp>
+// Hold-to-skip mod: any movie takes the game's FinalBattle skip below.
+#include "Game/System/CutsceneSkip.hpp"
 #endif
 
 namespace {
@@ -370,6 +372,17 @@ bool MoviePlayingSequence::trySkip() {
     if (!MR::isActiveMoviePlayer()) {
         return false;
     }
+
+#ifdef PETARI_NATIVE
+    if (CutsceneSkip::isActive()) {
+        OSReport("[skip] movie %s: stopped at frame %d of %d\n", mInfo->mMovieName, MR::getMovieCurrentFrame(), MR::getMovieTotalFrame());
+        MR::stopMoviePlayer();
+        MR::forceCloseWipeFade();
+        setNerve(GET_NERVE(MoviePlayingSequence, HostTypeEndWait));
+
+        return true;
+    }
+#endif
 
     if (!MR::isEqualStringCase(mInfo->mMovieName, "/MovieData/FinalBattle.thp")) {
         return false;

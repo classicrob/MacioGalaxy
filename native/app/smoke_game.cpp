@@ -53,14 +53,14 @@ bool warpPlayer(const Step& step) {
     return true;
 }
 
-Observation observeGame(bool wantPlayer) {
+Observation observeGame(bool wantPlayer, bool takeEvents) {
     Observation observation;
 
     const PetariNative::Platform::VI::DisplayState display = PetariNative::Platform::VI::displayState();
     observation.videoConfigured = display.configured;
     observation.videoBlack = display.black;
 
-    const unsigned long count = petari_milestone_count();
+    const unsigned long count = takeEvents ? petari_milestone_count() : gMilestonesRead;
     for (; gMilestonesRead < count; ++gMilestonesRead) {
         const char* name = petari_milestone_at(gMilestonesRead);
         observation.milestones.push_back(name != nullptr ? name : "(milestone history overflowed)");
@@ -68,7 +68,7 @@ Observation observeGame(bool wantPlayer) {
 
     std::vector<UiObserve::Target> targets;
     std::vector<UiObserve::Prompt> prompts;
-    UiObserve::take(&targets, &prompts);
+    if (takeEvents) UiObserve::take(&targets, &prompts);
     for (const UiObserve::Target& target : targets) {
         observation.targets.push_back({target.id, target.index, target.u, target.v, target.flags});
     }
@@ -77,7 +77,7 @@ Observation observeGame(bool wantPlayer) {
     }
     // Taken every frame, so the fixed store never fills with stale frames.
     std::vector<ActorObserve::Actor> actors;
-    ActorObserve::take(&actors);
+    if (takeEvents) ActorObserve::take(&actors);
     for (const ActorObserve::Actor& actor : actors) {
         observation.actors.push_back({actor.kind, actor.x, actor.y, actor.z, actor.dx, actor.dy, actor.dz, actor.state, actor.flags});
     }

@@ -12,7 +12,8 @@ selection have been exercised in the full game; later controls remain unverified
 | F | Spin |
 | Shift | Crouch / ground pound |
 | Mouse motion | Move the Star Pointer / collect Star Bits |
-| Left mouse button | Shoot Star Bits |
+| Left mouse button | Shoot Star Bits. With the Point to move mod on: hold to run toward the pointer (native/MODS.md) |
+| B | Shoot Star Bits (the Wii B, like the left mouse button; hold it to stroke pointer objects) |
 | Hold right mouse button | Interact with pointer targets / Pull Stars |
 | Q / E | Rotate camera |
 | C | Recenter camera |
@@ -77,6 +78,7 @@ have input-component tests but have not been approved through gameplay:
 | Arrow keys | D-pad; Up enters first-person view where supported, Down or Space leaves it |
 | F1 or ` | Native Home menu: Resume, Controls (every control, remappable), Mods (with Level Select, native/LEVEL_SELECT.md), Restart from Title, Quit |
 | G / V | Optional mods (off by default; F1 → Mods): collect visible Star Bits / fire a Star Bit at the nearest enemy. See native/MODS.md |
+| Hold left mouse | Only with the Point to move mod on (F1 → Mods): Mario runs toward the pointer; keys still jump, spin and crouch; B shoots Star Bits. See native/MODS.md |
 | R | Cap throw, only with the Cappy mod on (F1 → Mods; it needs Odyssey movement). Hold to keep Cappy out. See native/MODS.md |
 | J / L, I / K, Z / X, Command or middle mouse + mouse, trackpad scroll and pinch, right stick | Only with the Odyssey camera mod on (F1 → Mods → Odyssey camera): orbit, pitch, zoom. C recentres. See native/MODS.md |
 | P | Only with Photo mode on (F1 → Mods → Odyssey camera → Photo mode): freeze the game and fly a free camera (WASD, Space/Shift, mouse drag); O saves a screenshot; P or Escape returns. See native/MODS.md |
@@ -125,7 +127,7 @@ hold:
 
 | The game asks you to | On the keyboard |
 | --- | --- |
-| Press A and B (title screen) | Return. Or hold Space, then press Backspace |
+| Press A and B (title screen) | Return. Or hold Space, then press B (or Backspace) |
 | Press any button (strap warning, 60 Hz prompt) | Space |
 | Shake the remote (spin; climb vines; swing from plants; jump off the Ray; launch from slingshots) | F |
 | Point at and grab a Pull Star or a pointer target | Put the mouse on it and hold the right button; release to let go |

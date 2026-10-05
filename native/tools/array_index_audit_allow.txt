@@ -1,0 +1,23 @@
+# Reviewed COMPUTED findings in files whose owners did not annotate them. Format: path :: source text :: why bounded.
+# Add a row only after reading the code; a new finding with no row fails the audit.
+native/app/frame_stats.cpp :: if (mWorstCount < kWorst || frame.intervalMs > mWorst[mWorstCount - 1].intervalMs) { :: short-circuit: mWorst[mWorstCount - 1] is read only when mWorstCount == kWorst (> 0)
+native/app/frame_stats.cpp :: for (; i > 0 && mWorst[i - 1].intervalMs < frame.intervalMs; --i) { :: i starts <= kWorst - 1 and the loop only reads mWorst[i - 1] while i > 0
+native/app/frame_stats.cpp :: mWorst[i] = mWorst[i - 1]; :: i starts <= kWorst - 1 and the loop only reads mWorst[i - 1] while i > 0
+native/app/frame_stats.cpp :: return sorted[std::max(1u, r) - 1]; :: rank <= mWindowCount <= kWindow (ceil(p/100 * count)), and max(1, r) - 1 >= 0
+native/app/frame_stats.cpp :: static_cast<unsigned long long>(mWindow[mWindowCount - 1].index), rank(50), rank(95), rank(99), :: mWindowCount > 0 here (returns early at 0) and <= kWindow
+native/app/frame_stats.cpp :: sorted[mWindowCount - 1], over16, over33, late); :: mWindowCount > 0 here (returns early at 0) and <= kWindow
+native/gx/game_math.cpp :: bigEndianPositions[i * 4] = static_cast<u8>(bits >> 24); :: i < 9, so i * 4 + 3 <= 35 < 36 (sizeof positions)
+native/gx/game_math.cpp :: bigEndianPositions[i * 4 + 1] = static_cast<u8>(bits >> 16); :: i < 9, so i * 4 + 3 <= 35 < 36 (sizeof positions)
+native/gx/game_math.cpp :: bigEndianPositions[i * 4 + 2] = static_cast<u8>(bits >> 8); :: i < 9, so i * 4 + 3 <= 35 < 36 (sizeof positions)
+native/gx/game_math.cpp :: bigEndianPositions[i * 4 + 3] = static_cast<u8>(bits); :: i < 9, so i * 4 + 3 <= 35 < 36 (sizeof positions)
+native/input/wpad_host.cpp :: Command& command = ch.commands[(ch.commandHead + ch.commandCount) % kCommandCapacity]; :: index is reduced modulo kCommandCapacity
+native/input/wpad_host.cpp :: pending[i] = ch.commands[(ch.commandHead + i) % kCommandCapacity]; :: index is reduced modulo kCommandCapacity
+native/movie/thp_video_check.cpp :: c.huffman[id * 2 + tableClass] = table; :: tableClass > 1 || id > 1 returns above: id * 2 + tableClass <= 3 < 4
+native/movie/thp_video_check.cpp :: if (dc > 1 || ac > 1 || !c.huffman[dc * 2].valid || !c.huffman[ac * 2 + 1].valid) { :: dc > 1 || ac > 1 returns first (short-circuit): dc * 2 and ac * 2 + 1 <= 3
+native/platform/audio/dsp_renderer.cpp :: deltas[i + 1] = static_cast<std::int16_t>(static_cast<std::int16_t>(src[0] << 12) >> 1); :: i < 16 in steps of 2 (i + 1 <= 15) / steps of 4 with k < 4 (i + k <= 15)
+native/platform/audio/dsp_renderer.cpp :: deltas[i + k] = static_cast<std::int16_t>(static_cast<std::int16_t>(bits << 14) >> 1); :: i < 16 in steps of 2 (i + 1 <= 15) / steps of 4 with k < 4 (i + k <= 15)
+native/platform/nand/nand_host.cpp :: return ERRMAP[i + 1]; :: i steps by 2 over an even-length table of pairs, so i + 1 < size
+native/movie/thp_video_check.cpp :: const std::uint16_t entry = symbols.lookup[index][peek >> (16 - kLookupBits)]; :: peek16() is masked to 16 bits, so peek >> (16 - kLookupBits) < 512; index = id * 2 + class <= 3 (parseHuffman rejects id/class > 1)
+native/movie/thp_video_check.cpp :: *symbol = symbols.values[index][symbols.offsets[index][length] + code - table.firstCodes[length]]; :: a validated DHT (parseHuffman): sum of counts <= 256 and code - firstCodes[length] < counts[length]
+native/movie/thp_video_check.cpp :: (length << 8) | symbols.values[index][symbols.offsets[index][length] + k]); :: a validated DHT (parseHuffman): offsets[length] + k < the table total, which is <= 256
+native/movie/thp_video_check.cpp :: symbols.lookup[index][(code << shift) | fill] = entry; :: parseHuffman rejects oversubscribed codes: (code << shift) | fill < 1 << kLookupBits (512)

@@ -147,9 +147,16 @@ struct Rect {
     bool contains(float x, float y) const { return x >= x0 && x < x1 && y >= y0 && y < y1; }
 };
 
-constexpr int kMaxItems = 10;
+constexpr int kMaxMods = 8;          // Mods::Mod::Count must stay <= this (the Mods page has one toggle each)
+// The Mods page lists every mod toggle, then Odyssey camera, Level Select, Mod folder and Back.
+constexpr int kModsPageExtraItems = 4;
+// Sized from the worst page (the Mods page); other pages use at most 6 items. View::items
+// must never be indexed past this: a write past it lands on View::lineCount.
+constexpr int kMaxItems = kMaxMods + kModsPageExtraItems;
+static_assert(kMaxItems >= kMaxMods + kModsPageExtraItems, "the Mods page must fit in View::items");
 constexpr int kMaxControls = 20;
-constexpr int kMaxMods = 6;
+constexpr int kMaxProgressLines = 8;   // the My Progress page: a header and up to 7 missions; <= kMaxControls
+static_assert(kMaxProgressLines <= kMaxControls, "the progress lines are shown through View::lines");
 constexpr int kMaxFolderMods = 64;   // detected disc-file mods (native/MODS.md)
 constexpr int kFolderPageSize = 3;   // toggles per page of the Mod folder page
 
@@ -334,7 +341,8 @@ public:
     View view() const;
 
 private:
-    int itemCount() const;
+    int itemCount() const;      // the page's item count, capped at kMaxItems
+    int pageItemCount() const;  // uncapped
     Rect itemRect(int index) const;
     float adjustX() const { return mWidescreen ? mConfig.widescreenAdjustX : 1.0f; }
     void play(int num) const;
@@ -380,12 +388,12 @@ private:
     bool mProgressResetArmed = false;
     char mProgressLabels[4][96] = {};
     char mProgressMessage[160] = {};
-    ControlsEntry mProgressLines[8];
+    ControlsEntry mProgressLines[kMaxProgressLines];
     int mProgressLineCount = 0;
     void refreshProgress();
     void changeProgressGalaxy(int delta);
     int folderPages() const { return (mFolderCount + kFolderPageSize - 1) / kFolderPageSize; }
-    int folderShown() const { return std::min(kFolderPageSize, mFolderCount - mFolderPageIndex * kFolderPageSize); }
+    int folderShown() const { return std::clamp(mFolderCount - mFolderPageIndex * kFolderPageSize, 0, kFolderPageSize); }
     int modsBackIndex() const { return mModCount + (mFolderPage ? 3 : 2); }
     void refreshFolderLabels();
     int mLevelGalaxy = 0;   // index into LaunchStage::galaxies
@@ -465,6 +473,29 @@ ImFont* galaxyTitleFont();  // MenuFont64
 // coordinates. Draws nothing while the menu is hidden. The overlay window
 // takes no input, so ImGui never captures the game's keyboard or mouse.
 void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageHeight);
+// The hold-to-skip ring (Mods::Mod::SkipCutscenes). The overlay asks this once per frame while the
+// menu is hidden: 0 or less draws nothing, 0..1 fills a ring in the top right corner (1.5 s of
+// holding = 1), 1 while a skip runs shows it full. The app points it at petari_skip_progress
+// (native/include/petari/skip.hpp) by default when the input layer is in the build, else null (no
+// ring); pass null to disable it. With the input layer the ring names the key bound to A
+// (Space by default) rather than showing the A icon. Any thread, set once.
+using HoldProgressFn = float (*)();
+void setHoldProgressSource(HoldProgressFn source);
+// Draws the ring for `progress` (used by drawImGuiOverlay; exposed for the render tool and tests).
+// `key` is the name of the key being held ("Space"), shown in the ring; null or "" shows the
+// controller's A icon. Same thread and frame rules as drawImGuiOverlay.
+void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight, const char* key = nullptr);
+// The Point-to-move steering cue (Mods::Mod::PointToMove): while the left button steers Mario, a
+// faint arrow from Mario toward the pointer shows where he is headed. The overlay asks this once per
+// frame while the menu is hidden. It returns true only while the cue is active and fills Mario's
+// and the pointer's positions in KPAD space (-1..1 across the game image, y down). The app points it
+// at petari_point_move_cue (native/include/petari/point_move.hpp) by default when the input layer is in
+// the build; null disables the cue.
+using SteerCueFn = bool (*)(float* marioX, float* marioY, float* pointerX, float* pointerY);
+void setSteerCueSource(SteerCueFn source);
+// Draws the cue (used by drawImGuiOverlay; exposed for the render tool and tests).
+void drawSteerCue(float marioX, float marioY, float pointerX, float pointerY, float imageX, float imageY, float imageWidth,
+                  float imageHeight);
 // The title screen's keyboard hint (ASCII), in a bar across the top of the
 // image, above the logo. drawImGuiOverlay draws it while the input layer
 // reports the title's "press A and B" prompt and the menu is hidden, when

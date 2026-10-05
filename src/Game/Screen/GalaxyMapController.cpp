@@ -22,6 +22,10 @@
 #include <JSystem/JUtility/JUTVideo.hpp>
 #include <nw4r/lyt/drawInfo.h>
 
+#ifdef PETARI_NATIVE
+#include "Game/System/CutsceneSkip.hpp"
+#endif
+
 namespace {
     static const s32 sDisplayKeepFrame = 30;
     static const s32 sMapFadeinoutFrame = 12;
@@ -599,7 +603,12 @@ bool GalaxyMapController::tryDisplayAndKeyWait() {
         mMap->dispIconAButton();
     }
 
-    if (MR::isGreaterStep(this, ::sDisplayKeepFrame) && MR::testCorePadTriggerA(WPAD_CHAN0)) {
+    bool isDecide = MR::testCorePadTriggerA(WPAD_CHAN0);
+#ifdef PETARI_NATIVE
+    isDecide = isDecide || CutsceneSkip::isActive();  // hold-to-skip mod: the new-galaxy map closes
+#endif
+
+    if (MR::isGreaterStep(this, ::sDisplayKeepFrame) && isDecide) {
         setNerve(GET_NERVE_ANON(GalaxyMapControllerFadeout));
 
         return true;

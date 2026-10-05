@@ -238,11 +238,14 @@ int main(int argc, char** argv) {
         {PETARI_ICON_HOME " This menu", "F1 / `", "Guide"},
     };
     menu.setControls(controls, static_cast<int>(sizeof(controls) / sizeof(controls[0])));
-    // Every mod, as the game lists them (native/input/mods.cpp).
-    HM::ModsEntry mods[6] = {{"Collect Star Bits (G)", false}, {"Shoot nearest enemy (V)", false},
-                             {"Odyssey movement", true}, {"Cappy (R)", false, 2},
-                             {"Jump during a ground pound dives", true, 2}, {"Level editor (Tab)", true}};
-    menu.setMods(mods, 6);
+    // Every slot filled, with the Mod folder entry below: the page at its tallest (12 rows).
+    HM::ModsEntry mods[HM::kMaxMods] = {{"Collect Star Bits (G)", false}, {"Shoot nearest enemy (V)", false},
+                                        {"Odyssey movement", true}, {"Cappy (R)", false, 2},
+                                        {"Skip cutscenes", false}};
+    for (int i = 5; i < HM::kMaxMods; ++i) {
+        std::snprintf(mods[i].label, sizeof(mods[i].label), "Spare mod %d", i + 1);
+    }
+    menu.setMods(mods, HM::kMaxMods);
     HM::FolderModEntry folder[2] = {{"Coin ring (3 files)", true}, {"Retexture pack (40 files)", false}};
     menu.setFolderMods(folder, 2);
     menu.setFooterKeys("Space", "Escape", "F1", "\xE2\x86\x90/\xE2\x86\x92");
@@ -250,8 +253,9 @@ int main(int argc, char** argv) {
     auto settle = [&] {
         for (int i = 0; i < 12; ++i) menu.update(HM::FrameInput{});
     };
+    bool menuHidden = false;  // the hold ring shots: the game scene with no menu
     auto shot = [&](const char* name) {
-        HM::publish(menu.view());
+        HM::publish(menuHidden ? HM::View{} : menu.view());
         io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
         io.DeltaTime = 1.0f / 60.0f;
         ImGui::NewFrame();
@@ -315,6 +319,54 @@ int main(int argc, char** argv) {
     menu.update(press(Down));
     menu.update(press(A));
     shot("confirm");
+    // The hold-to-skip ring while Space is held: a third, two thirds, and the skip running.
+    static float ringProgress = 0.0f;
+    HM::setHoldProgressSource([]() { return ringProgress; });
+    menuHidden = true;
+    for (const float p : {0.33f, 0.66f, 1.0f}) {
+        ringProgress = p;
+        shot(p < 0.5f ? "skip-ring-third" : p < 1.0f ? "skip-ring-twothirds" : "skip-ring-full");
+    }
+    // The same ring for a keyboard player (the key bound to A) and a long key name.
+    {
+        menuHidden = true;
+        ringProgress = 0.66f;
+        auto keyShot = [&](const char* name, const char* key) {
+            io.DisplaySize = ImVec2(static_cast<float>(width), static_cast<float>(height));
+            io.DeltaTime = 1.0f / 60.0f;
+            HM::publish(HM::View{});
+            ImGui::NewFrame();
+            HM::drawHoldRing(ringProgress, imageX, imageY, imageW, imageH, key);
+            ImGui::Render();
+            Canvas canvas;
+            canvas.width = width;
+            canvas.height = height;
+            canvas.rgb.assign(static_cast<size_t>(width) * height * 3, 0.0f);
+            fillBackground(canvas, backgroundRgb, bw, bh);
+            rasterize(canvas, texture);
+            std::vector<unsigned char> rgb(canvas.rgb.size());
+            for (size_t i = 0; i < rgb.size(); ++i) rgb[i] = static_cast<unsigned char>(std::clamp(canvas.rgb[i], 0.0f, 1.0f) * 255.0f + 0.5f);
+            PetariNative::writePngRgb(out + "/" + name + ".png", static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height),
+                                      rgb.data());
+            std::printf("%s/%s.png\n", out.c_str(), name);
+        };
+        keyShot("skip-ring-key-space", "Space");
+        keyShot("skip-ring-key-shift", "Left Shift");
+    }
+    // The Point-to-move steering cue: Mario at the lower middle, the pointer up and to the right.
+    {
+        menuHidden = true;
+        ringProgress = 0.0f;
+        static float cuePointer[2] = {0.65f, -0.35f};
+        HM::setSteerCueSource([](float* mx, float* my, float* px, float* py) {
+            *mx = 0.0f; *my = 0.35f; *px = cuePointer[0]; *py = cuePointer[1];
+            return true;
+        });
+        shot("steer-cue-far");
+        cuePointer[0] = 0.12f; cuePointer[1] = 0.20f;
+        shot("steer-cue-near");
+        HM::setSteerCueSource(nullptr);
+    }
     ImGui::DestroyContext();
     return 0;
 }

@@ -22,6 +22,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <vector>
 #include <array>
 #include <cfloat>
@@ -422,7 +423,7 @@ void drawRemapTable(ImDrawList* list, ImFont* font, const ImageSpace& image, con
     }
 
     const float pulse = 0.65f + 0.35f * std::sin(static_cast<float>(ImGui::GetTime()) * 6.0f);
-    for (int r = 0; r < remap.rowCount; r++) {
+    for (int r = 0; r < std::clamp(remap.rowCount, 0, kRemapVisibleRows); r++) {
         const RemapRow& row = remap.rows[r];
         const float top = areaMin.y + rowHeight * static_cast<float>(r + 1);
         const float middle = top + rowHeight * 0.5f;
@@ -582,8 +583,145 @@ void drawProgressBadges(float imageX, float imageY, float imageWidth, float imag
     list->PopClipRect();
 }
 
+#ifdef PETARI_HOME_MENU_INPUT
+extern "C" float petari_skip_progress(void);  // native/input/skip.cpp: the hold-to-skip mod's progress
+#endif
+
+namespace {
+#ifdef PETARI_HOME_MENU_INPUT
+std::atomic<HoldProgressFn> gHoldProgress{&petari_skip_progress};
+#else
+std::atomic<HoldProgressFn> gHoldProgress{nullptr};
+#endif
+}  // namespace
+
+void setHoldProgressSource(HoldProgressFn source) {
+    gHoldProgress.store(source, std::memory_order_relaxed);
+}
+
+void drawHoldRing(float progress, float imageX, float imageY, float imageWidth, float imageHeight, const char* key) {
+    if (!(progress > 0.0f) || !(imageWidth > 0.0f) || !(imageHeight > 0.0f) || !ImGui::GetCurrentContext()) {
+        return;
+    }
+    progress = std::min(progress, 1.0f);
+    const ImageSpace image{imageX, imageY, imageWidth, imageHeight};
+    const float unit = imageHeight / 720.0f;
+    // A tap in a cutscene barely shows: the ring fades in over the first tenth of the hold.
+    const float alpha = std::clamp(progress / 0.1f, 0.0f, 1.0f);
+    const float radius = unit * 30.0f;
+    const ImVec2 center = image.point(0.92f, -0.80f);
+    const bool full = progress >= 1.0f;
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    list->PushClipRect(image.point(-1.0f, -1.0f), image.point(1.0f, 1.0f), false);
+    list->AddCircleFilled(center, radius + unit * 5.0f, color(0.0f, 0.10f, 0.18f, 0.62f * alpha), 48);
+    list->AddCircle(center, radius, color(0.55f, 0.85f, 1.0f, 0.28f * alpha), 48, unit * 5.0f);
+    const float start = -1.5707963f;  // twelve o'clock
+    list->PathArcTo(center, radius, start, start + 6.2831853f * progress, 48);
+    list->PathStroke(full ? color(1.0f, 0.92f, 0.45f, alpha) : color(0.40f, 0.86f, 1.0f, alpha), 0, unit * 5.0f);
+    if (key != nullptr && key[0] != '\0') {
+        // A keycap's worth of text inside the ring: shrinks to fit longer names ("Left Shift").
+        centeredText(list, textFont(), unit * 17.0f, radius * 1.65f, center, color(1.0f, 1.0f, 1.0f, 0.95f * alpha), key);
+    } else {
+        centeredText(list, textFont(), unit * 30.0f, radius * 1.6f, center, color(1.0f, 1.0f, 1.0f, 0.95f * alpha), PETARI_ICON_A);
+    }
+    list->PopClipRect();
+}
+
+#ifdef PETARI_HOME_MENU_INPUT
+extern "C" bool petari_point_move_cue(float*, float*, float*, float*);  // native/input/point_move.cpp
+#endif
+
+namespace {
+#ifdef PETARI_HOME_MENU_INPUT
+std::atomic<SteerCueFn> gSteerCue{&petari_point_move_cue};
+#else
+std::atomic<SteerCueFn> gSteerCue{nullptr};
+#endif
+}  // namespace
+
+void setSteerCueSource(SteerCueFn source) {
+    gSteerCue.store(source, std::memory_order_relaxed);
+}
+
+void drawSteerCue(float marioX, float marioY, float pointerX, float pointerY, float imageX, float imageY, float imageWidth,
+                  float imageHeight) {
+    if (!(imageWidth > 0.0f) || !(imageHeight > 0.0f) || !ImGui::GetCurrentContext() || !std::isfinite(marioX) ||
+        !std::isfinite(marioY) || !std::isfinite(pointerX) || !std::isfinite(pointerY)) {
+        return;
+    }
+    const ImageSpace image{imageX, imageY, imageWidth, imageHeight};
+    const float unit = imageHeight / 720.0f;
+    const ImVec2 from = image.point(marioX, marioY);
+    const ImVec2 to = image.point(pointerX, pointerY);
+    const float dx = to.x - from.x, dy = to.y - from.y;
+    const float distance = std::sqrt(dx * dx + dy * dy);
+    // Inside Mario's dead zone (3% of the screen height) he does not move: no cue. The cue fades in
+    // over the next few percent so it never pops.
+    const float deadZone = imageHeight * 0.03f;
+    const float alpha = std::clamp((distance - deadZone) / (imageHeight * 0.04f), 0.0f, 1.0f);
+    if (alpha <= 0.0f) {
+        return;
+    }
+    const ImVec2 dir(dx / distance, dy / distance);
+    const ImVec2 side(-dir.y, dir.x);
+    // From a little ahead of Mario, up to a fifth of the screen toward the pointer.
+    const float start = unit * 34.0f;
+    const float length = std::clamp(distance - start - unit * 10.0f, 0.0f, imageHeight * 0.2f);
+    if (length < unit * 12.0f) {
+        return;
+    }
+    const ImVec2 a(from.x + dir.x * start, from.y + dir.y * start);
+    const ImVec2 tip(a.x + dir.x * length, a.y + dir.y * length);
+    const float head = unit * 18.0f;
+    const ImVec2 base(tip.x - dir.x * head, tip.y - dir.y * head);
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    list->PushClipRect(image.point(-1.0f, -1.0f), image.point(1.0f, 1.0f), false);
+    // A dark underlay keeps it readable on light ground; the light arrow itself stays translucent.
+    for (const bool shadow : {true, false}) {
+        const float grow = shadow ? unit * 2.0f : 0.0f;
+        const ImU32 col = shadow ? color(0.0f, 0.05f, 0.1f, 0.35f * alpha) : color(1.0f, 1.0f, 1.0f, 0.62f * alpha);
+        list->AddLine(a, base, col, unit * 5.0f + grow * 2.0f);
+        list->AddTriangleFilled(ImVec2(tip.x + dir.x * grow, tip.y + dir.y * grow),
+                                ImVec2(base.x + side.x * (head * 0.62f + grow), base.y + side.y * (head * 0.62f + grow)),
+                                ImVec2(base.x - side.x * (head * 0.62f + grow), base.y - side.y * (head * 0.62f + grow)), col);
+    }
+    list->PopClipRect();
+}
+
 void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageHeight) {
     const View view = publishedView();
+    if (!view.visible) {
+        if (const SteerCueFn source = gSteerCue.load(std::memory_order_relaxed)) {
+            float mx = 0.0f, my = 0.0f, px = 0.0f, py = 0.0f;
+            if (source(&mx, &my, &px, &py)) {
+                drawSteerCue(mx, my, px, py, imageX, imageY, imageWidth, imageHeight);
+            }
+        }
+        if (const HoldProgressFn source = gHoldProgress.load(std::memory_order_relaxed)) {
+            const float progress = source();
+            const char* key = nullptr;
+#ifdef PETARI_HOME_MENU_INPUT
+            // The key bound to A (Space by default), looked up when a hold starts.
+            static bool sHolding = false;
+            static std::string sKey;
+            if (progress > 0.0f && !sHolding) {
+                HostAllocationScope scope;  // this may be a game thread
+                sKey.clear();
+                const Input::Bindings bindings = Input::bindings();  // a copy: keep it alive through the loop
+                for (const Input::Binding& input : bindings.inputs(Input::Action::A)) {
+                    if (input.device == Input::Binding::Device::Key) {
+                        sKey = Input::displayName(input);
+                        break;
+                    }
+                }
+            }
+            sHolding = progress > 0.0f;
+            // A player on the controller sees the A icon, not the keyboard's key.
+            key = Input::lastDevice() == Input::Binding::Device::Pad ? nullptr : sKey.c_str();
+#endif
+            drawHoldRing(progress, imageX, imageY, imageWidth, imageHeight, key);
+        }
+    }
 #ifdef PETARI_HOME_MENU_INPUT
     // The title's "press A and B": say which keys do that. The text is built
     // from the bindings each time the prompt appears.
@@ -653,23 +791,25 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
 
         // Controls page: action names on the left, inputs on the right, one
         // row each, with a light band on every other row for reading across.
-        if (view.lineCount > 0) {
+        // Clamped to the array: a corrupt count must not read past View::lines.
+        const int lineCount = std::clamp(view.lineCount, 0, kMaxControls);
+        if (lineCount > 0) {
             const ImVec2 areaMin = image.point(view.linesArea.x0, view.linesArea.y0);
             const ImVec2 areaMax = image.point(view.linesArea.x1, view.linesArea.y1);
             // Few lines keep a normal row height from the top rather than stretching.
-            const float rowHeight = std::min((areaMax.y - areaMin.y) / static_cast<float>(view.lineCount), imageHeight * 0.064f);
+            const float rowHeight = std::min((areaMax.y - areaMin.y) / static_cast<float>(lineCount), imageHeight * 0.064f);
             const float areaWidth = areaMax.x - areaMin.x;
             const float textSize = std::min(rowHeight * 0.78f, imageHeight * 0.036f);
             const float pad = areaWidth * 0.02f;
             bool padColumn = false;
-            for (int i = 0; i < view.lineCount; i++) {
+            for (int i = 0; i < lineCount; i++) {
                 padColumn = padColumn || view.lines[i].pad[0] != '\0';
             }
             // Action | keyboard and mouse [| controller].
             const float split = areaMin.x + areaWidth * (padColumn ? 0.3f : 0.42f);
             const float split2 = padColumn ? areaMin.x + areaWidth * 0.69f : areaMax.x;
             const float bandRounding = rowHeight * 0.3f;
-            for (int i = 0; i < view.lineCount; i++) {
+            for (int i = 0; i < lineCount; i++) {
                 const float top = areaMin.y + rowHeight * static_cast<float>(i);
                 const float middle = top + rowHeight * 0.5f;
                 const bool header = view.lines[i].action[0] == '\0';
@@ -696,7 +836,7 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
             drawRemapTable(list, font, image, view.remap, unit, alpha);
         }
 
-        for (int i = 0; i < view.itemCount; i++) {
+        for (int i = 0; i < std::clamp(view.itemCount, 0, kMaxItems); i++) {
             const ViewItem& item = view.items[i];
             galaxyButton(list, font, itemSize, image.point(item.rect.x0, item.rect.y0), image.point(item.rect.x1, item.rect.y1),
                          item.focused, unit, alpha, item.label);

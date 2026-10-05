@@ -108,7 +108,9 @@ add_library(petari_input STATIC
     editor_pick.cpp
     mods.cpp
     remap.cpp
+    point_move.cpp
     remote_model.cpp
+    skip.cpp
     wpad_host.cpp
     ${PETARI_KPAD_SOURCE})
 petari_encode_target_sources(petari_input)

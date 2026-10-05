@@ -82,10 +82,11 @@ constexpr TourEntry kHomeTour[] = {
     {Button::A, "home-remap-done"}, {Button::Plus, nullptr},
     {Button::StickDown, nullptr}, {Button::A, nullptr},  // Mods
     {Button::A, "home-mods"},
-    // To Back (focus clamps there), then up: Mod folder, Level Select, Odyssey camera.
+    // To Back (focus clamps there; one Down per row: 6 mods, Odyssey camera, Level Select,
+    // Mod folder), then up: Mod folder, Level Select, Odyssey camera.
     {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
     {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
-    {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
     {Button::StickUp, nullptr},   {Button::A, nullptr},  // Mod folder
     {Button::A, "home-modfolder"}, {Button::Plus, nullptr},
     {Button::StickUp, nullptr},   {Button::A, nullptr},  // Level Select
@@ -173,6 +174,17 @@ bool stageEnabledFromEnvironment(StageConfig* config) {
             config->warpName = warp + 5;
         } else if (std::sscanf(warp, "%f,%f,%f", &config->warpX, &config->warpY, &config->warpZ) == 3) {
             config->warp = true;
+            for (const char* more = std::strchr(warp, ';'); more != nullptr; more = std::strchr(more + 1, ';')) {
+                StageConfig::WarpPoint point{};
+                if (std::strncmp(more + 1, "name:", 5) == 0) {
+                    const char* end = std::strchr(more + 1, ';');
+                    point.name.assign(more + 6, end != nullptr ? static_cast<size_t>(end - more - 6) : std::strlen(more + 6));
+                } else if (std::sscanf(more + 1, "%f,%f,%f", &point.x, &point.y, &point.z) != 3) {
+                    std::fprintf(stderr, "PETARI SMOKE: PETARI_STAGE_WARP \"%s\": every warp after ';' must be x,y,z or name:<GeneralPos>; not running\n", warp);
+                    return false;
+                }
+                config->moreWarps.push_back(point);
+            }
         } else {
             std::fprintf(stderr, "PETARI SMOKE: PETARI_STAGE_WARP \"%s\" is neither x,y,z nor name:<GeneralPos>; not running\n", warp);
             return false;
@@ -723,9 +735,25 @@ void StageDriver::exercise(const Observation& o, Step& step) {
                  (mConfig.warpName.empty() ? text({mConfig.warpX, mConfig.warpY, mConfig.warpZ})
                                            : "GeneralPos " + mConfig.warpName));
             mPhaseFrames = 0;
-        } else if (mPhaseFrames >= kWarpSettle) {
+        } else if (mPhaseFrames >= kWarpSettle && mWarpIndex < mConfig.moreWarps.size() &&
+                   ((!o.demoActive && o.pausePermitted) || mPhaseFrames >= 7200)) {
+            // The next warp once gameplay is back (a warp into a trigger may start a demo).
+            const StageConfig::WarpPoint& point = mConfig.moreWarps[mWarpIndex++];
+            step.warp = true;
+            step.warpName = point.name;
+            step.warpX = point.x;
+            step.warpY = point.y;
+            step.warpZ = point.z;
+            note("TEST WARP " + std::to_string(mWarpIndex + 1) + " (not gameplay) from " + text(pos) + " to " +
+                 (point.name.empty() ? text({point.x, point.y, point.z}) : "GeneralPos " + point.name));
+            mPhaseFrames = 0;
+        } else if (mPhaseFrames >= kWarpSettle && mWarpIndex >= mConfig.moreWarps.size()) {
             const std::string distance = mConfig.warpName.empty()
-                ? ", " + number(length(sub(pos, Vec{mConfig.warpX, mConfig.warpY, mConfig.warpZ}))) + " units from the target"
+                ? ", " + number(length(sub(pos, mConfig.moreWarps.empty()
+                                                       ? Vec{mConfig.warpX, mConfig.warpY, mConfig.warpZ}
+                                                       : Vec{mConfig.moreWarps.back().x, mConfig.moreWarps.back().y,
+                                                             mConfig.moreWarps.back().z}))) +
+                      " units from the target"
                 : "";
             note("after the warp: at " + text(pos) + distance + " " + lockState(o));
             next(Phase::Ready);

@@ -286,6 +286,19 @@ void testFile() {
           "save then load gives the same bindings");
     check(!std::filesystem::exists(dir / "controls.txt.tmp"), "no temporary file left");
 
+    // A file saved before the B key was a default: its old-default B line gets the B key.
+    write(file, "B=Mouse:Left,Key:Backspace,Pad:East,Pad:RightTrigger\n");
+    check(Remap::load(file, &loaded, &message) && message.empty() && has(loaded, Action::B, In::Binding::key(In::Key::B)) &&
+              loaded.inputs(Action::B) == In::Bindings::defaults().inputs(Action::B),
+          "an old-default B line gains the B key");
+    write(file, "B=Mouse:Left,Key:Backspace,Pad:East,Pad:RightTrigger\nShake=Key:B\n");
+    check(Remap::load(file, &loaded, &message) && !has(loaded, Action::B, In::Binding::key(In::Key::B)) &&
+              has(loaded, Action::Shake, In::Binding::key(In::Key::B)),
+          "a B key the player bound elsewhere stays there");
+    write(file, "B=Mouse:Left\n");
+    check(Remap::load(file, &loaded, &message) && loaded.inputs(Action::B).size() == 1,
+          "a customised B line is left alone");
+
     // A partial hand-written file: the actions it names, defaults for the rest.
     write(file, "# mine\nShake=Key:G\n");
     check(Remap::load(file, &loaded, &message) && slot(loaded, Action::Shake, 0) == kG &&

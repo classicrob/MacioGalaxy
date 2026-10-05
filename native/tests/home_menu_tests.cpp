@@ -1070,6 +1070,34 @@ Bounds drawOverlay(float x, float y, float w, float h) {
     return bounds;
 }
 
+// The hold ring drawn directly with a key name (drawImGuiOverlay passes the bound key when the
+// input layer is built; this test build has none).
+int ringVertices(float progress, const char* key) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1280.0f, 800.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    ImGui::NewFrame();
+    HM::drawHoldRing(progress, 160.0f, 40.0f, 960.0f, 720.0f, key);
+    ImGui::Render();
+    int count = 0;
+    const ImDrawData* data = ImGui::GetDrawData();
+    for (int i = 0; i < data->CmdListsCount; i++) count += data->CmdLists[i]->VtxBuffer.Size;
+    return count;
+}
+
+int cueVertices(float mx, float my, float px, float py) {
+    ImGuiIO& io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1280.0f, 800.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    ImGui::NewFrame();
+    HM::drawSteerCue(mx, my, px, py, 160.0f, 40.0f, 960.0f, 720.0f);
+    ImGui::Render();
+    int count = 0;
+    const ImDrawData* data = ImGui::GetDrawData();
+    for (int i = 0; i < data->CmdListsCount; i++) count += data->CmdLists[i]->VtxBuffer.Size;
+    return count;
+}
+
 void testImGuiOverlay() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -1083,10 +1111,64 @@ void testImGuiOverlay() {
     HM::publish(HM::View{});
     check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "hidden menu draws nothing");
 
+    // The hold-to-skip ring: nothing without a source or at 0, a ring in the top right corner when
+    // held, nothing while the menu itself is up.
+    static float sHold = 0.0f;
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "no hold source: no ring");
+    HM::setHoldProgressSource([]() { return sHold; });
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "hold progress 0: no ring");
+    sHold = -1.0f;
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "inactive (negative) hold: no ring");
+    sHold = 0.5f;
+    const Bounds half = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(half.vertices > 50 && half.x0 > 160.0f + 960.0f * 0.5f && half.y1 < 40.0f + 720.0f * 0.5f &&
+              half.x1 <= 1120.0f + 0.5f && half.y0 >= 40.0f - 0.5f,
+          "half-held ring sits in the image's top right corner");
+    sHold = 1.0f;
+    const Bounds fullRing = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(fullRing.vertices >= half.vertices, "a full ring draws at least the half ring's geometry");
+    sHold = 7.0f;
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == fullRing.vertices, "progress past 1 is clamped");
+    // The Point-to-move steering cue: nothing inside Mario's dead zone or with bad numbers, an arrow
+    // otherwise, and a source that says "inactive" draws nothing.
+    HM::setHoldProgressSource(nullptr);  // the ring's test source must not draw in these frames
+    check(cueVertices(0.0f, 0.0f, 0.0f, 0.0f) == 0, "pointer on Mario: no cue");
+    check(cueVertices(0.0f, 0.0f, 0.03f, 0.0f) == 0, "pointer inside the dead zone: no cue");
+    check(cueVertices(0.0f, 0.0f, 0.8f, -0.4f) >= 10, "pointer far away: an arrow is drawn");
+    check(cueVertices(0.0f, 0.0f, std::nanf(""), 0.0f) == 0, "a NaN pointer draws nothing");
+    check(cueVertices(0.0f, 0.0f, 0.8f, 0.0f) == cueVertices(0.0f, 0.0f, -0.8f, 0.0f), "the arrow has the same geometry in any direction");
+    static bool sActive = false;
+    HM::setSteerCueSource([](float* mx, float* my, float* px, float* py) {
+        *mx = 0.0f; *my = 0.2f; *px = 0.7f; *py = -0.3f;
+        return sActive;
+    });
+    HM::publish(HM::View{});
+    check(drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices == 0, "cue source inactive: nothing drawn");
+    sActive = true;
+    const Bounds cue = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(cue.vertices >= 10 && cue.x0 >= 160.0f - 0.5f && cue.x1 <= 1120.0f + 0.5f && cue.y0 >= 40.0f - 0.5f && cue.y1 <= 760.0f + 0.5f,
+          "active cue draws an arrow inside the image");
+    HM::Menu cueMenu = newMenu();
+    openToList(cueMenu);
+    HM::publish(cueMenu.view());
+    const int withMenu = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices;
+    sActive = false;
+    check(withMenu == drawOverlay(160.0f, 40.0f, 960.0f, 720.0f).vertices, "the cue is hidden while the menu is open");
+    HM::setSteerCueSource(nullptr);
+    HM::publish(HM::View{});
+    const int icon = ringVertices(0.5f, nullptr), spaceKey = ringVertices(0.5f, "Space"), shiftKey = ringVertices(0.5f, "Left Shift");
+    check(icon > 50 && spaceKey > 50 && shiftKey > 50, "the ring draws with the A icon and with a key name");
+    check(ringVertices(0.5f, "") == icon, "an empty key name falls back to the A icon");
+    check(spaceKey != icon || shiftKey != spaceKey, "the key name is drawn in place of the icon");
+    check(ringVertices(0.0f, "Space") == 0, "no ring at 0 even with a key name");
     HM::Menu menu = newMenu();
     openToList(menu);
     HM::publish(menu.view());
     const Bounds list = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    sHold = 0.0f;
+    const Bounds listNoRing = drawOverlay(160.0f, 40.0f, 960.0f, 720.0f);
+    check(list.vertices == listNoRing.vertices, "the ring is hidden while the menu is open");
+    HM::setHoldProgressSource(nullptr);
     check(list.vertices > 100, "list draws the dim, panel, items, and text");
     check(list.x0 >= 160.0f - 0.5f && list.x1 <= 1120.0f + 0.5f && list.y0 >= 40.0f - 0.5f && list.y1 <= 760.0f + 0.5f,
           "drawing stays inside the game image");
@@ -1300,6 +1382,54 @@ void testModsPage() {
     check(menu.phase() == HM::Phase::List && menu.focus() == 2 && menu.takeModToggles() == 0, "Escape returns, no toggle");
     menu.update(press(A));
     check(std::strcmp(menu.view().items[0].label, "Collect visible Star Bits: On") == 0, "state kept on reopen");
+}
+
+// Regression: with every mod slot filled and the Mod folder page present, the Mods page
+// needs kMaxMods + 4 items. It once held 8 for 5 mods (9 items), and items[8] overwrote
+// View::lineCount, so the overlay's Controls loop read off the stack (SIGSEGV on F1 -> Mods).
+void testModsPageCapacity() {
+    HM::Menu menu = newMenu();
+    HM::ModsEntry entries[HM::kMaxMods];
+    for (int i = 0; i < HM::kMaxMods; ++i) {
+        std::snprintf(entries[i].label, sizeof(entries[i].label), "Mod %d", i);
+    }
+    menu.setMods(entries, HM::kMaxMods);
+    HM::FolderModEntry folder[2];
+    std::strcpy(folder[0].label, "Folder mod");
+    menu.setFolderMods(folder, 1);
+    openToList(menu);
+    menu.update(press(Down));
+    menu.update(press(Down));
+    menu.update(press(A));
+    check(menu.phase() == HM::Phase::Mods, "full Mods page opens");
+    const HM::View view = menu.view();
+    check(view.itemCount == HM::kMaxMods + 4 && view.itemCount <= HM::kMaxItems, "Mods page item count fits View::items");
+    check(view.lineCount == 0, "Mods page has no Controls lines (items must not overwrite lineCount)");
+    bool labels = true;
+    bool onScreen = true;
+    for (int i = 0; i < view.itemCount; ++i) {
+        labels = labels && view.items[i].label != nullptr && view.items[i].label[0] != '\0';
+        onScreen = onScreen && view.items[i].rect.y0 >= -1.0f && view.items[i].rect.y1 <= 0.915f;
+    }
+    check(labels, "every Mods page item has a label");
+    check(onScreen, "every Mods page item sits above the footer");
+    check(std::strcmp(view.items[HM::kMaxMods].label, "Odyssey camera...") == 0 &&
+              std::strcmp(view.items[HM::kMaxMods + 1].label, "Level Select") == 0 &&
+              std::strcmp(view.items[HM::kMaxMods + 2].label, "Mod folder...") == 0 &&
+              std::strcmp(view.items[HM::kMaxMods + 3].label, "Back") == 0,
+          "the fixed rows follow the last mod toggle");
+    // The last toggle works, and Back is reachable and leaves the page.
+    for (int i = 0; i < HM::kMaxMods - 1; ++i) menu.update(press(Down));
+    menu.update(press(A));
+    check(menu.takeModToggles() == (1u << (HM::kMaxMods - 1)), "the last mod toggle works");
+    for (int i = 0; i < 20; ++i) menu.update(press(Down));
+    check(menu.focus() == view.itemCount - 1, "focus reaches the last item");
+    menu.update(press(A));
+    check(menu.phase() == HM::Phase::List && menu.focus() == 2, "Back is reachable on a full Mods page");
+    // Escape leaves it too.
+    menu.update(press(A));
+    menu.update(press(Plus | B));
+    check(menu.phase() == HM::Phase::List, "Escape leaves a full Mods page");
 }
 
 void testModFolderPage() {
@@ -1624,6 +1754,7 @@ int main() {
     testRemapper();
     testRemapperScrolling();
     testModsPage();
+    testModsPageCapacity();
     testModFolderPage();
     testProgressPage();
     testLevelSelect();

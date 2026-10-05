@@ -456,10 +456,27 @@ namespace PetariNative::App::Smoke {
 // smoke_game.cpp (SDK side): what the game shows now, and the milestones
 // recorded since the previous call. Main thread, at the seam, while it holds
 // the CPU (before the seam releases it).
-Observation observeGame(bool wantPlayer);
+// takeEvents false (the probes): the state only, leaving milestones, prompts, targets
+// and actors for the script's own call.
+Observation observeGame(bool wantPlayer, bool takeEvents = true);
 // Applies a Step's warp (SDK side, main thread at the seam while it holds the CPU). False when
 // there is no Mario to move.
 bool warpPlayer(const Step& step);
+// skip_probe.cpp (SDK side): PETARI_SKIP_PROBE, holds Space through each cutscene and
+// dialogue to prove the hold-to-skip mod; once per frame at the seam, before the script.
+// True while it holds Space (the script's A presses are then dropped).
+bool skipProbeFrame();
+// PETARI_SKIP_PROBE_ANSWER=yes: where the probe wants the pointer this frame (normalised over the
+// game image) while it answers a yes/no Yes after a skip; false otherwise.
+bool skipProbeAnswerPointer(float* u, float* v);
+// point_probe.cpp (SDK side): PETARI_POINT_PROBE, drives the mouse to prove the Point to move
+// mod. Once per frame at the seam; while active, the script's presses are dropped.
+struct PointProbeStep {
+    bool active = false;
+    bool pointer = false;  // move the pointer to (u, v), normalised over the game image
+    float u = 0.0f, v = 0.0f;
+};
+PointProbeStep pointProbeFrame();
 // collision_probe.cpp (SDK side): PETARI_COLLISION_PROBE, a read-only map
 // collision survey for offline route planning; stepped by observeGame.
 bool collisionProbeActive();
