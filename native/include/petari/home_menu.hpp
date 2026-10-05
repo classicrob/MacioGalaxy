@@ -145,7 +145,7 @@ struct Rect {
     bool contains(float x, float y) const { return x >= x0 && x < x1 && y >= y0 && y < y1; }
 };
 
-constexpr int kMaxMods = 8;          // Mods::Mod::Count must stay <= this (the Mods page has one toggle each)
+constexpr int kMaxMods = 12;         // Mods::Mod::Count must stay <= this (the Mods page has one toggle each)
 // The Mods page lists every mod toggle, then Odyssey camera, Level Select, Mod folder and Back.
 constexpr int kModsPageExtraItems = 4;
 // Sized from the worst page (the Mods page); other pages use at most 6 items. View::items

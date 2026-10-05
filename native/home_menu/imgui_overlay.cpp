@@ -830,8 +830,11 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
 
         for (int i = 0; i < std::clamp(view.itemCount, 0, kMaxItems); i++) {
             const ViewItem& item = view.items[i];
-            galaxyButton(list, font, itemSize, image.point(item.rect.x0, item.rect.y0), image.point(item.rect.x1, item.rect.y1),
-                         item.focused, unit, alpha, item.label);
+            const ImVec2 itemMin = image.point(item.rect.x0, item.rect.y0), itemMax = image.point(item.rect.x1, item.rect.y1);
+            // A page with many rows (the Mods page with a dozen mods) has short buttons: the label shrinks
+            // with them instead of crowding the edges. Normal pages keep itemSize.
+            const float labelSize = std::min(itemSize, (itemMax.y - itemMin.y) * 0.78f);
+            galaxyButton(list, font, labelSize, itemMin, itemMax, item.focused, unit, alpha, item.label);
         }
 
         // The buttons that work here, along the bottom of the image, as the
