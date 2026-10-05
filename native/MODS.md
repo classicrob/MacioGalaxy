@@ -11,6 +11,7 @@ unmodified game and every test run behave exactly as before.
 | Cappy (`Cappy`) | R, controller RB | Super Mario Odyssey's cap throw and cap bounce; needs Odyssey movement: see "Cappy" below. |
 | Point to move (`PointToMove`) | hold the left mouse button | Mario runs toward the point under the cursor while you hold it; keys still jump, spin and crouch: see "Point to move" below. |
 | Hold Space to skip cutscenes and dialogue (`SkipCutscenes`) | none (hold Jump/A: Space, controller bottom button) | Holding A for 1.5 s skips the cutscene or dialogue on screen, and everything after it until you have control again: see "Skip cutscenes and dialogue" below. |
+| Generic character (`GenericCharacter`) | none (a look) | The player is drawn as a plain figure with Mario's proportions and animations instead of Mario: see "Generic character" below. |
 | Level editor (`LevelEditor`) | a tap of Tab | Edit the galaxy you are in (docs/dev/level-editor/UX.md). A short tap of Tab, with nothing else pressed, freezes the game into Edit mode where the pause menu could open; another tap plays again. Holding Tab still tilts the remote. Remappable as `LevelEditor` in `controls.txt`. |
 
 ## Turning mods on
@@ -225,6 +226,38 @@ and logs `[point-probe]` checks: Mario's movement on screen follows the pointer
 up, right and down-left, he runs with the pointer just outside the dead zone, he
 stops on release, Space jumps mid-run, and in the
 pause menu left click is B.
+
+## Generic character
+
+Turn on "Generic character (not Mario)" (`GenericCharacter=on`). The player is
+then drawn as a plain figure: a round head, a bucket hat, a slate suit, mittens
+and dark shoes. It is built at runtime from ellipsoids and capsules in flat
+colours, lit by the game's player lights. No Mario mesh or texture is drawn for
+it. The figure sits on Mario's own skeleton, so it has his proportions and
+moves with every one of his animations (run, jumps, spin, long jump, swimming,
+and so on). Only the drawing changes: movement, collision, hit boxes and sounds
+are the game's.
+
+- **Power-ups** recolour the figure. Fire: a white suit and an orange hat.
+  Flying (Red Star): a dark suit and a gold hat. Rainbow: the suit cycles
+  through colours. Ice: pale cyan all over. Bee: a yellow suit and a dark hat
+  (the game's bee wings stay). Spring: metal grey, with no coil drawn. Boo: a
+  plain white ghost with the same hat (the Boo Mario model is hidden).
+- **Cappy** (with the Cappy mod): the thrown cap is the figure's hat, spinning
+  and growing as Cappy does, and the head is bare while it is out.
+- **Not drawn with the mod on:** Mario's reflection in mirror floors, the
+  rainbow afterimages, and the light-blue see-through-walls silhouette (the
+  game builds it from Mario's own models), so the figure is hidden behind walls
+  like any other object.
+- **Still Mario:** his voice, the HUD and life-meter icons, the ground shadow (a
+  soft blob from Mario's shadow model), characters in cutscenes that are
+  separate models rather than the player, the Cosmic Mario racer, and dialogue
+  that names him. First-person view shows the mittens.
+
+Test: `PETARI_FIGURE_PROBE=1` (native/app/figure_probe.cpp) plays a fixed key
+script once normal play is steady (idle, run, jump, spin, long jump, Cappy
+throw, dive) and saves `figure-<pose>.png` screenshots to
+`PETARI_FIGURE_PROBE_SHOTS`. Run it with the mod on and off to compare.
 
 ## Skip cutscenes and dialogue
 

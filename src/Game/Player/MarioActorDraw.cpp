@@ -4,6 +4,7 @@
 #include "Game/MapObj/IceStep.hpp"
 #include "Game/Player/DLchanger.hpp"
 #include "Game/Player/DrawAdaptor.hpp"
+#include "Game/Player/GenericFigure.hpp"
 #include "Game/Player/J3DModelX.hpp"
 #include "Game/Player/MarioActor.hpp"
 #include "Game/Player/MarioAnimator.hpp"
@@ -469,6 +470,18 @@ void MarioActor::drawMarioModel() const {
         }
     }
 
+#ifdef PETARI_NATIVE
+    if (GenericFigure::on()) {
+        // Generic character mod: the figure instead of the body, hands, face
+        // and ice models (drawIndirectModel draws none of them).
+        drawSpinInhibit();
+        drawSphereMask();
+        drawDarkMask();
+        GenericFigure::drawPlayer(this);
+        return;
+    }
+#endif
+
     switch (mCurrModel) {
     case 3:
         return;
@@ -756,6 +769,9 @@ void MarioActor::draw() const {
             drawWallShade(_1F0, _1FC, _208);
         }
 
+#ifdef PETARI_NATIVE
+        GenericFigure::drawBoo(this);
+#endif
         drawMarioModel();
         mMario->draw();
     }
@@ -788,6 +804,11 @@ void MarioActor::drawIndirectModel() const {
     if (isAllHidden()) {
         return;
     }
+#ifdef PETARI_NATIVE
+    if (GenericFigure::on()) {
+        return;  // Generic character mod: no Mario reflection, ice or ice hands
+    }
+#endif
 
     drawReflectModel();
 
@@ -928,6 +949,11 @@ void MarioActor::drawModelBlur() const {
     if (!_A6E) {
         return;
     }
+#ifdef PETARI_NATIVE
+    if (GenericFigure::on()) {
+        return;  // Generic character mod: no Mario afterimages
+    }
+#endif
 
     model->mFlags._13 = true;
 

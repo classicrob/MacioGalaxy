@@ -5,6 +5,7 @@
 #include <petari/odyssey_move.hpp>
 #include <petari/editor/runtime.hpp>
 #include "Game/Player/MarioCappy.hpp"
+#include "Game/Player/GenericFigure.hpp"
 extern "C" bool petari_mod_enabled(int mod);
 #endif
 #include "Game/Animation/XanimeCore.hpp"
@@ -1097,6 +1098,7 @@ void MarioActor::controlMain() {
     }
 #ifdef PETARI_NATIVE
     petariCappyUpdate(this);  // Cappy mod: the cap's flight and bounce (returns at once while it is off)
+    GenericFigure::update(this);  // Generic character mod: the Boo model's materials
 #endif
 }
 

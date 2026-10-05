@@ -2475,6 +2475,12 @@ void testMods() {
     check(Mods::enabled(Mods::Mod::OdysseyJumpDive) && !Mods::enabled(Mods::Mod::OdysseyMovement),
           "missing file: the jump-dive sub-option defaults on (it does nothing while Odyssey movement is off)");
     check(Mods::parse("OdysseyJumpDive=off\n", &error) && !Mods::enabled(Mods::Mod::OdysseyJumpDive), "the sub-option can be turned off");
+    check(!Mods::enabled(Mods::Mod::GenericCharacter), "missing file: the generic character is off");
+    check(Mods::parse("GenericCharacter=on\n", &error) && Mods::enabled(Mods::Mod::GenericCharacter) &&
+              std::string(Mods::name(Mods::Mod::GenericCharacter)) == "GenericCharacter" &&
+              Mods::serialize().find("GenericCharacter=on") != std::string::npos,
+          "GenericCharacter parses, is named and saved");
+    check(Mods::parse("GenericCharacter=off\n", &error) && !Mods::enabled(Mods::Mod::GenericCharacter), "GenericCharacter turns off");
     setenv("PETARI_MODS", "OdysseyMovement,-OdysseyJumpDive", 1);
     check(Mods::load("/nonexistent/petari-mods.txt", &error) && Mods::enabled(Mods::Mod::OdysseyMovement) &&
               !Mods::enabled(Mods::Mod::OdysseyJumpDive),

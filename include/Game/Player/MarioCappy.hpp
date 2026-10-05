@@ -21,6 +21,10 @@ void petariCappyUpdate(MarioActor* pActor);
 void petariCappyWallJump();
 // MarioJump.cpp: a dive started; while Cappy is out it keeps him there (as a throw press).
 void petariCappyDiveStarted();
+// The Generic character mod (GenericFigure.cpp): while Cappy is out, his matrix
+// (axes scaled by his drawn size, origin his centre) and true; false while he
+// is on Mario's head or the mod is off.
+bool petariCappyCapMtx(float (*pOut)[4]);
 
 // MarioJump.cpp (the movement mod's air state lives there).
 // The air throw: SMO's hop (no new hop above the last throw's height, `hop`).

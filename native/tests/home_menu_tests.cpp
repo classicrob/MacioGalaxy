@@ -1418,6 +1418,18 @@ void testModsPageCapacity() {
               std::strcmp(view.items[HM::kMaxMods + 2].label, "Mod folder...") == 0 &&
               std::strcmp(view.items[HM::kMaxMods + 3].label, "Back") == 0,
           "the fixed rows follow the last mod toggle");
+    // Every row can take the focus in turn, top to bottom, and exactly one is focused at a time.
+    bool walked = true;
+    for (int i = 0; i < view.itemCount; ++i) {
+        const HM::View now = menu.view();
+        int focused = 0;
+        for (int j = 0; j < now.itemCount; ++j) focused += now.items[j].focused ? 1 : 0;
+        walked = walked && menu.focus() == i && focused == 1 && now.items[i].focused;
+        menu.update(press(Down));
+    }
+    check(walked, "focus walks every row of the full Mods page");
+    for (int i = 0; i < view.itemCount; ++i) menu.update(press(Up));
+    check(menu.focus() == 0, "and back up to the first");
     // The last toggle works, and Back is reachable and leaves the page.
     for (int i = 0; i < HM::kMaxMods - 1; ++i) menu.update(press(Down));
     menu.update(press(A));

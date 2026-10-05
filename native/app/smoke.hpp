@@ -477,6 +477,9 @@ struct PointProbeStep {
     float u = 0.0f, v = 0.0f;
 };
 PointProbeStep pointProbeFrame();
+// figure_probe.cpp: PETARI_FIGURE_PROBE, the Generic character mod's pose script
+// and screenshots; stepped by pointProbeFrame (true while it drives the keys).
+bool figureProbeFrame();
 // collision_probe.cpp (SDK side): PETARI_COLLISION_PROBE, a read-only map
 // collision survey for offline route planning; stepped by observeGame.
 bool collisionProbeActive();
