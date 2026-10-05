@@ -199,9 +199,11 @@ Shift, then Space while running), Left Alt walks.
 - **It is the stick.** The pointer's direction from Mario on the screen becomes
   the Nunchuk stick, so the game moves him exactly as with the stick: on round
   planets, upside down, in water, and as Bee, Boo, Spring, Ice and Fire Mario.
-  WASD (or a controller stick), when held, wins over the pointer. The Star Ball
-  and the Ray (Manta) steer by tilting the remote, not the stick, so the pointer
-  does not steer them; use the keys there as before.
+  WASD (or a controller stick), when held, wins over the pointer. On the Star
+  Ball and the Ray (Manta), which steer by tilting the remote, the pointer tilts
+  it the way the stick keys do there (native/CONTROLS.md): the Star Ball rolls
+  toward the pointer, the Ray turns toward its side. Always at full tilt, as a
+  held key; let go to stop tilting.
 - **Shooting Star Bits.** While the mod is on, a left press in normal play steers
   and sends no B, from press to release. Shoot with the **B key** instead (the
   Wii B: it shoots a Star Bit at the pointer, and holding it strokes the pointer
