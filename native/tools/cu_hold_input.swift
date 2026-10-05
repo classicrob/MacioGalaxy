@@ -217,6 +217,15 @@ for name in names {
                 }
             }
             post(.mouseMoved, at)  // the game's pointer goes there first
+            // Let the game see the pointer arrive (a frame or two, even at a low frame rate)
+            // before the button goes down.
+            Thread.sleep(forTimeInterval: 0.3)
+            if hidMouse {
+                let now = CGEvent(source: nil)?.location ?? .zero
+                guard abs(now.x - at.x) <= 2 && abs(now.y - at.y) <= 2 else {
+                    eventLock.unlock(); release(); fail("hid-mouse-left: the cursor moved before the press (someone at the machine?); nothing pressed")
+                }
+            }
         }
         mouseAt = at
         mouseHeld = true

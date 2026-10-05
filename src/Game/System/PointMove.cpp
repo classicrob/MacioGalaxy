@@ -22,8 +22,11 @@
 #include <cstdlib>
 
 namespace {
-    // Normal play: the Game scene in its action nerve with Mario present and in
-    // control, no demo, talk or movie, and the pointer on the screen.
+    // Normal play: the Game scene in its action nerve on a stage where the pause
+    // menu is allowed (not the title/file select), with Mario present and in
+    // control, no demo, talk or movie. (Not the pointer: a click into the window
+    // can come before a game frame has seen the pointer arrive; a pointer off the
+    // screen only zeroes the stick.)
     bool isSteerable() {
         GameSystemSceneController* pController = SingletonHolder< GameSystem >::get()->mSceneController;
 
@@ -32,7 +35,7 @@ namespace {
             return false;
         }
 
-        if (!static_cast< GameScene* >(pController->mScene)->isNativeSceneAction()) {
+        if (!static_cast< GameScene* >(pController->mScene)->isNativeSceneAction() || MR::isStageDisablePauseMenu()) {
             return false;
         }
 
@@ -40,11 +43,7 @@ namespace {
             return false;
         }
 
-        if ((MR::isExistSceneObj(SceneObj_DemoDirector) && MR::isDemoActive()) || MR::isSystemTalking() || MR::isMoviePlayingOnSequence()) {
-            return false;
-        }
-
-        return MR::isCorePadPointInScreen(WPAD_CHAN0);
+        return !((MR::isExistSceneObj(SceneObj_DemoDirector) && MR::isDemoActive()) || MR::isSystemTalking() || MR::isMoviePlayingOnSequence());
     }
 }  // namespace
 
@@ -100,7 +99,9 @@ namespace PointMove {
 
         const float width = static_cast< float >(MR::getScreenWidth());
         const float height = static_cast< float >(MR::getScreenHeight());
-        const bool seen = MR::calcScreenPosition(&mario, *MR::getPlayerCenterPos());
+        // The pointer off the screen (not yet seen in the window): steerable, no direction.
+        const bool pointer = MR::isCorePadPointInScreen(WPAD_CHAN0);
+        const bool seen = MR::calcScreenPosition(&mario, *MR::getPlayerCenterPos()) && pointer;
         const TVec2f* pPointer = MR::getStarPointerScreenPosition(WPAD_CHAN0);
 
         if (seen) {
