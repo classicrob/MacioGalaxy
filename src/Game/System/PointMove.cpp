@@ -17,6 +17,10 @@
 #include <petari/mods.hpp>
 #include <petari/point_move.hpp>
 
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+
 namespace {
     // Normal play: the Game scene in its action nerve with Mario present and in
     // control, no demo, talk or movie, and the pointer on the screen.
@@ -44,8 +48,47 @@ namespace {
     }
 }  // namespace
 
+namespace {
+    // PETARI_POINT_TRACE=1: Mario's world position when a steering hold starts and ends, the
+    // game frames it lasted and the distance he moved (the input side traces the rest).
+    void traceHold() {
+        static const bool sOn = [] {
+            const char* v = std::getenv("PETARI_POINT_TRACE");
+            return v != nullptr && v[0] != '\0' && v[0] != '0';
+        }();
+        static bool sWasClaimed = false;
+        static unsigned sFrames = 0;
+        static TVec3f sStart(0.0f, 0.0f, 0.0f);
+        if (!sOn) {
+            return;
+        }
+        const bool claimed = petari_point_move_claimed();
+        const bool mario = isSteerable();
+        if (claimed && !sWasClaimed && mario) {
+            sStart = *MR::getPlayerPos();
+            sFrames = 0;
+            std::fprintf(stderr, "[point] hold start: Mario at (%.1f, %.1f, %.1f)\n", sStart.x, sStart.y, sStart.z);
+        }
+        if (claimed) {
+            ++sFrames;
+        }
+        if (!claimed && sWasClaimed) {
+            if (mario) {
+                const TVec3f& end = *MR::getPlayerPos();
+                const float dx = end.x - sStart.x, dy = end.y - sStart.y, dz = end.z - sStart.z;
+                std::fprintf(stderr, "[point] hold end after %u game frames: Mario at (%.1f, %.1f, %.1f), moved %.1f units\n", sFrames, end.x,
+                             end.y, end.z, std::sqrt(dx * dx + dy * dy + dz * dz));
+            } else {
+                std::fprintf(stderr, "[point] hold end after %u game frames (Mario not steerable now)\n", sFrames);
+            }
+        }
+        sWasClaimed = claimed;
+    }
+}  // namespace
+
 namespace PointMove {
     void update() {
+        traceHold();
         if (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::PointToMove) || !isSteerable()) {
             petari_point_move_publish(false, 0.0f, 0.0f);
             return;

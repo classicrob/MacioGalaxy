@@ -43,8 +43,9 @@ void leftButton(bool down) {
     const bool steerable = gSteerable.load(std::memory_order_relaxed);
     gClaimed.store(down && on && steerable, std::memory_order_relaxed);
     if (tracing()) {
-        std::fprintf(stderr, "[point] left %s: mod %s, steerable %d -> %s\n", down ? "down" : "up", on ? "on" : "off", steerable ? 1 : 0,
-                     down ? (on && steerable ? "claimed (steers, no B)" : "not claimed (B)") : "released");
+        std::fprintf(stderr, "[point] left %s: mod %s, steerable %d -> %s (stick reads by the remote so far %u)\n", down ? "down" : "up",
+                     on ? "on" : "off", steerable ? 1 : 0, down ? (on && steerable ? "claimed (steers, no B)" : "not claimed (B)") : "released",
+                     gStickReads.load());
     }
 }
 
