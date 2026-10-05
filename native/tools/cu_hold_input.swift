@@ -5,9 +5,16 @@
 // moved there first, so the Point to move mod steers toward it. Plain "mouse-left" uses the
 // global cursor, which an app-directed CUA pointer does not move. Combine with keys, e.g.
 // "mouse-left@830,300,space". Events go only to the app's process, never system-wide.
+// "hid-mouse-left@X,Y" (lead-approved fallback, when process-posted mouse events don't reach the
+// game): the same hold through the system event stream, which moves the real cursor. Only while
+// the user is idle: HIDIdleTime above 120 s just before the hold, else it refuses. The cursor
+// position is saved and restored. The hold aborts if a key is pressed or the cursor leaves the
+// held point (someone at the machine); the tool's own events reset the HID idle clock, so that
+// clock is checked only before.
 import AppKit
 import CoreGraphics
 import Foundation
+import IOKit
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(Data((message + "\n").utf8))
@@ -21,14 +28,14 @@ let codes: [String: CGKeyCode] = ["w":13,"a":0,"s":1,"d":2,"space":49,"f":3,"q":
 // "mouse-left@X,Y" carries a comma: rejoin it after splitting the list.
 var names: [String] = []
 for part in args[2].split(separator: ",").map(String.init) {
-    if let last = names.last, last.hasPrefix("mouse-left@"), !last.contains(","), Double(part) != nil {
+    if let last = names.last, last.hasPrefix("mouse-left@") || last.hasPrefix("hid-mouse-left@"), !last.contains(","), Double(part) != nil {
         names[names.count - 1] = last + "," + part
     } else {
         names.append(part)
     }
 }
 guard !names.isEmpty, names.count <= 3, Set(names).count == names.count,
-      names.allSatisfy({ codes[$0] != nil || $0.hasPrefix("mouse-left") }) else { fail("Unsupported or repeated key") }
+      names.allSatisfy({ codes[$0] != nil || $0.hasPrefix("mouse-left") || $0.hasPrefix("hid-mouse-left@") }) else { fail("Unsupported or repeated key") }
 let recordURL = URL(fileURLWithPath: args[1]).standardizedFileURL
 let data = try Data(contentsOf: recordURL)
 guard let record = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -50,6 +57,17 @@ let eventLock = NSRecursiveLock()
 var held: [CGKeyCode] = []
 var mouseHeld = false
 var mouseAt: CGPoint? = nil  // the held button's global position
+var hidMouse = false          // the hold goes through the system event stream (hid-mouse-left)
+var savedCursor: CGPoint? = nil
+let holdStart = Date()
+// Seconds since the last real input on this machine (IOHIDSystem's HIDIdleTime), nil if unknown.
+func hidIdleSeconds() -> Double? {
+    let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOHIDSystem"))
+    guard service != 0 else { return nil }
+    defer { IOObjectRelease(service) }
+    guard let value = IORegistryEntryCreateCFProperty(service, "HIDIdleTime" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? NSNumber else { return nil }
+    return value.doubleValue / 1_000_000_000
+}
 func cursor() -> CGPoint { return mouseAt ?? CGEvent(source: nil)?.location ?? .zero }
 // The app's largest on-screen window, in global display points (top-left origin, as CGEvent).
 func windowBounds() -> CGRect? {
@@ -62,7 +80,8 @@ func windowBounds() -> CGRect? {
     return best
 }
 func post(_ type: CGEventType, _ at: CGPoint) {
-    CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: at, mouseButton: .left)?.postToPid(pid_t(rawPid))
+    let event = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: at, mouseButton: .left)
+    if hidMouse { event?.post(tap: .cghidEventTap) } else { event?.postToPid(pid_t(rawPid)) }
 }
 func log(_ action: String, key: CGKeyCode? = nil, details: [String: Any] = [:]) {
     var item: [String: Any] = ["utc":ISO8601DateFormatter().string(from: Date()), "action":action,
@@ -120,6 +139,10 @@ func release() {
             post(.leftMouseUp, at)
         }
         mouseHeld = false
+        if hidMouse, let saved = savedCursor {
+            CGWarpMouseCursorPosition(saved)
+            log("os-hid-cursor-restored", details: ["x": Double(saved.x), "y": Double(saved.y)])
+        }
     }
 }
 let signalQueue = DispatchQueue(label:"cu-hold-input.signals")
@@ -136,7 +159,15 @@ defer { release() }
 for name in names {
     eventLock.lock()
     guard focused() else { eventLock.unlock(); release(); fail("Focus changed before keyDown") }
-    if name.hasPrefix("mouse-left") {
+    if name.hasPrefix("hid-mouse-left@") {
+        guard let idle = hidIdleSeconds(), idle > 120 else {
+            eventLock.unlock(); release(); fail("hid-mouse-left needs the user idle: HIDIdleTime \(hidIdleSeconds() ?? -1) s, need > 120")
+        }
+        hidMouse = true
+        savedCursor = CGEvent(source: nil)?.location
+        log("os-hid-idle-ok", details: ["hid_idle_s": idle])
+    }
+    if name.hasPrefix("mouse-left") || name.hasPrefix("hid-mouse-left") {
         var at = CGEvent(source: nil)?.location ?? .zero
         var details: [String: Any] = [:]
         if let range = name.range(of: "@") {
@@ -170,6 +201,15 @@ let deadline = Date().addingTimeInterval(duration)
 while Date() < deadline {
     guard focused() else { release(); fail("Focus changed during hold") }
     if mouseHeld, let at = mouseAt { eventLock.lock(); post(.leftMouseDragged, at); eventLock.unlock() }  // still held, same spot
+    if hidMouse, let at = mouseAt {
+        // Someone at the machine: a key since the hold began, or the cursor moved off the held point.
+        let keyIdle = CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: .keyDown)
+        let now = CGEvent(source: nil)?.location ?? at
+        if keyIdle < Date().timeIntervalSince(holdStart) || abs(now.x - at.x) > 2 || abs(now.y - at.y) > 2 {
+            log("os-hid-user-activity-abort", details: ["key_idle_s": keyIdle, "x": Double(now.x), "y": Double(now.y)])
+            release(); fail("User activity during the hid-mouse-left hold; released and restored the cursor")
+        }
+    }
     Thread.sleep(forTimeInterval:min(0.02, max(0,deadline.timeIntervalSinceNow)))
 }
 release()
