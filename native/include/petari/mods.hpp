@@ -21,6 +21,7 @@ enum class Mod : int {
     OdysseyJumpDive,  // with OdysseyMovement: pressing Jump in the air dives; ON unless turned off
     SkipCutscenes,    // hold A (Space) 1.5 s to skip cutscenes and dialogue (petari/skip.hpp); no button of its own
     PointToMove,      // hold left click: Mario runs toward the pointer (petari/point_move.hpp); no button of its own
+    GenericCharacter, // the player is drawn as a plain figure, not Mario (Game/Player/GenericFigure.hpp); no button
     Count
 };
 

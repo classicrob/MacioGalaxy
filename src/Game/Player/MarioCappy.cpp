@@ -37,9 +37,11 @@ namespace {
     namespace Odyssey = PetariNative::Odyssey;
     constexpr int kModOdysseyMovement = 2;  // PetariNative::Mods::Mod
     constexpr int kModCappy = 3;
+    constexpr int kModGenericCharacter = 7;  // its figure draws a plain hat for Cappy (GenericFigure.cpp)
     constexpr f32 kSpinDegrees = 40.0f;  // Cappy's spin while out, per frame (I)
 
     void capSensor(HitSensor* pOwn, HitSensor* pOther);
+    void applyGenericLook();
 
     // The flying cap: a MarioParts with an eye sensor (checked against enemies,
     // map objects, coins and Star Bits, like Mario's own "eye").
@@ -121,6 +123,34 @@ namespace {
         } else {
             MR::hideJoint(s.actor, "Cap0");
             s.hair->appear();
+            applyGenericLook();
+        }
+    }
+
+    // The Generic character mod: Cappy and the hair under him are MarioHair's
+    // models; with that mod on their materials are hidden (the figure draws a
+    // plain hat at sCapMtx instead).
+    void applyGenericLook() {
+        static bool sHidden = false;
+        static const MarioParts* sCap = nullptr;
+        const bool generic = petari_mod_enabled(kModGenericCharacter);
+        if (sCap != s.cap) {
+            sCap = s.cap;
+            sHidden = false;  // new models (a new stage): everything shown
+        }
+        if (generic == sHidden || s.cap == nullptr) {
+            return;
+        }
+        sHidden = generic;
+        const char* const cap[] = {"Cap_v"};
+        const char* const hair[] = {"Hair_v", "Hair2_v"};
+        for (const char* material : cap) {
+            generic ? MR::hideMaterial(s.cap, material) : MR::showMaterial(s.cap, material);
+        }
+        if (s.hair != nullptr) {
+            for (const char* material : hair) {
+                generic ? MR::hideMaterial(s.hair, material) : MR::showMaterial(s.hair, material);
+            }
         }
     }
 
@@ -260,6 +290,7 @@ namespace {
         if (MR::isDead(s.cap)) {
             s.cap->appear();
         }
+        applyGenericLook();
     }
 
     void doTrace(const MarioActor* pActor, const TVec3f& up, bool contactTest, bool contact) {
@@ -311,6 +342,21 @@ void petariCappyInit(MarioActor* pActor) {
     MR::hideMaterial(s.hair, "Cap_v");
     s.hair->kill();
     std::fprintf(stderr, "[cappy] cap models created\n");
+}
+
+bool petariCappyCapMtx(float (*pOut)[4]) {
+    if (s.cap == nullptr || MR::isDead(s.cap) || !active()) {
+        return false;
+    }
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            pOut[row][col] = sCapMtx.mMtx[row][col];
+        }
+    }
+    pOut[0][3] = s.pos.x;
+    pOut[1][3] = s.pos.y;
+    pOut[2][3] = s.pos.z;
+    return true;
 }
 
 void petariCappyInput(MarioActor* pActor) {

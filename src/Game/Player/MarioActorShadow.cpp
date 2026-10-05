@@ -1,6 +1,7 @@
 #include "Game/LiveActor/HitSensor.hpp"
 #include "Game/Map/HitInfo.hpp"
 #include "Game/Player/J3DModelX.hpp"
+#include "Game/Player/GenericFigure.hpp"
 #include "Game/Player/JetTurtleShadow.hpp"
 #include "Game/Player/Mario.hpp"
 #include "Game/Player/MarioActor.hpp"
@@ -581,6 +582,16 @@ void MarioActor::drawSilhouette() const {
     if (_934) {
         return;
     }
+
+#ifdef PETARI_NATIVE
+    if (GenericFigure::drawSilhouette(this)) {
+        // Generic character mod: no Mario-shaped silhouette; the state the pass leaves.
+        GXSetAlphaUpdate(GX_TRUE);
+        GXSetColorUpdate(GX_TRUE);
+        GXSetDstAlpha(GX_TRUE, 0);
+        return;
+    }
+#endif
 
     J3DModelX* pModel = getSimpleModel();
     pModel->setDrawView(1);
