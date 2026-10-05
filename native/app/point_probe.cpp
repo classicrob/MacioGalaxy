@@ -14,12 +14,16 @@
 //     keep moving up the screen.
 //   menu: the pause menu open (Escape held), a left press is B for the game and
 //     is not claimed.
+// PETARI_POINT_PROBE_WHEN=mode:N or status:N: start only once Mario is in that player mode
+// (MarioActor::mPlayerMode: 2 fire, 3 ice, 4 bee, 5 spring, 6 boo, 7 flying) or status (6 swim),
+// e.g. after the stage script's bee/swim mechanic route or a warp onto a power-up.
 // While it runs, the smoke script's own presses are dropped. Each left press starts the
 // image-dump phase "point-hold" (petari/efb_dump_mark.hpp).
 
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 #include "Game/Scene/SceneObjHolder.hpp"
@@ -64,6 +68,7 @@ struct Probe {
     float screenX = 0.0f, screenY = 0.0f;  // Mario's summed on-screen motion
     float maxRise = 0.0f;
     int ok = 0, fail = 0;
+    int whenMode = -1, whenStatus = -1;  // PETARI_POINT_PROBE_WHEN
 };
 
 Probe& probe() {
@@ -71,7 +76,11 @@ Probe& probe() {
         Probe p;
         const char* on = std::getenv("PETARI_POINT_PROBE");
         p.enabled = on != nullptr && on[0] != '\0' && on[0] != '0';
-        if (p.enabled) std::fprintf(stderr, "[point-probe] on\n");
+        if (const char* when = std::getenv("PETARI_POINT_PROBE_WHEN")) {
+            if (std::strncmp(when, "mode:", 5) == 0) p.whenMode = std::atoi(when + 5);
+            if (std::strncmp(when, "status:", 7) == 0) p.whenStatus = std::atoi(when + 7);
+        }
+        if (p.enabled) std::fprintf(stderr, "[point-probe] on (when mode %d, status %d)\n", p.whenMode, p.whenStatus);
         return p;
     }();
     return p;
@@ -139,11 +148,14 @@ PointProbeStep pointProbeFrame() {
 
     switch (p.phase) {
     case Phase::Wait:
-        p.steady = play ? p.steady + 1 : 0;
+        p.steady = play && (p.whenMode < 0 || o.playerMode == p.whenMode) && (p.whenStatus < 0 || o.marioStatus == p.whenStatus)
+                       ? p.steady + 1
+                       : 0;
         if (p.steady >= 90) {
             p.phase = Phase::Run;
             p.frames = 0;
-            std::fprintf(stderr, "[point-probe] normal play steady; starting at (%.1f, %.1f, %.1f)\n", o.playerX, o.playerY, o.playerZ);
+            std::fprintf(stderr, "[point-probe] normal play steady (player mode %d, status %d); starting at (%.1f, %.1f, %.1f)\n",
+                         o.playerMode, o.marioStatus, o.playerX, o.playerY, o.playerZ);
         }
         break;
     case Phase::Run: {
