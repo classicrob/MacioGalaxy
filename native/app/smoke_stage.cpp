@@ -3,6 +3,7 @@
 
 #include "smoke_stage.hpp"
 #include <petari/efb_dump_mark.hpp>
+#include <petari/home_menu.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -48,7 +49,7 @@ constexpr float kPausedDrift = 1.0f;
 struct TourEntry {
     Button button;
     const char* mark;  // null: act (see kind)
-    enum Kind { Tap, Down, Up, Point, Wheel } kind = Tap;  // tap / hold / release the button, move the pointer, wheel
+    enum Kind { Tap, Down, Up, Point, Wheel, ToBack } kind = Tap;  // tap / hold / release the button, move the pointer, wheel, tap `button` until the focused item is "Back"
     float u = 0.0f, v = 0.0f;  // Point: over the game image, 0..1; Wheel: u is the movement (+ toward the top)
 };
 constexpr unsigned long kTourGap = 45;
@@ -81,11 +82,9 @@ constexpr TourEntry kHomeTour[] = {
     {Button::A, "home-remap-done"}, {Button::Plus, nullptr},
     {Button::StickDown, nullptr}, {Button::A, nullptr},  // Mods
     {Button::A, "home-mods"},
-    // To Back (focus clamps there; one Down per row: 6 mods, Odyssey camera, Level Select,
-    // Mod folder), then up: Mod folder, Level Select, Odyssey camera.
-    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
-    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
-    {Button::StickDown, nullptr}, {Button::StickDown, nullptr}, {Button::StickDown, nullptr},
+    // To Back: Down until the focused item is labelled "Back" (the page grows with every mod), then
+    // up: Mod folder, Level Select, Odyssey camera.
+    {Button::StickDown, nullptr, TourEntry::ToBack},
     {Button::StickUp, nullptr},   {Button::A, nullptr},  // Mod folder
     {Button::A, "home-modfolder"}, {Button::Plus, nullptr},
     {Button::StickUp, nullptr},   {Button::A, nullptr},  // Level Select
@@ -661,6 +660,28 @@ void StageDriver::exercise(const Observation& o, Step& step) {
                 break;
             }
             const TourEntry& entry = kHomeTour[mTourStep++];
+            if (entry.kind == TourEntry::ToBack && entry.mark == nullptr) {
+                // One Down per tour gap until the focused item says "Back"; stay on this entry meanwhile.
+                // Bounded by the menu's own capacity: a page that never reaches Back fails the tour.
+                const PetariNative::HomeMenu::View view = PetariNative::HomeMenu::publishedView();
+                bool onBack = false;
+                for (int i = 0; i < view.itemCount && i < PetariNative::HomeMenu::kMaxItems; i++) {
+                    onBack = onBack || (view.items[i].focused && view.items[i].label != nullptr &&
+                                        std::strcmp(view.items[i].label, "Back") == 0);
+                }
+                if (!onBack) {
+                    if (++mTourBackPresses > PetariNative::HomeMenu::kMaxItems) {
+                        finish(Result::Fail, "home tour: Down never reached Back in " + std::to_string(mTourBackPresses - 1) + " presses", step);
+                        break;
+                    }
+                    --mTourStep;
+                    tap(entry.button, kTapFrames, step);
+                } else {
+                    note("home tour: Back after " + std::to_string(mTourBackPresses) + " Down presses");
+                    mTourBackPresses = 0;
+                }
+                break;
+            }
             if (entry.mark != nullptr) {
                 PetariNative::EfbDump::mark(entry.mark);
                 note(std::string("home tour: ") + entry.mark);
