@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 #include "petari/mods.hpp"
 
@@ -13,6 +15,16 @@ std::atomic<float> gStickY{0.0f};
 std::atomic<bool> gClaimed{false};
 std::atomic<bool> gPointsValid{false};
 std::atomic<float> gMarioX{0.0f}, gMarioY{0.0f}, gPointerX{0.0f}, gPointerY{0.0f};
+std::atomic<unsigned> gStickReads{0};  // RemoteModel reads of the pointer stick (trace)
+
+// PETARI_POINT_TRACE=1: claim decisions and, while steering, what is published and used.
+bool tracing() {
+    static const bool sOn = [] {
+        const char* v = std::getenv("PETARI_POINT_TRACE");
+        return v != nullptr && v[0] != '\0' && v[0] != '0';
+    }();
+    return sOn;
+}
 }  // namespace
 
 void stickFor(float dx, float dy, float screenHeight, float* x, float* y) {
@@ -27,8 +39,13 @@ void stickFor(float dx, float dy, float screenHeight, float* x, float* y) {
 }
 
 void leftButton(bool down) {
-    gClaimed.store(down && Mods::enabled(Mods::Mod::PointToMove) && gSteerable.load(std::memory_order_relaxed),
-                   std::memory_order_relaxed);
+    const bool on = Mods::enabled(Mods::Mod::PointToMove);
+    const bool steerable = gSteerable.load(std::memory_order_relaxed);
+    gClaimed.store(down && on && steerable, std::memory_order_relaxed);
+    if (tracing()) {
+        std::fprintf(stderr, "[point] left %s: mod %s, steerable %d -> %s\n", down ? "down" : "up", on ? "on" : "off", steerable ? 1 : 0,
+                     down ? (on && steerable ? "claimed (steers, no B)" : "not claimed (B)") : "released");
+    }
 }
 
 bool claimsLeft() {
@@ -45,6 +62,7 @@ bool stick(bool leftHeld, float* x, float* y) {
     }
     *x = gStickX.load(std::memory_order_relaxed);
     *y = gStickY.load(std::memory_order_relaxed);
+    gStickReads.fetch_add(1, std::memory_order_relaxed);
     return true;
 }
 
@@ -60,6 +78,15 @@ void resetForTesting() {
 
 extern "C" void petari_point_move_publish(bool steerable, float stickX, float stickY) {
     using namespace PetariNative::PointMove;
+    if (tracing() && claimsLeft()) {
+        static unsigned frames = 0;
+        if (frames++ % 30 == 0) {
+            std::fprintf(stderr, "[point] steering: steerable %d, stick (%.2f, %.2f), Mario (%.2f, %.2f), pointer (%.2f, %.2f), "
+                                 "stick reads by the remote %u\n",
+                         steerable ? 1 : 0, stickX, stickY, gMarioX.load(), gMarioY.load(), gPointerX.load(), gPointerY.load(),
+                         gStickReads.load());
+        }
+    }
     gStickX.store(steerable ? stickX : 0.0f, std::memory_order_relaxed);
     gStickY.store(steerable ? stickY : 0.0f, std::memory_order_relaxed);
     gSteerable.store(steerable, std::memory_order_relaxed);
