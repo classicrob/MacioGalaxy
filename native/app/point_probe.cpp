@@ -118,6 +118,10 @@ void left(bool down) {
 
 PointProbeStep pointProbeFrame() {
     PointProbeStep step;
+    if (figureProbeFrame()) {
+        step.active = true;  // the figure probe's keys: the smoke script's presses wait
+        return step;
+    }
     Probe& p = probe();
     if (!p.enabled || p.phase == Phase::Done) return step;
     if (!sceneReadable()) {
