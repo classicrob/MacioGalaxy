@@ -21,7 +21,7 @@ constexpr const char* kDescriptions[kCount] = {"Collect visible Star Bits", "Fir
                                                "Generic character (not Mario)", "Level editor (Tab)"};
 // The value of a mod with no line in mods.txt (a sub-option of another mod can
 // default on: it does nothing while its mod is off).
-constexpr bool kDefaults[kCount] = {false, false, false, false, true, false, false, false};
+constexpr bool kDefaults[kCount] = {false, false, false, false, true, false, false, false, false};
 // Input::Action::Count: the mod is a mode with no button of its own.
 constexpr Input::Action kActions[kCount] = {Input::Action::ModCollectStarBits, Input::Action::ModShootEnemy,
                                             Input::Action::Count, Input::Action::ModCappyThrow, Input::Action::Count,
