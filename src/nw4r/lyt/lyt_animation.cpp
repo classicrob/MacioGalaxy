@@ -8,6 +8,10 @@
 #include "nw4r/lyt/layout.h"
 #include "nw4r/lyt/resourceAccessor.h"
 #include <new>
+#ifdef PETARI_NATIVE
+// Game/System/GenericWorld.cpp: the Generic world mod's plain HUD icons (lives, star, coin, Star Bit).
+extern "C" void petari_generic_world_layout_texture(void* pTpl, const char* pName);
+#endif
 
 const f32 R_SAME_TOLERANCE = 1.0e-5F;
 const f32 R_FRAME_TOLERANCE = 0.001F;
@@ -250,6 +254,9 @@ namespace nw4r {
                     for (int i = 0; i < mpRes->fileNum; i++) {
                         const char* const name = detail::GetStrTableStr(fileNameOffs, i);
                         mpFileResAry[i] = pResAccessor->GetResource('timg', name, 0);
+#ifdef PETARI_NATIVE
+                        petari_generic_world_layout_texture(mpFileResAry[i], name);
+#endif
                     }
                 }
             }

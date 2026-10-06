@@ -18,6 +18,9 @@ namespace GenericWorld {
     // ResourceHolder, before J3D loads a model file (.bdl/.bmd): its material
     // colours (MAT3 tables, MDL3 display lists) lose their hue, keeping brightness.
     void onModelFile(void* pFile, const char* pArchive);
+    // ResourceHolder: a colour animation (.brk) was loaded; from a non-player archive its colours
+    // lose their hue while the mod is on (J3DAnmTevRegKey asks petari_generic_world_grey_animation).
+    void onAnimation(const void* pAnimation, const char* pArchive);
     // DrawBuffer::drawOpa/drawXlu: true when the buffer's model has a stand-in;
     // the stand-ins are drawn (opaque pass) and the model is not.
     bool drawBuffer(const DrawBuffer* pBuffer, bool opaque);
