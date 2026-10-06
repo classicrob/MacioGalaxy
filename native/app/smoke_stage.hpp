@@ -151,6 +151,7 @@ private:
     int mWalksOk = 0;
     bool mPausePressed = false;
     size_t mTourStep = 0;  // next entry of the Home menu tour
+    int mTourBackPresses = 0;  // Down presses spent on the current "to Back" entry
     unsigned long mPauseOpenCount = 0, mPauseCloseCount = 0;
     unsigned long mPhysicalBase = 0;  // physical gameplay inputs when the stage was entered
     unsigned long mPhysicalSeen = 0;

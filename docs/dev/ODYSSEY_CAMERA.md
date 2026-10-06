@@ -67,6 +67,9 @@ handoff is to the game's camera as if the orbit had never been there.
 Everything else (fixed, rail, tripod, demo, talk, black hole, Foo Fighter, anim,
 DPD, subjective) stays the game's camera. On entering the orbit, its yaw, pitch
 and distance are seeded from the current game camera pose, so there is no jump.
+Each scene's `CameraDirector` resets the orbit when it is built (`petariOdysseyCameraSceneStart`),
+so a stage restart, death or editor reload seeds again from the new scene's camera. Before this,
+a reload with no scripted camera in between kept the last scene's yaw, pitch and distance.
 
 ## Orbit model
 
@@ -153,6 +156,14 @@ camera-relative movement checks finish before the camera turns.
 `PETARI_CAMERA_TRACE=1` logs every 60 frames: distance, wanted distance, how many
 frames the line of sight was blocked, the nearest allowed distance, elevation.
 Script: `build/camera/run3.sh` (stage smoke, 1200-frame delay, 1500-frame tail).
+
+`PETARI_INPUT_SCRIPT=<file>` (native/app/input_script_probe.cpp, test-only) types a player's
+keyboard through the native input layer (`Input::keyEvent`, as the skip and point probes do) once
+normal play has been steady for `PETARI_INPUT_SCRIPT_STEADY` frames (default 60). Each line is
+`<frames> [key ...]` with controls.txt key names (`W`, `Space`, `LeftShift`, `R`, `J`/`L` orbit,
+`I`/`K` pitch, `Z`/`X` zoom); `#` starts a comment. `PETARI_INPUT_SCRIPT_LOG=<csv>` records each
+frame's held keys, Mario's position, velocity and ground flag, and the camera's position and forward
+axis. It drives the orbit with the same keys a player uses, e.g. for camera-move videos.
 
 ## Risks
 
