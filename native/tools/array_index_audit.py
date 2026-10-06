@@ -26,6 +26,7 @@ Run it under the build lock like any heavy job:
 Exit status 1 when an unsuppressed CONST-OOB or COMPUTED finding exists.
 """
 import argparse
+import functools
 import json
 import os
 import re
@@ -36,6 +37,15 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@functools.lru_cache(maxsize=None)
+def real(path):
+    """The real path: compile_commands.json and clang print the path the build was configured with, which
+    differs from ROOT (resolved) when the checkout is reached through a symlink (a moved or renamed checkout)."""
+    return os.path.realpath(path)
+
+
 LOC = re.compile(r"<(?P<inner>[^>]*)>")
 NODE = re.compile(r"^(?P<prefix>[\s|`\-]*)(?P<kind>[A-Za-z]+:?)\s")  # also `value: Int 6` lines of constant initialisers
 DIM = re.compile(r"\[(\d+)\]")
@@ -53,7 +63,7 @@ def tokens(inner):
         else:
             pieces = part.rsplit(":", 2)  # path:line:col
             try:
-                out.append((pieces[0], int(pieces[1])))
+                out.append((real(pieces[0]), int(pieces[1])))
             except (IndexError, ValueError):
                 out.append((None, None))
     return out
@@ -347,12 +357,17 @@ def main():
     root_native = f"{ROOT}/native/"
     entries, seen = [], set()
     for e in db:
-        f = str(Path(e["directory"], e["file"]).resolve()) if not e["file"].startswith("/") else e["file"]
+        f = real(str(Path(e["directory"], e["file"])))
         if root_native in f and f not in seen and args.filter in f and (args.tests or "/native/tests/" not in f):
             seen.add(f)
             e = dict(e, file=f)
             entries.append(e)
     print(f"auditing {len(entries)} translation units under native/", file=sys.stderr)
+    if not entries and not args.filter:
+        # A gate that scanned nothing must not pass (the compile database's paths did not match ROOT).
+        print(f"array_index_audit: 0 translation units under {root_native} in {args.build}/compile_commands.json; "
+              "refusing to pass an audit that scanned nothing", file=sys.stderr)
+        return 2
 
     results, failed = {}, []
     with ThreadPoolExecutor(args.jobs) as pool:
