@@ -1,17 +1,37 @@
 # MacioGalaxy: Super Mario Galaxy for Apple Silicon (unofficial native port)
 
-**MacioGalaxy** is a native macOS (Apple Silicon) port of **Super Mario Galaxy**.
-The original game code is compiled for arm64 and runs directly on your Mac,
-rendering with Metal through [Aurora](https://github.com/encounter/aurora).
-There is no emulator.
+**MacioGalaxy** runs **Super Mario Galaxy** natively on Apple Silicon Macs. The
+original game code is compiled for arm64 and runs directly on your Mac,
+rendering with Metal through [Aurora](https://github.com/encounter/aurora), with
+native input, audio and menus around it. There is no emulator. It needs your own
+copy of the game's data (see [Your game data](#your-game-data)).
 
 > [!NOTE]
 > **Built on the SMGCommunity [Petari](https://github.com/SMGCommunity/Petari)
 > decompilation, with thanks.** MacioGalaxy exists because of the Petari
-> contributors' years of work reconstructing the game's source. The decompiled
-> game code in this repository is theirs (CC0 1.0, see [LICENSE](LICENSE) and
-> [Credits and licenses](#credits-and-licenses)); the native macOS port around it
-> is this project.
+> contributors' years of work reconstructing the game's source (see
+> [Built on Petari](#built-on-petari)). The decompiled game code in this
+> repository is theirs (CC0 1.0); the native macOS port around it is this
+> project.
+
+## What it adds
+
+- **Native Apple Silicon and Metal:** arm64 game code, GX rendered through
+  Aurora/Dawn on Metal, native audio, no emulator.
+- **Keyboard, mouse and game controller**, with in-game remapping:
+  [native/CONTROLS.md](native/CONTROLS.md).
+- **A native Home menu** (**F1** or **`**): Resume, Controls (the remapper),
+  Mods (which also holds Level Select, to jump to any galaxy, and the camera
+  options), My Progress (a personal record of cleared missions), Restart and Quit.
+- **Optional mods**, all off by default ([native/MODS.md](native/MODS.md)):
+  - hold **Space** for 1.5 s to **skip cutscenes and dialogue**;
+  - **point to move**: hold the left mouse button and Mario runs toward the cursor;
+  - **Odyssey movement** (Super Mario Odyssey's physics and moveset), **Cappy**
+    (cap throw and bounce) and an **Odyssey-style orbit camera** with photo mode;
+  - **Star Bit helpers**: collect every Star Bit on screen, or shoot the nearest enemy;
+  - **Generic character**, **Generic world** and **Hide HUD**: a plain figure, plain
+    terrain and objects, and no on-screen counters, for clean footage;
+  - a **mod folder** for replacing or adding disc files.
 
 > [!IMPORTANT]
 > **This is an unofficial, independent project, not affiliated with the Petari project or its
@@ -154,15 +174,16 @@ backup: [native/SAVES.md](native/SAVES.md).
 ## Mods
 
 Optional gameplay helpers, all **off by default**; turn them on in the Home
-menu (**`** or **F1**, then **Mods**):
+menu (**`** or **F1**, then **Mods**) or in `mods.txt`. With every mod off the
+game behaves as the original.
 
-- **Collect Star Bits** (**G**, or **L3** on a controller): the Star Pointer
-  collects every Star Bit currently on screen.
-- **Shoot nearest enemy** (**V**): fires a Star Bit at the nearest enemy in view.
+- **Skip cutscenes and dialogue** (hold **Space** 1.5 s), **Point to move** (hold
+  the left mouse button), **Odyssey movement**, **Cappy** (**R**), the **Odyssey
+  camera** and photo mode, **Collect Star Bits** (**G**), **Shoot nearest enemy**
+  (**V**), **Generic character**, **Generic world**, **Hide the HUD**, and a
+  mod folder for disc-file mods.
 
-Both use the game's own collection and shooting, so counters, sounds and stuns
-behave normally. Details: [native/MODS.md](native/MODS.md). With every mod off
-the game behaves as the original.
+What each does, its keys and how it was checked: [native/MODS.md](native/MODS.md).
 
 ## Known issues
 
@@ -186,10 +207,26 @@ the game behaves as the original.
 Detailed test coverage: [native/RELIABILITY.md](native/RELIABILITY.md) and
 [native/PLAYTEST.md](native/PLAYTEST.md).
 
+## Built on Petari
+
+[**Petari**](https://github.com/SMGCommunity/Petari) is the SMGCommunity's
+decompilation of Super Mario Galaxy: human-written C++ that compiles to a
+byte-matching build of the original Wii game. MacioGalaxy compiles that
+source for arm64 (the `PETARI_NATIVE` hooks in `src/` and everything in
+`native/` are this project's work) instead of for the Wii. Petari's own README
+covers the decompilation, its matching Wii build, its progress tracking and its
+contribution guide; its work and Discord are for the decompilation, not for
+this port. **Please do not ask the Petari maintainers about MacioGalaxy**:
+report problems in this repository.
+
 ## Credits and licenses
 
 - **Petari decompilation**: the [SMGCommunity/Petari](https://github.com/SMGCommunity/Petari)
-  contributors. Released under CC0 1.0 ([LICENSE](LICENSE)).
+  contributors. Released under CC0 1.0 ([LICENSE](LICENSE)). Petari in turn
+  sourced code and headers from the
+  [doldecomp](https://github.com/doldecomp/sdk_2009-12-11) SDK decompilation,
+  [zeldaret/tp](https://github.com/zeldaret/tp) (JSystem) and
+  [doldecomp/ogws](https://github.com/doldecomp/ogws) (nw4r).
 - **This port's own code** (the native port, its tools and documentation) is
   also released under **CC0 1.0**, the same terms as the decompilation: you can
   use it for any purpose without asking. The dependencies below keep their own
@@ -204,9 +241,16 @@ Detailed test coverage: [native/RELIABILITY.md](native/RELIABILITY.md) and
 - **Dear ImGui** ([ocornut/imgui](https://github.com/ocornut/imgui)): MIT License,
   Copyright (c) 2014-2025 Omar Cornut.
 - **Tracy** ([wolfpld/tracy](https://github.com/wolfpld/tracy)): BSD 3-Clause License.
+- **FreeType** ([freetype.org](https://freetype.org/)): used by Dear ImGui's font
+  builder; found on the system (Homebrew), not vendored. FreeType License or GPLv2.
 - **xxHash** ([Cyan4973/xxHash](https://github.com/Cyan4973/xxHash)): BSD 2-Clause
   License, Copyright (c) 2012-2021 Yann Collet.
 - **SQLite**: public domain.
+- **Super Mario Odyssey data for the Odyssey mods**: player constants from
+  [MonsterDruide1/OdysseyDecomp](https://github.com/MonsterDruide1/OdysseyDecomp)
+  (v1.0.0, used as numbers for the movement and Cappy mods), and measurements from
+  [smo.wiki](https://smo.wiki/) and the "Odyssey Movement Data v2" sheet. Details in
+  `docs/dev/ODYSSEY_MOVEMENT.md`; no Nintendo assets or code are included.
 
 These dependencies are downloaded at build time, not included in this
 repository; their license files come with their sources (Dawn's prebuilt
@@ -228,113 +272,3 @@ MacioGalaxy would not exist.
 
 Super Mario Galaxy is a trademark of Nintendo. This project is not affiliated
 with or endorsed by Nintendo.
-
----
-
-# About the Petari decompilation
-
-The rest of this file is the upstream Petari README, kept as is. It describes
-the decompilation project and its matching Wii build, not this port.
-
-Petari
-[![Build Status]][actions] ![Progress] [![Discord Badge]][discord]
-=============
-
-[Build Status]: https://github.com/SMGCommunity/Petari/actions/workflows/build.yml/badge.svg
-[actions]: https://github.com/SMGCommunity/Petari/actions/workflows/build.yml
-
-[Progress]: https://decomp.dev/SMGCommunity/Petari.svg?mode=shield&measure=code&label=Code
-
-[Discord Badge]: https://img.shields.io/discord/727908905392275526?color=%237289DA&logo=discord&logoColor=%23FFFFFF
-[discord]: https://discord.gg/ZxEqyYeZbf
-[progress_link]: https://decomp.dev/SMGCommunity/Petari
-
-<!-- markdownlint-disable MD033 -->
-[<img src="https://decomp.dev/SMGCommunity/Petari.svg?w=512&h=256" width="512" height="256" alt="A visual">][progress_link]
-<!-- markdownlint-enable MD033 -->
-
-A work-in-progress decompilation of Super Mario Galaxy 1.
-
-This repository does **not** contain any game assets or assembly whatsoever. An existing copy of the game is required.
-
-This project is **not** meant to be an effort to create a PC Port. Please do not ask for any information on a PC port on this repository or in the Discord server.
-
-> [!NOTE]
-> AI may be used for code cleanup, formatting, documentation, and naming assistance. AI-generated decompilation work is not allowed. Pull requests containing obvious AI-generated decompilation output or other AI slop will be rejected. Contributors should be able to explain and justify any decompilation work they submit. This also applies to all tool-generated code. We want to keep this project as human as possible.
-
-Supported versions:
-
-- `RMGK01`: Rev 0 (Korea)
-
-Dependencies
-============
-
-Windows
---------
-
-On Windows, it's **highly recommended** to use native tooling. WSL or msys2 are **not** required.  
-When running under WSL, [objdiff](#diffing) is unable to get filesystem notifications for automatic rebuilds.
-
-- Install [Python](https://www.python.org/downloads/) and add it to `%PATH%`.
-  - Also available from the [Windows Store](https://apps.microsoft.com/store/detail/python-311/9NRWMJP3717K).
-- Download [ninja](https://github.com/ninja-build/ninja/releases) and add it to `%PATH%`.
-  - Quick install via pip: `pip install ninja`
-
-macOS
-------
-
-- Install [ninja](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages):
-
-  ```sh
-  brew install ninja
-  ```
-
-[wibo](https://github.com/decompals/wibo), a minimal 32-bit Windows binary wrapper, will be automatically downloaded and used.
-
-Linux
-------
-
-- Install [ninja](https://github.com/ninja-build/ninja/wiki/Pre-built-Ninja-packages).
-
-[wibo](https://github.com/decompals/wibo), a minimal 32-bit Windows binary wrapper, will be automatically downloaded and used.
-
-Building
-========
-
-- Clone the repository:
-
-  ```sh
-  git clone https://github.com/SMGCommunity/Petari.git
-  ```
-
-- Using [Dolphin Emulator](https://dolphin-emu.org/), extract your game to `orig/GAMEID`.
-![](assets/dolphin-extract.png)
-  - To save space, the only necessary files are the following. Any others can be deleted.
-    - `sys/main.dol`
-- Configure:
-
-  ```sh
-  python configure.py
-  ```
-
-  To use a version other than `GAMEID` (USA), specify it with `--version`.
-- Build:
-
-  ```sh
-  ninja
-  ```
-
-Diffing
-=======
-
-Once the initial build succeeds, an `objdiff.json` should exist in the project root.
-
-Download the latest release from [encounter/objdiff](https://github.com/encounter/objdiff). Under project settings, set `Project directory`. The configuration should be loaded automatically.
-
-Select an object from the left sidebar to begin diffing. Changes to the project will rebuild automatically: changes to source files, headers, `configure.py`, `splits.txt` or `symbols.txt`.
-
-![](assets/objdiff.png)
-
-Credits
-=======
-Big thanks to the [doldecomp team](https://github.com/doldecomp/sdk_2009-12-11) for their efforts on bte, [tp](https://github.com/zeldaret/tp) for JSystem, and [ogws](https://github.com/doldecomp/ogws/tree/master), where this repository has sourced code and headers from.
