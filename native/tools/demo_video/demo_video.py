@@ -51,7 +51,8 @@ MAIN = Path(os.environ.get("PETARI_MAIN", Path.home() / "petari"))
 LEVELS = Path.home() / "Petari-playtest" / "levels"
 FRAME_BYTES = 12 * 1024 * 1024  # a 2560x1440 PNG dump frame, with headroom
 DEFAULT_LATENCY = 1  # measured on the shape-garden / le-main builds; the tool re-measures every run
-MOVE = re.compile(r"^\[(input-script|cappy|odyssey)\] (on|start|done|stopped|throw|bounce|dive \(|cap bounce|.* landed|.*long jump)|"
+MOVE = re.compile(r"^\[(input-script|cappy|odyssey)\] (on|start|done|stopped|throw|bounce|dive \(|cap bounce|.* landed|.*long jump|"
+                  r"frame 1 kind \d+ )|"   # PETARI_ODYSSEY_TRACE=1: the first frame of each air move (kind 6 = long jump)
                   r"^PETARI MODS: .* on$|^\[odyssey camera\] orbit on")
 
 
@@ -419,6 +420,9 @@ def selftest(_args):
         a2 = argparse.Namespace(latency="1", highlight="", slow=False, crop="", title="", keep_run=False, layout="overlay")
         info2 = render(run2, "selftest2", a2, tmp / "out2")
         assert probe(tmp / "out2" / "selftest2.mp4")["height"] == 720
+        # the move log keeps the first frame of each Odyssey air move (PETARI_ODYSSEY_TRACE=1) but not every trace line
+        assert MOVE.match("[odyssey] frame 1 kind 6 rise 3.1") and not MOVE.match("[odyssey] frame 2 kind 6 rise 3.1")
+        assert MOVE.match("[cappy] throw (air) at (1, 2, 3)") and not MOVE.match("[cappy] trace something else")
         # warm caches are copied consistently into the seed dir
         import sqlite3
         (tmp / "user").mkdir()

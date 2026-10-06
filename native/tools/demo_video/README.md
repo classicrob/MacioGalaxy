@@ -56,4 +56,7 @@ drawn; the `band` layout keeps the cropped aspect, so a wider crop uses more of 
 also `ctest -R native_demo_video`, label `tools`). Rehearse a script first with `--no-dump` (fast; check `-moves.log`
 and `-inputs.csv`).
 
+Move log: `-moves.log` keeps the game's `[cappy]` / `[odyssey]` move lines. Add `--env PETARI_ODYSSEY_TRACE=1` to also
+keep the first frame of each Odyssey air move (`[odyssey] frame 1 kind N ...`; kind 6 = long jump).
+
 Never signal Petari processes by name or path: the tool only signals the process group it started.
