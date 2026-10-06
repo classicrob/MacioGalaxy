@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Unit tests for test_server.py's stop: safe after a successful quit, with a reused pid, and still kills a server that ignores quit."""
+"""Unit tests for test_server.py: stop is safe after a successful quit, with a reused pid, and still kills a server that ignores
+quit; a fresh start empties the command and reply queues."""
 import argparse
 import subprocess
 import sys
@@ -44,6 +45,26 @@ class Stop(unittest.TestCase):
         self.assertEqual(self.stop(), 0)
         proc.wait(timeout=5)
         self.assertIsNotNone(proc.returncode)
+
+
+class Queues(unittest.TestCase):
+    def test_a_fresh_start_drops_commands_and_replies_left_by_a_previous_server(self):
+        directory = Path(tempfile.mkdtemp())
+        (directory / "cmd").mkdir()
+        (directory / "reply").mkdir()
+        (directory / "cmd/1.txt").write_text("quit\n")       # a send() that timed out: the old server never read it
+        (directory / "cmd/2.tmp").write_text("warp X\n")
+        (directory / "reply/3.txt").write_text("ok old\n")
+        (directory / "keep.txt").write_text("not a queue")
+        ts.reset_queues(directory)
+        self.assertEqual(list((directory / "cmd").iterdir()), [])
+        self.assertEqual(list((directory / "reply").iterdir()), [])
+        self.assertTrue((directory / "keep.txt").exists())
+
+    def test_missing_queues_are_created(self):
+        directory = Path(tempfile.mkdtemp()) / "new"
+        ts.reset_queues(directory)
+        self.assertTrue((directory / "cmd").is_dir() and (directory / "reply").is_dir())
 
 
 if __name__ == "__main__":

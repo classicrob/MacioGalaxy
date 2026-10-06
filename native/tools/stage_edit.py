@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Edit a stage archive's placement tables (native/MODS.md "Make a level edit").
+Legacy archive-level editing; for authoring with the in-game editor's semantics (Checks, undo, patch mods) use
+petari-level or the petari_level Python API (docs/dev/level-editor/AGENT_API.md).
 
 Reads a stage archive (Yaz0 or plain RARC) from your own copy of the disc, edits
 JMap/BCSV placement rows, and writes a new archive for a mod folder

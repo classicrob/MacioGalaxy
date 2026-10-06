@@ -17,5 +17,9 @@ namespace EditorCamera {
     // A new GameScene: Edit mode ends without restoring a view (the old scene is gone); the editor's own
     // view is kept for re-entry. No-op when not editing.
     void abandon();
+    // Edit mode only: put the editor camera at `eye` looking at `target` (`up` sets the roll, `fovy` in degrees,
+    // 1..175); orbiting then continues around `target`. False, and nothing changes, outside Edit mode or for a
+    // non-finite, degenerate or parallel pose. The test server's posed `screenshot` uses it.
+    bool setPose(const float eye[3], const float target[3], const float up[3], float fovy);
 }  // namespace EditorCamera
 #endif

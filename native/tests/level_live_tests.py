@@ -112,6 +112,28 @@ class LiveTests(unittest.TestCase):
                 live.start_inputs([{"frames":3,"stick":[float("nan"),0]}])
             self.assertFalse(list(Path(directory).glob("*.json")))
 
+    def test_plain_screenshot_sends_only_the_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live, sent = Live(directory), []
+            live.send = lambda command, timeout=120: sent.append(command) or {}
+            live.screenshot(Path(directory) / "shot.png")
+            self.assertEqual(sent, [f"screenshot {(Path(directory) / 'shot.png').resolve()}"])
+
+    def test_posed_screenshot_sends_eye_target_up_and_fovy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live, sent = Live(directory), []
+            live.send = lambda command, timeout=120: sent.append(command) or {}
+            live.screenshot(Path(directory) / "shot.png", eye=[1, 2.5, -3], target=(0, 0, 0), up=[0, 1, 0], fovy=60)
+            self.assertTrue(sent[0].endswith(" eye 1 2.5 -3 target 0 0 0 up 0 1 0 fovy 60"), sent[0])
+
+    def test_posed_screenshot_needs_eye_and_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            live, sent = Live(directory), []
+            live.send = lambda command, timeout=120: sent.append(command) or {}
+            with self.assertRaises(ValueError):
+                live.screenshot(Path(directory) / "shot.png", eye=[1, 2, 3])
+            self.assertEqual(sent, [])
+
 
 if __name__ == "__main__":
     unittest.main()
