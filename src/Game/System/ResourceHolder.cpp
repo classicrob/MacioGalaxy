@@ -1,3 +1,4 @@
+#include "Game/System/GenericWorld.hpp"
 #include "Game/System/ResourceHolder.hpp"
 #include "Game/Animation/MaterialAnmBuffer.hpp"
 #include "Game/Util/MemoryUtil.hpp"
@@ -263,6 +264,9 @@ ResFileInfo* ResourceHolder::createAndRegisterObject(const char* pName, void* pD
     }
 
     if (strstr(pName, ".bdl") != nullptr) {
+#ifdef PETARI_NATIVE
+        GenericWorld::onModelFile(pData, mArchive->mLoaderName);  // Generic world mod: colours without hue
+#endif
         OSLockMutex(&MR::MutexHolder< 0 >::sMutex);
         J3DModelData* modelData = J3DModelLoaderDataBase::loadBinaryDisplayList(pData, J3DMLF_Material_UseIndirect | J3DMLF_UseUniqueMaterials);
         OSUnlockMutex(&MR::MutexHolder< 0 >::sMutex);
@@ -270,13 +274,22 @@ ResFileInfo* ResourceHolder::createAndRegisterObject(const char* pName, void* pD
         if (MR::isUseFur(modelData) || MR::strcasecmp(pName, "MarioShadow.bdl") == 0) {
             MR::downFracVtx(modelData);
         }
+#ifdef PETARI_NATIVE
+        GenericWorld::onModelData(modelData, mArchive->mLoaderName, pName);  // Generic world mod: plain textures
+#endif
         return mModelResTable->add(pName, modelData, true);
     }
 
     if (strstr(pName, ".bmd") != nullptr) {
+#ifdef PETARI_NATIVE
+        GenericWorld::onModelFile(pData, mArchive->mLoaderName);  // Generic world mod: colours without hue
+#endif
         J3DModelData* modelData =
             J3DModelLoaderDataBase::load(pData, J3DMLF_Material_PE_Full | J3DMLF_Material_UseIndirect | J3DMLF_UseUniqueMaterials | J3DMLF_21);
         modelData->newSharedDisplayList(0);
+#ifdef PETARI_NATIVE
+        GenericWorld::onModelData(modelData, mArchive->mLoaderName, pName);  // Generic world mod: plain textures
+#endif
         return mModelResTable->add(pName, modelData, true);
     }
 

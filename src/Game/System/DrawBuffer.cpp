@@ -1,3 +1,4 @@
+#include "Game/System/GenericWorld.hpp"
 #include "Game/System/DrawBuffer.hpp"
 #include "Game/LiveActor/ActorLightCtrl.hpp"
 #include "Game/System/ShapePacketUserData.hpp"
@@ -185,6 +186,11 @@ void DrawBuffer::resetLightSort(const ActorLightCtrl* pLightCtrl) {
 }
 
 void DrawBuffer::drawOpa() const {
+#ifdef PETARI_NATIVE
+    if (GenericWorld::drawBuffer(this, true)) {
+        return;  // Generic world mod: plain stand-ins instead of this model
+    }
+#endif
     if (mNumActors > 0) {
         J3DShape::sOldVcdVatCmd = nullptr;
         for (s32 idx = 0; idx < mNumOpaShapeDrawers; idx++) {
@@ -194,6 +200,11 @@ void DrawBuffer::drawOpa() const {
 }
 
 void DrawBuffer::drawXlu() const {
+#ifdef PETARI_NATIVE
+    if (GenericWorld::drawBuffer(this, false)) {
+        return;
+    }
+#endif
     if (mNumActors > 0) {
         J3DShape::sOldVcdVatCmd = nullptr;
         for (s32 idx = mNumOpaShapeDrawers; idx < mNumShapeDrawers; idx++) {

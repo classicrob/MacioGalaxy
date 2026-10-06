@@ -11,10 +11,7 @@
 #include "Game/Player/MarioCappy.hpp"
 #include "Game/Player/MarioParts.hpp"
 #include "Game/Player/MarioState.hpp"
-#include "Game/Util/CameraUtil.hpp"
-#include "Game/Util/DirectDraw.hpp"
-#include "Game/Util/DrawUtil.hpp"
-#include "Game/Util/LightUtil.hpp"
+#include "Game/Util/GenericShapes.hpp"
 #include "Game/Util/LiveActorUtil.hpp"
 #include "Game/Util/ModelUtil.hpp"
 #include <JSystem/J3DGraphAnimator/J3DJoint.hpp>
@@ -28,9 +25,9 @@
 #include <cmath>
 
 namespace {
+    using GenericShapes::apply;
+    using GenericShapes::unitNormal;
     constexpr int kMaxJoints = 64;
-    constexpr int kRings = 10;  // the unit sphere: latitude rings
-    constexpr int kSegs = 16;   // and longitude segments (also the capsules' sides)
 
     enum Slot : u8 { Skin, Suit, Shoe, Hat, Dark, SlotCount };
 
@@ -187,133 +184,11 @@ namespace {
         }
     };
 
-    TVec3f apply(const Mtx m, const TVec3f& v) {
-        return TVec3f(m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z + m[0][3], m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z + m[1][3],
-                      m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z + m[2][3]);
-    }
-
-    TVec3f rotate(const Mtx m, const TVec3f& v) {
-        return TVec3f(m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z, m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
-                      m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z);
-    }
-
-    TVec3f unitNormal(const TVec3f& v) {
-        TVec3f n(v);
-        const f32 length = n.length();
-        if (length > 0.0001f) {
-            n *= 1.0f / length;
-        } else {
-            n.set(0.0f, 1.0f, 0.0f);
-        }
-        return n;
-    }
-
-    // The unit sphere's point at ring i (0 = top), segment j.
-    TVec3f spherePoint(int i, int j) {
-        const f32 lat = 3.14159265f * (0.5f - static_cast< f32 >(i) / kRings);
-        const f32 lon = 6.2831853f * static_cast< f32 >(j) / kSegs;
-        return TVec3f(std::cos(lat) * std::sin(lon), std::sin(lat), std::cos(lat) * std::cos(lon));
-    }
-
-    void sendVertex(const TVec3f& rPos, const TVec3f& rNormal) {
-        GXPosition3f32(rPos.x, rPos.y, rPos.z);
-        GXNormal3f32(rNormal.x, rNormal.y, rNormal.z);
-    }
-
-    // An ellipsoid centre c, radii r in m's space (a joint's skin matrix, or
-    // identity for world space). dome: the upper half only.
-    void drawEllipsoid(const Mtx m, const TVec3f& c, const TVec3f& r, bool dome) {
-        const int rings = dome ? kRings / 2 : kRings;
-        GXBegin(GX_TRIANGLES, GX_VTXFMT0, static_cast< u16 >(rings * kSegs * 6));
-        for (int i = 0; i < rings; ++i) {
-            for (int j = 0; j < kSegs; ++j) {
-                const TVec3f u[4] = {spherePoint(i, j), spherePoint(i + 1, j), spherePoint(i + 1, j + 1), spherePoint(i, j + 1)};
-                TVec3f pos[4], nrm[4];
-                for (int k = 0; k < 4; ++k) {
-                    pos[k] = apply(m, TVec3f(c.x + r.x * u[k].x, c.y + r.y * u[k].y, c.z + r.z * u[k].z));
-                    nrm[k] = unitNormal(rotate(m, TVec3f(u[k].x / r.x, u[k].y / r.y, u[k].z / r.z)));
-                }
-                const int order[6] = {0, 1, 2, 0, 2, 3};
-                for (int k : order) {
-                    sendVertex(pos[k], nrm[k]);
-                }
-            }
-        }
-        GXEnd();
-    }
-
-    // A capsule in world space: a sphere at each end and the side between.
-    void drawCapsule(const TVec3f& a, f32 ra, const TVec3f& b, f32 rb) {
-        Mtx identity;
-        PSMTXIdentity(identity);
-        drawEllipsoid(identity, a, TVec3f(ra, ra, ra), false);
-        drawEllipsoid(identity, b, TVec3f(rb, rb, rb), false);
-        TVec3f axis(b - a);
-        if (axis.length() < 0.01f) {
-            return;
-        }
-        axis = unitNormal(axis);
-        TVec3f helper = std::fabs(axis.y) < 0.9f ? TVec3f(0.0f, 1.0f, 0.0f) : TVec3f(1.0f, 0.0f, 0.0f);
-        TVec3f e1;
-        e1.cross(axis, helper);
-        e1 = unitNormal(e1);
-        TVec3f e2;
-        e2.cross(axis, e1);
-        GXBegin(GX_TRIANGLES, GX_VTXFMT0, static_cast< u16 >(kSegs * 6));
-        for (int j = 0; j < kSegs; ++j) {
-            const f32 t0 = 6.2831853f * static_cast< f32 >(j) / kSegs;
-            const f32 t1 = 6.2831853f * static_cast< f32 >(j + 1) / kSegs;
-            const TVec3f n0(e1 * std::cos(t0) + e2 * std::sin(t0));
-            const TVec3f n1(e1 * std::cos(t1) + e2 * std::sin(t1));
-            const TVec3f a0(a + n0 * ra), a1(a + n1 * ra), b0(b + n0 * rb), b1(b + n1 * rb);
-            sendVertex(a0, n0);
-            sendVertex(b0, n0);
-            sendVertex(b1, n1);
-            sendVertex(a0, n0);
-            sendVertex(b1, n1);
-            sendVertex(a1, n1);
-        }
-        GXEnd();
-    }
-
-    // The GX state for the figure: positions and normals in world space (the
-    // camera view as the position and normal matrix), one colour channel.
-    // Lit by the player lights.
-    void beginFigure() {
-        TDDraw::cameraInit3D();
-        TDDraw::setup(0, 0, 0);
-        MR::loadLightPlayer();  // LIGHT0/1 and the ambient colour (after setup, which clears it)
-        GXClearVtxDesc();
-        GXSetVtxDesc(GX_VA_POS, GX_DIRECT);
-        GXSetVtxDesc(GX_VA_NRM, GX_DIRECT);
-        GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_POS, GX_POS_XYZ, GX_F32, 0);
-        GXSetVtxAttrFmt(GX_VTXFMT0, GX_VA_NRM, GX_NRM_XYZ, GX_F32, 0);
-        GXSetNumChans(1);
-        GXSetNumTexGens(0);
-        GXSetNumTevStages(1);
-        GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD_NULL, GX_TEXMAP_NULL, GX_COLOR0A0);
-        GXSetTevOp(GX_TEVSTAGE0, GX_PASSCLR);
-        GXSetChanCtrl(GX_COLOR0, GX_TRUE, GX_SRC_REG, GX_SRC_REG, GX_LIGHT0 | GX_LIGHT1, GX_DF_CLAMP, GX_AF_NONE);
-        GXSetChanCtrl(GX_ALPHA0, GX_FALSE, GX_SRC_REG, GX_SRC_REG, GX_LIGHT_NULL, GX_DF_NONE, GX_AF_NONE);
-        GXSetAlphaCompare(GX_ALWAYS, 0, GX_AOP_AND, GX_ALWAYS, 0);
-        GXSetFog(GX_FOG_NONE, 0.0f, 0.0f, 0.0f, 0.0f, GXColor{0, 0, 0, 0});
-        GXSetCullMode(GX_CULL_NONE);
-        GXSetZCompLoc(GX_TRUE);
-        GXSetZMode(GX_TRUE, GX_LEQUAL, GX_TRUE);
-        GXSetBlendMode(GX_BM_NONE, GX_BL_ONE, GX_BL_ZERO, GX_LO_CLEAR);
-    }
-
-    void endFigure() {
-        MR::reinitGX();
-        MR::loadViewMtx();
-        MR::loadProjectionMtx();
-    }
-
     struct Painter {
         const Palette* palette;
 
         void use(Slot slot) const {
-            GXSetChanMatColor(GX_COLOR0A0, palette->c[slot]);
+            GenericShapes::color(palette->c[slot]);
         }
     };
 
@@ -329,7 +204,7 @@ namespace {
             const TVec3f around(pAround[0], pAround[1], pAround[2]);
             c = around + (c - TVec3f(kHatCentre[0], kHatCentre[1], kHatCentre[2])) * scale;
         }
-        drawEllipsoid(rPose.skin[joint], c, TVec3f(rBlob.r[0] * scale, rBlob.r[1] * scale, rBlob.r[2] * scale), rBlob.dome);
+        GenericShapes::ellipsoid(rPose.skin[joint], c, TVec3f(rBlob.r[0] * scale, rBlob.r[1] * scale, rBlob.r[2] * scale), rBlob.dome);
     }
 
     bool limbPoint(const Pose& rPose, const char* pJoint, const f32* pPoint, TVec3f* pOut, f32* pScale) {
@@ -349,7 +224,7 @@ namespace {
             return;
         }
         rPaint.use(rLimb.slot);
-        drawCapsule(a, rLimb.ra * sa, b, rLimb.rb * sb);
+        GenericShapes::capsule(a, rLimb.ra * sa, b, rLimb.rb * sb);
     }
 
     void drawMittens(const Pose& rPose, const Painter& rPaint) {
@@ -367,7 +242,7 @@ namespace {
             const TVec3f along(unitNormal(wrist - rPose.origin(elbow)));
             rPaint.use(Skin);
             const f32 r = kMittenRadius * s;
-            drawEllipsoid(identity, wrist + along * (kMittenReach * s), TVec3f(r, r, r), false);
+            GenericShapes::ellipsoid(identity, wrist + along * (kMittenReach * s), TVec3f(r, r, r), false);
         }
     }
 
@@ -381,7 +256,7 @@ namespace {
             }
             rPaint.use(Suit);
             const f32 r = kShoulderRadius * rPose.scale(joint);
-            drawEllipsoid(identity, rPose.origin(joint), TVec3f(r, r, r), false);
+            GenericShapes::ellipsoid(identity, rPose.origin(joint), TVec3f(r, r, r), false);
         }
     }
 
@@ -390,7 +265,7 @@ namespace {
         rPaint.use(Hat);
         for (const Blob& blob : kHat) {
             const TVec3f c(blob.c[0] - kHatCentre[0], blob.c[1] - kHatCentre[1], blob.c[2] - kHatCentre[2]);
-            drawEllipsoid(capMtx, c, TVec3f(blob.r[0], blob.r[1], blob.r[2]), blob.dome);
+            GenericShapes::ellipsoid(capMtx, c, TVec3f(blob.r[0], blob.r[1], blob.r[2]), blob.dome);
         }
     }
 
@@ -513,12 +388,12 @@ namespace GenericFigure {
         sCapOutMtxValid = petariCappyCapMtx(sCapOutMtx);
         const Palette palette = paletteFor(pActor);
         const Painter paint = {&palette};
-        beginFigure();
+        GenericShapes::begin(true);
         drawBody(pose, paint, fpView, !sCapOutMtxValid);
         if (sCapOutMtxValid) {
             drawThrownHat(paint, sCapOutMtx);
         }
-        endFigure();
+        GenericShapes::end();
         return true;
     }
 
@@ -542,7 +417,7 @@ namespace GenericFigure {
         Palette palette = kPlain;
         palette.c[Skin] = GXColor{0xF2, 0xF0, 0xEC, 0xFF};
         const Painter paint = {&palette};
-        beginFigure();
+        GenericShapes::begin(true);
         for (const Blob& blob : kBooBlobs) {
             drawBlob(pose, paint, blob);
         }
@@ -554,7 +429,7 @@ namespace GenericFigure {
             onBoo.joint = "SklRoot";
             drawBlob(pose, paint, onBoo, kBooHatScale, kBooHatCentre);
         }
-        endFigure();
+        GenericShapes::end();
     }
 }  // namespace GenericFigure
 
