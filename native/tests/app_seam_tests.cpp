@@ -23,6 +23,7 @@
 #include "../app/spike_profiler.hpp"
 #include "../app/smoke.hpp"
 #include "petari/app.hpp"
+#include "petari/home_menu.hpp"
 #include "petari/frame_telemetry.hpp"
 #include "petari/host_allocation.hpp"
 
