@@ -294,8 +294,11 @@ unchanged, so every shape still reads.
 - **HUD icons**: the lives icon is a plain head with the bucket hat (not
   Mario's head), the star counter a plain gold star, the coin counter a gold
   disc, the Star Bit counter a pale gold gem.
+- **Particle effects** (sparkles, dust, the Launch Star streak) keep their shapes
+  and brightness but lose their hue (their colours and textures, as the effects
+  load at start-up: turn the mod on before starting the game).
 - **Still the game's look:** the HUD digits, the LIFE meter and other HUD
-  screens, fonts and banners, particle effects, models that use texture formats
+  screens, fonts and banners, models that use texture formats
   the rewrite skips, and the player (see "Generic character"). Objects without a
   stand-in keep their shape, in plain colours.
 

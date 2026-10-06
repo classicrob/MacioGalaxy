@@ -1100,6 +1100,11 @@ namespace GenericWorld {
     }
 }  // namespace GenericWorld
 
+// native/resource/jpa_resource.cpp, as the particle resources load: their colours lose their hue.
+extern "C" bool petari_generic_world_grey_particles() {
+    return GenericWorld::on();
+}
+
 extern "C" void petari_generic_world_layout_texture(void* pTpl, const char* pName) {
     if (pTpl == nullptr || pName == nullptr || iconFor(pName) == Icon::None) {
         return;
