@@ -8,6 +8,14 @@
 FileHolderFileEntry::FileHolderFileEntry(const char* pFilePath, JKRHeap* pHeap, void* pContext)
     : mEntryNum(DVDConvertPathToEntrynum(pFilePath)), mContext(nullptr), mHeap(pHeap), mState(FILE_HOLDER_STATE_NONE), mContextSet(true) {
     OSInitMessageQueue(&mQueue, &mMessage, 1);
+#ifdef PETARI_NATIVE
+    mNativePath = nullptr;
+    if (mEntryNum < 0 && pFilePath != nullptr) {
+        const s32 length = strlen(pFilePath) + 1;
+        mNativePath = new (pHeap, 0) char[length];
+        MR::copyString(mNativePath, pFilePath, length);
+    }
+#endif
 
     if (pContext) {
         mContextSet = false;
@@ -19,6 +27,9 @@ FileHolderFileEntry::~FileHolderFileEntry() {
     if (mContextSet && (mContext != nullptr)) {
         delete (u8*)mContext;
     }
+#ifdef PETARI_NATIVE
+    delete[] mNativePath;
+#endif
 }
 
 void FileHolderFileEntry::waitReadDone() {
@@ -84,6 +95,16 @@ FileHolderFileEntry** FileHolder::removeFile(const char* pFilePath) {
 FileHolderFileEntry* FileHolder::findEntry(const char* pFilePath) const {
     s32 entryNum = DVDConvertPathToEntrynum(pFilePath);
     for (FileHolderFileEntry* const* pEntry = mEntries.begin(); pEntry != mEntries.end(); pEntry++) {
+#ifdef PETARI_NATIVE
+        // Every path that is not on the disc has entry number -1: match those by name, or the
+        // first such file would answer for all of them (TECH.md 2.5).
+        if (entryNum < 0) {
+            if ((*pEntry)->mEntryNum < 0 && (*pEntry)->mNativePath != nullptr && MR::isEqualStringCase((*pEntry)->mNativePath, pFilePath)) {
+                return *pEntry;
+            }
+            continue;
+        }
+#endif
         if (entryNum == (*pEntry)->mEntryNum) {
             return *pEntry;
         }

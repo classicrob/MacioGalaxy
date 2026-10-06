@@ -14,6 +14,7 @@ unmodified game and every test run behave exactly as before.
 | Generic character (`GenericCharacter`) | none (a look) | The player is drawn as a plain figure with Mario's proportions and animations instead of Mario: see "Generic character" below. |
 | Generic world (`GenericWorld`) | none (a look) | Terrain, sky and objects lose the game's look: plain textures, colours without hue, and plain shapes for common enemies and items: see "Generic world" below. |
 | Hide the HUD (`HideHud`) | none (a look) | No counters, meters, lives icon, pointer cursor or stage banners on screen: see "Hide the HUD" below. |
+| Level editor (`LevelEditor`) | a tap of Tab | Edit the galaxy you are in (docs/dev/level-editor/UX.md). A short tap of Tab, with nothing else pressed, freezes the game into Edit mode where the pause menu could open; another tap plays again. Holding Tab still tilts the remote. Remappable as `LevelEditor` in `controls.txt`. |
 
 ## Turning mods on
 
@@ -464,6 +465,26 @@ says what happened:
 A mod file that cannot be used (for example a path where the disc has a directory
 in the way) is skipped with a `[mods] skipped <path>: <reason>` line; the rest of the
 mod still applies.
+
+## Level edit patches
+
+The level editor saves a mod as a **patch** by default: `edits/<Galaxy>.json`
+next to `mod.txt`, holding the changed rows of the galaxy's tables and no game
+data. At start-up the loader builds the archives from your own disc. It caches
+them in `<user folder>/mods-cache/` and builds again only when the patch changes.
+After that the result is used like any `files/` archive:
+
+```
+[mods] patch mods: built StageData/SoramameZone.arc (MyEdit)
+[mods] mod MyEdit (priority 0, rank 1 of 1): 0 files and level edits
+```
+
+How patches combine with other mods:
+- **Patch with patch:** two patch mods that edit the same archive are merged. Where both change the same cell, the higher-priority mod wins.
+- **Patch with full archive:** a higher-priority mod with a full archive of the same file wins it.
+- **Different disc:** a patch made against another disc (another region) is not applied to the archives whose rows don't match, and the log says so.
+
+To get archives Whitehole or Dolphin can open, save with "Full archives" in the editor.
 
 ## Compressed and uncompressed archives
 

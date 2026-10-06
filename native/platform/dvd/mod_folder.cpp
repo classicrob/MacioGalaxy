@@ -44,6 +44,7 @@ void readModText(const fs::path& file, ModInfo& mod) {
         const std::string key = upper(trim(line.substr(0, eq)));
         const std::string value = trim(line.substr(eq + 1));
         if (key == "NAME") mod.title = value;
+        else if (key == "EDITOR") mod.editor = value == "1";
         else if (key == "DESCRIPTION") mod.description = value;
         else if (key == "PRIORITY") {
             char* end = nullptr;
@@ -211,8 +212,13 @@ std::vector<ModInfo> discover(const std::vector<fs::path>& directories) {
             mod.source = directory.string();
             readModText(folder / "mod.txt", mod);
             if (mod.title.empty()) mod.title = mod.name;
+            std::error_code editsError;
+            for (fs::directory_iterator it(folder / "edits", editsError), end; !editsError && it != end; it.increment(editsError)) {
+                mod.hasEdits = mod.hasEdits || it->path().extension() == ".json";
+            }
             const fs::path files = folder / "files";
             std::error_code dirError;
+            mod.bakes = mod.editor && fs::is_directory(files / "StageData", dirError);
             if (fs::is_directory(files, dirError)) {
                 walk(files, [&](const std::string& relative, const fs::path&) {
                     if (!normalizePath(relative).empty()) ++mod.fileCount;
@@ -297,7 +303,17 @@ std::map<std::string, bool> effectiveStates(const fs::path& modsFile) {
     return states;
 }
 
-Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, bool>& states) {
+namespace {
+std::mutex gBuilderMutex;
+PatchBuilder gBuilder;
+}  // namespace
+
+void setPatchBuilder(PatchBuilder builder) {
+    std::lock_guard<std::mutex> lock(gBuilderMutex);
+    gBuilder = std::move(builder);
+}
+
+Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, bool>& states, const PatchContext* patch) {
     Resolved out;
     std::vector<const ModInfo*> enabled;
     for (const ModInfo& mod : mods) {
@@ -310,15 +326,46 @@ Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, b
     std::map<std::string, std::size_t> owner;  // upper-cased normalized path -> index in out.files
     struct Rejected { std::string mod, path, kind; };
     std::vector<Rejected> rejected;
+    // Patch mods (lowest priority first, so a higher one's edit of the same cell wins), built once.
+    std::vector<std::pair<std::string, fs::path>> patched;
+    {
+        std::vector<fs::path> roots;
+        for (auto it = enabled.rbegin(); it != enabled.rend(); ++it) {
+            if ((*it)->hasEdits || (*it)->bakes) roots.push_back((*it)->root);
+        }
+        PatchBuilder builder;
+        {
+            std::lock_guard<std::mutex> lock(gBuilderMutex);
+            builder = gBuilder;
+        }
+        if (!roots.empty() && (patch == nullptr || patch->discFiles.empty() || !builder)) {
+            out.log.push_back("patch mods: no builder or disc here; their edits are not applied");
+        } else if (!roots.empty()) {
+            patched = builder(roots, patch->discFiles, patch->cacheDirectory, &out.log);
+        }
+    }
+    bool patchedClaimed = false;
     for (std::size_t rank = 0; rank < enabled.size(); ++rank) {
         const ModInfo& mod = *enabled[rank];
         out.log.push_back("mod " + mod.name + " (priority " + std::to_string(mod.priority) + ", rank " +
                           std::to_string(rank + 1) + " of " + std::to_string(enabled.size()) + "): " +
-                          std::to_string(mod.fileCount) + " files");
+                          std::to_string(mod.fileCount) + " files" + (mod.hasEdits ? " and level edits" : ""));
+        if ((mod.hasEdits || mod.bakes) && !patchedClaimed) {
+            patchedClaimed = true;
+            for (const auto& [discPath, host] : patched) {
+                const std::string path = normalizePath(discPath);
+                const auto [it, inserted] = owner.emplace(upper(path), out.files.size());
+                if (inserted) {
+                    out.files.push_back({path, host, mod.name});
+                } else {
+                    out.log.push_back("conflict " + path + ": " + out.files[it->second].mod + " wins over the level edits");
+                }
+            }
+        }
         const fs::path files = mod.root / "files";
         std::error_code ec;
         if (!fs::is_directory(files, ec)) {
-            out.log.push_back("mod " + mod.name + ": no files/ directory, nothing to apply");
+            if (!mod.hasEdits) out.log.push_back("mod " + mod.name + ": no files/ directory, nothing to apply");
             continue;
         }
         walk(files, [&](const std::string& relative, const fs::path& host) {
@@ -331,7 +378,7 @@ Resolved resolve(const std::vector<ModInfo>& mods, const std::map<std::string, b
             const auto [it, inserted] = owner.emplace(upper(path), out.files.size());
             if (inserted) {
                 out.files.push_back({path, host, mod.name});
-            } else {
+            } else if (out.files[it->second].mod != mod.name) {  // its own level edits beat its old full archive quietly
                 out.log.push_back("conflict " + path + ": " + out.files[it->second].mod + " wins over " + mod.name);
             }
         });
@@ -361,13 +408,33 @@ std::mutex gUserMutex;
 fs::path gUser;
 }  // namespace
 
-Resolved resolveForUser(const fs::path& userDirectory) {
+Resolved resolveForUser(const fs::path& userDirectory, const fs::path& disc) {
     {
         std::lock_guard<std::mutex> lock(gUserMutex);
         gUser = userDirectory;
     }
     const auto mods = discover(searchDirectories(userDirectory));
-    return resolve(mods, effectiveStates(userDirectory / "mods.txt"));
+    PatchContext patch;
+    if (!disc.empty()) {
+        std::error_code ec;
+        patch.discFiles = fs::is_directory(disc / "files", ec) ? disc / "files" : disc / "DATA" / "files";  // as DVD::mount
+        patch.cacheDirectory = userDirectory / "mods-cache";
+    }
+    return resolve(mods, effectiveStates(userDirectory / "mods.txt"), &patch);
+}
+
+std::vector<fs::path> enabledRoots(const fs::path& userDirectory) {
+    std::vector<ModInfo> mods = discover(searchDirectories(userDirectory));
+    const std::map<std::string, bool> states = effectiveStates(userDirectory / "mods.txt");
+    std::stable_sort(mods.begin(), mods.end(), [](const ModInfo& a, const ModInfo& b) {
+        return a.priority != b.priority ? a.priority > b.priority : a.name < b.name;
+    });
+    std::vector<fs::path> roots;
+    for (const ModInfo& mod : mods) {
+        auto state = states.find(mod.name);
+        if (state != states.end() && state->second) roots.push_back(mod.root);
+    }
+    return roots;
 }
 
 std::vector<ModInfo> detected() {
@@ -382,6 +449,11 @@ std::vector<ModInfo> detected() {
 std::map<std::string, bool> detectedStates() {
     std::lock_guard<std::mutex> lock(gUserMutex);
     return gUser.empty() ? std::map<std::string, bool>{} : effectiveStates(gUser / "mods.txt");
+}
+
+fs::path userDirectory() {
+    std::lock_guard<std::mutex> lock(gUserMutex);
+    return gUser;
 }
 
 bool setEnabled(const std::string& name, bool on, std::string* error) {

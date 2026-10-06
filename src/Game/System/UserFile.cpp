@@ -3,6 +3,9 @@
 #include "Game/System/GameDataHolder.hpp"
 #include "Game/Util/MemoryUtil.hpp"
 #include <RVLFaceLib.h>
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime.hpp>
+#endif
 
 #define USER_NAME_SIZE (RFL_NAME_LEN + 1)
 
@@ -87,6 +90,17 @@ const char* UserFile::getGameDataName() const {
 void UserFile::makeGameDataBinary(u8* pBuffer, u32 size) const {
     mGameDataHolder->makeFileBinary(pBuffer, size);
 }
+
+#ifdef PETARI_NATIVE
+void UserFile::nativeSaveModGalaxies() const {
+    if (PetariEditor::Runtime::progressIsolated()) return;
+    mGameDataHolder->nativeSaveModGalaxies();
+}
+
+void UserFile::nativeCopyModGalaxies(const UserFile& rOther) {
+    mGameDataHolder->nativeCopyModGalaxies(*rOther.mGameDataHolder);
+}
+#endif
 
 void UserFile::loadFromGameDataBinary(const char* pName, const u8* pBuffer, u32 size) {
     mIsGameDataCorrupted = !mGameDataHolder->loadFromFileBinary(pName, pBuffer, size);

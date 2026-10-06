@@ -380,6 +380,7 @@ private:
     std::string mObserved;        // Observe: the scene/stage last logged
     unsigned long mObserveTalkFrames = 0, mObserveTaps = 0;
     bool mIconConfirmed = false;  // System_FileSelect013 answered Yes
+    bool mOpenRestart = false;    // started by a New Galaxy restart (PlayerLaunch::openFile): the game opens the file
     unsigned long mAimFrames = 0;
     unsigned long mAimMissing = 0;
     unsigned long mPointingFrames = 0;

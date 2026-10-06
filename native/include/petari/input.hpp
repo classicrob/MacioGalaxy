@@ -109,6 +109,10 @@ enum class Action : std::uint8_t {
     // Cappy mod (docs/dev/CAPPY.md): throw the cap. While the mod is active, an
     // input bound to it and to Shake throws only (RB by default; X still spins).
     ModCappyThrow,
+    // The level editor (docs/dev/level-editor/UX.md section 3), only while it is on (Mods page):
+    // a tap enters Edit mode or leaves it. Tab by default, which also tilts the remote while
+    // held (TiltHold): only a short tap with nothing else pressed toggles.
+    LevelEditor,
     Count
 };
 

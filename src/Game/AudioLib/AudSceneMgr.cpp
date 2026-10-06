@@ -6,6 +6,9 @@
 #include "Game/RhythmLib/AudRhythmWrap.hpp"
 #include "Game/Speaker/SpkSystem.hpp"
 #include <JSystem/JAudio2/JAUSectionHeap.hpp>
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 namespace {
     static const AudSceneSoundInfo cSceneInfo[] = {
@@ -374,6 +377,12 @@ void AudSceneMgr::startScene() {
 }
 
 const AudSceneSoundInfo* AudSceneMgr::findSceneSoundInfo(const char* pSceneName, const char* pStageName) {
+#ifdef PETARI_NATIVE
+    // A mod galaxy plays the music of the disc galaxy it borrows from (galaxy.json, TECH.md 5.7).
+    if (const char* pBorrowed = PetariNative::Platform::ModGalaxy::musicFrom(pStageName)) {
+        pStageName = pBorrowed;
+    }
+#endif
     for (s32 i = 0; i < ARRAY_SIZE(::cSceneInfo); i++) {
         if (strcmp(pSceneName, ::cSceneInfo[i].mSceneName) == 0 && strcmp(pStageName, ::cSceneInfo[i].mStageName) == 0) {
             return &::cSceneInfo[i];

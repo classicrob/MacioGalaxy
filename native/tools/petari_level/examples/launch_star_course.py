@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Example: a coin-arc + Launch Star + Power Star course on Good Egg's starting planet (Disk Garden).
+
+From Mario's mission-1 start: a short coin trail to a Launch Star; the Launch Star flies a new path
+in a high arc over the planet's middle to its far side; an arc of coins traces the flight; a Power
+Star waits where the flight comes down. The Launch Star and the star go in mission 1 only (Disk Garden's layer E): in the
+common layer it would be the 17th Launch Star of mission 2, which the Checks report as an error
+(the game keeps paths for 16), so the script shows that probe first as a dry run.
+
+    native/tools/petari_level/examples/launch_star_course.py [--ws build/ws/launch] [--disc ...] [--save]
+"""
+import argparse
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from petari_level import Level  # noqa: E402
+
+ROOT = Path(__file__).resolve().parents[4]
+
+
+# The course's Power Star uses Star ID 2: mission 1 already has star 1 (the boss's), and a placed star reusing
+# its mission's Star ID is removed after a save and restart (the scripted one wins; duplicate-star check). ID 2
+# is a valid star of this galaxy that mission 1 doesn't use; the result screen then names mission 2.
+STAR_ID = 2
+
+
+def report_checks(lv):
+    checks = lv.checks()["checks"]
+    print(json.dumps({"problems": checks}, indent=1))
+    return not checks
+
+
+def add(a, b, k=1.0):
+    return [a[i] + b[i] * k for i in range(3)]
+
+
+def flat_unit(v, up):
+    d = sum(v[i] * up[i] for i in range(3))
+    f = [v[i] - up[i] * d for i in range(3)]
+    n = sum(x * x for x in f) ** 0.5
+    return [x / n for x in f]
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--ws", default=str(ROOT / "build/ws/launch"))
+    ap.add_argument("--disc", default=str(ROOT / "build/game-data/RMGE01"))
+    ap.add_argument("--save", action="store_true", help="save the patch mod 'Launch Star Course'")
+    args = ap.parse_args()
+
+    lv = Level.init(args.ws, disc=args.disc, galaxy="EggStarGalaxy", mission=1, force=True)
+    start = lv.get({"class": "Mario", "zone": "EggStarGalaxy", "table": "start/layera"})["pos"]
+    up = [-v for v in lv.gravity(start)["down"]]
+    planet = lv.ground(start)["on"]                           # DiskGardenZone:common/objinfo:11
+    zone = planet.split(":")[0]                               # a Launch Star and its path share a zone
+    center = lv.get(planet)["pos"]
+    ahead = flat_unit([center[i] - start[i] for i in range(3)], up)
+    launch = lv.ground(add(add(start, ahead, 450), up, 300))["point"]      # probes start above the ground
+    # The landing: flat open ground on the far side. Probe from high above (an origin inside the tree there
+    # is refused) and keep the first spot whose surface faces up at about the start's level.
+    side = [ahead[1] * up[2] - ahead[2] * up[1], ahead[2] * up[0] - ahead[0] * up[2], ahead[0] * up[1] - ahead[1] * up[0]]
+    landing = None
+    for k, s in [(2900, 0), (2900, 700), (2900, -700), (2600, 700), (2600, -700), (3200, 0), (2400, 1000), (2400, -1000), (3200, 900), (3200, -900)]:
+        probe = lv.ground(add(add(add(start, ahead, k), side, s), up, 3000))
+        # Up-facing and near the planet's surface level (not a tree top or a roof seen from above).
+        level = sum((probe.get("point", start)[i] - start[i]) * up[i] for i in range(3))
+        if probe.get("hit") and sum(probe["normal"][i] * up[i] for i in range(3)) > 0.9 and abs(level) < 500:
+            landing = probe["point"]
+            break
+    assert landing is not None, "no flat landing found"
+    apex = add([(launch[i] + landing[i]) / 2 for i in range(3)], up, 2600)
+
+    def course(layer_ops):
+        return [
+            {"op": "array", "class": "Coin", "shape": "line", "start": add(add(start, ahead, 120), up, 300), "end": add(add(start, ahead, 330), up, 300),
+             "count": 3, "on_ground": True, "height": 80, "as": "trail"},
+            {"op": "path", "zone": zone, "points": [add(launch, up, 150), apex, add(landing, up, 450)], "as": "flight"},
+            {"op": "add", "class": "Launch Star", "pos": add(launch, up, 300), "on_ground": True, "height": 150, "path": "@flight",
+             "zone": zone, "as": "launch", **layer_ops},
+            {"op": "array", "class": "Coin", "shape": "arc", "start": add(launch, up, 500), "end": add(landing, up, 650),
+             "peak": 2200, "count": 9, "down": [-v for v in up], "as": "arc"},
+            {"op": "add", "class": "PowerStar", "pos": add(landing, up, 300), "on_ground": True, "height": 180, "args": {"Star ID": STAR_ID},
+             "missions": [1], "as": "star"},
+        ]
+
+    probe = lv.apply(course({}), dry_run=True)                # the Launch Star in every mission
+    print(json.dumps({"probe_common_layer_checks": probe["checks_introduced"]}, indent=1))
+    result = lv.apply(course({"missions": [1]}), key="launch-course", label="Launch Star course")
+    print(json.dumps({"created": [(o["ref"], o.get("label"), o["class"]) for o in result["created"]],
+                      "checks_introduced": result["checks_introduced"]}, indent=1))
+    clean = report_checks(lv)
+    if args.save:
+        print(json.dumps(lv.save("Launch Star Course"), indent=1))
+    lv.close()
+    sys.exit(0 if clean else 1)
+
+
+if __name__ == "__main__":
+    main()

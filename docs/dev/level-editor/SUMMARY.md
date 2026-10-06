@@ -30,26 +30,22 @@ live in Good Egg, loading models that weren't in the stage in under 2 ms. We
 agreed the reload happens on Play, and coming back to Edit is an instant freeze
 that keeps the frame.
 
-## Open questions for you
+## Decisions (the user, 2026-10-02)
 
-1. **Tab.** Is Tab the right key? Should the editor stay off until it's
-   switched on once in the Home menu, so a stray Tab never freezes a normal game?
-2. **Type.** Galaxy lettering for titles and buttons plus a crisp system font
-   for data (proposed), or the Galaxy font everywhere, larger, with less on
-   screen?
-3. **Panels.** Docked beside the game (proposed), or overlaid on a full-screen
-   game like Mario Maker and Dreams?
-4. **The community's object database.** It has years of argument names but no
-   licence. Proposed: build our own from the decompilation, offer an "import
-   community names" button that downloads theirs into your user folder, and
-   ask the maintainers about bundling. OK to reach out to them?
-5. **Sharing.** Should a shared mod contain the edited archives (the community
-   norm) or only a patch applied to each player's own disc (smaller, no Nintendo
-   data, Petari-only)? Proposed: patch by default.
-6. **Play-tests and your save.** Play-tests run on a scratch save (proposed).
-   Do you also want a "play it for real" mode that saves stars, or is turning
-   the mod on and using Level Select enough?
-7. **Mod galaxies** go in their own Level Select group in v1, with
-   observatory domes later. Is that fine?
-8. **Supernova** (the community's new MIT-licensed editor) already uses Petari
-   as a reference. Should we aim to share formats or the catalog with it?
+The user approved the design and took the recommendation on every open question:
+
+1. **Tab** toggles Edit and Play, but the editor stays **off until switched on once** in the Home menu (Mods page, "Level editor"). A stray Tab never freezes a normal game.
+2. **Type:** Galaxy lettering for titles, tabs and buttons; a crisp system UI font for data.
+3. **Panels** are docked beside the game, with a Focus mode.
+4. **Object database:** our own catalog, built from the decompilation. An optional "import community names" button downloads theirs into the user folder. Contacting the maintainers is deferred; the lead will ask the user first.
+5. **Sharing:** patch mods by default (no Nintendo data); Full-archive export as an option.
+6. **Play-tests** run on a scratch save. Enabling the mod and using Level Select is the "play it for real" path.
+7. **Mod galaxies** get their own Level Select group in v1; observatory domes come later.
+8. **Supernova:** share formats and the catalog where practical.
+9. **Technical** (TECH.md section 9):
+   - New galaxies are Petari-only; edits to existing galaxies stay portable.
+   - Mesh gravity is deferred; terrain gets fitted game gravity shapes.
+   - No VoiceOver in v1.
+   - Vendoring MIT/Apache libraries (Manifold, cgltf, tinyobjloader, meshoptimizer) is fine when needed.
+
+The build plan is TECH.md section 7. Work happens on the `level-editor` branch, with stacked `editor/<topic>` branches merged into it.

@@ -44,6 +44,7 @@ public:
     void exeStaffRoll();
 #ifdef PETARI_NATIVE
     void exePhotoMode();  // native photo mode (Game/Camera/PhotoCamera.hpp)
+    void exeEditMode();   // the level editor's Edit mode (Game/Camera/EditorCamera.hpp)
     bool isNativeSceneAction() const;  // normal play (the hold-to-skip mod's "gameplay", Game/System/CutsceneSkip.hpp)
     bool isNativeMenuOpen() const;     // the galaxy map or pause menu waits for the player (ends a skip)
 #endif

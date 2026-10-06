@@ -1,14 +1,24 @@
 // The per-frame host seam (petari/app.hpp). Aurora and SDL side.
 
+#ifdef PETARI_EDITOR_UI
+#include <petari/editor/ui.hpp>
+#endif
 #include <aurora/aurora.h>
 #include <aurora/event.h>
 
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_keyboard.h>
+#ifdef PETARI_EDITOR_UI
+#include <imgui.h>
+#include <imgui_internal.h>  // GImGui->HoveredWindow, ActiveId (the mouse trace)
+#endif
 
 #include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 extern "C" uint64_t petari_gx_pipeline_manifest_failure_count();
@@ -24,6 +34,9 @@ extern "C" void petari_gx_pipeline_report();
 #include "smoke_domes.hpp"
 #include "smoke_movement.hpp"
 #include "smoke_replay.hpp"
+#include <petari/agent_replay.hpp>
+#include <fstream>
+#include <sstream>
 #include "smoke_goodegg.hpp"
 #include "smoke_soak.hpp"
 #include "smoke_stage.hpp"
@@ -225,6 +238,11 @@ Smoke::SoakDriver* gSoak = nullptr;
 // Or the dome tour (smoke_domes.hpp), PETARI_SMOKE=domes.
 Smoke::DomesDriver* gDomes = nullptr;
 Smoke::ReplayDriver* gReplay = nullptr;
+Smoke::ReplayDriver* gAgentReplay = nullptr;
+uint64_t gAgentMissingLayout = 0;
+uint64_t gAgentMissingSound = 0;
+uint64_t gAgentManifestFailures = 0;
+bool gAgentAssetFailure = false;
 Smoke::MovementDriver* gMovement = nullptr;
 
 unsigned long environmentNumber(const char* name, unsigned long fallback) {
@@ -341,7 +359,7 @@ void startSmoke() {
 long gQuitDelayFrames = 0;  // PETARI_SMOKE_QUIT_DELAY frames left before the power button
 
 template <class Driver>
-void runSmoke(Driver* driver, bool probeHoldsA, bool probeOwnsInput) {
+void runSmoke(Driver* driver, bool probeHoldsA, bool probeOwnsInput, bool quitOnFinish = true) {
     Smoke::Observation observation = Smoke::observeGame(driver->wantsPlayer());
     observation.physical = Events::physicalInputs();
     const Smoke::Step step = driver->step(observation);
@@ -372,7 +390,14 @@ void runSmoke(Driver* driver, bool probeHoldsA, bool probeOwnsInput) {
         std::fprintf(stderr, "PETARI SMOKE: warp requested with no player to move\n");
     }
     Smoke::heartbeat(driver->frame(), driver->phase());
-    if (step.requestQuit) {
+    if (step.requestQuit && !quitOnFinish) {
+        for (Smoke::Button button : {Smoke::Button::A, Smoke::Button::B, Smoke::Button::StickUp,
+             Smoke::Button::StickDown, Smoke::Button::StickLeft, Smoke::Button::StickRight,
+             Smoke::Button::Spin, Smoke::Button::Plus, Smoke::Button::Minus}) {
+            Events::pressButton(static_cast<int>(button), false);
+        }
+    }
+    if (step.requestQuit && quitOnFinish) {
         // A route that passed while looking up layout panes/animations or sounds that do
         // not exist in the disc data did not really pass: those lookups were skipped.
         Smoke::Result result = driver->result();
@@ -455,6 +480,40 @@ void traceFrame(const Rect& image) {
     gTrace.slowFrames = 0;
 }
 
+#ifdef PETARI_EDITOR_UI
+// PETARI_EDITOR_MOUSE_TRACE=1: ImGui's mouse beside SDL's, when either changes (EP-001: panels ignore real
+// clicks in a visible window). One line per change; quiet when nothing moves.
+unsigned gImGuiMouseEvents = 0;  // SDL mouse events Aurora forwarded this run (counted in handleEvents)
+void traceEditorMouse() {
+    static const bool enabled = std::getenv("PETARI_EDITOR_MOUSE_TRACE") != nullptr;
+    if (!enabled || ImGui::GetCurrentContext() == nullptr) return;
+    const ImGuiIO& io = ImGui::GetIO();
+    float sx = 0.0f, sy = 0.0f, gx = 0.0f, gy = 0.0f;
+    const SDL_MouseButtonFlags sdlButtons = SDL_GetMouseState(&sx, &sy);
+    SDL_GetGlobalMouseState(&gx, &gy);
+    int wx = 0, wy = 0;
+    if (gWindow != nullptr) SDL_GetWindowPosition(gWindow, &wx, &wy);
+    SDL_Window* focus = SDL_GetKeyboardFocus();
+    SDL_Window* mouseFocus = SDL_GetMouseFocus();
+    const ImGuiWindow* hovered = GImGui->HoveredWindow;
+    char line[512];
+    std::snprintf(line, sizeof(line),
+                  "imgui pos (%.0f,%.0f) down %d%d%d display %.0fx%.0f fb %.2f capture %d hovered '%s' active %u | sdl window (%.0f,%.0f) "
+                  "buttons %u global (%.0f,%.0f) winpos (%d,%d) keyfocus %s mousefocus %s relative %d | events %u",
+                  io.MousePos.x, io.MousePos.y, io.MouseDown[0], io.MouseDown[1], io.MouseDown[2], io.DisplaySize.x, io.DisplaySize.y,
+                  io.DisplayFramebufferScale.x, io.WantCaptureMouse, hovered != nullptr ? hovered->Name : "-", GImGui->ActiveId,
+                  sx, sy, static_cast<unsigned>(sdlButtons), gx, gy, wx, wy, focus == nullptr ? "none" : focus == gWindow ? "ours" : "other",
+                  mouseFocus == nullptr ? "none" : mouseFocus == gWindow ? "ours" : "other",
+                  gWindow != nullptr ? static_cast<int>(SDL_GetWindowRelativeMouseMode(gWindow)) : -1, gImGuiMouseEvents);
+    static std::string last;
+    // Compare without the event counter (it ticks with every motion).
+    const std::string key(line, std::strstr(line, " | events") != nullptr ? std::strstr(line, " | events") - line : std::strlen(line));
+    if (key == last) return;
+    last = key;
+    std::fprintf(stderr, "[editor-mouse] %s\n", line);
+}
+#endif
+
 void handleEvents(const AuroraEvent* event) {
     for (; event != nullptr && event->type != AURORA_NONE; ++event) {
         switch (event->type) {
@@ -467,6 +526,9 @@ void handleEvents(const AuroraEvent* event) {
             }
             break;
         case AURORA_SDL_EVENT:
+#ifdef PETARI_EDITOR_UI
+            if (event->sdl.type >= SDL_EVENT_MOUSE_MOTION && event->sdl.type <= SDL_EVENT_MOUSE_WHEEL) ++gImGuiMouseEvents;
+#endif
             if (event->sdl.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
                 gTiming.unfocused = gTiming.unfocusedInFrame = true;
             } else if (event->sdl.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
@@ -482,6 +544,15 @@ void handleEvents(const AuroraEvent* event) {
                              static_cast<unsigned>(event->sdl.adevice.which),
                              event->sdl.adevice.recording ? " (recording)" : "");
             }
+#ifdef PETARI_EDITOR_UI
+            // A mod zip dropped on the window: the Install sheet (UX section 17).
+            if (event->sdl.type == SDL_EVENT_DROP_FILE && event->sdl.drop.data != nullptr) {
+                const std::string dropped = event->sdl.drop.data;
+                if (dropped.size() > 4 && dropped.compare(dropped.size() - 4, 4, ".zip") == 0) PetariEditor::Ui::openInstallSheet(dropped.c_str());
+                const auto extension = std::filesystem::path(dropped).extension().string();
+                if (extension == ".gltf" || extension == ".glb" || extension == ".obj") PetariEditor::Ui::openImportSheet(dropped.c_str());  // M6 import
+            }
+#endif
             Events::input(event->sdl);
             break;
         default:
@@ -611,6 +682,66 @@ void reportFrameStats() {
 
 }  // namespace Seam
 
+namespace AgentReplay {
+    bool start(const std::string& route, const std::string& stage, int scenario, unsigned long frames, bool requireStar, std::string* error) {
+        HostAllocationScope host;
+        if (gAgentReplay && gAgentReplay->result() == Smoke::Result::Running) {
+            *error = "a recorded route is already running";
+            return false;
+        }
+        std::ifstream in(route);
+        std::ostringstream text;
+        text << in.rdbuf();
+        Smoke::ReplayConfig config;
+        config.stage = stage;
+        config.scenario = scenario;
+        config.routePath = route;
+        config.route = Smoke::parseReplayRoute(text.str());
+        config.requireStar = requireStar;
+        config.startInStage = true;
+        if (!in || config.route.size() < 2 || frames < 60 || frames > 1080000) {
+            *error = "route needs a readable CSV with at least 2 waypoints and frame limit 60..1080000";
+            return false;
+        }
+        delete gAgentReplay;
+        gAgentMissingLayout = petari_layout_missing_reference_count();
+        gAgentMissingSound = petari_sound_missing_reference_count();
+        gAgentManifestFailures = petari_gx_pipeline_manifest_failure_count();
+        gAgentAssetFailure = false;
+        gAgentReplay = new Smoke::ReplayDriver(frames, config);
+        return true;
+    }
+    bool active() {
+        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Running;
+    }
+    bool finished() {
+        return gAgentReplay && gAgentReplay->result() != Smoke::Result::Running;
+    }
+    bool passed() {
+        return gAgentReplay && gAgentReplay->result() == Smoke::Result::Pass && !gAgentAssetFailure;
+    }
+    std::string reason() {
+        HostAllocationScope host;
+        if (!gAgentReplay)
+            return "no route";
+        auto result = gAgentReplay->reason();
+        if (gAgentReplay->result() == Smoke::Result::Pass && !passed())
+            result += "; missing game assets or shader manifest failures (see server log)";
+        return result;
+    }
+    unsigned long frame() {
+        return gAgentReplay ? gAgentReplay->frame() : 0;
+    }
+    void cancel() {
+        HostAllocationScope host;
+        for (Smoke::Button button : {Smoke::Button::A, Smoke::Button::B, Smoke::Button::StickUp, Smoke::Button::StickDown, Smoke::Button::StickLeft,
+                                     Smoke::Button::StickRight, Smoke::Button::Spin, Smoke::Button::Plus, Smoke::Button::Minus})
+            Events::pressButton(static_cast< int >(button), false);
+        delete gAgentReplay;
+        gAgentReplay = nullptr;
+    }
+}  // namespace AgentReplay
+
 }  // namespace PetariNative::App
 
 using namespace PetariNative::App;
@@ -642,7 +773,14 @@ extern "C" void petari_host_frame_seam(void) {
     if (point.pointer) {
         Events::movePointer(gLastImage.x + point.u * gLastImage.width, gLastImage.y + point.v * gLastImage.height);
     }
-    if (gSmoke != nullptr) {
+    if (gAgentReplay != nullptr && !AgentReplay::finished()) {
+        runSmoke(gAgentReplay, false, false, false);
+        if (AgentReplay::finished()) {
+            gAgentAssetFailure = petari_layout_missing_reference_count() != gAgentMissingLayout ||
+                                 petari_sound_missing_reference_count() != gAgentMissingSound ||
+                                 petari_gx_pipeline_manifest_failure_count() != gAgentManifestFailures;
+        }
+    } else if (gSmoke != nullptr) {
         runSmoke(gSmoke, probeHoldsA, point.active);
     } else if (gStage != nullptr) {
         runSmoke(gStage, probeHoldsA, point.active);
@@ -672,6 +810,13 @@ extern "C" void petari_host_frame_seam(void) {
     }
     const Rect image = updateImage();
     traceFrame(image);
+#ifdef PETARI_EDITOR_UI
+    // The level editor's panels, around the game (they set where the next frame's image goes).
+    PetariEditor::Ui::drawFrame(gLastWindowWidth, gLastWindowHeight);
+#endif
+#ifdef PETARI_EDITOR_UI
+    traceEditorMouse();
+#endif
     PetariNative::HomeMenu::drawImGuiOverlay(image.x, image.y, image.width, image.height);
     const std::uint64_t endStart = Telemetry::nowNs();
     aurora_end_frame();

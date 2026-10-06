@@ -18,7 +18,7 @@ const char* const kActionNames[kActionCount] = {
     "Two",     "DpadUp",    "DpadDown",  "DpadLeft",   "DpadRight", "NunchukC", "NunchukZ", "Shake",     "TiltHold",
     "PostureToggle", "Walk",   "Start", "ModCollectStarBits", "ModShootEnemy", "CameraOrbitHold", "CameraZoomIn",
     "CameraZoomOut", "CameraOrbitLeft", "CameraOrbitRight", "CameraPitchUp", "CameraPitchDown", "PhotoMode", "PhotoShot",
-    "ModCappyThrow",
+    "ModCappyThrow", "LevelEditor",
 };
 
 const char* const kMouseNames[static_cast<int>(MouseButton::Count)] = {"Left", "Middle", "Right", "X1", "X2"};
@@ -336,6 +336,7 @@ Bindings Bindings::defaults() {
     b.bind(Action::CameraPitchDown, Binding::key(Key::K));
     b.bind(Action::PhotoMode, Binding::key(Key::P));
     b.bind(Action::PhotoShot, Binding::key(Key::O));
+    b.bind(Action::LevelEditor, Binding::key(Key::Tab));
     // Game controllers: the usual console layout for this game. The left
     // stick is the Nunchuk stick and the right stick the Star Pointer (not
     // bindings; see RemoteModel). Start and Back would block pausing if they

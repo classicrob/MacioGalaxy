@@ -11,12 +11,15 @@ struct Galaxy {
     const char* stage;    // StageData directory, e.g. "EggStarGalaxy"
     const char* alias;    // "good-egg"
     const char* name;     // "Good Egg Galaxy"
-    int dome;             // 1 Terrace .. 6 Garden; 0 elsewhere (Gateway, Grand Finale, later unlocks)
+    int dome;             // 1 Terrace .. 6 Garden; 0 elsewhere (Gateway, Grand Finale, later unlocks); 7 mod galaxies
     int missions;         // scenario rows, comet and hidden stars included
     const char* comets;   // comet mission numbers, e.g. "45"
     const char* hidden;   // hidden-star mission numbers
 };
 
+// The disc's galaxies, then the new galaxies of enabled folder mods (the mod galaxy registry,
+// docs/dev/level-editor/TECH.md 5.7) in their own "Mod galaxies" section. The list grows when the
+// registry does; earlier pointers into it stay valid.
 const Galaxy* galaxies(int* count);
 const char* domeName(int dome);
 

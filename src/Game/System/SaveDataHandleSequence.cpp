@@ -324,6 +324,9 @@ void SaveDataHandleSequence::restoreUserFile(UserFile* pUserFile, int index, boo
 void SaveDataHandleSequence::backupCurrentUserFile() {
     mCurrentUserFile->makeGameDataBinary(mTempBuffer, SaveDataHandler::getEnoughtTempBufferSize());
     mBackupUserFile->loadFromGameDataBinary(mCurrentUserFile->getGameDataName(), mTempBuffer, SaveDataHandler::getEnoughtTempBufferSize());
+#ifdef PETARI_NATIVE
+    mBackupUserFile->nativeCopyModGalaxies(*mCurrentUserFile);  // not in the binary (TECH.md 5.7)
+#endif
     mCurrentUserFile->makeConfigDataBinary(mTempBuffer, SaveDataHandler::getEnoughtTempBufferSize());
     mBackupUserFile->loadFromConfigDataBinary(mCurrentUserFile->getConfigDataName(), mTempBuffer, SaveDataHandler::getEnoughtTempBufferSize());
 }

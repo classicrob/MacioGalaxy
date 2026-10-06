@@ -110,3 +110,13 @@ inline void PlanetGravityManager::bubbleDown(int i) {
     mGravities[i - 1] = mGravities[i];
     mGravities[i] = temp;
 }
+
+#ifdef PETARI_NATIVE
+void PlanetGravityManager::nativeResortGravities() {
+    for (s32 i = 1; i < mNumGravities; ++i) {
+        for (s32 j = i; j > 0 && mGravities[j]->mPriority > mGravities[j - 1]->mPriority; --j) {
+            bubbleDown(j);
+        }
+    }
+}
+#endif

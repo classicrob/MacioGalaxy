@@ -292,7 +292,7 @@ tracks each one and refuses (with a Check) before the limit.
 | Camera chunks | 1,024 | `src/Game/Camera/CameraParamChunkHolder.cpp:12` |
 | Area managers | 80 types; per type 16-160 | `include/Game/AreaObj/AreaObjContainer.hpp:31` |
 | Demo casts | 512 actors / 64 layouts / 128 NameObjs; 32 groups x 192 | `src/Game/Demo/DemoDirector.cpp:22` |
-| Resource holders / archives | 512 / 384 | `ResourceHolderManager` |
+| Resource holders / mounted archives | 512 / 384; the archive add is unchecked, and Good Egg uses about 350 (S6) | `ResourceHolderManager`, `ArchiveHolder` (`mEntries.init(0x180)`) |
 | Draw-buffer models per group | 1-256 (MapObj 256, NPC 80, Planet 64) | `SceneNameObjListExecutor.cpp:289+` |
 | Child zones | 24 | `include/Game/Scene/StageDataHolder.hpp` |
 
@@ -342,13 +342,14 @@ These follow UX section 3, agreed between UX and tech.
   - Clipping is suspended for actors near the selection, so culled actors don't stay hidden (a known photo-mode limit).
   - Planets, map parts and collision objects compute their matrix inside movement (`src/Game/Scene/SceneExecutor.cpp:48-51`). Moving one while frozen calls `MR::calcAnimDirect` (`src/Game/Util/LiveActorUtil.cpp:619-628`) and resets its collision matrix.
 - **Play.**
-  - If anything is pending or dirty, reload from the model (2.6) and then teleport Mario.
-  - If not, unfreeze and teleport.
+  - If anything is pending, or a fresh Play follows an already-played scene, reload from the model (2.6) and then teleport Mario.
+  - Otherwise unfreeze and teleport; Resume retains the played scene and run.
   - Teleport: the play marker dropped along gravity; the smoke's `PETARI_STAGE_WARP` shows the warp path.
 - **Return to Edit** freezes only; the played state stays visible. Edits made there still go to rows and re-create their actors; the spike re-created actors in a scene that had been playing for 1,000 frames. Played-state caveats are shown, not prevented: switches on, collected items dead, Mario's state.
-- **Trail.** A ring buffer of Mario's position per frame (60 s x 60 frames), written at the seam the way route recording does, and drawn as a line strip.
+- **Trail.** `EditorPlaytest` records Mario at the game-frame seam into a 3,600-sample ring. Returning to Edit draws dotted, depth-tested segments coloured by ground, air, dive or cap-bounce state. Gold diamonds mark peaks along local gravity. Begin resets the run; Resume retains it and breaks the line across time spent in Edit; End clears it. The elapsed timer continues after the ring wraps.
+- **Miss.** Native death entry points call Runtime's miss handlers before death camera, animation or event work; first-step death-nerve hooks cover direct nerve changes. `EditorPlaytest::miss` adds the terminal sample and red marker, pauses the trail, and calls `requestEditAfterMiss` with a `Missed at m:ss` notice. Edit preserves this scene; the next Play or Resume rebuilds from the marker. The normal game follows its original death path.
 - **Keep.** Copies a live actor's transform into its row, for classes the catalog marks as placement-owned (not rail riders, children, or actors that re-derive their position; the spike saw one snap back).
-- **Save isolation.** During an edit session NAND writes go to `<user>/editor/scratch-NAND` (the native NAND is a host folder). On Power Star get, a hook at the end of `GameScenePowerStarGet` returns to Edit instead of `requestChangeStageAfterStageClear`.
+- **Save isolation.** During an edit session the save isn't written at all: NAND writes prepared while `Runtime::progressIsolated()` are dropped, and the session's in-memory progress is put back at End (see "Play-test isolation" in section 10). This replaced the planned on-disk scratch copy, which nothing would have read. On Power Star contact, `EditorPlaytest::collectStar` intercepts the first step of `PowerStar::exeStageClearDemo`, before progress writes or the star-get sequence. It releases Mario, retires the star and requests Edit with a `Cleared in m:ss` notice. Normal play follows the original path.
 - **Mission switch.** `requestGalaxyMove` to the same stage and another scenario (Level Select's path, `src/Game/Scene/GameScene.cpp:191-202`), skipping the intro. 2-4 s.
 
 ### 2.8 Undo
@@ -357,7 +358,7 @@ These follow UX section 3, agreed between UX and tech.
 - **Undo.** Applying an op's inverse is a normal edit: SceneSync re-derives the affected actors, re-creating them or marking them pending.
 - **Drag coalescing.** A drag streams preview pokes and records **one** op on release.
 - **Multi-object ops.** Duplicate, array and paste are one compound op.
-- **Journal.** The op log is written to the project journal as it happens (UX "Autosave and the journal"), so a crash loses nothing. Replaying the journal onto the original archives rebuilds the project.
+- **Journal.** After each op the session's unsaved edits are written to `<user>/editor/journal/<Galaxy>.json` (atomically: a temp file renamed) as `EditModel::patch()` (disc-relative, as a Save writes; zones the disc lacks whole, beside it in `<Galaxy>.files/`), with the edit count and time (UX "Autosave and the journal"), so a crash loses no edit. Opening the galaxy again finds it and offers it (`Status::journalEdits`; new edits aren't journaled until it's answered). `RestoreJournal` builds the patch over the unmodded disc, reloads the model with those archives before every other source (`ModelIO::load`'s `restored`, so they also win over a patch mod's), overrides the scene's archives with them and marks the model unsaved (`markRestored`). A save or an undo back to the saved state removes the file, and so does `DiscardJournal`. The undo history itself isn't journaled yet.
 - **Undo across a reload** works because ops live in native editor state.
 - **Undo across play.** The undo stack never includes play-test results; Keep is an explicit op.
 
@@ -668,6 +669,28 @@ The Checks run on the EditModel at every op (cheap, incremental) and block savin
 | Save: `GALA` records keyed by a 16-bit name hash; unknown records are dropped at the next save | Progress lost when the mod is off; possible hash collision with a real galaxy | The registry rejects colliding names. Mod galaxies' records go to a **sidecar** `<user>/mods-saves/<Mod>.bin`, and `GameData.bin` stays vanilla-shaped |
 | Observatory: domes, map panes, `Mini<G>` miniatures (names hard-coded; a dome holds at most 5) | Not shown | Not in v1: mod galaxies are reached from Level Select (UX agreed). Domes later |
 
+**S8 (spike, `editor/galaxy-registry`).**
+- [new-galaxies.md](new-galaxies.md) lists every crash site, with file:line and a guard for each. The table above was missing several:
+  - the pause menu's `PauseMenu::init` name lookup at **stage load**;
+  - **any** Power Star in **any** galaxy, vanilla included, once a new galaxy is parsed (`getGalaxyNumCanOpen`);
+  - the next stage after leaving (`strcmp(nullptr)`);
+  - the 75-row pause star list;
+  - comet-schedule null pointers.
+- What the spike implements:
+  - The registry: `native/platform/dvd/mod_galaxy.cpp`, read from `<mod>/galaxy.json` at start-up.
+  - Native hooks: the message overlay, null-flag guards, `JMapInfoIter::getValue` reading nothing past its table (every `GalaxyID` lookup), music borrowing, and the parser.
+  - The parser takes only disc galaxies and registered ones, refuses a save-key collision, and caps at 64. Spin-driver records go up to 64.
+- **Result.** `editor_galaxy_smoke.py` builds a skeleton galaxy (`petari_terrain_bake --galaxy`: the baked box planet, cube gravity, a start and Power Star 1) outside every compiled-in table. The game:
+  - enters it with the registry's names;
+  - plays the star get;
+  - returns to the Comet Observatory (`GrandGalaxyNo` 0);
+  - saves (see the S8 row in 7 for the restart check).
+- Since then:
+  - **Level Select / `--stage`** list mod galaxies in their own section.
+  - **The save sidecar** is done, as JSON rather than `.bin` (`<user>/mods-saves/<Mod>.json`, so it is readable and mergeable). `GameData.bin` keeps only the disc's galaxies.
+  - The comet null guard, the pause star-list cap, and leaving mod stars out of the game's totals are done.
+- What remains is M4 work: `SPN1` in the sidecar, the 8-mission and 7-star editor Checks (new-galaxies.md marks them *Proposed*).
+
 **`galaxy.json`** (in the mod, user-made, so no Nintendo data):
 - name and short name per language
 - mission names
@@ -676,8 +699,10 @@ The Checks run on the EditModel at every op (cheap, incremental) and block savin
 - music and banks "borrowed from"
 - an optional preview image
 
-The editor's new-galaxy flow (UX section 14) writes it with the Scenario
-archive and the skeleton stage archives from templates (5.3).
+The editor's new-galaxy flow (UX section 14) writes it with the Scenario archive and the galaxy's
+own stage archive from a template, as a switched-on mod (`mods/<G>`, `mod.txt editor=1`), then
+restarts into it. Names and music change live afterwards (`ModGalaxy::update`); a new mission count
+restarts. The design as built is [new-galaxy-flow.md](new-galaxy-flow.md).
 
 **Portability.** A new galaxy needs Petari's registry, because the real game has
 no data-driven way to add one. On a Wii or in Dolphin, the equivalent is an
@@ -702,7 +727,7 @@ existing galaxies stay fully portable.
   - `buildSyntheticKcl` (`native/tests/kcl_tests.cpp:82-143`), with octree branches and shared lists.
   - A minimal complete BDL builder: one joint, one material (MAT3 + MDL3), one shape, one texture (`native/tests/j3d_load_tests.cpp:118-123`; every block in `j3d_model_tests.cpp`).
   - A Python KCL reader (`native/tools/observatory_static_collision.py:121-132`).
-- **KCL limits.** u16 indices (at most 65,535 triangles per file), 512 collision parts per zone, 32 hits per query. Surfaces come from the `.pa` attribute row per triangle: `Floor_code` (Normal, Death, Ice, Sand, Slip, Damage*...), `Wall_code`, `Sound_code`, `Camera_through` (`src/Game/Map/CollisionCode.cpp`).
+- **KCL limits.** u16 indices for positions, normals and prisms. **Normals run out first.** Each triangle has a face normal and three edge normals, and they are shared only when equal. That gives at most about **16,000 triangles per file** (S6: 16,200 fit, 16,562 do not), and disc files also carry about 4 normals per triangle. Also: 512 collision parts per zone, 32 hits per query. Surfaces come from the `.pa` attribute row per triangle: `Floor_code` (Normal, Death, Ice, Sand, Slip, Damage*...), `Wall_code`, `Sound_code`, `Camera_through` (`src/Game/Map/CollisionCode.cpp`).
 - **Gravity is analytic only:**
   - Point, Cube, Disk, DiskTorus, Cone, Plane, PlaneInBox, PlaneInCylinder, Segment, Wire.
   - Shared fields: `Range`, `Priority`, `Power`, `Inverse`.
@@ -731,7 +756,7 @@ existing galaxies stay fully portable.
 1. **Editing (live).**
    - Brushes and imported meshes live in the project as **our own mesh data** (`assets/terrain/*.json` plus binary buffers; user-made, so shareable).
    - On every edit, the editor triangulates the result (CSG for brushes) and builds a `KCLFile` **in memory**: positions, normals, prisms and an octree, which takes milliseconds for blockout-sized meshes. A `CollisionParts` of the right zone uses it in place, so Mario walks on a brush the moment you release it.
-   - Looks during editing are an editor draw pass (3.1): flat-shaded triangles with a per-surface tint, or the chosen game material's base texture.
+   - **Looks during editing use the real model (S7).** The same mesh becomes a J3D model with the chosen game material, served as an in-memory `ObjectData` archive and drawn by a `ModelObj` that follows the collision part. The box takes 3-4 ms and the 1,472-triangle sphere about 11 ms (KCL included). An editor draw pass (3.1) is only needed for selection tints and brush handles.
 2. **Bake (build, on the user's machine).**
    - The patch builder (5.1) writes `ObjectData/<Part>.arc` containing a real BDL, `<Part>.kcl` and `<Part>.pa`.
    - It adds a `PlanetMapDataTable` row and an `ObjNameTable` row, so the part is placed like any planet.
@@ -745,9 +770,24 @@ existing galaxies stay fully portable.
 - The shared mod contains the reference, never the texture. The look is identical on every machine with the game.
 - User-imported textures are the user's own: encoded to CMPR (opaque) or RGB5A3 (alpha) and shipped in the mod.
 
+**S7 result.** The writer emits **J3D2bmd3 (`.bmd`)**, not `.bdl`:
+- The game takes `.bmd` wherever it takes `.bdl` (`ResourceHolder`'s model extensions), and J3D builds the material display lists from MAT3 at load, so **no MDL3** is written.
+- **Material clone.** A compact MAT3 holds the donor material's init entry with every shared pool copied whole, so its indices stay valid, plus the donor's whole TEX1.
+  - The native big-endian converter sizes each MAT3 table by the distance to the next table, so the clone is rebuilt in the donor's table order rather than patched.
+  - Every material of four planets loads cloned onto a box and a sphere (`native_editor_terrain_model`).
+- **Shading.** Disc planet materials are mostly `_v` (lit by vertex colour). The writer's single white CLR0 makes them flat, so it should bake a simple light term into CLR0 (M5).
+- **Texture trimming.** TEX1 is not trimmed to the material's textures yet (M5).
+
 **The BDL writer subset.** Static meshes, one joint (or one per brush group), and materials either cloned (donor) or from three built-in templates (lit textured, lit vertex-colour, unlit). Tri-strips via a simple stripifier, position/normal/UV0 (+colour), and 16-bit indices. This is a small fraction of the J3D format. The test `BlockWriter` is the starting point, and the loader tests become its tests.
 
-**KCL writer.**
+**KCL writer** (S6, `native/editor/terrain/kcl_writer.cpp`):
+- Top cells are the longest extent / 8. A leaf holds at most 24 prisms or is 64 units wide.
+- Identical prism lists are shared; suffix sharing is not done yet.
+- 0.1 ms for a box, 6 ms for a 1,472-triangle sphere, 50 ms for 16,200 triangles.
+- The `.pa` packs the four codes and `camera_id` into one u32, as the disc does.
+- Rebuilding three disc planets' collision through the writer answers 9,000 arrows identically to the originals.
+
+Design notes:
 - Triangles go to prisms. Normals are de-duplicated with a tolerance.
 - The octree has a fixed top-level cell size (power of two around the mesh extent / 8), subdivided until a leaf holds 16 or fewer prisms or reaches a minimum size.
 - Prism lists are shared by suffix, as the disc does.
@@ -787,6 +827,92 @@ existing galaxies stay fully portable.
   - LOD via the planet `Low`/`Middle` archives, generated by simplification.
 
 ---
+
+### 6.5 M5 blockout as built (`editor/terrain-blockout`)
+
+**A brush is an ordinary placement row.** It sits in an ObjInfo table of any layer, with the reserved class `EditorBrush`:
+
+| Field | Meaning |
+| --- | --- |
+| `pos_*` | The bottom centre |
+| `dir_*` | The rotation |
+| `scale_*` | The size / 1000: box w/h/d; sphere diameter (x); cylinder diameter (x) and height (y); ramp w/h/d, rising towards +z |
+| `Obj_arg0` | Shape: box, sphere, cylinder, ramp |
+| `Obj_arg1` | Material: an index into `materialPalette()`, ten planet materials from the disc (checker, grass, soil, stone, wood, metal, ice, snow, rock, lava), each with its footstep sound |
+| `Obj_arg2` | Surface: normal, ice, sand, slippery, burns, death, snow, no wall jump |
+| `Obj_arg3` | Gravity: 0 = the stage's, 1 = fitted, 2 = down only (a cube field over the bounds with only its top face: upright platforming, no pull round the edges) |
+
+Undo, the journal, layers, the gizmo, copy and paste, Changes and saving therefore need nothing new. The catalog registers the class (`TerrainSync::registerWithEditor`): Browser presets "Box/Sphere/Cylinder/Ramp brush", and the four args as named Enum args, so the Inspector shows dropdowns.
+
+**Live** (`native/editor/runtime/terrain_sync.cpp`). SceneSync routes brush rows to terrain parts instead of the game's factory, which has no such class and skips them at placement.
+- A part (`EditorTerrain::Part`) takes its collision from an in-memory KCL.
+- Its model is a `.bmd` served as an in-memory archive (`Hooks::setArchiveOverride`) and drawn by a `ModelObj` that follows the part's matrix.
+- Its fitted gravity lives in the part's own space and follows the matrix (`PlanetGravity::updateMtx`), so moving a brush moves its field.
+- A gizmo scale preview stretches the model and collision. The commit rebuilds them at the new size.
+- Cost: a box rebuilds in about 4 ms, a 1,500-triangle sphere in about 11 ms.
+- The part has no model of its own, so the Browser's thumbnail finds the brush's model through `EditorTerrain::partModel`.
+
+**Bake on save** (`petari/editor/terrain/bake.hpp`, called by `save_mod.cpp` for a Full archives save and by `petari_terrain_bake`). A patch save holds no game data, so its brush rows travel as ordinary row ops. The mod loader bakes them from the player's disc (`Terrain::bakePatchAssets`, a `Patch` asset builder), **unless the level editor is on** (decided at start-up, before the disc mounts). Then they stay rows, so the session edits them: placement notes the skipped rows (`Hooks::noteBrushRow`), and the session loads its model for that scene even outside Edit, so TerrainSync shows them while playing.
+- Each brush row becomes a generated planet: `ObjectData/EditorBrush<hash>.arc` (bmd, kcl, pa).
+- The row is renamed, its scale becomes 1 and its args are cleared.
+- A `GlobalCubeGravity` / `GlobalPointGravity` / `GlobalSegmentGravity` row is written in the same layer's PlanetObjInfo.
+- The planets go into `PlanetMapDataTable` (rows from an earlier bake are replaced).
+- The saved mod therefore plays without the editor, anywhere these archives load.
+
+**Limits found while building it:**
+- **Gravity: 128 fields, never unregistered.** Good Egg already uses 113. A brush keeps one field and changes it in place. A different kind retires the old one until the next reload, and creation is refused at the cap.
+- **Mounted archives: 384, unchecked.** Good Egg uses about 351. Each model rebuild serves a new archive name (resource holders are cached by name) and unmounts the previous one (`EditorTerrain::releaseArchive`), so the count stays flat. Resource holders still grow by one per rebuild (512); a reload resets them.
+- **TEX1 is trimmed** to the textures the cloned material uses: generated models average 56 KB.
+- **Donor vertex colours.** Planet materials are made for their own painted, pre-lit vertex colours, read through a TEV scale of 2 or a -0.5 bias (AssemblyBlock's metal). The baked light is scaled by the donor's lit level on that material: the 90th percentile of its vertex colours (`MaterialClone::vertexTint`; FlowerPlanet's grass 229/255, the metal 161). With the mean instead, metal drew almost black. Some donors also light COLOR0 with the scene's light 0, and many light ALPHA0 with light 2: their TEV adds the texture's alpha to the colour where that light is weak, which washed the first brushes white far from those lights. The clone turns both off for opaque materials (vertex alpha 255, as lit as on their own planet), so the bake is the only light.
+- `calcCollisionMtx` multiplies by the actor's `scale.x`. That is why the part computes its own collision matrix.
+
+**Without the game.** `petari_editor_terrain` and `petari_editor_terrain_catalog` need no runtime: brush meshes and fits, the KCL writer and reader (`readKcl`, `raycast`: triangles as KCollisionServer::getPos rebuilds them), the model writer, the bake, and the brush class and Check (`brushClassInfo`, `brushChecks` from rows). The headless tools use them.
+
+**Checks.** A brush over 16,000 triangles warns (`brush-tris:<row>`, a provider in Runtime's Checks engine). Galaxy-level Checks (missions > 8, stars > 7, launch-star paths > 16, name rules) are Runtime's (5.7).
+
+### 6.6 M6 static model import
+
+`petari_editor_import` reads OBJ, glTF and GLB with pinned MIT copies of tinyobjloader,
+cgltf and meshoptimizer (versions and licenses in `native/editor/import/vendor`). It reads
+local sibling files and embedded buffers/images; it never fetches network resources. Node
+transforms, mirrored winding, UV sets, texture transforms and meshoptimizer-compressed
+buffer views are applied. Animation, skinning and morph targets import as static/rest
+geometry with a warning. The imported look uses base colour and its texture, not the full
+PBR material graph.
+
+**Sheet and reusable parts.** Drop a model onto the window while editing, or choose
+Import model from the Browser or editor title menu. The sheet loads and prepares on a host
+worker thread. Its orbitable source-texture preview includes an approximate Mario-sized
+reference and the origin. Scale, up axis, origin, collision mode, LOD, optional downward
+box gravity, and each material's look/surface are chosen before placement. The native file
+panel uses the shared asynchronous Host dialog callback. The first Browser card places all
+material/collision splits together in one op; individual split cards remain available.
+
+**Portable assets.** Each prepared model is a versioned, bounded `.pmodel` containing user
+vertices, normals, UVs, surface codes, GX texture data and LOD meshes. A disc material is
+only a palette reference. Neutral assets live in `<user>/editor/imports/<content-id>.pmodel`
+and referenced assets are copied into `<mod>/assets/models`. Placement rows use
+`EditorModel_<content-id>_<part-index>`; undo removes the rows while retaining the reusable
+library asset. The source file is not needed to reopen or share a saved mod.
+
+**Geometry and limits.** Materials and triangle chunks produce parts of at most 16,000
+triangles, so the KCL normal/index budget is respected. Collision can use the full mesh,
+a meshoptimizer simplification, an AABB hull, a separate model or none. Textures encode to
+CMPR, RGB5A3 or I8; Auto chooses CMPR for opaque images and RGB5A3 when alpha is present.
+Images over 1024 pixels are reduced; the sheet warns above the recommended 512-pixel
+texture budget. Checks report missing assets, more than 64 distinct imported parts, and
+more than 64k imported triangles in a zone for the current mission. A single import is
+limited to 64 parts. Simplification preserves collision borders and material boundaries.
+
+**Runtime and save.** `Runtime::GeneratedRowProvider` supplies owns/sync/retire/beginScene;
+TerrainSync and ImportSync are clients. Imported parts use EditorTerrain's collision/model
+actors, including a null-collision path for decorative models. The row's full XYZ scale is
+baked into the vertices and KCL; `ClassInfo::bakesScale` exempts these generated parts from
+the game's ordinary uneven-collision Check. ModelIO's `Assets::Provider` supplies
+load/save/bake/ownsFile, composing bakers over the files produced by previous providers.
+The imported model baker writes BMD/KCL/PA planet archives, Middle/Low archives and
+PlanetMapDataTable entries. The patch loader invokes it only with the editor off; editing
+keeps the neutral rows and creates the same geometry live. Both paths call `buildPart`.
 
 ## 7. Milestones
 
@@ -828,9 +954,27 @@ live, undoable, no Dolphin round trip.
 | S3 | **Fast reload**: skip the pipeline gate and the wipe on same-stage reloads; serve zone archives from an editor buffer (archive override); profile scene init | ≤2 s reload; row-count changes via reload | 3 days |
 | S4 | Docked viewport: game in an ImGui central node, input mapping, resize | 3.6 | 2 days |
 | S5 | Selection hull outline through a J3D material override on Aurora | 3.4 | 2 days |
-| S6 | **KCL round trip**: generate KCL for a box/sphere brush in memory, create a collision part from it live, walk on it | Terrain collision path (6) | 4 days |
-| S7 | **Minimal BDL**: write a one-material, one-joint BDL from a mesh, with the material cloned from a disc model, and render it through `ModelObj` | Terrain rendering path (6) | 1 week |
-| S8 | **New galaxy loads**: a skeleton galaxy with one Power Star, outside `GalaxyID.bcsv`, entered through a registry prototype; collect the star, save, reload. Find every crash site | 5.7 | 3-4 days |
+| S6 | **KCL round trip**: generate KCL for a box/sphere brush in memory, create a collision part from it live, walk on it | Terrain collision path (6). **Done** (7.1) | 4 days |
+| S7 | **Minimal BDL**: write a one-material, one-joint BDL from a mesh, with the material cloned from a disc model, and render it through `ModelObj` | Terrain rendering path (6). **Done** (7.1) | 1 week |
+| S8 | **New galaxy loads**: a skeleton galaxy with one Power Star, outside `GalaxyID.bcsv`, entered through a registry prototype; collect the star, save, reload. Find every crash site | 5.7. **Done** (5.7, new-galaxies.md) | 3-4 days |
+
+### 7.1 Spike results: terrain (S6, S7)
+
+Branch `editor/terrain-kcl`. Live check: `native/tools/editor_terrain_smoke.py` on the Good Egg stage smoke. Mario is warped onto each part, then the smoke's walks, jump and spin run there.
+
+| Run | What it proves | Result |
+| --- | --- | --- |
+| `native_editor_terrain_kcl` | Generated KCLs go through the game's `KCollisionServer`: corners, arrows against brute force, spheres, `.pa` codes; disc planets rebuilt | Pass |
+| `native_editor_terrain_model` | Generated `.bmd`s load through the game's J3D loader | 36 models from 18 donor materials, all pass |
+| live box / sphere | KCL, J3D model and `ModelObj` built in memory mid-stage, with cube / point gravity fitted in code | Walked about 800 units on each with 2 landings; gravity along the field; `.pa` Sound_code (Stone, Lawn) read from Mario's ground triangle |
+| archive box / sphere | `petari_terrain_bake` writes a Full-archive mod: planet archives (`.bmd`, `.kcl`, `.pa`), `PlanetMapDataTable` rows, ObjInfo and `GlobalCubeGravity`/`GlobalPointGravity` rows | Same checks pass through the game's own placement (`PlanetMap`) |
+
+Changes to the plan:
+- **No separate preview draw.** The live look is the real model (6.3).
+- **About 16k triangles per KCL** (6.1).
+- **`.bmd`, not `.bdl`** (6.3).
+- **Fixed in the game, native only:** `FileHolder` keys files by DVD entry number, and every path not on the disc has -1. So the first such file answered for all of them, and a second generated archive was never mounted (`ResourceHolder::initializeArc` read garbage). `FileHolder::findEntry` now compares names for -1. This matters for every in-memory archive (terrain parts, reload overrides of new files, new galaxies).
+- **Archive capacity:** at most 384 mounted archives, unchecked. The editor refuses at capacity (2.4).
 
 S2 and S3 de-risk M1 and M2. S6 and S7 de-risk terrain and should run early,
 though terrain ships last, because their answer could change the project
@@ -881,10 +1025,131 @@ in the tech worker's thread storage (`spike/run1..run7`), not in the repo
 
 ---
 
-## 9. Open questions for the user (technical)
+## 9. Decisions (the user, 2026-10-02)
 
-1. **Patch mods by default** (no Nintendo data; built from each player's disc at start-up), with Full archives as an export option (UX Q5)? Recommended: yes.
-2. **New galaxies are Petari-only** unless someone writes an executable patch for the real game. Edits to existing galaxies stay portable. Acceptable?
-3. **Mesh gravity** (a Petari-only gravity class for imported shapes) is deferred; v1 fits the game's own gravity shapes to terrain. OK?
-4. **Accessibility:** ImGui gives no VoiceOver support. Accept for v1?
-5. **Third-party libraries for terrain** (Manifold for booleans, cgltf, tinyobjloader, meshoptimizer; all MIT or Apache-2.0) are fine to vendor?
+The open questions are resolved; the user took every recommendation (SUMMARY.md has the UX ones):
+
+1. **Patch mods by default** (no Nintendo data; built from each player's disc at start-up), with Full-archive export as an option. M1 writes Full archives first because today's loader reads them; the patch loader is M2.
+2. **New galaxies are Petari-only** (the mod galaxy registry, 5.7). Edits to existing galaxies stay portable.
+3. **Mesh gravity is deferred.** Terrain gets fitted game gravity shapes (6.3).
+4. **No VoiceOver in v1** (ImGui).
+5. **MIT/Apache libraries** for terrain (Manifold, cgltf, tinyobjloader, meshoptimizer) may be vendored when needed.
+6. The editor is **off until switched on once** in the Home menu (Mods page, "Level editor"). With it off, the game is unchanged: no runtime hooks run, and no headroom is reserved at load.
+7. **Formats and the catalog** are shared with Supernova (SMGCommunity, MIT) where practical: plain JSON, documented here.
+
+## 10. Implementation notes (build phase)
+
+- **Branches.** `level-editor` is the integration branch; each topic gets its own `editor/<topic>` branch (docs/dev/WORKTREES.md workflow).
+- **Interface.** The UI <-> Runtime contract is `native/editor/include/petari/editor/edit_api.hpp`. It refines 2.10, as agreed with the UI worker:
+  - The UI reads the EditModel directly from the overlay (main thread, never mutated there) and touches actors only in its seam hook.
+  - There is no separate snapshot struct; `status()` carries the toolbar, meter and Checks data.
+  - Selection and the editor camera are UI state.
+  - Runtime owns Play and Reload, and calls back into the UI (`leaveEdit`, `resumeEdit`, `sceneRebuilt`).
+- **Code layout.**
+  - `native/editor/runtime/`: the EditModel, ops, SceneSync, reload, save.
+  - `native/editor/ui/`: panels, camera, gizmo, picking.
+  - Game-side hooks in `src/` stay `PETARI_NATIVE` and do nothing while the editor is off.
+- **Engine hooks** (`editor/runtime-hooks`; `native/editor/include/petari/editor/runtime_hooks.hpp`, `src/Game/Editor/EditorScene.cpp`):
+  - The spike's four hooks are productised. All are no-ops while the editor is off (`Hooks::enabled()`, set by the Mods-page switch or `PETARI_EDITOR=1`).
+  - Headroom at load is `count + count/2 + 16` per category list and draw executor, with growth as the fallback. `DrawBuffer::init` now takes the executor's allocated size (identical when off).
+  - The `waitForEnd` guard is unconditional: it only changes a path that read past the list.
+  - `EditorScene::createFromRow` / `retire` are the game-side operations. They refuse past the actor and execute limits, minus a margin of 64.
+  - `PetariEditor::` is routed to the host allocator (`native/src/host_allocation.cpp`), so the EditModel and session survive scene reloads. Game objects the editor creates still come from the scene heap.
+  - Live check: `native/tools/editor_hooks_smoke.py` (Good Egg, editor off then on).
+- **Reload and Play** (`editor/fast-reload`; S3):
+  - `destroyScene` drops the archives the editor overrides (`EditorReload::dropOverriddenArchives`, with a new `ArchiveHolder::nativeRemove`).
+  - `StageFileLoader::startLoadingStageFile` injects the model's archive bytes onto the scene heap, so nothing is read from disc.
+  - The restart is a type-5 galaxy move from the restart point (or the mission start). For an editor reload it skips the lives counter, the shader gate and the circle wipe (a fade instead), and clears the already-done flags, so collected items come back.
+  - Measured on Good Egg: **265-493 ms** from the request to normal play (the design target was ~2 s).
+  - Play: if edits are pending, reload, then `leaveEdit` and teleport to the play marker; if not, `leaveEdit` and teleport at once. Reload from Edit ends with `resumeEdit`.
+  - Overrides stay for the session, so a death or a Level Select warp into the galaxy also shows the edits.
+  - The EditModel reads the unmodded disc as its originals (`DVD::mountInfo().filesDirectory`). A saved mod's edits then count as changes and stay in the next save.
+  - Live check: `native/tools/editor_reload_smoke.py`. It enters Edit through the UI's Tab path, using `PETARI_MODS=LevelEditor`.
+- **Catalog and Checks** (`editor/catalog`):
+  - `native/editor/catalog/generated.json` comes from `native/editor/tools/gen_catalog.py`, a decomp scan of all 1,183 factory classes: args and their types, switches, rail-capable, archives, category. It folds in the class sweep's `sweep.json` when present (required links).
+  - `curated.json` adds names, one-line help, aliases, enum labels and defaults for the 210 most-placed classes (the last 58 from the UI worker's list of the most common uncurated classes in five galaxies). These were researched against the decomp in our own words; no community data.
+  - Both are embedded in the binary. The user's `<user>/editor/catalog/*.json` override them, and planets come from the disc's PlanetMapDataTable at session start.
+  - The Checks engine (`runtime/checks.cpp`) reports only problems the edits introduce. The galaxy as loaded is the baseline, so vanilla Good Egg shows 0.
+  - Kinds: unknown classes; missing required links; paths that don't exist or have fewer than 2 points; switch ids out of range or unused by the class; a zone switch only one row uses; duplicate l_ids. Most come with fix Ops or a UI fix kind.
+- **Missions** (`editor/switch-scenario`): `SwitchScenario` sets the model's mission and reloads into it from its start (a type-5 move with that scenario and selected scenario). The model, its history and its edits are kept. While the reload is under way, `tick` does not reload the model, even though the scene still reports the old mission. Each switch takes 1.7-2 s, because the mission's other zones load.
+- **Patch mods** (`editor/patch-mods`; 5.1, 5.3; `native/editor/include/petari/editor/patch.hpp`):
+  - **Save:** Save writes a patch by default: `edits/<Galaxy>.json` from `EditModel::patch()`. `Command::fullArchives` writes Full archives instead.
+    - Each form removes the other's files for that galaxy.
+    - Zones the disc doesn't have can't be patched, so they are saved whole under `files/`.
+  - **Diffing:** the writer diffs every table against the **disc's**, not the loaded source.
+    - Rows map to disc rows by position when the model's original is the disc table; otherwise by equal cells, then by name and l_id.
+    - So re-saving on top of the player's own enabled mod still gives a disc-relative patch that carries both sessions' edits.
+  - **Ops:** `set` and `delete` name the disc row and its fingerprint (a hash of its cells, strings included). `add` carries every cell and its final index (`at`), so point tables keep their order. New layers' tables use `addFile` with `schemaOf` (a disc table with the same columns) or a column list; new columns use `addColumn`.
+  - **Applying:** `Patch::build` applies each mod in turn (addFile, addColumn, set, delete, add) to rows that remember their disc index, so mods merge.
+    - A later (higher-priority) mod wins a cell.
+    - A delete repeated by a second mod is a no-op, and a set on a deleted row is dropped.
+    - A fingerprint mismatch (another disc) keeps that mod's ops out of that archive, with a log line.
+  - **Loader:** `ModFolder::setPatchBuilder` (set by the app) lets the platform layer call the builder without depending on editor code.
+    - `resolveForUser(user, disc)` builds every enabled patch mod into `<user>/mods-cache/<key>/files/` (plain RARC; the key covers the patches and the disc files' size and time) and reuses that cache on later starts.
+    - The built archives are claimed at the rank of the highest patch mod, ahead of its own `files/` (an older full save of the same mod loses quietly). A higher-priority full-archive mod still wins its paths.
+  - **Generated files** (`editor/patch-assets`): `Patch::registerAssetBuilder(version, fn)` adds a step after the row edits.
+    - The builder gets the mod's root, the disc reader and every built archive. It may replace archives (terrain rewrites brush rows into planet rows) and append files (`ObjectData/EditorBrush<hash>.arc`, `PlanetMapDataTable`).
+    - If a builder fails a mod, the loader builds everything again without that mod (logged), so a broken mod never serves half its files.
+    - The cache key covers each builder's version and every mod's `assets/`.
+    - Builders register before `ModFolder::setPatchBuilder` in `native/app/platform_host.cpp`.
+  - **Size:** Good Egg with a move, a delete, a duplicate and a new layer's table comes to 5 ops, 2.6 KB.
+  - **Tests:** `native_editor_model` (round trip on the synthetic galaxy and Good Egg, re-save over the built mod, two-mod merge, another disc refused, the loader cache) and `native_mod_folder` (claiming and precedence). Live: `editor_save_smoke.py` saves Full archives, saves again as a patch over them, then starts with the mod: the loader builds the archive and the Octoomba stands 600 units up.
+- **SceneSync extensions for M3** (`editor/sync-hooks`; `petari/editor/runtime.hpp`, `check_providers.hpp`):
+  - **Preview handlers:** `registerPreviewHandler` lets classes whose look isn't just the actor's transform (gravity shapes) take Preview and EndPreview.
+  - **Live updaters:** `registerLiveUpdater` updates a changed row's actor in place instead of re-creating it, so a gravity field spends no new manager slot. Owners whitelist which columns may change in place.
+  - **Checks:** `invalidateChecks()` recomputes without re-baselining, and `registerCheckProvider` is public (once per provider).
+  - **Gravity rows:** `/planetobjinfo` (the `Global*Gravity` classes) is live.
+    - At 128 registered fields (retired ones count until a Reload) a change stays pending with a notice, and the current field stays.
+    - A `GlobalWireGravity` row without a path, or with `Obj_arg0` outside 0-4096, is refused before its constructor (it divides by the point count).
+  - **Ordered insert:** `AddRow::at` inserts at an index (a path's points); undo and redo keep it.
+- **Share and Install** (`editor/share`; UX 17; `petari/editor/share.hpp`, wrappers in `edit_api.hpp`):
+  - **Export:** `shareMod(modName, info, zipPath)` puts the sheet's name/author/version/description/needs into the mod's `mod.txt` (other lines kept) and writes `preview.png`. It then zips the folder as `<Name>/...`, leaving out host clutter.
+  - **Inspect:** `inspectModZip` gives the Install sheet its preview: title, author, version, needs, screenshot, galaxies changed (from `edits/*.json` and `galaxy.json`), archives touched, whether it's an editor mod, and whether `files/` carries game data.
+  - **Install:** `installModZip(zip, replace)` unpacks into `<user>/mods/<Name>` through a staging folder and turns the mod on.
+    - It refuses paths escaping the folder, zips that aren't one mod folder, more than 2 GB, and an installed folder of the same name unless `replace`.
+  - **Zip format:** our own (deflate via zlib, CRC-checked on read; no zip64 or encryption). The system's `unzip` accepts our zips (`native_editor_share`).
+- **SceneSync extensions for M3** (`editor/sync-hooks`; `petari/editor/runtime.hpp`, `check_providers.hpp`):
+  - **Preview handlers:** `registerPreviewHandler` lets classes whose look isn't just the actor's transform (gravity shapes) take Preview and EndPreview.
+  - **Live updaters:** `registerLiveUpdater` updates a changed row's actor in place instead of re-creating it, so a gravity field spends no new manager slot. Owners whitelist which columns may change in place.
+  - **Checks:** `invalidateChecks()` recomputes without re-baselining, and `registerCheckProvider` is public (once per provider).
+  - **Gravity rows:** `/planetobjinfo` (the `Global*Gravity` classes) is live.
+    - At 128 registered fields (retired ones count until a Reload) a change stays pending with a notice, and the current field stays.
+    - A `GlobalWireGravity` row without a path, or with `Obj_arg0` outside 0-4096, is refused before its constructor (it divides by the point count).
+  - **Ordered insert:** `AddRow::at` inserts at an index (a path's points); undo and redo keep it.
+- **Shared load and save** (`editor/shared-io`; `native/editor/runtime/model_io.hpp`, library `petari_editor_save`): what the Runtime and headless tools (the petari-level CLIs) share, so both load and save the same way.
+  - `ModelIO::load` loads the catalog with the user's files, runs a `registerClasses` hook (terrain's brush class), adds the disc's planets, then loads the model. It reads the mounted disc (mods applied) plus the unmodded disc.
+  - `ModelIO::saveToDirectory(model, mods/<Name>, fullArchives)` writes the patch or the Full archives, removes the other form's files, writes mod.txt for a new folder, and refuses a folder the editor didn't make. It returns a summary for the caller's notice.
+  - The Runtime's `saveMod` and `loadModel` are thin wrappers that add the user folder, turning the mod on, mission names and bindings.
+  - Test: `native_editor_save` runs it headless on Good Egg; the patch builds exactly the Full save's archive.
+- **ensureModel** (`editor/ensure-model`): `Runtime::ensureModel()` loads and binds the edit model without entering Edit, and keeps it loaded for the rest of the run. Commands then apply in Play, with SceneSync re-creating actors in the running scene; this is the agent tools' live mode through the test server. Live check: editor_sync_smoke's fourth run moves Good Egg's Octoomba from Play.
+- **The play-test loop** (`editor/play-lifecycle`; UX 3, TECH 2.7): `registerPlayListener` hears every run.
+  - **Events:**
+    - `Begin` fires on a fresh Play, or Resume with no earlier run.
+    - `Resume` keeps the run.
+    - `ToEdit` fires on Tab, `requestEdit`, or a miss.
+    - `End` fires on another galaxy or mission (Play drops to normal play), or when the editor is turned off.
+  - `requestEdit(reason)`, for a play-test star caught, returns to Edit with the reason as the notice.
+  - `interceptMiss()` (from `GameScene::requestEndMissDemo`) turns a play-test miss into an editor reload back to Edit, with no lives lost.
+  - A fresh Play in a scene already played rebuilds it, so collected and defeated objects come back; only Resume keeps them.
+  - Catalog presets carry a size (`Preset::scale`).
+  - Scratch saves (progress isolation) follow in their own branch.
+- **Shared core for the agent tools** (`editor/shared-core-2`):
+  - `EditModel::discRowIndex(RowId)`: the row's index in the disc's table, or -1 for a row the disc doesn't have.
+  - `ModelIO::load` reads the missions' English names from the disc's message archive (`Formats::messageText`: messageid.tbl plus message.bmg), so headless tools see "Dino Piranha" rather than ScenarioData's Japanese names.
+  - Checks:
+    - `launch-star-facing:<row>`: a Launch or Sling Star more than 45 degrees off its path's first segment, with a "Face along the path" fix.
+    - `duplicate-star:<mission>:<id>`: Power Stars sharing a Star ID in a mission.
+- **Play-test isolation** (`editor/scratch-saves`; TECH 2.7): progress a play-test earns never reaches the player's records.
+  - When an edit session's model loads, `EditorScratch::snapshot()` keeps the save file's progress: its game data binary and the mod galaxies' records. `Runtime::progressIsolated()`, an atomic flag, then reads true.
+  - While isolated, NAND writes are skipped (`NANDManagerThread::executeWriteSequence`; the game sees a successful write). The Gravity worker's gates stop progress.json and the mod galaxies' sidecars.
+  - At End (another galaxy or mission, or the editor turned off), the progress is restored first, then the flag is released.
+  - Live check: editor_sync_smoke's fifth run earns 100 Star Bits in a session, turns the editor off, and finds the count restored.
+- **Mission membership and star IDs** (`editor/model-ops`; `petari/editor/model_ops.hpp`, in core):
+  - `ModelOps::changeMissions(model, rows, mask)` moves each object to the layer with exactly those missions, or splits it over the fewest layers whose missions don't overlap.
+    - Copies keep the l_id, so links and paths stay.
+    - An object includes its identical copies in other layers.
+    - It returns one Op and the flattened result rows.
+    - An impossible or empty mask is an error that says what's possible.
+  - `possibleMissionMasks` and `layerMissions` list what a zone allows.
+  - `freeStarId(model, mission)` gives the lowest Star ID no Power Star in that mission uses.
+  - `duplicate-star` is an Error with a "Use Star ID n" fix when the edit placed one of the stars, since the placed star is killed after a restart.

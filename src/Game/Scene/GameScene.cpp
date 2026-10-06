@@ -43,9 +43,23 @@
 #ifdef PETARI_NATIVE
 // native/platform/include/petari/platform/os_host.hpp
 extern "C" void petari_os_preemption_point(void);
+#include "Game/Camera/EditorCamera.hpp"
+#include "Game/Camera/EditorCameraPreview.hpp"
+#include "Game/Camera/EditorDraw.hpp"
+#include "Game/Camera/EditorGravity.hpp"
+#include "Game/Camera/EditorPlaytest.hpp"
+#include "Game/Camera/EditorThumbs.hpp"
 #include "Game/Camera/PhotoCamera.hpp"
+#include "Game/Editor/EditorGalaxyTest.hpp"
+#include "Game/Editor/EditorScene.hpp"
+#include "Game/Editor/EditorTerrain.hpp"
+#include "Game/Scene/ClassSweep.hpp"
+#include "Game/Scene/TestServer.hpp"
 #include "Game/System/GalaxyMoveArgument.hpp"
 #include "Game/System/GameSequenceFunction.hpp"
+#include <petari/editor/runtime.hpp>
+#include <petari/editor/runtime_hooks.hpp>
+#include <petari/editor_settings.hpp>
 #include <petari/player_launch.hpp>
 // StorySequenceExecutor.cpp
 bool petariDirectStageMove(GalaxyMoveArgument* pMoveArgument, const char* pStage, s32 selected, const char* pLabel);
@@ -73,6 +87,7 @@ namespace NrvGameScene {
     NEW_NERVE(GameSceneStaffRoll, GameScene, StaffRoll);
 #ifdef PETARI_NATIVE
     NEW_NERVE(GameScenePhotoMode, GameScene, PhotoMode);
+    NEW_NERVE(GameSceneEditMode, GameScene, EditMode);
 #endif
 };  // namespace NrvGameScene
 
@@ -81,12 +96,21 @@ GameScene::GameScene()
 }
 
 GameScene::~GameScene() {
+#ifdef PETARI_NATIVE
+    PetariEditor::Runtime::sceneEnded();  // before the hooks forget the scene
+    PetariEditor::Hooks::sceneDestroyed();
+#endif
     MR::destroySceneMessage();
     NPCFunction::deleteNPCData();
     MR::onStarPointerSceneOut();
 }
 
 void GameScene::init() {
+#ifdef PETARI_NATIVE
+    // Before any list is sized: the level editor's headroom follows the Mods-page switch.
+    PetariEditor::Hooks::syncSwitch(PetariNative::EditorSettings::enabled());
+    EditorCamera::abandon();  // a scene rebuilt under Edit mode (a reload) starts outside it
+#endif
     SceneFunction::createHioBasicNode(this);
     SceneFunction::startStageFileLoad();
     MR::requestChangeArchivePlayer(MR::isPlayerLuigi() == false);
@@ -185,6 +209,27 @@ void GameScene::update() {
         PhotoCamera::start();
         setNerve(GET_NERVE(GameScene, GameScenePhotoMode));
     }
+    // The level editor's Edit mode: the same rule, and never over photo mode.
+    if (!EditorCamera::isActive() && !PhotoCamera::isActive() &&
+        EditorCamera::takeEnterRequest((isPermitToPauseMenu() || EditorPlaytest::missPending()) &&
+                                      isNerve(GET_NERVE(GameScene, GameSceneAction)))) {
+        EditorCamera::start();
+        setNerve(GET_NERVE(GameScene, GameSceneEditMode));
+    }
+#endif
+#ifdef PETARI_NATIVE
+    EditorPlaytest::init();  // M3 play-test: subscribe before the command drain.
+    PetariEditor::Runtime::tick(isPermitToPauseMenu());  // the level editor's commands and SceneSync; nothing while it is off
+    EditorPlaytest::update(isPermitToPauseMenu());  // M3 play-test: sample once per game frame.
+    EditorPlaytest::testTick(isPermitToPauseMenu());  // M3 play-test: opt-in live checks.
+    EditorGravity::testTick(isPermitToPauseMenu());  // M3 gravity: opt-in live smoke.
+    EditorHooksTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_HOOKS_TEST
+    EditorTerrainTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_TERRAIN_TEST
+    EditorGalaxyTest::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));  // off unless PETARI_EDITOR_GALAXY_TEST
+#endif
+#ifdef PETARI_NATIVE
+    ClassSweep::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));
+    TestServer::update(isNerve(GET_NERVE(GameScene, GameSceneAction)));
 #endif
     mPauseCtrl->updateNerve();
     updateNerve();
@@ -218,7 +263,7 @@ void GameScene::draw() const {
     drawMirror();
     draw3D();
 #ifdef PETARI_NATIVE
-    if (!PhotoCamera::isActive())  // photo mode: no HUD
+    if (!PhotoCamera::isActive() && !EditorCamera::isActive())  // photo and Edit mode: no HUD
 #endif
         draw2D();
     MR::reinitGX();
@@ -257,6 +302,11 @@ void GameScene::requestEndGameOverDemo() {
 }
 
 void GameScene::requestEndMissDemo() {
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::interceptMiss()) {
+        return;  // a play-test miss: back to the level editor's Edit mode
+    }
+#endif
     if (MR::isExistSceneObj(SceneObj_CometRetryButton)) {
         setNerve(GET_NERVE(GameScene, GameSceneCometRetryAfterMiss));
     } else {
@@ -412,6 +462,11 @@ void GameScene::draw3D() const {
         return;
     }
 
+#ifdef PETARI_NATIVE
+    EditorDraw::beginFrame();  // the editor's draw budget for this frame (EP-004)
+    EditorCameraPreview::render();  // M3 areas: camera picture-in-picture.
+    EditorThumbs::render();  // the level editor's Browser: one model offscreen, copied out
+#endif
     CategoryList::execute(MR::DrawType_AstroDomeSkyClear);
     MR::loadViewMtx();
     MR::loadProjectionMtx();
@@ -460,6 +515,9 @@ void GameScene::draw3D() const {
     MR::loadLightPlayer();
     CategoryList::execute(MR::DrawType_0x24);
     CategoryList::execute(MR::DrawType_0x3B);
+#ifdef PETARI_NATIVE
+    EditorDraw::draw3D();  // the level editor's selection and hover, before the Z buffer is cleared
+#endif
     MR::clearZBuffer();
 }
 
@@ -499,7 +557,16 @@ void GameScene::drawOdhCapture() const {
 }
 
 void GameScene::startStagePlayFirst() {
+#ifdef PETARI_NATIVE
+    // Test-only (PETARI_FAST_BOOT=1, set by the smoke tools): no galaxy fly-over camera at stage start.
+    static const bool fastBoot = [] {
+        const char* pFast = std::getenv("PETARI_FAST_BOOT");
+        return pFast != nullptr && pFast[0] == '1';
+    }();
+    if (isValidScenarioOpeningCamera() && !fastBoot) {
+#else
     if (isValidScenarioOpeningCamera()) {
+#endif
         setNerve(GET_NERVE(GameScene, GameSceneScenarioOpeningCamera));
 
         if (!MR::isBeginScenarioStarter()) {
@@ -531,7 +598,12 @@ void GameScene::startStagePlayFirst() {
 }
 
 void GameScene::startStagePlayRetry() {
-    MR::openWipeCircle();
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Hooks::editorReload()) {
+        MR::forceOpenWipeFade();  // the level editor's reload: no circle
+    } else
+#endif
+        MR::openWipeCircle();
 
     if (MR::isEqualStageName("SurfingLv1Galaxy") && MR::getPlayerRestartIdInfo()->_0 == 1) {
         MR::stopSubBGM(0);
@@ -643,6 +715,14 @@ bool GameScene::isNativeMenuOpen() const {
 void GameScene::exePhotoMode() {
     if (PhotoCamera::update()) {
         PhotoCamera::end();
+        setNerveAfterPauseMenu();
+    }
+}
+
+// The level editor's Edit mode (Game/Camera/EditorCamera.hpp): frozen like the pause menu.
+void GameScene::exeEditMode() {
+    if (EditorCamera::update()) {
+        EditorCamera::end();
         setNerveAfterPauseMenu();
     }
 }

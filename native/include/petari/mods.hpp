@@ -24,6 +24,7 @@ enum class Mod : int {
     GenericCharacter, // the player is drawn as a plain figure, not Mario (Game/Player/GenericFigure.hpp); no button
     GenericWorld,     // plain terrain, sky and object stand-ins (Game/System/GenericWorld.hpp); no button
     HideHud,          // no HUD (counters, meters, pointer); PETARI_HIDE_HUD=1 forces it on (LayoutActor.cpp); no button
+    LevelEditor,      // the level editor: a Tab tap enters Edit mode (docs/dev/level-editor/UX.md); off by default
     Count
 };
 

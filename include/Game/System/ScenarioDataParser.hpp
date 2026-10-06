@@ -18,6 +18,11 @@ public:
     const ScenarioData* getScenarioData(const char*) const;
     const ScenarioData* getScenarioData(s32) const;
     GalaxyStatusAccessor makeAccessor(const char*) const;
+#ifdef PETARI_NATIVE
+    /// A StageData galaxy directory is parsed only when it is a disc galaxy or a registered mod
+    /// galaxy whose save key collides with none (TECH.md 5.7).
+    static bool nativeAcceptGalaxy(const char* pName);
+#endif
 
     /* 0x0C */ MR::Vector< MR::FixedArray< ScenarioData*, 64 > > mScenarioData;
 };

@@ -2,6 +2,7 @@
 // feeds it observations and applies its presses.
 
 #include "smoke.hpp"
+#include <petari/player_launch.hpp>
 
 #include <signal.h>
 #include <spawn.h>
@@ -26,6 +27,7 @@ namespace PetariNative::App::Smoke {
 namespace {
 
 constexpr unsigned long kStrapFirstTap = 480;    // game accepts a button after 450
+constexpr unsigned long kStrapFirstTapFast = 40;   // PETARI_FAST_BOOT=1: the game accepts a button after 30
 constexpr unsigned long kStrapTapInterval = 120;
 constexpr unsigned long kTapFrames = 6;          // at least one KPAD read at 60 Hz
 constexpr unsigned long kLogoDisplaySettle = 10;   // after TitleSequence.LogoDisplay (A+B is read from then)
@@ -228,6 +230,7 @@ StickKeys stickKeysFor(float x, float y) {
 Driver::Driver(unsigned long frameLimit, Script script) : mFrameLimit(frameLimit), mScript(script) {
     const char* player = std::getenv("PETARI_SMOKE_PLAYER");
     mChooseLuigi = player != nullptr && std::strcmp(player, "luigi") == 0;
+    mOpenRestart = PetariNative::PlayerLaunch::openFile > 0;
 }
 
 bool Driver::seen(const std::string& milestone) const {
@@ -1513,7 +1516,19 @@ Step Driver::step(const Observation& observation) {
         return step;
     }
 
-    if (mBgmPrepareAt >= 0 && mLogoDisplayAt < 0 && mFrame - mBgmPrepareAt >= kBgmPrepareLimit) {
+    // A restart into a new galaxy (the level editor's New Galaxy) passes the strap, the title and
+    // the file select by itself: only watch until the file starts, then go on as after a start.
+    if (mOpenRestart) {
+        if (!seen("FileSelector.DemoStartWait")) {
+            return step;
+        }
+        if (mPhase < Phase::WaitDemo) {
+            note("the restart opened the file by itself");
+            mPhase = Phase::WaitDemo;
+            mPhaseFrames = 0;
+        }
+    }
+    if (!mOpenRestart && mBgmPrepareAt >= 0 && mLogoDisplayAt < 0 && mFrame - mBgmPrepareAt >= kBgmPrepareLimit) {
         finish(Result::Fail,
                "stuck in the title's BgmPrepare for " + std::to_string(kBgmPrepareLimit) +
                    " frames (STM_TITLE not prepared)",
@@ -1556,7 +1571,9 @@ Step Driver::step(const Observation& observation) {
         }
         if (observation.strap) {
             ++mStrapFrames;
-            if (mStrapFrames >= kStrapFirstTap && (mStrapFrames - kStrapFirstTap) % kStrapTapInterval == 0) {
+            const char* fast = std::getenv("PETARI_FAST_BOOT");
+            const unsigned long first = fast != nullptr && fast[0] == '1' ? kStrapFirstTapFast : kStrapFirstTap;
+            if (mStrapFrames >= first && (mStrapFrames - first) % kStrapTapInterval == 0) {
                 note("tap A: strap reminder");
                 tap(Button::A, kTapFrames, step);
             }

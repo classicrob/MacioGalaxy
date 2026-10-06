@@ -298,7 +298,8 @@ bool threadStart(const std::string& name) {
 
 bool hostCode(const std::string& name) {
     static const char* const kQualified[] = {"aurora::", "PetariNative::", "dawn::", "dawn_native::", "wgpu::", "webgpu::",
-                                             "tint::", "fmt::", "absl::", "tracy::", "ImGui", "Rml::", "nod::"};
+                                             "tint::", "fmt::", "absl::", "tracy::", "ImGui", "Rml::", "nod::",
+                                             "PetariEditor::"};  // the level editor's model and session (native/editor)
     for (const char* prefix : kQualified) {
         if (startsWith(name, prefix)) {
             return true;

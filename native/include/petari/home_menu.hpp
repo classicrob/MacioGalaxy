@@ -41,6 +41,8 @@
 #include <cstdint>
 #include <string>
 
+struct ImFont;
+
 namespace PetariNative::HomeMenu {
 
 // The game's picture-font icons (GalaxyFont::Picture), as UTF-8 that menu text
@@ -318,6 +320,8 @@ public:
     // Level Select's Go, reported once after the menu has closed: the
     // internal stage name and mission. The caller starts the warp.
     bool takeLevelRequest(const char** stage, int* mission);
+    void setEditorEnabled(bool enabled);
+    bool takeNewGalaxyRequest();
     int levelGalaxy() const { return mLevelGalaxy; }
     // The Odyssey camera page's options; changes are reported once (true) and
     // copied to *options. The caller applies and saves them.
@@ -395,6 +399,8 @@ private:
     int mLevelGalaxy = 0;   // index into LaunchStage::galaxies
     int mLevelMission = 1;
     bool mLevelPending = false;
+    bool mEditorEnabled = false;
+    bool mNewGalaxyPending = false;
     char mLevelLabels[2][80] = {};
     char mLevelMessage[96] = {};
     void refreshLevelLabels();
@@ -456,6 +462,10 @@ void publish(const View& view);
 // ImGui's built-in font. Target petari_home_menu_imgui.
 bool installGalaxyFonts(const char* fontArchive, std::string* error);
 bool galaxyFontsInstalled();
+// The game's fonts in the ImGui atlas (null without them), for other ImGui
+// surfaces that want the Galaxy lettering (the level editor's titles and tabs).
+ImFont* galaxyTextFont();   // MessageFont26, with the picture icons at U+E000..
+ImFont* galaxyTitleFont();  // MenuFont64
 
 // Draws publishedView() with Dear ImGui (target petari_home_menu_imgui). Call
 // on the thread that owns the ImGui context, between aurora_begin_frame() and

@@ -2,6 +2,9 @@
 #include "Game/Util/MathUtil.hpp"
 #include "Game/Util/ScreenUtil.hpp"
 #include "Game/Util/SystemUtil.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor_view.hpp>
+#endif
 
 void CameraContext_FORCE_MATCH_SDATA2() {
     (void)1.0f;
@@ -43,6 +46,12 @@ const TPos3f& CameraContext::getInvViewMtx() const {
 }
 
 f32 CameraContext::getAspect() const {
+#ifdef PETARI_NATIVE
+    // The level editor's docked viewport: the image fills it (petari/editor_view.hpp).
+    if (const f32 editor = PetariNative::EditorView::aspect(); editor > 0.0f) {
+        return editor;
+    }
+#endif
     if (MR::isScreen16Per9()) {
         return 16.0f / 9.0f;
     } else {

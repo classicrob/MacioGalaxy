@@ -14,6 +14,7 @@ array of known size and whose location is in native/ is classified by its index:
   CALL        the index is a function result (`rows[mBackend->row()]`)
   VAR         a plain variable or member (`lines[i]`). Mostly loop counters; counted, listed with --all.
 
+Third-party sources under native/**/vendor/ (for example the editor's meshoptimizer) are not audited.
 A line (or the line above it) with `audit-ok: <why>` silences the finding; the reason is the point, so
 the comment has to say where the bound comes from ("count clamped to kMaxMods in setMods"). Files whose owner
 did not add the comment are listed in array_index_audit_allow.txt as `path :: source text :: why`.
@@ -369,7 +370,8 @@ def main():
         text, above = source_line(r["file"], r["line"])
         r["source"] = text
         rel_path = str(Path(r["file"]).relative_to(ROOT)) if str(r["file"]).startswith(str(ROOT)) else r["file"]
-        r["suppressed"] = "audit-ok:" in text or "audit-ok:" in above or (rel_path, text) in allowed
+        vendored = "/vendor/" in "/" + rel_path  # third-party sources (native/**/vendor/): not ours, not audited
+        r["suppressed"] = vendored or "audit-ok:" in text or "audit-ok:" in above or (rel_path, text) in allowed
         loop = r.get("loop")
         sub = r["class"]
         if r["class"] == "VAR":

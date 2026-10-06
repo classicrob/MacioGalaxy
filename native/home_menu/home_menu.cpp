@@ -105,6 +105,7 @@ void Menu::open() {
     mResult = Selection::None;
     mConfirming = Selection::None;
     mLevelPending = false;
+    mNewGalaxyPending = false;
     mFocus = kListResume;
     mTime = 0.0f;
     mBlackStart = 0.0f;
@@ -432,9 +433,32 @@ bool Menu::takeLevelRequest(const char** stage, int* mission) {
     return true;
 }
 
+void Menu::setEditorEnabled(bool enabled) {
+    if (enabled == mEditorEnabled) return;
+    mEditorEnabled = enabled;
+    int count = 0;
+    App::LaunchStage::galaxies(&count);
+    if (!enabled && mLevelGalaxy >= count) mLevelGalaxy = 0;
+    if (!enabled) mNewGalaxyPending = false;
+    if (mPhase == Phase::Levels) refreshLevelLabels();
+}
+
+bool Menu::takeNewGalaxyRequest() {
+    if (!mEditorEnabled || !mNewGalaxyPending || mPhase != Phase::Finished) return false;
+    mNewGalaxyPending = false;
+    return true;
+}
+
 void Menu::refreshLevelLabels() {
     int count = 0;
-    const App::LaunchStage::Galaxy& galaxy = App::LaunchStage::galaxies(&count)[mLevelGalaxy];
+    const auto* galaxies = App::LaunchStage::galaxies(&count);
+    if (mEditorEnabled && mLevelGalaxy == count) {
+        std::snprintf(mLevelLabels[0], sizeof(mLevelLabels[0]), "+ New galaxy...");
+        std::snprintf(mLevelLabels[1], sizeof(mLevelLabels[1]), "Choose a template in the editor");
+        std::snprintf(mLevelMessage, sizeof(mLevelMessage), "Mod galaxies. Create your own galaxy.");
+        return;
+    }
+    const App::LaunchStage::Galaxy& galaxy = galaxies[mLevelGalaxy];
     const char digit = static_cast<char>('0' + mLevelMission);
     const bool comet = std::strchr(galaxy.comets, digit) != nullptr;
     const bool hidden = std::strchr(galaxy.hidden, digit) != nullptr;
@@ -449,9 +473,10 @@ void Menu::changeLevelValue(int item, int delta) {
     int count = 0;
     const App::LaunchStage::Galaxy* galaxies = App::LaunchStage::galaxies(&count);
     if (item == 0) {
-        mLevelGalaxy = (mLevelGalaxy + delta + count) % count;
+        const int slots = count + (mEditorEnabled ? 1 : 0);
+        mLevelGalaxy = (mLevelGalaxy + delta + slots) % slots;
         mLevelMission = 1;
-    } else {
+    } else if (mLevelGalaxy < count) {
         const int missions = galaxies[mLevelGalaxy].missions;
         mLevelMission = (mLevelMission - 1 + delta + missions) % missions + 1;
     }
@@ -630,7 +655,9 @@ View Menu::view() const {
         view.message = mLevelMessage;
         setItem(0, mLevelLabels[0]);
         setItem(1, mLevelLabels[1]);
-        setItem(2, "Go");
+        int count = 0;
+        App::LaunchStage::galaxies(&count);
+        setItem(2, mEditorEnabled && mLevelGalaxy == count ? "Create..." : "Go");
         setItem(3, "Back");
     } else if (!confirm) {
         view.bands = true;
@@ -858,7 +885,10 @@ void Menu::activate(int index) {
             changeLevelValue(index, 1);
         } else if (index == 2) {
             play(Sound::Select);
-            mLevelPending = true;
+            int count = 0;
+            App::LaunchStage::galaxies(&count);
+            mNewGalaxyPending = mEditorEnabled && mLevelGalaxy == count;
+            mLevelPending = !mNewGalaxyPending;
             close();
         } else {
             play(Sound::Cancel);

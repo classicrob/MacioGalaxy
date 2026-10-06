@@ -17,10 +17,20 @@ namespace PetariNative::PlayerLaunch {
 inline std::string stage;
 inline int scenario = 0;
 
+// A restart into a new galaxy (the level editor's New Galaxy: PETARI_OPEN_* from the previous
+// process, read once by app_main). The game skips the strap's wait and the title and opens file
+// `openFile` (1-based; 0: off) without asking, then goes to `stage` as above; the editor enters
+// Edit there (openEdit). openTitle is the galaxy's name, for the "Creating" screen.
+inline int openFile = 0;
+inline bool openEdit = false;
+inline std::string openTitle;
+
 // The Home menu's Level Select (native/LEVEL_SELECT.md): a warp the game
 // starts at its next normal gameplay frame (GameScene::update), through the
 // game's own galaxy move, and then clears. Game threads only.
 inline char warpStage[64] = {};
 inline int warpScenario = 0;
 inline std::atomic<bool> warpPending{false};
+// M4: Home closes before the UI opens the New Galaxy sheet; never a warp destination.
+inline std::atomic<bool> newGalaxyPending{false};
 }  // namespace PetariNative::PlayerLaunch

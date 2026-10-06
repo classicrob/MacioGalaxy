@@ -1,0 +1,640 @@
+#include "journal.hpp"
+#include "home_entry.hpp"
+#include "playtest.hpp"
+#include "help.hpp"
+#include "areas.hpp"
+#include "play_view.hpp"
+// The level editor's frame: toolbar, dock and footer around the game (petari/editor/ui.hpp).
+#include <petari/editor/ui.hpp>
+
+#include "edit_mode.hpp"
+#include "panels.hpp"
+#include "paths.hpp"
+
+#include <petari/editor/edit_api.hpp>
+#include <petari/editor/gravity.hpp>
+#include <petari/editor_pick.hpp>
+
+#include <petari/home_menu.hpp>
+
+#include "imgui.h"
+#include "imgui_internal.h"  // DockBuilder: the default layout
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <string>
+
+extern "C" void petari_present_set_content_area(float x, float y, float width, float height);
+extern "C" void petari_present_set_free_aspect(int enabled);
+
+namespace PetariEditor::Ui {
+namespace {
+
+int gSwitchingTo = 0;      // a mission switch in flight (SwitchScenario takes ~2 s)
+double gSwitchSince = 0.0;
+bool gSwitchReloading = false;  // Runtime has started the switch's reload
+
+constexpr float kToolbarHeight = 44.0f;
+constexpr float kFooterHeight = 28.0f;
+constexpr float kLeftWidth = 260.0f;   // UX section 4: 1440 x 900 window -> 260 / 300 docks
+constexpr float kRightWidth = 300.0f;
+constexpr const char* kOutliner = "Galaxy";  // Outliner, Changes, History
+constexpr const char* kInspector = "Inspector";
+
+bool gVisible = false;
+bool gFocus = false;
+bool gAreaSet = false;  // the presenter has a content area from us
+ImFont* gUiFont = nullptr;
+struct Rect {
+    float x = 0, y = 0, w = 0, h = 0;
+};
+Rect gViewport;
+bool gViewportValid = false;
+
+ImU32 rgba(float r, float g, float b, float a = 1.0f) {
+    return ImGui::ColorConvertFloat4ToU32(ImVec4(r, g, b, a));
+}
+ImVec4 vec(float r, float g, float b, float a = 1.0f) {
+    return ImVec4(r, g, b, a);
+}
+
+// The Home menu's palette (native/HOME_MENU.md, imgui_overlay.cpp), tuned for dense panels.
+void applyStyle(ImGuiStyle& s) {
+    s = ImGuiStyle();
+    s.WindowRounding = 0.0f;
+    s.WindowBorderSize = 0.0f;
+    s.ChildRounding = 6.0f;
+    s.FrameRounding = 6.0f;
+    s.PopupRounding = 8.0f;
+    s.GrabRounding = 999.0f;
+    s.TabRounding = 8.0f;
+    s.ScrollbarRounding = 999.0f;
+    s.FramePadding = ImVec2(6.0f, 3.0f);
+    s.ItemSpacing = ImVec2(6.0f, 4.0f);
+    s.WindowPadding = ImVec2(8.0f, 6.0f);
+    s.IndentSpacing = 14.0f;
+    s.ScrollbarSize = 10.0f;
+    s.DockingSeparatorSize = 2.0f;
+    ImVec4* c = s.Colors;
+    c[ImGuiCol_Text] = vec(0.90f, 0.96f, 1.00f);
+    c[ImGuiCol_TextDisabled] = vec(0.50f, 0.66f, 0.79f);
+    c[ImGuiCol_WindowBg] = vec(0.02f, 0.19f, 0.29f, 0.97f);       // between the panel gradient's ends
+    c[ImGuiCol_ChildBg] = vec(0.0f, 0.06f, 0.12f, 0.35f);
+    c[ImGuiCol_PopupBg] = vec(0.02f, 0.22f, 0.33f, 0.98f);
+    c[ImGuiCol_Border] = vec(0.40f, 0.86f, 1.00f, 0.45f);          // the cyan rim
+    c[ImGuiCol_FrameBg] = vec(0.0f, 0.06f, 0.12f, 0.55f);
+    c[ImGuiCol_FrameBgHovered] = vec(0.0f, 0.10f, 0.18f, 0.75f);
+    c[ImGuiCol_FrameBgActive] = vec(0.0f, 0.12f, 0.22f, 0.90f);
+    c[ImGuiCol_TitleBg] = vec(0.03f, 0.34f, 0.45f);
+    c[ImGuiCol_TitleBgActive] = vec(0.03f, 0.34f, 0.45f);
+    c[ImGuiCol_MenuBarBg] = vec(0.03f, 0.30f, 0.40f);
+    c[ImGuiCol_ScrollbarBg] = vec(0.0f, 0.05f, 0.12f, 0.45f);
+    c[ImGuiCol_ScrollbarGrab] = vec(0.60f, 0.78f, 0.97f, 0.55f);
+    c[ImGuiCol_ScrollbarGrabHovered] = vec(0.75f, 0.88f, 1.0f, 0.75f);
+    c[ImGuiCol_ScrollbarGrabActive] = vec(0.98f, 0.80f, 0.22f);
+    c[ImGuiCol_CheckMark] = vec(0.98f, 0.80f, 0.22f);
+    c[ImGuiCol_SliderGrab] = vec(0.60f, 0.78f, 0.97f);
+    c[ImGuiCol_SliderGrabActive] = vec(0.98f, 0.80f, 0.22f);
+    c[ImGuiCol_Button] = vec(0.60f, 0.78f, 0.97f, 0.22f);
+    c[ImGuiCol_ButtonHovered] = vec(0.60f, 0.85f, 1.0f, 0.38f);
+    c[ImGuiCol_ButtonActive] = vec(0.98f, 0.80f, 0.22f, 0.55f);
+    c[ImGuiCol_Header] = vec(0.98f, 0.80f, 0.22f, 0.16f);        // selection: gold
+    c[ImGuiCol_HeaderHovered] = vec(1.0f, 1.0f, 1.0f, 0.07f);
+    c[ImGuiCol_HeaderActive] = vec(0.98f, 0.80f, 0.22f, 0.28f);
+    c[ImGuiCol_Separator] = vec(0.40f, 0.86f, 1.00f, 0.30f);
+    c[ImGuiCol_SeparatorHovered] = vec(0.40f, 0.86f, 1.00f, 0.70f);
+    c[ImGuiCol_SeparatorActive] = vec(0.98f, 0.80f, 0.22f);
+    c[ImGuiCol_ResizeGrip] = vec(0.40f, 0.86f, 1.00f, 0.20f);
+    c[ImGuiCol_ResizeGripHovered] = vec(0.40f, 0.86f, 1.00f, 0.60f);
+    c[ImGuiCol_ResizeGripActive] = vec(0.98f, 0.80f, 0.22f);
+    c[ImGuiCol_Tab] = vec(0.03f, 0.27f, 0.37f);
+    c[ImGuiCol_TabHovered] = vec(0.20f, 0.55f, 0.72f);
+    c[ImGuiCol_TabSelected] = vec(0.13f, 0.47f, 0.62f);           // the table header band
+    c[ImGuiCol_TabSelectedOverline] = vec(0.98f, 0.80f, 0.22f);
+    c[ImGuiCol_TabDimmed] = vec(0.03f, 0.24f, 0.33f);
+    c[ImGuiCol_TabDimmedSelected] = vec(0.08f, 0.38f, 0.50f);
+    c[ImGuiCol_DockingPreview] = vec(0.98f, 0.80f, 0.22f, 0.45f);
+    c[ImGuiCol_DockingEmptyBg] = vec(0.0f, 0.0f, 0.0f, 0.0f);
+    c[ImGuiCol_TableHeaderBg] = vec(0.35f, 0.80f, 1.0f, 0.22f);
+    c[ImGuiCol_TableBorderStrong] = vec(0.40f, 0.86f, 1.00f, 0.35f);
+    c[ImGuiCol_TableBorderLight] = vec(0.40f, 0.86f, 1.00f, 0.15f);
+    c[ImGuiCol_TableRowBgAlt] = vec(1.0f, 1.0f, 1.0f, 0.03f);
+    c[ImGuiCol_TextSelectedBg] = vec(0.98f, 0.80f, 0.22f, 0.35f);
+    c[ImGuiCol_NavHighlight] = vec(0.98f, 0.80f, 0.22f);
+    c[ImGuiCol_ModalWindowDimBg] = vec(0.0f, 0.16f, 0.26f, 0.6f);
+}
+
+// The editor's look applies only while its windows are drawn: the Home menu and anything
+// else drawn with ImGui keep the global style.
+struct StyleScope {
+    ImGuiStyle saved;
+    bool font = false;
+    StyleScope() {
+        saved = ImGui::GetStyle();
+        static ImGuiStyle editor = [] {
+            ImGuiStyle s;
+            applyStyle(s);
+            return s;
+        }();
+        ImGui::GetStyle() = editor;
+        if (gUiFont != nullptr) {
+            ImGui::PushFont(gUiFont);
+            font = true;
+        }
+    }
+    ~StyleScope() {
+        if (font) ImGui::PopFont();
+        ImGui::GetStyle() = saved;
+    }
+};
+
+// The game's white-to-blue capsule with a cyan rim; gold when primary (HOME_MENU.md "Style").
+bool capsule(const char* id, const char* label, bool gold, float height) {
+    ImFont* font = PetariNative::HomeMenu::galaxyTextFont();
+    const float size = height * 0.62f;
+    ImFont* f = font != nullptr ? font : ImGui::GetFont();
+    const ImVec2 text = f->CalcTextSizeA(size, 1e9f, 0.0f, label);
+    const ImVec2 dim(text.x + height * 1.1f, height);
+    const ImVec2 min = ImGui::GetCursorScreenPos();
+    const bool pressed = ImGui::InvisibleButton(id, dim);
+    const bool hovered = ImGui::IsItemHovered();
+    const ImVec2 max(min.x + dim.x, min.y + dim.y);
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    const float r = height * 0.5f;
+    if (gold) list->AddRectFilled(ImVec2(min.x - 3, min.y - 3), ImVec2(max.x + 3, max.y + 3), rgba(1.0f, 0.86f, 0.30f, 0.30f), r + 3);
+    const ImU32 top = gold ? rgba(1.0f, 1.0f, 0.93f) : rgba(1.0f, 1.0f, 1.0f);
+    const ImU32 bottom = gold ? rgba(1.0f, 0.84f, 0.36f) : rgba(0.60f, 0.78f, 0.97f);
+    list->AddRectFilled(min, max, bottom, r);
+    list->AddRectFilledMultiColor(ImVec2(min.x + r * 0.4f, min.y + 1), ImVec2(max.x - r * 0.4f, max.y - 1), top, top, bottom, bottom);
+    list->AddRect(min, max, gold ? rgba(0.98f, 0.80f, 0.22f) : rgba(0.22f, 0.74f, 1.0f, hovered ? 1.0f : 0.9f), r, 0, 1.5f);
+    const ImU32 ink = gold ? rgba(0.30f, 0.17f, 0.02f) : rgba(0.20f, 0.25f, 0.34f);
+    list->AddText(f, size, ImVec2(min.x + (dim.x - text.x) * 0.5f, min.y + (dim.y - text.y) * 0.5f), ink, label);
+    return pressed;
+}
+
+void galaxyText(const char* text, float size, ImU32 color) {
+    ImFont* font = PetariNative::HomeMenu::galaxyTextFont();
+    ImFont* f = font != nullptr ? font : ImGui::GetFont();
+    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    const ImVec2 dim = f->CalcTextSizeA(size, 1e9f, 0.0f, text);
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    list->AddText(f, size, ImVec2(pos.x + 1, pos.y + 1.5f), rgba(0.0f, 0.05f, 0.12f, 0.6f), text);  // the menus' soft shadow
+    list->AddText(f, size, pos, color, text);
+    ImGui::Dummy(dim);
+}
+
+constexpr ImGuiWindowFlags kBandFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDocking |
+                                        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                        ImGuiWindowFlags_NoScrollWithMouse;
+
+void bandBackground(ImVec2 min, ImVec2 max, bool top) {
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    if (top) {
+        list->AddRectFilledMultiColor(min, max, rgba(0.03f, 0.34f, 0.45f), rgba(0.03f, 0.34f, 0.45f), rgba(0.02f, 0.22f, 0.33f),
+                                      rgba(0.02f, 0.22f, 0.33f));
+        list->AddLine(ImVec2(min.x, max.y - 0.5f), ImVec2(max.x, max.y - 0.5f), rgba(0.40f, 0.86f, 1.0f, 0.6f));
+    } else {
+        // The Home menu's footer band: pause-screen teal with a light cyan line.
+        list->AddRectFilledMultiColor(min, max, rgba(0.03f, 0.43f, 0.53f, 0.95f), rgba(0.03f, 0.43f, 0.53f, 0.95f),
+                                      rgba(0.01f, 0.24f, 0.33f, 0.97f), rgba(0.01f, 0.24f, 0.33f, 0.97f));
+        list->AddLine(ImVec2(min.x, min.y + 0.5f), ImVec2(max.x, min.y + 0.5f), rgba(0.55f, 0.92f, 1.0f, 0.9f));
+    }
+}
+
+void drawToolbar(float width) {
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(width, kToolbarHeight));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+    ImGui::Begin("##PetariEditorToolbar", nullptr, kBandFlags);
+    bandBackground(ImVec2(0, 0), ImVec2(width, kToolbarHeight), true);
+    ImGui::SetCursorPosY((kToolbarHeight - 18.0f) * 0.5f);
+    galaxyText("Level Editor", 18.0f, rgba(1.0f, 1.0f, 1.0f));
+    // The title is the editor's menu: new galaxy, save, share.
+    if (ImGui::IsItemClicked()) ImGui::OpenPopup("editor-menu");
+    if (ImGui::IsItemHovered()) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (ImGui::BeginPopup("editor-menu")) {
+        if (ImGui::MenuItem("New galaxy...", "Cmd+N")) openNewGalaxySheet();
+        if (ImGui::MenuItem("Import model...")) openImportSheet();  // M6 import
+        if (ImGui::MenuItem("Save", "Cmd+S")) requestSave(false);
+        if (ImGui::MenuItem("Save as...", "Cmd+Shift+S")) requestSave(true);
+        if (ImGui::MenuItem("Share...", "Cmd+Shift+E")) openShareSheet();
+        if (ImGui::MenuItem("Keys and tips", "?")) toggleHelp();  // Editor guide
+        ImGui::EndPopup();
+    }
+    ImGui::SameLine(0.0f, 24.0f);
+    // Undo / redo (Cmd+Z / Cmd+Shift+Z).
+    ImGui::SetCursorPosY((kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f);
+    ImGui::BeginDisabled(!canUndo());
+    if (ImGui::Button("Undo")) undo();
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    ImGui::BeginDisabled(!canRedo());
+    if (ImGui::Button("Redo")) redo();
+    ImGui::EndDisabled();
+    ImGui::SameLine(0.0f, 24.0f);
+    // Missions (UX section 12): the one being edited in gold; another reloads into it.
+    if (const ModelView* model = PetariEditor::model(); model != nullptr && model->missionCount() > 0) {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextColored(ImVec4(0.6f, 0.92f, 1.0f, 1.0f), "Mission");
+        for (int mission = 1; mission <= model->missionCount(); mission++) {
+            ImGui::SameLine(0.0f, 4.0f);
+            char label[8];
+            std::snprintf(label, sizeof(label), "%d", mission);
+            const bool current = mission == model->scenario();
+            if (current) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.98f, 0.80f, 0.22f, 0.85f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.30f, 0.17f, 0.02f, 1.0f));
+            }
+            if (ImGui::Button(label) && !current) {
+                switchMission(mission);
+            }
+            if (current) ImGui::PopStyleColor(2);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s%s", missionLabel(*model, mission).c_str(), current ? " (editing)" : " (click to edit it)");
+            }
+        }
+        ImGui::SameLine(0.0f, 10.0f);
+        // View (one menu, so the toolbar fits a 1280-point window): what the viewport shows besides the scene.
+        if (ImGui::Button("View")) ImGui::OpenPopup("view-menu");
+        noteTestTarget("button:View");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ghosts, links, gravity... (what the viewport shows)");
+        if (ImGui::BeginPopup("view-menu")) {
+            bool ghosts = PetariNative::EditorGizmo::showGhosts();
+            if (ImGui::Checkbox("Other missions' objects (ghosts)", &ghosts)) PetariNative::EditorGizmo::setShowGhosts(ghosts);
+            if (ImGui::MenuItem("New path")) beginNewPath();  // M3 paths: draw a fresh rail.
+            ImGui::TextUnformatted("Paths and switch wires (5)");
+            drawPathsToggle();  // M3 paths: selection/all/none.
+            bool gravity = Gravity::visible();  // M3 gravity: view toggle.
+            if (ImGui::Checkbox("Gravity fields (1)", &gravity)) Gravity::setVisible(gravity);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gravity fields, flow arrows and uncovered ground");
+            drawAreasToggle();      // M3 areas: bounds visibility.
+            drawAreasToggle(true);  // M3 areas: camera volume visibility.
+            // M3 play-test and later view toggles go here, one per line.
+            drawPlaytestToggle();  // M3 play-test: recorded Mario trail.
+            drawPlayViewToggle();  // friction #14: what Play shows from the marker.
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine(0.0f, 16.0f);
+    }
+    const float buttonHeight = 26.0f;
+    const Status& state = status();
+    // Reload: rebuild the scene from the layout, applying pending changes (UX section 3).
+    char reload[48];
+    std::snprintf(reload, sizeof(reload), state.pendingCount > 0 ? "Reload  %d pending" : "Reload", state.pendingCount);
+    const float right = width - 12.0f;
+    float leftEdge = right - 96.0f - 8.0f - 230.0f;  // the Reload button's left; Save and the badge go left of it
+    // Share (UX section 17): the saved mod as a zip; Cmd+Shift+E.
+    {
+        const float w = ImGui::CalcTextSize("Share").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (ImGui::Button("Share")) openShareSheet();
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pack the saved mod as a .zip to give someone (Cmd+Shift+E)");
+    }
+    // Editor guide: compact help button immediately left of Share.
+    {
+        const float w = ImGui::CalcTextSize("?").x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (ImGui::Button("?")) toggleHelp();
+        noteTestTarget("button:Help");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Keys and tips (?)");
+    }
+    // Save (UX section 17): highlighted while there are unsaved edits; Cmd+S.
+    {
+        const char* label = state.unsaved ? "Save*###save" : "Save###save";
+        const float w = ImGui::CalcTextSize(label, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= w + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        if (state.unsaved) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.66f, 1.0f, 0.45f));
+        if (ImGui::Button(label)) requestSave(false);
+        if (state.unsaved) ImGui::PopStyleColor();
+        if (ImGui::IsItemHovered()) {
+            const std::string& mod = sessionModName();
+            ImGui::SetTooltip(mod.empty() ? "Save your edits as a mod (Cmd+S)" : "Save to mods/%s (Cmd+S; Cmd+Shift+S to change)", mod.c_str());
+        }
+    }
+    // Checks badge (UX section 16): problems the edits introduced; opens the Checks tab.
+    if (const CheckCounts counts = countChecks(checks()); counts.errors + counts.warnings > 0) {
+        char badge[32];
+        std::snprintf(badge, sizeof(badge), "     %d###checks", counts.errors + counts.warnings);  // room for the warning sign
+        const float badgeWidth = ImGui::CalcTextSize(badge, nullptr, true).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+        leftEdge -= badgeWidth + 10.0f;
+        ImGui::SetCursorPos(ImVec2(leftEdge, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+        ImGui::PushStyleColor(ImGuiCol_Button, counts.errors > 0 ? ImVec4(0.85f, 0.25f, 0.20f, 0.85f) : ImVec4(0.90f, 0.65f, 0.15f, 0.80f));
+        if (ImGui::Button(badge)) openTab("Checks");
+        ImGui::PopStyleColor();
+        {
+            // The warning sign, drawn (the fonts may not have U+26A0): a white triangle with a dark "!".
+            const ImVec2 min = ImGui::GetItemRectMin();
+            const float h = ImGui::GetItemRectSize().y, x = min.x + ImGui::GetStyle().FramePadding.x, t = h * 0.30f;
+            ImDrawList* list = ImGui::GetWindowDrawList();
+            list->AddTriangleFilled(ImVec2(x + t, min.y + h * 0.5f - t), ImVec2(x + 2.0f * t, min.y + h * 0.5f + t * 0.85f),
+                                    ImVec2(x, min.y + h * 0.5f + t * 0.85f), IM_COL32(255, 255, 255, 240));
+            list->AddLine(ImVec2(x + t, min.y + h * 0.5f - t * 0.35f), ImVec2(x + t, min.y + h * 0.5f + t * 0.30f), IM_COL32(60, 30, 10, 255), 1.6f);
+            list->AddCircleFilled(ImVec2(x + t, min.y + h * 0.5f + t * 0.58f), 1.0f, IM_COL32(60, 30, 10, 255));
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("%d error%s, %d warning%s: click for the list", counts.errors, counts.errors == 1 ? "" : "s", counts.warnings,
+                              counts.warnings == 1 ? "" : "s");
+        }
+    }
+    ImGui::SetCursorPos(ImVec2(right - 96.0f - 8.0f - 230.0f, (kToolbarHeight - ImGui::GetFrameHeight()) * 0.5f));
+    if (state.pendingCount > 0) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.66f, 1.0f, 0.45f));
+    if (ImGui::Button(reload)) enqueue(Command{Command::Kind::Reload});
+    if (state.pendingCount > 0) ImGui::PopStyleColor();
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cmd+R: rebuild the world from your layout (enemies home, coins back, pending changes applied)");
+    ImGui::SameLine();
+    if (ImGui::Button("Resume")) {
+        Command play{Command::Kind::Play};
+        play.from = PlayFrom::Resume;
+        enqueue(std::move(play));
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Shift+Tab: continue the frozen moment as it is");
+    ImGui::SameLine();
+    if (ImGui::Button("From start")) {
+        Command play{Command::Kind::Play};
+        play.from = PlayFrom::MissionStart;
+        enqueue(std::move(play));
+    }
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Option+Tab: play the mission from its start");
+    ImGui::SetCursorPos(ImVec2(right - 96.0f, (kToolbarHeight - buttonHeight) * 0.5f));
+    if (capsule("##play", "Play  Tab", true, buttonHeight)) {
+        Command play{Command::Kind::Play};
+        play.from = PlayFrom::Marker;
+        enqueue(std::move(play));
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+void drawFooter(float width, float height) {
+    ImGui::SetNextWindowPos(ImVec2(0, height - kFooterHeight));
+    ImGui::SetNextWindowSize(ImVec2(width, kFooterHeight));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
+    ImGui::Begin("##PetariEditorFooter", nullptr, kBandFlags);
+    const ImVec2 min(0, height - kFooterHeight);
+    bandBackground(min, ImVec2(width, height), false);
+    ImGui::SetCursorPosY((kFooterHeight - ImGui::GetTextLineHeight()) * 0.5f);
+    // The keys that work right now (the Home menu's footer convention), or the drag under way.
+    const PetariNative::EditorGizmo::View gizmo = PetariNative::EditorGizmo::view();
+    if (gizmo.dragging && gizmo.status[0] != '\0') {
+        ImGui::TextUnformatted(gizmo.status);
+    } else if (!drawPlaytestFooter()) {  // M3 play-test: Keep status.
+        ImGui::TextUnformatted("Tab play    M marker    Click select    W E R move/rotate/scale    End drop    F frame    Cmd+Z undo    Cmd+. focus");
+    }
+    // Right end: unsaved edits and the stage's memory (UX section 16, the memory meter).
+    const Status& state = status();
+    const float meter = 90.0f;
+    float x = width - 12.0f - meter - 150.0f;
+    if (state.unsaved) {
+        ImGui::SameLine(x - 80.0f);
+        ImGui::TextColored(ImVec4(1.0f, 0.84f, 0.42f, 1.0f), "Unsaved");
+    }
+    if (state.heapTotal > 0) {
+        const float used = 1.0f - static_cast<float>(state.heapFree) / static_cast<float>(state.heapTotal);
+        ImGui::SameLine(x);
+        ImGui::Text("Memory %d%%", static_cast<int>(used * 100.0f + 0.5f));
+        ImGui::SameLine();
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float barY = at.y + ImGui::GetTextLineHeight() * 0.5f - 4.0f;
+        ImDrawList* list = ImGui::GetWindowDrawList();
+        list->AddRectFilled(ImVec2(at.x, barY), ImVec2(at.x + meter, barY + 8.0f), rgba(0.0f, 0.06f, 0.12f, 0.6f), 4.0f);
+        const ImU32 fill = used >= 1.0f ? rgba(1.0f, 0.35f, 0.35f) : used >= 0.9f ? rgba(1.0f, 0.55f, 0.25f) : rgba(0.35f, 0.85f, 0.45f);
+        list->AddRectFilled(ImVec2(at.x, barY), ImVec2(at.x + meter * std::fmin(used, 1.0f), barY + 8.0f), fill, 4.0f);
+        ImGui::Dummy(ImVec2(meter, 1.0f));
+        if (ImGui::IsItemHovered()) {
+            std::string capacities;
+            for (const Capacity& c : state.capacities) {
+                char line[96];
+                std::snprintf(line, sizeof(line), "%s %d / %d\n", c.name, c.used, c.limit);
+                capacities += line;
+            }
+            ImGui::SetTooltip("Stage memory: %u KB free of %u KB\n%s", state.heapFree / 1024, state.heapTotal / 1024, capacities.c_str());
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+}
+
+// The default layout (UX section 4): Outliner left, Inspector right, the game between.
+void buildDefaultLayout(ImGuiID dock, ImVec2 size) {
+    ImGui::DockBuilderRemoveNode(dock);
+    ImGui::DockBuilderAddNode(dock, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dock, size);
+    ImGuiID left = 0, rest = 0, right = 0, center = 0;
+    ImGui::DockBuilderSplitNode(dock, ImGuiDir_Left, std::clamp(kLeftWidth / size.x, 0.1f, 0.4f), &left, &rest);
+    ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, std::clamp(kRightWidth / (size.x - kLeftWidth), 0.1f, 0.5f), &right, &center);
+    ImGui::DockBuilderDockWindow(kOutliner, left);
+    ImGui::DockBuilderDockWindow(kInspector, right);
+    ImGui::DockBuilderFinish(dock);
+}
+
+// A toast at the top of the viewport: a mission switch in flight, else the last failed command (4 s,
+// orange; Runtime's status().lastError), else the last notice (3 s, cyan; status().notice).
+void drawToast() {
+    static std::uint64_t sErrorSerial = 0, sNoticeSerial = 0;
+    static std::string sText;
+    static bool sError = false;
+    static double sUntil = 0.0;
+    const Status& state = status();
+    if (state.errorSerial != sErrorSerial) {
+        sErrorSerial = state.errorSerial;
+        sText = state.lastError, sError = true, sUntil = ImGui::GetTime() + 4.0;
+    }
+    if (state.noticeSerial != sNoticeSerial) {
+        sNoticeSerial = state.noticeSerial;
+        sText = state.notice, sError = false, sUntil = ImGui::GetTime() + 3.0;
+    }
+    std::string text = sText;
+    bool error = sError;
+    if (gSwitchingTo != 0) {
+        // Done when Runtime's reload for it has come and gone (the model names the new mission at once).
+        const ModelView* model = PetariEditor::model();
+        const bool reloading = mode() == Mode::Reloading;
+        gSwitchReloading = gSwitchReloading || reloading;
+        const double elapsed = ImGui::GetTime() - gSwitchSince;
+        if ((gSwitchReloading && !reloading) || elapsed > 10.0 || (!gSwitchReloading && elapsed > 1.5)) {
+            gSwitchingTo = 0;
+        } else {
+            const std::string name = model != nullptr ? missionLabel(*model, gSwitchingTo) : "";
+            text = "Loading " + (name.empty() || name.rfind("Mission ", 0) == 0 ? "mission " + std::to_string(gSwitchingTo) : "mission " + std::to_string(gSwitchingTo) + ": " + name) + "...";
+            error = false;
+        }
+    } else if (sText.empty() || ImGui::GetTime() > sUntil) {
+        return;
+    }
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    const ImVec2 size = ImGui::CalcTextSize(text.c_str());
+    const float cx = gViewport.x + gViewport.w * 0.5f, top = gViewport.y + 12.0f;
+    const ImVec2 min(cx - size.x * 0.5f - 14.0f, top), max(cx + size.x * 0.5f + 14.0f, top + size.y + 10.0f);
+    list->AddRectFilled(min, max, error ? rgba(0.05f, 0.03f, 0.03f, 0.88f) : rgba(0.02f, 0.10f, 0.16f, 0.88f), (max.y - min.y) * 0.5f);
+    list->AddRect(min, max, error ? rgba(1.0f, 0.55f, 0.25f, 1.0f) : rgba(0.40f, 0.86f, 1.0f, 1.0f), (max.y - min.y) * 0.5f, 0, 1.5f);
+    list->AddText(ImVec2(min.x + 14.0f, min.y + 5.0f), rgba(1, 1, 1, 1), text.c_str());
+}
+
+std::string gOpening;  // showOpening's title, for this frame only
+
+void drawOpeningBanner() {
+    if (gOpening.empty()) return;
+    const std::string text = "Creating " + gOpening + "...";
+    ImDrawList* list = ImGui::GetForegroundDrawList();
+    ImFont* galaxy = PetariNative::HomeMenu::galaxyTextFont();
+    ImFont* font = galaxy != nullptr ? galaxy : ImGui::GetFont();
+    const float size = 30.0f;
+    const ImVec2 dim = font->CalcTextSizeA(size, 1e9f, 0.0f, text.c_str());
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    const ImVec2 at((display.x - dim.x) * 0.5f, display.y * 0.42f);
+    list->AddRectFilled(ImVec2(at.x - 28.0f, at.y - 16.0f), ImVec2(at.x + dim.x + 28.0f, at.y + dim.y + 16.0f), rgba(0.02f, 0.14f, 0.24f, 0.85f), 18.0f);
+    list->AddText(font, size, ImVec2(at.x + 1.0f, at.y + 2.0f), rgba(0.0f, 0.05f, 0.12f, 0.6f), text.c_str());
+    list->AddText(font, size, at, rgba(1.0f, 1.0f, 1.0f, 1.0f), text.c_str());
+    gOpening.clear();
+}
+
+void setArea(float x, float y, float w, float h) {
+    petari_present_set_content_area(x, y, w, h);
+    gAreaSet = w > 0.0f && h > 0.0f;
+    // Docked, the game renders at the viewport's shape (the HUD is hidden while editing).
+    petari_present_set_free_aspect(gAreaSet ? 1 : 0);
+}
+
+}  // namespace
+
+void switchMission(int mission) {
+    Command command{Command::Kind::SwitchScenario};
+    command.index = mission;
+    enqueue(std::move(command));
+    gSwitchingTo = mission;
+    gSwitchSince = ImGui::GetCurrentContext() != nullptr ? ImGui::GetTime() : 0.0;
+    gSwitchReloading = false;
+}
+
+void showOpening(const char* title) { gOpening = title != nullptr ? title : ""; }
+
+bool installFonts(float displayScale) {
+    if (ImGui::GetCurrentContext() == nullptr || gUiFont != nullptr) {
+        return gUiFont != nullptr;
+    }
+    const float scale = displayScale > 0.0f ? displayScale : 1.0f;
+    // macOS's UI font, read from the system at run time.
+    static const char* const kCandidates[] = {"/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc"};
+    ImFontAtlas* atlas = ImGui::GetIO().Fonts;
+    if (atlas->Fonts.Size == 0) {
+        atlas->AddFontDefault();  // ImGui's own font stays the default
+    }
+    for (const char* path : kCandidates) {
+        if (FILE* file = std::fopen(path, "rb")) {
+            std::fclose(file);
+            ImFontConfig config;
+            config.OversampleH = 2;
+            config.OversampleV = 1;
+            std::snprintf(config.Name, sizeof(config.Name), "Editor UI (%s)", path);
+            gUiFont = atlas->AddFontFromFileTTF(path, 13.0f * scale, &config, atlas->GetGlyphRangesDefault());
+            if (gUiFont != nullptr) {
+                gUiFont->Scale = 1.0f / scale;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void setVisible(bool visible) {
+    gVisible = visible;
+}
+
+bool visible() {
+    return gVisible;
+}
+
+void setFocusMode(bool focus) {
+    gFocus = focus;
+}
+
+bool focusMode() {
+    return gFocus;
+}
+
+bool viewportRect(float* x, float* y, float* width, float* height) {
+    if (!gViewportValid) return false;
+    *x = gViewport.x;
+    *y = gViewport.y;
+    *width = gViewport.w;
+    *height = gViewport.h;
+    return true;
+}
+
+// M3 areas: use the editor style for viewport panels.
+bool drawStyledOverlay(const std::function< bool() >& draw) {
+    StyleScope style;
+    return draw();
+}
+
+void drawFrame(float windowWidth, float windowHeight) {
+    {
+        StyleScope style;
+        serviceHomeNewGalaxy();  // M4: Home requests are handled on the UI thread.
+        drawNewGalaxySheet();  // M4: also available outside the docked layout.
+        drawJournalSheet();  // M4: recovery owns input before the first Edit frame.
+    }
+    updateEditMode(windowWidth, windowHeight);  // uses last frame's viewport
+    {
+        StyleScope style;
+        drawInstallSheet();  // a dropped mod zip, in or out of Edit
+        drawOpeningBanner();  // a new galaxy on its way into Edit
+    }
+    gViewportValid = false;
+    if (!gVisible || gFocus || !(windowWidth > 0.0f) || !(windowHeight > kToolbarHeight + kFooterHeight + 50.0f)) {
+        if (gVisible && gFocus) {
+            StyleScope style;
+            drawHelpOverlay();  // Editor guide: help also works with the panels hidden.
+        }
+        if (gAreaSet) setArea(0, 0, 0, 0);  // the game takes the whole window again
+        return;
+    }
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    StyleScope style;
+
+    drawToolbar(windowWidth);
+    drawFooter(windowWidth, windowHeight);
+
+    // The dock host between the bands; its central node is the game's viewport.
+    const ImVec2 hostPos(0.0f, kToolbarHeight);
+    const ImVec2 hostSize(windowWidth, windowHeight - kToolbarHeight - kFooterHeight);
+    ImGui::SetNextWindowPos(hostPos);
+    ImGui::SetNextWindowSize(hostSize);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::Begin("##PetariEditorDockHost", nullptr,
+                 kBandFlags | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoNavFocus);
+    ImGui::PopStyleVar(2);
+    const ImGuiID dock = ImGui::GetID("PetariEditorDock");
+    if (ImGuiDockNode* node = ImGui::DockBuilderGetNode(dock); node == nullptr || !node->IsSplitNode()) {
+        buildDefaultLayout(dock, hostSize);
+    }
+    ImGui::DockSpace(dock, ImVec2(0, 0), ImGuiDockNodeFlags_PassthruCentralNode | ImGuiDockNodeFlags_NoDockingOverCentralNode);
+    ImGui::End();
+
+    drawGalaxyWindow(kOutliner);
+    drawInspectorWindow(kInspector);
+    drawSaveSheet();
+    drawShareSheet();
+    drawImportSheet();  // M6 import
+    drawHelpOverlay();  // Editor guide
+
+    if (ImGuiDockNode* central = ImGui::DockBuilderGetCentralNode(dock); central != nullptr && central->Size.x > 8.0f &&
+                                                                        central->Size.y > 8.0f) {
+        gViewport = {central->Pos.x, central->Pos.y, central->Size.x, central->Size.y};
+        gViewportValid = true;
+        setArea(gViewport.x, gViewport.y, gViewport.w, gViewport.h);
+        drawToast();
+    }
+}
+
+}  // namespace PetariEditor::Ui

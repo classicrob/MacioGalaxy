@@ -141,6 +141,9 @@ is always one hover (or the Advanced fold) away.
    └──── Resume as-is ───┘          (freezes this frame; the trail of the run is drawn)
 ```
 
+- **Tab is a tap.** Tab also tilts the remote while held (the ball and surfing levels), so
+  only a short tap (under a quarter second, nothing else pressed) toggles Edit; a hold stays
+  the game's tilt. The editor is off until the Mods page's "Level editor" is switched on.
 - **Entering Edit never changes what's on screen.** Tab (or F1 → Level
   Editor, or the controller's hold-Minus) freezes the game exactly as photo mode
   does: the frame stays, the HUD fades out, the editor camera starts at the
@@ -158,7 +161,7 @@ is always one hover (or the Advanced fold) away.
   It's offered only when nothing that needs a reset was changed (a pure camera
   fly-around, or edits the game applied to live objects).
 - **Play from the mission start**: hold **Tab** for half a second (Mario Maker's
-  hold-to-play-from-the-start), `Cmd+Shift+Tab`, or the Play button's menu.
+  hold-to-play-from-the-start), `Option+Tab`, or the Play button's menu.
 - **Returning** (Tab during a play-test) freezes that frame again. The camera
   goes to where you were editing (not where Mario is), the selection and panels
   are as you left them, and Mario's **trail** from the run is drawn as a dotted
@@ -229,17 +232,18 @@ A translucent Mario standing in the scene, with a small arrow for facing.
 - Drag it like any object (it sticks to the ground and stands up with gravity).
   **M** drops it on the ground under the cursor, facing away from the camera.
 - **Tab** plays from it. The Play button's menu: *Play from marker* (Tab),
-  *Resume* (Shift+Tab), *Play from mission start* (Cmd+Shift+Tab), *Play from
+  *Resume* (Shift+Tab), *Play from mission start* (Option+Tab), *Play from
   start point...* (lists this mission's starts and warps).
 - Play-test options in the same menu: *Invincible* (no damage), *Infinite
   life*, *Show trail*, *Test as Luigi*. They apply to play-tests only.
 
 ### Play-tests don't touch your save
 
-A play-test runs on a scratch copy of the current save file: stars, coins and
-unlocks from a test are thrown away. Collecting a Power Star in a play-test
-plays the get-star sequence, then returns to Edit instead of leaving the galaxy
-(with a toast: "Star collected in 0:42"). Dying returns to Edit with the
+A play-test can't change your save: the game doesn't write it while you edit, and
+the stars, coins, lives and unlocks a test earns are put back as they were when you
+leave the editor. Collecting a Power Star in a play-test
+returns immediately to Edit with a "Cleared in 0:42" toast, skipping the star
+cutscene and save prompt. Dying returns to Edit with the
 frame frozen at the moment of death and the trail drawn.
 
 ### Feedback while playing
@@ -508,7 +512,12 @@ Hold **Cmd** while dragging to suspend all snapping for that drag.
   a line or curve of coins along the planet.
 - **Array** (`Cmd+Shift+D`, or the Inspector's Arrange section): pattern the
   selection with live preview and on-canvas handles:
-  - **Line**: count or spacing; drag the end handle and the count updates.
+  - **Line**: count or spacing; colored **Forward/Back**, **Right/Left**, and
+    **Up/Down** direction buttons follow the source heading and local gravity.
+    Up/Down turns ground snapping off to keep the copies at their chosen elevation.
+    Drag the end handle and the count updates. Changing the settings reframes
+    an offscreen handle after the edit; **F** or **Frame preview** fits the source,
+    copies and handle together. Camera framing waits until a handle drag ends.
   - **Ring**: around a centre (the play marker, the pivot, or a picked object),
     lying on the surface; radius handle; "face outward / inward / along".
   - **Grid**: rows × columns on the surface.
@@ -588,6 +597,12 @@ cursor with **Space**.
 
 ### Placing
 
+- Copies from Browser examples keep settings and scale, but clear optional switch,
+  group, camera and other catalog links so the new object can stand on its own.
+  **Keep links**, in the example details, preserves the wiring. Required links
+  (such as a Launch Star's flight path) always stay; linked copies stay in the
+  donor's zone. A destination layer inactive in the edited mission falls back
+  to Common. Duplicates and arrays keep their links.
 - **Drag a card into the viewport**: the object follows the cursor on the
   ground, upright for gravity, with a ghost preview, and lands where you
   release. Esc while dragging cancels.
@@ -780,10 +795,18 @@ camera moves.
 - Shown (selection only, by default) as a smooth curve with direction chevrons,
   its points as dots, and Bézier handles on the selected point. Closed loops
   are drawn as loops.
-- **Pen** tool (`P` with nothing to paint): click on surfaces to lay points at
-  a chosen height above the ground (the Pen's height field, default 100);
-  drag while clicking to pull handles; click the first point to close; Return
-  finishes. Points snap to the surface and to gravity as objects do.
+- **New path** in the Browser or toolbar **View** menu: click surfaces to lay
+  points; the cursor shows the local gravity direction. Return commits two or
+  more points in one undo step. Backspace removes the last draft point; Escape
+  discards the draft. The first ground hit chooses the zone. Points can then
+  be moved and their handles edited; **Closed loop** is in the path Inspector.
+- A selected **Launch Star** offers **New flight path** in the Inspector. Its
+  first point is the star's position: click the landing (or intermediate points
+  first), then Return. The new rail and the star's link are one undo step. A
+  new flight uses the star's zone, including when the landing is in another
+  zone. Existing appearance switches and mission membership are preserved.
+- A galaxy without any canonical path-table schema reports that limitation
+  when finishing; the draft stays available and can be cancelled.
 - On a path: click to select a point, drag to move, Option-click on the curve
   to insert a point, Delete to remove. Points have their own fields in the
   Inspector (speed, wait time, the per-point arguments with names).
@@ -838,11 +861,17 @@ A galaxy's missions share one world; each mission turns some groups of objects
   - makes Play start that mission (and resets to its layout);
   - makes new objects appear **only in this mission** by default; the toast
     after placing says so with an **All missions** button to change it.
-- **Appears in** chips on every object: `All` or any combination of `1 2 3 4C
-  5C 6H`. Toggle chips to change membership. Behind the scenes the editor moves
-  the object to the layer whose mission set matches, or creates one (TECH.md);
-  layers are never named in the main UI.
-- **Missions panel** (Outliner tab "Missions"): each mission's name (editable,
+- **Appears in** chips in the Inspector: toggle the numbered missions, then
+  **Apply** or **Cancel**. **Only this mission** applies that choice immediately.
+  A mixed selection says **Apply to N selected objects**. One Apply is one undo
+  step. Matching copies of the same object in other missions change together.
+  The editor moves each object to an existing layer, or splits it across
+  layers with disjoint mission sets, preserving its links. When existing layers
+  cannot represent the choice, Apply explains why and lists the possible mission
+  combinations. Editing ScenarioData to create new layer combinations is not yet
+  supported.
+- **Galaxy settings** (Inspector with nothing selected): built for registered mod galaxies, with a draft galaxy name, music and English mission names, plus Add mission / Remove last. Apply writes live names and music (heard on the next Play/reload); Apply (restarts) handles count changes with Save or explicit Discard first. Cancel drops the draft. Internal names stay read-only. Objects exclusive to removed missions stay in the layout but no longer appear until those missions return.
+- Later Missions-panel fields: each mission's name (editable,
   in every language the game has, with the current language first), its star
   (which Power Star, where: a link to the star object), its start point, the
   mission type (normal, comet: speed run / purple coins / daredevil / cosmic
@@ -904,7 +933,7 @@ three steps and a live preview on the right (the game renders the template).
      from the name (`PipeDreamGalaxy`) and editable under Advanced.
    - Stars collected in a mod galaxy are kept in the mod's own save beside
      your save file, never in the game's save slots.
-   - Missions: how many, and their names (editable later in the Missions panel).
+   - Missions: how many, and their names (editable later in Galaxy settings).
    - Stars: one per mission by default.
 
 Everything the community does by hand today happens behind this sheet: the
@@ -978,17 +1007,23 @@ shape leaves room for it now. Sketch:
   6 Coins", "Linked Goomba → Switch 7"); click a step to go back to it; the
   steps after it stay (greyed) until you make a new change.
 - Play-tests never add steps and never break the history.
-- Play-tests can't touch your save: while you edit, the game's saving goes to a
-  scratch copy in the project, and your save file is exactly as it was when
-  you leave the editor.
-- Undo history survives quitting (it's in the journal below).
+- Play-tests can't touch your save: while you edit, the game doesn't save, and
+  your save file and progress are exactly as they were when you leave the editor.
+- Unsaved edits survive quitting and crashes (the journal below); their undo
+  history doesn't yet: restored edits are where the next session starts.
 
 ### Autosave and the journal
 
-- Every change is written to a journal in the project folder as you make it.
-  If the game quits or crashes, the next time you open the editor it says
-  "Restored your edit of Good Egg from 2 minutes ago" and you're where you
-  were, history included.
+- Every change is written to a journal as you make it
+  (`<user>/editor/journal/<Galaxy>.json`: the unsaved edits as a patch against
+  the disc, as a save writes them). If the game quits or crashes before a save,
+  the next time you edit that galaxy the editor asks "Restore 3 unsaved edits
+  from 2 minutes ago?". **Restore** reloads with them (still unsaved, so Cmd+S
+  keeps them); **Discard** drops them. Saving, or undoing back to the saved
+  state, clears the journal. Built: per-galaxy journal, the offer
+  (`status().journalEdits/journalTime`), `RestoreJournal`/`DiscardJournal`;
+  live test `editor_journal_smoke.py` (SIGKILL mid-session). Not yet: the undo
+  history itself.
 - **Cmd+S** writes the mod (the archives the game loads: section 17). Until
   then, the mod folder holds the last saved version, so a half-done edit never
   breaks the game for you or anyone else. The toolbar shows "Unsaved changes"
@@ -1139,7 +1174,7 @@ view, play-test and do light editing from the couch.
 | --- | --- |
 | Tab | Edit ⇄ Play from marker |
 | Shift+Tab | Resume (continue the frozen moment) |
-| Hold Tab, Cmd+Shift+Tab | Play from the mission start |
+| Hold Tab, Option+Tab | Play from the mission start |
 | K | Keep: copy selected live objects' current places into the layout |
 | Cmd+R | Reload: rebuild the world from the layout, applying pending changes |
 | M | Play marker here |
@@ -1171,6 +1206,10 @@ view, play-test and do light editing from the couch.
 | Cmd+[ / Cmd+] | Previous / next view |
 | Option+1–9 | Saved views |
 | Cmd+1–5 | Snapping toggles |
+
+None of these take macOS's own shortcuts: Cmd+Tab and Cmd+Shift+Tab (app switcher), Cmd+H (hide),
+Cmd+M (minimize), Cmd+Q (quit), Cmd+Space (Spotlight) and Cmd+` (window cycle) reach the system, never
+the game; Cmd+Ctrl+F is the system's own fullscreen.
 
 Every binding is remappable on the Home menu's Controls page (a new "Editor"
 section), and **Cmd+K** finds any command by name with its key shown, so nobody
@@ -1224,8 +1263,8 @@ same kind, Missions, Delete, See examples).
   applied to each player's own disc at load) is smaller and contains no
   Nintendo data, but needs our loader to apply it. Proposal: patch by default,
   "full archives" as an option for other tools (TECH.md).
-- **Q6. Play-tests and the save.** Proposal: play-tests use a scratch copy of the
-  save and never save stars. Do you also want a "play it for real" mode that
+- **Q6. Play-tests and the save.** Decided: play-tests never write the save, and their
+  progress is put back when the session ends (no scratch copy is kept). Do you also want a "play it for real" mode that
   plays your mod as the game (with saving), or is enabling the mod and using
   Level Select enough?
 - **Q7. Compare key.** Hold-to-compare wants a key you can hold. Backquote is

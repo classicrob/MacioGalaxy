@@ -40,6 +40,12 @@ public:
     /// @param pGravity The PlanetGravity instance to be registered.
     void registerGravity(PlanetGravity* pGravity);
 
+#ifdef PETARI_NATIVE
+    PlanetGravity* nativeGravityAt(s32 index) const { return index >= 0 && index < mNumGravities ? mGravities[index] : nullptr; }
+    void nativeResortGravities();
+    s32 nativeGravityCount() const { return mNumGravities; }  // the level editor's capacity meter (cap 128)
+#endif
+
 private:
     /// @brief Sorts all PlanetGravity instances by their priority in reverse order. The higher the priority is, the lower
     /// it gets positioned in the array.

@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""Persistent test server client: one background Petari stays up and takes commands (src/Game/Scene/TestServer.cpp).
+
+  native/tools/test_server.py start --app <Petari> [--stage EggStarGalaxy --scenario 1] [--dir build/test-server/<name>]
+  native/tools/test_server.py send  --dir <dir> status | warp <Stage> [<scenario>] | reload [start] | settle [frames] [timeout] | pos <x> <y> <z> [<front_x> <front_z>] | quit
+  native/tools/test_server.py stop  --dir <dir>
+  native/tools/test_server.py input --dir <dir> [--log f.csv] --steps '[{"frames":60,"stick":[0,1],"buttons":["A"],"press":false}, ...]'
+  native/tools/test_server.py route --dir <dir> <route.csv> [--log f.csv] [--from N] [--frames N]
+
+`input` plays frame-counted steps through the game's input layer (frame-exact, independent of the OS): stick is x,y in -1..1 (y up);
+buttons are A B Z Spin Cap CamLeft CamRight Plus Minus, held for the whole step, or with "press": true for a 6-frame tap at the step's start.
+It replies with Mario's position, velocity, grounded and dead flags at the end, and --log writes one row per frame (frame,step,x,y,z,vx,vy,vz,ground).
+`route` replays a PETARI_ROUTE_RECORD csv frame by frame (move_x/y, jump, spin, crouch, camera left/right).
+
+`start` boots once (warm shader seed, PETARI_FAST_BOOT=1) through build/locked-app.sh and returns when the app answers `status`;
+the app holds one app slot until `stop`/`quit`. `send` writes a command file and waits for its reply (exit 1 on "error").
+Files: <dir>/server.log (the app's stderr), <dir>/cmd, <dir>/reply, <dir>/server.pid.
+"""
+import argparse
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+TOOLS = Path(__file__).resolve().parent
+sys.path.insert(0, str(TOOLS))
+
+
+def main_checkout():
+    common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=TOOLS,
+                            capture_output=True, text=True, check=True).stdout.strip()
+    return Path(common).parent
+
+
+def send(directory, command, timeout):
+    name = f"{time.time_ns()}"
+    cmd = Path(directory) / "cmd"
+    tmp = cmd / f"{name}.tmp"
+    tmp.write_text(command + "\n")
+    tmp.rename(cmd / f"{name}.txt")
+    reply = Path(directory) / "reply" / f"{name}.txt"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if reply.is_file():
+            return reply.read_text().strip()
+        time.sleep(0.05)
+    return "error no reply within %ds" % timeout
+
+
+def cmd_start(args):
+    import stage_sweep as sweep
+    import warm_seed
+    main = main_checkout()
+    directory = Path(args.dir or main / "build/test-server" / f"{os.getpid()}").resolve()
+    if (directory / "server.pid").exists():
+        sys.exit(f"test-server: {directory} already has a server (stop it first)")
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "cmd").mkdir(exist_ok=True)
+    (directory / "reply").mkdir(exist_ok=True)
+    user = directory / "user"
+    if user.exists():
+        subprocess.run(["rm", "-rf", str(user)], check=True)
+    sweep.load_fixture_module().create(main / "build/observatory-user-2", user, "stage")
+    app = Path(args.app).resolve()
+
+    class A:
+        pass
+    a = A()
+    a.app, a.disc, a.frames, a.idle_frames, a.pipeline_policy = app, main / "build/game-data/RMGE01", 10_000_000, 10_000_000, "default"
+    command, env_extra = sweep.app_command(a, user, args.stage, args.scenario)
+    command += []
+    wargs = argparse.Namespace(app=app, seed_root=str(main / "build/shader-seed"), stages=[args.stage] if args.warm_current_stage else warm_seed.DEFAULT_STAGES, owner="test-server",
+                               timeout=900, idle=900, force=False, user=user)
+    wargs.sha = warm_seed.sha256_of(app)
+    seed = warm_seed.ensure(wargs)
+    warm_seed.prepare(wargs)
+    env = dict(os.environ, **env_extra, PETARI_LOCK_CLASS="functional", PETARI_FAST_BOOT="1", PETARI_STAGE_GATE_MS="0",
+               PETARI_SHADER_SEED_DIR=str(seed), PETARI_TEST_SERVER=str(directory))
+    env.update(PETARI_SMOKE_FRAMES=str(10_000_000), PETARI_STAGE_IDLE_FRAMES=str(10_000_000))
+    full = [str(main / "build/locked-app.sh"), args.owner, "/usr/bin/perl", "-e", "alarm shift; exec @ARGV or die", str(args.lifetime)] + command
+    log = (directory / "server.log").open("wb")
+    t0 = time.time()
+    proc = subprocess.Popen(full, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    (directory / "server.pid").write_text(str(proc.pid))
+    while time.time() - t0 < args.boot_timeout:
+        if proc.poll() is not None:
+            sys.exit(f"test-server: the app exited ({proc.returncode}); see {directory}/server.log")
+        text = send(directory, "status", 5)
+        if text.startswith("ok") and "not-playable" not in text and f"stage={args.stage} " in text:
+            print(f"{directory}\nready in {time.time() - t0:.1f} s: {text}")
+            return 0
+        time.sleep(1)
+    sys.exit("test-server: boot timeout")
+
+
+def cmd_send(args):
+    text = send(args.dir, " ".join(args.words), args.timeout)
+    print(text)
+    return 1 if text.startswith("error") else 0
+
+
+def steps_line(steps):
+    """JSON steps -> the server's one-line form: frames,x,y,buttons ('-' for none; 'A!' for a tap)."""
+    out = []
+    for step in steps:
+        x, y = step.get("stick", [0, 0])
+        names = step.get("buttons", [])
+        text = "+".join(n + ("!" if step.get("press") else "") for n in names) or "-"
+        out.append(f"{int(step['frames'])},{float(x):g},{float(y):g},{text}")
+    return " ".join(out)
+
+
+def cmd_input(args):
+    import json
+    steps = json.loads(Path(args.steps_file).read_text() if args.steps_file else args.steps)
+    line = "input " + (f"log={Path(args.log).resolve()} " if args.log else "") + steps_line(steps)
+    text = send(args.dir, line, args.timeout)
+    print(text)
+    return 1 if text.startswith("error") else 0
+
+
+def cmd_route(args):
+    line = f"route {Path(args.csv).resolve()}" + (f" log={Path(args.log).resolve()}" if args.log else "")
+    line += (f" from={args.start}" if args.start else "") + (f" frames={args.frames}" if args.frames else "")
+    text = send(args.dir, line, args.timeout)
+    print(text)
+    return 1 if text.startswith("error") else 0
+
+
+QUIT_WAIT_SECONDS = 10  # how long a clean quit may take before the process group is signalled
+
+
+def group_alive(pgid):
+    """True while the server's process group exists and is ours. A pid reused by someone else's process (PermissionError) is not ours
+    to signal, so it counts as gone."""
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
+
+
+def cmd_stop(args):
+    """Quit the server and make sure it is gone. Safe after a successful quit (the group is already gone, or its pid was reused):
+    never raises on a missing or foreign process."""
+    pid_file = Path(args.dir) / "server.pid"
+    reply = send(args.dir, "quit", 5)
+    pgid = None
+    try:
+        pgid = int(pid_file.read_text())
+    except (OSError, ValueError):
+        pass
+    if pgid is not None:
+        deadline = time.time() + QUIT_WAIT_SECONDS  # a clean quit exits within a moment; wait for it before signalling anything
+        while group_alive(pgid) and time.time() < deadline:
+            time.sleep(0.25)
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            if not group_alive(pgid):
+                break
+            try:
+                os.killpg(pgid, sig)
+            except (ProcessLookupError, PermissionError):
+                break
+            time.sleep(min(2, QUIT_WAIT_SECONDS))
+    pid_file.unlink(missing_ok=True)
+    subprocess.run(["rm", "-rf", str(Path(args.dir) / "user/cache")], check=False)  # ~1.9 GB private cache per run
+    if not reply.startswith("ok") and pgid is not None and group_alive(pgid):
+        print(f"test-server: quit got '{reply}' and the process group {pgid} is still alive", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    p = sub.add_parser("start")
+    p.set_defaults(fn=cmd_start)
+    p.add_argument("--app", required=True)
+    p.add_argument("--stage", default="EggStarGalaxy")
+    p.add_argument("--warm-current-stage", action="store_true", help="Warm only --stage for this binary (the default warms all standard stages)")
+    p.add_argument("--scenario", type=int, default=1)
+    p.add_argument("--dir")
+    p.add_argument("--owner", default="test-server")
+    p.add_argument("--lifetime", type=int, default=7200, help="seconds the app may live (an alarm)")
+    p.add_argument("--boot-timeout", type=int, default=900)
+    p = sub.add_parser("send")
+    p.set_defaults(fn=cmd_send)
+    p.add_argument("--dir", required=True)
+    p.add_argument("--timeout", type=int, default=180)
+    p.add_argument("words", nargs="+")
+    p = sub.add_parser("input")
+    p.set_defaults(fn=cmd_input)
+    p.add_argument("--dir", required=True)
+    p.add_argument("--timeout", type=int, default=600)
+    p.add_argument("--log")
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--steps", help="JSON list of {frames, stick:[x,y], buttons:[...], press:bool}")
+    group.add_argument("--steps-file")
+    p = sub.add_parser("route")
+    p.set_defaults(fn=cmd_route)
+    p.add_argument("--dir", required=True)
+    p.add_argument("--timeout", type=int, default=1800)
+    p.add_argument("--log")
+    p.add_argument("--from", dest="start", type=int, default=0)
+    p.add_argument("--frames", type=int, default=0)
+    p.add_argument("csv")
+    p = sub.add_parser("stop")
+    p.set_defaults(fn=cmd_stop)
+    p.add_argument("--dir", required=True)
+    args = parser.parse_args()
+    sys.exit(args.fn(args) or 0)
+
+
+if __name__ == "__main__":
+    main()

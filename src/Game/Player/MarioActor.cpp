@@ -3,6 +3,7 @@
 #include "Game/Util/GamePadUtil.hpp"
 #include <cstdlib>
 #include <petari/odyssey_move.hpp>
+#include <petari/editor/runtime.hpp>
 #include "Game/Player/MarioCappy.hpp"
 #include "Game/Player/GenericFigure.hpp"
 extern "C" bool petari_mod_enabled(int mod);
@@ -1739,6 +1740,11 @@ bool MarioActor::doPressing() {
     case 0:
         if (!mMario->checkVerticalPress(false)) {
             if (--_390 == 0x1e && !mHealth && isEnableNerveChange()) {
+#ifdef PETARI_NATIVE
+                if (PetariEditor::Runtime::playerMissing("マリオダウン")) {
+                    return true;
+                }
+#endif
                 setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOver));
             }
 
@@ -1752,6 +1758,11 @@ bool MarioActor::doPressing() {
     case 2:
     case 3:
         if (--_390 == 0x1e && !mHealth && isEnableNerveChange()) {
+#ifdef PETARI_NATIVE
+            if (PetariEditor::Runtime::playerMissing("マリオダウン")) {
+                return true;
+            }
+#endif
             setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOver));
         }
 
@@ -2966,6 +2977,12 @@ void MarioActor::forceGameOver() {
         return;
     }
 
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::playerMissing("マリオダウン")) {
+        return;
+    }
+#endif
+
     setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOver));
 }
 
@@ -2973,6 +2990,12 @@ void MarioActor::forceGameOverAbyss() {
     if (!isEnableNerveChange()) {
         return;
     }
+
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::playerMissing("マリオ奈落")) {
+        return;
+    }
+#endif
 
     setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOverAbyss));
 }
@@ -2982,6 +3005,12 @@ void MarioActor::forceGameOverBlackHole() {
         return;
     }
 
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::playerMissing("マリオ奈落")) {
+        return;
+    }
+#endif
+
     setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOverBlackHole));
 }
 
@@ -2990,6 +3019,12 @@ void MarioActor::forceGameOverNonStop() {
         return;
     }
 
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::playerMissing("マリオ炎ダウン")) {
+        return;
+    }
+#endif
+
     setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOverNonStop));
 }
 
@@ -2997,6 +3032,12 @@ void MarioActor::forceGameOverSink() {
     if (!isEnableNerveChange()) {
         return;
     }
+
+#ifdef PETARI_NATIVE
+    if (PetariEditor::Runtime::playerMissing("マリオダウン")) {
+        return;
+    }
+#endif
 
     setNerve(GET_NERVE(MarioActor, MarioActorNrvGameOverSink));
 }

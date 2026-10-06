@@ -14,6 +14,7 @@
 #include "../app/smoke_goodegg.hpp"
 #include "../app/smoke_replay.hpp"
 #include "petari/milestone.hpp"
+#include "petari/test_server_gate.hpp"
 
 namespace Smoke = PetariNative::App::Smoke;
 using Smoke::Button;
@@ -2293,13 +2294,15 @@ struct ReplayRun {
     std::vector<Event> events;
     std::vector<std::string> log;
     int quits = 0;
-    ReplayRun(const std::string& route, int scenario = 2)
-        : driver(1000000, config(route, scenario)) {}
-    static Smoke::ReplayConfig config(const std::string& route, int scenario) {
+    ReplayRun(const std::string& route, int scenario = 2, bool requireStar = true, bool startInStage = false)
+        : driver(1000000, config(route, scenario, requireStar, startInStage)) {}
+    static Smoke::ReplayConfig config(const std::string& route, int scenario, bool requireStar = true, bool startInStage = false) {
         Smoke::ReplayConfig c;
         c.stage = "EggStarGalaxy";
         c.scenario = scenario;
         c.routePath = "test";
+        c.requireStar = requireStar;
+        c.startInStage = startInStage;
         c.route = Smoke::parseReplayRoute(route);
         return c;
     }
@@ -2352,10 +2355,30 @@ Observation eggAt(float x, float y, float z, int scenario = 2) {
 }
 
 void testReplay() {
+    ReplayRun live("0,0,0,Walk\n0,0,-500,Walk\n",2,false,true);
+    check(live.driver.wantsPlayer(),"live replay observes Mario immediately");
+    live.frames(eggAt(0,0,0),80);
+    check(live.driver.result()==Result::Running && live.logged("replay of"),"live replay hands over in its current stage without file-select boot");
+    live.frames(eggAt(0,0,-500),100);
+    check(live.driver.result()==Result::Pass,"live replay completes through the same route driver");
+    ReplayRun wrongStage("0,0,0,Walk\n0,0,-500,Walk\n",2,false,true);
+    auto wrongStageObservation=eggAt(0,0,0);wrongStageObservation.stage="OtherGalaxy";wrongStage.frame(wrongStageObservation);
+    check(wrongStage.driver.result()==Result::Fail,"live replay refuses a stage change during handover");
     const auto parsed = Smoke::parseReplayRoute("0,0,0,Walk\nbad line\n1,2,3,Launch\n4,5,6,Kick\n7,8,9,Mystery\nnan,0,0,Walk\n");
     check(parsed.size() == 4 && parsed[1].action == Smoke::DomeWaypoint::Launch && parsed[2].action == Smoke::DomeWaypoint::Kick &&
               parsed[3].action == Smoke::DomeWaypoint::Walk,
           "replay routes parse actions and skip bad rows");
+
+    ReplayRun jump("0,0,0,Walk\n0,0,-500,Jump\n",2,false);
+    toStage(jump);jump.frames(eggAt(0,0,0),80);
+    Observation jumping = eggAt(0,0,-500);
+    jumping.playerOnGround = false;
+    jump.frames(jumping,100);
+    check(jump.driver.result()==Smoke::Result::Running, "route-only replay cannot pass while Mario is airborne");
+    jump.frames(eggAt(0,0,-500),29);
+    check(jump.driver.result()==Smoke::Result::Running, "route-only replay waits for 30 consecutive landed frames");
+    jump.frame(eggAt(0,0,-500));
+    check(jump.driver.result()==Smoke::Result::Pass && jump.logged("route completed"), "route-only replay requires arrival and landing, not a star");
 
     // The wrong scenario fails at once.
     ReplayRun wrong("0,0,0,Walk\n0,0,-500,Walk\n");
@@ -2471,6 +2494,14 @@ void testReplay() {
 }
 
 int main() {
+    check(!PetariNative::testServerReady(false, nullptr, true), "disabled test server never dispatches");
+    check(PetariNative::testServerReady(true, nullptr, false), "normal private save dispatches without smoke");
+    check(PetariNative::testServerReady(true, "", false), "empty smoke variable is normal play");
+    check(!PetariNative::testServerReady(true, "stage", false), "stage smoke waits for checks");
+    check(PetariNative::testServerReady(true, "stage", true), "stage smoke tail dispatches");
+    for (const char* mode : {"goodegg", "soak", "domes", "replay", "movement", "title", "story"}) {
+        check(!PetariNative::testServerReady(true, mode, false), std::string("server cannot interrupt smoke ") + mode);
+    }
     testHappyPath();
     testTitleRetries();
     testTitleBgmStall();

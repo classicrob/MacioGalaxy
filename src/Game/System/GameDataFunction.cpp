@@ -1,4 +1,7 @@
 #include "Game/System/GameDataFunction.hpp"
+#ifdef PETARI_NATIVE
+#include <petari/editor/runtime_hooks.hpp>
+#endif
 #include "Game/System/GalaxyStatusAccessor.hpp"
 #include "Game/System/GameDataGalaxyStorage.hpp"
 #include "Game/System/GameDataHolder.hpp"
@@ -13,6 +16,9 @@
 #include "Game/System/UserFile.hpp"
 #include "Game/Util/SingletonHolder.hpp"
 #include <cstdio>
+#ifdef PETARI_NATIVE
+#include <petari/platform/mod_galaxy.hpp>
+#endif
 
 namespace {
     SaveDataHandleSequence* getSaveDataHandleSequence() NO_INLINE {
@@ -29,6 +35,17 @@ namespace {
 };  // namespace
 
 namespace GameDataFunction {
+#ifdef PETARI_NATIVE
+    UserFile* nativeCurrentUserFile() {
+        SaveDataHandleSequence* pSequence = ::getSaveDataHandleSequence();
+        return pSequence != nullptr ? pSequence->getCurrentUserFile() : nullptr;
+    }
+
+    GameDataTemporaryInGalaxy* nativeTemporaryInGalaxy() {
+        return ::getGameDataTemporaryInGalaxy();
+    }
+#endif
+
     bool isDataMario() {
         return getCurrentGameDataHolder()->isDataMario();
     }
@@ -73,6 +90,11 @@ namespace GameDataFunction {
         s32 powerStarNumMax = 0;
 
         for (ScenarioDataIter iter = MR::makeBeginScenarioDataIter(); !iter.isEnd(); iter.goNext()) {
+#ifdef PETARI_NATIVE
+            if (PetariNative::Platform::ModGalaxy::find(iter.makeAccessor().getName()) != nullptr) {
+                continue;  // mod galaxies are outside the game's total (TECH.md 5.7)
+            }
+#endif
             powerStarNumMax += iter.makeAccessor().getPowerStarNum();
         }
 
@@ -315,6 +337,11 @@ namespace GameDataFunction {
     void resetGameDataGoToGalaxyRetry() {
         ::getGameDataTemporaryInGalaxy()->resetRaceBestTime();
         ::getGameDataTemporaryInGalaxy()->_4 = true;
+#ifdef PETARI_NATIVE
+        if (PetariEditor::Hooks::editorReload()) {
+            ::getGameDataTemporaryInGalaxy()->clearAlreadyDoneFlag();  // the editor rebuilds the edited layout, items included
+        }
+#endif
     }
 
     void onCompleteEndingCurrentPlayer() {

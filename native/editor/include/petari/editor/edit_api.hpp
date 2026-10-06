@@ -1,0 +1,355 @@
+#pragma once
+// The level editor's contract between the UI (native/editor/ui: panels, camera, gizmo,
+// picking) and the Runtime (native/editor/runtime: EditModel, ops and undo, SceneSync,
+// reload, save). Design: docs/dev/level-editor/TECH.md section 2.
+//
+// Threading (TECH.md 2.10). The game, the frame seam and the ImGui overlay all run on the
+// macOS main thread, in this order each frame:
+//   seam (CPU baton held):  Runtime drains commands -> EditModel + SceneSync -> the UI seam hook
+//   overlay (baton released; audio/loader threads may run game code): UI panels
+// Consequences:
+// - The EditModel is editor-only data, mutated only in the drain, so the UI may read it
+//   (model()) from the overlay without locks.
+// - Game objects (actors) are touched only with the baton held: by Runtime, and by the UI
+//   in its seam hook (picking, ground rays, gizmo frames), which publishes plain data for
+//   its panels.
+// - enqueue() may be called any time on the main thread; commands take effect at the next seam.
+#include <petari/editor/share.hpp>
+
+#include <cstdint>
+#include <functional>
+#include <optional>
+#include <string>
+#include <vector>
+
+class LiveActor;
+
+namespace PetariEditor {
+
+// ---- identity ---------------------------------------------------------------------------------
+
+/// A row's stable editor id (TECH.md 1.9): survives undo, reload and re-create, and is the key
+/// the patch format uses. Opaque to the UI. Not the game's l_id.
+struct RowId {
+    std::uint64_t v = 0;
+    bool valid() const { return v != 0; }
+    friend bool operator==(RowId a, RowId b) { return a.v == b.v; }
+    friend bool operator!=(RowId a, RowId b) { return a.v != b.v; }
+    friend bool operator<(RowId a, RowId b) { return a.v < b.v; }
+};
+struct RowIdHash {
+    std::size_t operator()(RowId r) const { return std::hash< std::uint64_t >()(r.v); }
+};
+
+// ---- cells ------------------------------------------------------------------------------------
+
+/// BCSV cell types (include/Game/Util/JMapInfo.hpp). Int is types 0 and 3; String is the
+/// inline 32-byte string (1); StringOffset is the string pool (6).
+enum class CellType : std::uint8_t { Int, Float, String, Short, Byte, StringOffset };
+
+struct Cell {
+    CellType type = CellType::Int;
+    std::int32_t i = 0;  // Int, Short, Byte (as the game reads them, sign-extended)
+    float f = 0.0f;      // Float
+    std::string s;       // String, StringOffset (UTF-8 here, Shift-JIS on disc)
+};
+
+struct Column {
+    std::uint32_t hash = 0;
+    const char* name = nullptr;  // known name ("pos_x", "Obj_arg0") or null: show it as 0x%08x
+    CellType type = CellType::Int;
+};
+
+/// The game's field-name hash (JGadget::getHashCode: h = c + 31*h over signed chars).
+std::uint32_t columnHash(const char* pName);
+
+enum class RowState : std::uint8_t { Original, Changed, Added, Deleted };
+
+struct Vec3 {
+    float x = 0, y = 0, z = 0;
+};
+/// pos_*, dir_* (degrees) and scale_* of a row, in the row's own (zone) space.
+struct RowTransform {
+    Vec3 pos, dirDeg, scale{1, 1, 1};
+};
+/// Row columns are a 3x4 row-major affine matrix (the game's TPos3f layout).
+struct Mtx34 {
+    float m[3][4];
+};
+
+// ---- the model (read side; main thread, outside the drain) --------------------------------------
+
+class ModelView {
+public:
+    virtual ~ModelView() = default;
+    /// Bumps on every applied op, undo, redo and reload.
+    virtual std::uint64_t revision() const = 0;
+
+    virtual const char* galaxy() const = 0;  // "EggStarGalaxy"
+    virtual int scenario() const = 0;        // the mission being edited, 1-based
+
+    // zones and tables
+    virtual int zoneCount() const = 0;
+    virtual const char* zoneName(int zone) const = 0;  // "SoramameZone" (0 = the galaxy's own archive)
+    virtual bool zonePlaced(int zone) const = 0;       // placed in the current scenario
+    virtual Mtx34 zoneWorldMatrix(int zone) const = 0;  // world from zone (identity for zone 0)
+    /// Layers of `zone` active in `scenario` (bit 0 = Common, always set; bit n = Layer A + n - 1).
+    virtual std::uint32_t activeLayers(int zone, int scenario) const = 0;
+    virtual int tableCount(int zone) const = 0;
+    virtual const char* tablePath(int zone, int table) const = 0;  // "jmp/placement/layera/objinfo"
+    virtual const std::vector< Column >& columns(int zone, int table) const = 0;
+    /// Every row, in table order, including Added and Deleted ones.
+    virtual void forEachRow(int zone, int table, const std::function< void(RowId) >& fn) const = 0;
+
+    // Rails use the current CommonPathInfo row index to select their point table.
+    virtual int railPointTable(RowId rail) const;
+    virtual std::vector< RowId > railPoints(RowId rail) const;
+
+    // rows
+    // Either output pointer may be null.
+    virtual bool locate(RowId row, int* pZone, int* pTable) const = 0;
+    virtual RowState state(RowId row) const = 0;
+    virtual const Cell* cell(RowId row, std::uint32_t column) const = 0;          // current; null: no such column
+    virtual const Cell* originalCell(RowId row, std::uint32_t column) const = 0;  // disc value; null for Added rows
+    virtual const char* objectName(RowId row) const = 0;                           // `type`, else `name`; null if none
+    virtual bool hasTransform(RowId row) const = 0;
+    virtual RowTransform transform(RowId row) const = 0;
+
+    // missions (TECH.md 1.4; UX section 12)
+    virtual int missionCount() const = 0;                // scenarios of the galaxy
+    virtual const char* missionName(int mission) const = 0;  // 1-based; the ScenarioData name ("" if none)
+    /// The missions a row appears in: bit n-1 = mission n. A row appears where its layer is active
+    /// and its zone is placed. 0: in no mission (an unused layer).
+    virtual std::uint32_t rowMissions(RowId row) const = 0;
+
+    // history (Edit menu, History list)
+    virtual int historySize() const = 0;    // ops recorded
+    virtual int historyCursor() const = 0;  // ops applied: undo = cursor > 0, redo = cursor < size
+    virtual const char* historyLabel(int index) const = 0;
+};
+
+/// null until a galaxy is loaded in an edit session.
+const ModelView* model();
+
+// ---- ops (built by the UI, applied by Runtime at the seam) -----------------------------------------
+
+struct SetCell {
+    RowId row;
+    std::uint32_t column = 0;  // columnHash(); a column the table lacks is added to it
+    Cell after;                // Runtime records the "before" value itself
+};
+
+/// A new row (TECH.md 5.3). Reserve its id with newRowId() to select it in the same frame;
+/// left invalid, Runtime assigns one.
+struct AddRow {
+    RowId id;
+    int zone = 0;
+    std::string table;    // "jmp/placement/layera/objinfo"; a layer table the zone lacks is created
+    RowId copyOf;         // duplicate, paste, array: every cell of that row first (optional)
+    struct Value {
+        std::uint32_t column = 0;
+        Cell value;
+    };
+    std::vector< Value > cells;  // override copyOf's (or the table's neutral values)
+    int at = -1;  // the row's index in its table (a path's points are in order); -1: at the end.
+                  // An Op's adds apply in order, so give ascending indices for several rows
+
+};
+
+/// One undo step. Applied in this order: adds, sets (which may name added rows), deletes,
+/// reverts.
+struct Op {
+    std::string label;              // "Move Star Bunny", "Set Obj_arg1 on 3 objects", "Revert Coin"
+    std::vector< SetCell > sets;
+    std::vector< RowId > revertRows;  // every cell of these rows back to the disc value
+    std::vector< AddRow > adds;
+    std::vector< RowId > deletes;
+};
+
+/// A fresh id for a row the UI is about to add (main thread).
+RowId newRowId();
+
+// ---- commands (UI -> Runtime, drained in order at the seam) -----------------------------------------
+
+enum class PlayFrom : std::uint8_t {
+    Marker,        // the play marker
+    Resume,        // where play was (no teleport)
+    MissionStart,  // the mission's start point (a reload)
+};
+
+/// A new galaxy (docs/dev/level-editor/new-galaxy-flow.md, UX.md 14): the sheet's choices.
+struct NewGalaxyRequest {
+    std::string name;          // "Pipe Dream" (English; the other languages default to it)
+    std::string internalName;  // empty: newGalaxyInternalName(name)
+    enum class From : std::uint8_t { Empty, OnePlanet, Brushes, Copy } from = From::OnePlanet;
+    std::string planet;        // OnePlanet: one of newGalaxyChoices().planets
+    std::string copyOf;        // Copy: one of newGalaxyChoices().galaxies
+    std::string musicFrom;     // one of newGalaxyChoices().galaxies; empty: copyOf, else Good Egg's
+    std::vector< std::string > missions;  // names; their count is the mission count (1..8); empty: one
+    std::string sky;  // one of newGalaxyChoices().skies; empty: Good Egg's (Copy: the source's own)
+    /// The current galaxy's unsaved edits: Create refuses while there are any, unless the sheet
+    /// saved them first or the person chose to discard them.
+    bool discardUnsaved = false;
+};
+
+struct NewGalaxyChoices {
+    std::vector< std::string > planets;   // placeable by name (PlanetMapDataTable), sorted
+    std::vector< std::string > galaxies;  // the disc's, sorted (Copy, music)
+    std::vector< std::string > skies;     // placeable skies on the disc ("VROrbit"...), sorted
+};
+/// From the mounted disc, computed on first use. Empty lists before the runtime is up.
+const NewGalaxyChoices& newGalaxyChoices();
+/// The internal name Create would use for `name` ("Pipe Dream" -> "PipeDreamGalaxy").
+std::string newGalaxyInternalName(const std::string& name);
+/// "" when `internalName` can be created, else why not (characters, a disc galaxy or zone, a mod
+/// galaxy of the same name or save key, the 64-galaxy limit).
+std::string checkNewGalaxyName(const std::string& internalName);
+
+/// A mod galaxy's names, missions and music (the Missions panel; its galaxy.json). The internal
+/// name is fixed: the save, the files and the zones key on it.
+struct GalaxyInfo {
+    std::string internalName;             // "PipeDreamGalaxy" (read only)
+    std::string mod;                      // its mod folder (read only)
+    std::string name;                     // "Pipe Dream" (English; the other languages follow it)
+    std::vector< std::string > missions;  // names; their count is the mission count (1..8)
+    std::string musicFrom;                // one of newGalaxyChoices().galaxies
+    /// Command::SetGalaxyInfo with a new mission count restarts Petari (as NewGalaxy does): it
+    /// refuses while there are unsaved edits, unless the panel saved them first or the person
+    /// chose to discard them. Ignored when nothing restarts.
+    bool discardUnsaved = false;
+};
+/// The galaxy being edited, when it is a mod galaxy; nullopt for the disc's (or none loaded).
+std::optional< GalaxyInfo > modGalaxyInfo();
+/// "" when `info` can be applied to the galaxy being edited, else why not (a name, 1..8 missions,
+/// the music).
+std::string checkGalaxyInfo(const GalaxyInfo& info);
+/// True when applying `info` restarts Petari (the mission count changes); names and music apply live.
+bool galaxyInfoNeedsRestart(const GalaxyInfo& info);
+
+struct Command {
+    enum class Kind : std::uint8_t {
+        Apply,           // op -> undo stack, journal, SceneSync
+        Undo,
+        Redo,
+        JumpHistory,     // index -> undo or redo until historyCursor() == index
+        Preview,         // drag preview: poke the live actors of `rows` to `previews`; not recorded
+        EndPreview,      // drop the preview pokes of `rows` (a cancelled drag); Apply also ends them
+        Play,            // from
+        Reload,          // rebuild the scene from the model; stay in Edit
+        SetPlayMarker,   // markerPos (+ markerUp, markerFront)
+        SaveMod,         // modName, fullArchives: a patch (default; no game data) or Full archives (TECH.md 5.1)
+        SwitchScenario,  // index = the mission to edit, 1-based: a reload into it from its start, back in Edit; edits and history kept
+        NewGalaxy,       // newGalaxy: write it as a mod, then restart Petari into it in Edit (status().notice says so first)
+        RestoreJournal,  // status().journalEdits > 0: the journal's edits become the session's (a reload into Edit; unsaved)
+        DiscardJournal,  // drop the offered journal
+        SetGalaxyInfo,   // galaxyInfo: the mod galaxy's names and music, live; a new mission count restarts into it in Edit
+    } kind;
+    Op op;
+    int index = 0;
+    std::vector< RowId > rows;
+    std::vector< RowTransform > previews;  // parallel to rows, in row (zone) space
+    PlayFrom from = PlayFrom::Marker;
+    Vec3 markerPos, markerUp, markerFront;
+    std::string modName;
+    bool fullArchives = false;  // SaveMod: Full archives (Whitehole, Dolphin) instead of a patch
+    NewGalaxyRequest newGalaxy;
+    GalaxyInfo galaxyInfo;
+};
+
+void enqueue(Command&& command);
+
+// ---- seam services for the UI (main thread, baton held) ------------------------------------------
+
+/// Called at the seam after the drain and SceneSync, before the baton is released.
+void setUiSeamHook(void (*hook)());
+/// The actor a row created in the current scene (null: none, dead or pending). Rebuilt after
+/// re-create and reload. Valid only with the baton held.
+LiveActor* actorForRow(RowId row);
+RowId rowForActor(const LiveActor* pActor);
+void forEachBoundRow(const std::function< void(RowId, LiveActor*) >& fn);
+
+// ---- session (native state; survives scene reloads) --------------------------------------------
+
+enum class Mode : std::uint8_t { Off, Editing, Reloading, Playing };
+Mode mode();
+
+/// The UI owns entering and leaving the Edit nerve (Tab), the selection and the editor
+/// camera. Runtime owns Play and Reload:
+/// - Play: if dirty, Mode = Reloading and reload; then leaveEdit(), teleport Mario, Mode = Playing.
+///   Not dirty: leaveEdit() and teleport at once.
+/// - Reload in Edit: Mode = Reloading; when the new scene is up, resumeEdit() (the UI re-enters
+///   the nerve on the first permitted frame and restores camera and selection).
+/// - sceneRebuilt(): actor pointers are invalid; drop caches.
+struct UiCallbacks {
+    void (*leaveEdit)() = nullptr;
+    void (*resumeEdit)() = nullptr;
+    void (*sceneRebuilt)() = nullptr;
+};
+void setUiCallbacks(const UiCallbacks& callbacks);
+
+/// The UI tells Runtime when it enters or leaves Edit (Mode Off <-> Editing).
+void notifyEditEntered();
+void notifyEditLeft();
+
+// ---- status for the toolbar, footer and Checks ------------------------------------------------------
+
+struct Capacity {
+    const char* name = "";  // "Gravity fields"
+    int used = 0;
+    int limit = 0;
+};
+
+struct Status {
+    bool dirty = false;         // edits not yet in the scene that need a reload before play
+    int pendingCount = 0;       // "Reload · N pending"
+    bool unsaved = false;       // edits since the last SaveMod
+    bool playedState = false;   // played since the last reload (the Played-state chip)
+    std::vector< std::string > switchesOn;  // after a play-test, "Zone 3 · switch 13"
+    std::uint32_t heapFree = 0;  // scene heap, bytes (the memory meter)
+    std::uint32_t heapTotal = 0;
+    std::vector< Capacity > capacities;
+    std::string lastError;  // the last failed command, for a toast; cleared by the next success
+    std::uint64_t errorSerial = 0;  // bumps with each new error
+    std::string notice;             // the last success worth a toast ("Saved 2 archives to mods/MyMod")
+    std::uint64_t noticeSerial = 0;  // bumps with each new notice
+    std::string loadedMod;      // the enabled mod whose archives this galaxy loaded from (its edits are the session's start); "" for the disc
+    // Unsaved edits of an earlier session of this galaxy (a crash, or quit without saving), found
+    // when it opened: offer "Restore N unsaved edits from <time>?" (RestoreJournal / DiscardJournal).
+    // New edits aren't journaled until the offer is answered. 0: none.
+    int journalEdits = 0;
+    std::int64_t journalTime = 0;  // when they were made (seconds since 1970)
+};
+/// Updated at each seam.
+const Status& status();
+
+// ---- checks (TECH.md 5.5; UX section 16) ----------------------------------------------------------
+
+enum class Severity : std::uint8_t { Error, Warning };
+
+struct Check {
+    std::string key;  // stable across revisions while the problem lasts ("missing-rail:<row>")
+    Severity severity = Severity::Warning;
+    std::string message;          // "Launch Star needs a path"
+    std::vector< RowId > rows;    // the rows involved, first = the one to select
+    std::string fixLabel;         // "Remove the switch", "" = no fix
+    Op fix;                       // applied as one undo step when chosen; empty: see fixKind
+    std::string fixKind;          // a UI flow instead of an Op: "pick-path", "pick-switch", "pick-camera"; "" = none
+};
+
+/// The current problems, refreshed at the seam when the model's revision changes. Errors would
+/// crash or break the game; warnings are probably unintended.
+const std::vector< Check >& checks();
+
+// ---- Sharing (UX 17) -----------------------------------------------------------------------------
+// Files only, not commands: any thread (the UI calls them from its sheets, the app from a file drop).
+
+/// The Share sheet's Export: mods/<modName> as a zip at zipPath, with `info` put in its mod.txt
+/// and preview.png first.
+bool shareMod(const std::string& modName, const Share::Info& info, const std::string& zipPath, std::string* pError);
+/// The Install sheet: what a mod zip holds.
+std::optional< Share::Preview > inspectModZip(const std::string& zipPath, std::string* pError);
+/// Install: unpacks a mod zip into the user's mods folder and turns it on for the next start.
+/// `replace` overwrites an installed mod of the same folder name. *pFolder: its folder name.
+bool installModZip(const std::string& zipPath, bool replace, std::string* pFolder, std::string* pError);
+
+}  // namespace PetariEditor

@@ -11,8 +11,10 @@
 #include <petari/boot.hpp>
 #include <petari/platform/crash.hpp>
 #include <petari/platform/diagnostics.hpp>
+#include <petari/editor/patch.hpp>
 #include <petari/platform/dvd.hpp>
 #include <petari/platform/mod_folder.hpp>
+#include <petari/platform/mod_galaxy.hpp>
 #include <petari/platform/nand.hpp>
 #include <petari/platform/os_host.hpp>
 #include <petari/platform/power.hpp>
@@ -80,9 +82,22 @@ bool preparePlatform(const Paths& paths, std::string* error) {
     // case the disc is unchanged for every file the mods do not supply.
     Platform::DVD::MountOptions mountOptions{paths.disc};
     {
-        auto resolved = Platform::ModFolder::resolveForUser(paths.user);
+        // Level editor patch mods are built from this disc at start-up (docs/dev/level-editor/TECH.md 5.1).
+        // Generated files (terrain) come from builders registered with PetariEditor::Patch::registerAssetBuilder
+        // before this point (app_main: the terrain builder, unless the level editor is on).
+        Platform::ModFolder::setPatchBuilder(&PetariEditor::Patch::buildForLoader);
+        auto resolved = Platform::ModFolder::resolveForUser(paths.user, paths.disc);
         for (const std::string& line : resolved.log) std::fprintf(stderr, "[mods] %s\n", line.c_str());
         mountOptions.overlay = std::move(resolved.files);
+        // Mod galaxies' progress is saved beside the save, never in it (TECH.md 5.7).
+        Platform::ModGalaxy::setSaveDirectory(paths.user / "mods-saves");
+        // New galaxies of the enabled mods (galaxy.json; docs/dev/level-editor/TECH.md 5.7), unless
+        // --stage loaded them already.
+        if (Platform::ModGalaxy::all().empty()) {
+            std::vector<std::string> galaxyLog;
+            Platform::ModGalaxy::load(Platform::ModFolder::enabledRoots(paths.user), &galaxyLog);
+            for (const std::string& line : galaxyLog) std::fprintf(stderr, "[mods] %s\n", line.c_str());
+        }
     }
     if (!Platform::DVD::mount(mountOptions, error)) {
         *error = "disc " + paths.disc.string() + ": " + *error;
