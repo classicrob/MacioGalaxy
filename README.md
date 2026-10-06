@@ -1,9 +1,17 @@
-# Petari for Apple Silicon (unofficial native port)
+# MacioGalaxy: Super Mario Galaxy for Apple Silicon (unofficial native port)
 
-A native macOS (Apple Silicon) build of **Super Mario Galaxy**, made from the
-[Petari](https://github.com/SMGCommunity/Petari) decompilation. The original game
-code is compiled for arm64 and runs directly on your Mac, rendering with Metal
-through [Aurora](https://github.com/encounter/aurora). There is no emulator.
+**MacioGalaxy** is a native macOS (Apple Silicon) port of **Super Mario Galaxy**.
+The original game code is compiled for arm64 and runs directly on your Mac,
+rendering with Metal through [Aurora](https://github.com/encounter/aurora).
+There is no emulator.
+
+> [!NOTE]
+> **Built on the SMGCommunity [Petari](https://github.com/SMGCommunity/Petari)
+> decompilation, with thanks.** MacioGalaxy exists because of the Petari
+> contributors' years of work reconstructing the game's source. The decompiled
+> game code in this repository is theirs (CC0 1.0, see [LICENSE](LICENSE) and
+> [Credits and licenses](#credits-and-licenses)); the native macOS port around it
+> is this project.
 
 > [!IMPORTANT]
 > **This is an unofficial, independent project, not affiliated with the Petari project or its
@@ -41,7 +49,7 @@ see [Known issues](#known-issues).
 
 ## Your game data
 
-Petari needs the **USA release of Super Mario Galaxy, revision 0 (game ID
+MacioGalaxy needs the **USA release of Super Mario Galaxy, revision 0 (game ID
 `RMGE01`)**. Other regions and revisions have not been tested.
 
 Make a backup of your own disc (for example with a Wii and a disc-dumping
@@ -63,6 +71,11 @@ build/game-data/RMGE01/
 or Dolphin's `build/game-data/RMGE01/DATA/files` and `DATA/sys`.
 
 ## Build
+
+```sh
+git clone https://github.com/classicrob/MacioGalaxy.git
+cd MacioGalaxy
+```
 
 From the repository root:
 
@@ -97,7 +110,7 @@ More build detail, including the sanitizer core-library presets, is in
 
 ## First launch
 
-Double-click **`Play Petari.command`** in the repository root, or run:
+Double-click **`Play MacioGalaxy.command`** in the repository root, or run:
 
 ```sh
 build/macos-gx/native/app/Petari.app/Contents/MacOS/Petari --disc build/game-data/RMGE01
@@ -118,7 +131,7 @@ build/macos-gx/native/app/Petari.app/Contents/MacOS/Petari --disc build/game-dat
   location. Native saves are not compatible with Wii saves.
 - At the title screen press **Return** (the game's "press A and B").
 - To go straight into a galaxy after loading your file, add `--stage` and
-  `--scenario`, e.g. `./Play\ Petari.command --stage good-egg --scenario 2`.
+  `--scenario`, e.g. `./Play\ MacioGalaxy.command --stage good-egg --scenario 2`.
   Names, missions and rules: [native/LEVEL_SELECT.md](native/LEVEL_SELECT.md).
 
 ## Controls
@@ -210,8 +223,8 @@ goals, played the builds and reviewed the results:
 - **Astra**, an OpenAI model, used through Codex.
 
 Many of their commits carry `Co-Authored-By` trailers. The port builds on
-the work of the Petari decompilation contributors and on Aurora; without them it
-would not exist.
+the work of the Petari decompilation contributors and on Aurora; without them
+MacioGalaxy would not exist.
 
 Super Mario Galaxy is a trademark of Nintendo. This project is not affiliated
 with or endorsed by Nintendo.

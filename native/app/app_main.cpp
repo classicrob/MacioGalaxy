@@ -474,7 +474,7 @@ int main(int argc, char** argv) {
 
     const std::string userPath = paths.user.string();
     AuroraConfig config{};
-    config.appName = "Super Mario Galaxy";
+    config.appName = "MacioGalaxy";  // the window title (Aurora uses it for the SDL window)
     config.userPath = userPath.c_str();
     App::PipelineCacheDir pipelineCache;
     if (!App::SmokeBackground::enabled) {

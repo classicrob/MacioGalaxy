@@ -1,6 +1,6 @@
 # Native mods
 
-Optional gameplay helpers. Every mod is **off** unless you turn it on, so an
+Optional MacioGalaxy gameplay helpers. Every mod is **off** unless you turn it on, so an
 unmodified game and every test run behave exactly as before.
 
 | Mod (`mods.txt` name) | Button | What it does |

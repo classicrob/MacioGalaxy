@@ -310,7 +310,7 @@ After `build/cu-playtest/active-session.json` appears, confirm that PID is still
 running. Paste `native/tools/cu_playtest_repl.js` into `cua_repl` after reading its
 first-use documentation, then `await playtest.bind()`. Bind again after **every**
 relaunch; do not ask CUA to open the app while waiting for the launcher. CUA's
-`getApp` can launch an app if none exists. Do not use `Play Petari.command`.
+`getApp` can launch an app if none exists. Do not use `Play MacioGalaxy.command` (or the old `Play Petari.command` forwarder).
 
 The helper's `tap(key,count)`, `click(observedTarget,button)`, `drag(from,to)` and
 `capture(label)` send macOS UI events, refresh accessibility state, and save UTC

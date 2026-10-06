@@ -87,7 +87,7 @@ bool preparePipelines(SDL_Window* window) {
         // key/button events stay here so Return cannot also press the game's A.
         for (const AuroraEvent* event = aurora_update(); event && event->type != AURORA_NONE; ++event) {
             if (event->type == AURORA_EXIT) {
-                SDL_SetWindowTitle(window, "Super Mario Galaxy");
+                SDL_SetWindowTitle(window, "MacioGalaxy");
                 std::fprintf(stderr, "[gx startup prep] result=quit remaining=%u\n", pending);
                 return false;
             }
@@ -158,7 +158,7 @@ bool preparePipelines(SDL_Window* window) {
             partStart = SDL_GetTicksNS();
             if (pending != displayedRemaining && now >= nextTitle) {
                 char title[160];
-                std::snprintf(title, sizeof(title), "Super Mario Galaxy — Preparing shaders %u / %u (%u%%)%s",
+                std::snprintf(title, sizeof(title), "MacioGalaxy — Preparing shaders %u / %u (%u%%)%s",
                               completed, total, total ? static_cast<unsigned>(100ull * completed / total) : 100,
                               drawn ? "" : " — Return to start now");
                 SDL_SetWindowTitle(window, title);
@@ -180,7 +180,7 @@ bool preparePipelines(SDL_Window* window) {
     // Leaving this loop does not cancel them; stage/draw requests still promote
     // matching jobs, and the normal stage gates protect stages not ready yet.
     Input::focusChanged(SmokeBackground::enabled || (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0);
-    SDL_SetWindowTitle(window, "Super Mario Galaxy");
+    SDL_SetWindowTitle(window, "MacioGalaxy");
     petari_gx_pipeline_preparation_status(&total, &pending, &failed);
     std::sort(intervals.begin(), intervals.end());
     const double p99 = intervals.empty() ? 0.0 : intervals[static_cast<std::size_t>((intervals.size() - 1) * 0.99)];
