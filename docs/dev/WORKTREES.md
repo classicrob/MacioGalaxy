@@ -12,8 +12,8 @@ READY flow are unchanged.
 - Only committed work on `main` is in a new worktree. Uncommitted changes in the
   main checkout are not.
 - Create with `build/new-worktree.sh <name> [base-ref]` and remove with
-  `build/remove-worktree.sh <name>` (both untracked dev scripts in the main
-  checkout's `build/`, next to the lock scripts).
+  `build/remove-worktree.sh <name>` (both are tracked in `tools/dev/` and reached through
+  symlinks in the main checkout's `build/`, next to the lock state; see `tools/dev/README.md`).
 
 ## What the helper sets up
 
