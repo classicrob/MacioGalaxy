@@ -52,6 +52,7 @@ void SDL_GetRenderScale(SDL_Renderer*,float* x,float* y){*x=*y=1;}
 void SDL_GetRenderOutputSize(SDL_Renderer*,int* w,int* h){*w=640;*h=480;}
 static float g_scale=0;
 static bool g_useSdlRenderer=false;
+namespace petari_mouse { void frame() {} }  // EP-001: the patched new_frame() calls it; mouse handling is not under test here
 '''
 MAIN = r'''
 int main() {
