@@ -297,8 +297,11 @@ unchanged, so every shape still reads.
 - **Particle effects** (sparkles, dust, the Launch Star streak) keep their shapes
   and brightness but lose their hue (their colours and textures, as the effects
   load at start-up: turn the mod on before starting the game).
-- **Still the game's look:** the HUD digits, the LIFE meter and other HUD
-  screens, fonts and banners, models that use texture formats
+- **Layouts and text** (the HUD digits, the LIFE meter, menus, banners) lose
+  their hue: their textures, font glyph sheets, material, vertex and text
+  colours. Fonts load at start-up, like particles.
+- **Still the game's look:** the shapes of the HUD digits and banners (the
+  game's font, in grey), models that use texture formats
   the rewrite skips, and the player (see "Generic character"). Objects without a
   stand-in keep their shape, in plain colours.
 
