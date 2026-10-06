@@ -28,6 +28,14 @@ def _fonts():
 bold, small, cap, tiny = _fonts()
 
 
+def fit_font(d, text, width, fonts):
+    """The first font (largest first) in which `text` is at most `width` pixels wide; the last one if none is."""
+    for font in fonts:
+        if d.textlength(text, font=font) <= width:
+            return font
+    return fonts[-1]
+
+
 def _keycap(d, x, y, w, h, label, lit):
     d.rounded_rectangle([x, y, x + w, y + h], radius=7, fill=GOLD if lit else (0, 0, 0, 0), outline=GOLD if lit else DIM, width=3)
     tw = d.textlength(label, font=cap)
@@ -59,12 +67,17 @@ def draw(img, f, keys, all_frames, title, used=None, band=False):
         _keycap(d, x0 + dx * (k + 4), y0 + dy * (k + 4), k, k, label, label in keys)
     boxes = [b for b in BOXES if b[0] & {"Space", "LeftShift", "R"} or b[0] & used]  # jump/pound/throw always; the rest when used
     x, wbox = 150, (1280 - 150 - 10) // len(boxes) - 8
+    # One font per kind of label for every box (the largest in which the widest label fits), so the strip looks even.
+    widest_name = max((b[2] for b in boxes), key=lambda t: d.textlength(t, font=bold))
+    widest_key = max((b[1] for b in boxes), key=lambda t: d.textlength(t, font=cap))
+    name_font = fit_font(d, widest_name, wbox - 20, (bold, small, tiny))
+    key_font = fit_font(d, widest_key, wbox - 20, (cap, bold, small))
     for keyset, label, name, colour in boxes:
         lit = bool(keyset & keys)
         d.rounded_rectangle([x, top + 12, x + wbox, top + 88], radius=10, fill=colour if lit else (0, 0, 0, 0),
                             outline=colour if lit else DIM, width=3)
-        d.text((x + 10, top + 18), label, font=cap, fill=INK if lit else DIM)
-        d.text((x + 10, top + 54), name, font=bold if wbox > 150 else small, fill=INK if lit else DIM)
+        d.text((x + 10, top + 18), label, font=key_font, fill=INK if lit else DIM)
+        d.text((x + 10, top + 54), name, font=name_font, fill=INK if lit else DIM)
         x += wbox + 8
     # timeline: PAST frames back, FUTURE ahead (dimmed), one row per input in use
     rows = _rows(used)
