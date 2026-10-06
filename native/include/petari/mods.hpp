@@ -22,6 +22,7 @@ enum class Mod : int {
     SkipCutscenes,    // hold A (Space) 1.5 s to skip cutscenes and dialogue (petari/skip.hpp); no button of its own
     PointToMove,      // hold left click: Mario runs toward the pointer (petari/point_move.hpp); no button of its own
     GenericCharacter, // the player is drawn as a plain figure, not Mario (Game/Player/GenericFigure.hpp); no button
+    GenericWorld,     // plain terrain, sky and object stand-ins (Game/System/GenericWorld.hpp); no button
     Count
 };
 

@@ -2477,6 +2477,10 @@ void testMods() {
               Mods::serialize().find("GenericCharacter=on") != std::string::npos,
           "GenericCharacter parses, is named and saved");
     check(Mods::parse("GenericCharacter=off\n", &error) && !Mods::enabled(Mods::Mod::GenericCharacter), "GenericCharacter turns off");
+    check(!Mods::enabled(Mods::Mod::GenericWorld) && Mods::parse("GenericWorld=on\n", &error) && Mods::enabled(Mods::Mod::GenericWorld) &&
+              std::string(Mods::name(Mods::Mod::GenericWorld)) == "GenericWorld",
+          "GenericWorld defaults off, parses and is named");
+    check(Mods::parse("GenericWorld=off\n", &error) && !Mods::enabled(Mods::Mod::GenericWorld), "GenericWorld turns off");
     setenv("PETARI_MODS", "OdysseyMovement,-OdysseyJumpDive", 1);
     check(Mods::load("/nonexistent/petari-mods.txt", &error) && Mods::enabled(Mods::Mod::OdysseyMovement) &&
               !Mods::enabled(Mods::Mod::OdysseyJumpDive),

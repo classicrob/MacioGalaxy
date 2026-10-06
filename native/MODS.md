@@ -12,6 +12,7 @@ unmodified game and every test run behave exactly as before.
 | Point to move (`PointToMove`) | hold the left mouse button | Mario runs toward the point under the cursor while you hold it; keys still jump, spin and crouch: see "Point to move" below. |
 | Hold Space to skip cutscenes and dialogue (`SkipCutscenes`) | none (hold Jump/A: Space, controller bottom button) | Holding A for 1.5 s skips the cutscene or dialogue on screen, and everything after it until you have control again: see "Skip cutscenes and dialogue" below. |
 | Generic character (`GenericCharacter`) | none (a look) | The player is drawn as a plain figure with Mario's proportions and animations instead of Mario: see "Generic character" below. |
+| Generic world (`GenericWorld`) | none (a look) | Terrain, sky and objects lose the game's look: plain textures, colours without hue, and plain shapes for common enemies and items: see "Generic world" below. |
 
 ## Turning mods on
 
@@ -259,6 +260,39 @@ Test: `PETARI_FIGURE_PROBE=1` (native/app/figure_probe.cpp) plays a fixed key
 script once normal play is steady (idle, run, jump, spin, long jump, Cappy
 throw, dive) and saves `figure-<pose>.png` screenshots to
 `PETARI_FIGURE_PROBE_SHOTS`. Run it with the mod on and off to compare.
+
+## Generic world
+
+Turn on "Generic world (plain terrain and objects)" (`GenericWorld=on`). The level
+then stops looking like the game. The geometry, collision and behaviour are
+unchanged, so every shape still reads.
+
+- **Terrain and every other model** (planets, map parts, scenery, editor
+  brushes) get plain textures when they load. Each texture keeps its size, mip
+  levels and alpha cut-outs. Its colours become one of three mid-grey tones
+  (slate, stone, sand, picked by how bright the original was) in a soft
+  16-texel checker. Material and vertex colours lose their hue but keep their
+  brightness, so the game's lighting still shades them.
+- **Sky** models (`*Sky`, `VR*`) become a dark field with sparse stars.
+- **Stand-ins** replace these models with plain lit shapes on the same spot:
+  - enemies (Kuribo, KuriboMini, Takobo, NokonokoLand): a red-orange body with
+    eyes and feet;
+  - Coin (a gold disc), PurpleCoin (violet), StarPiece (a pale gold gem);
+  - PowerStar and GrandStar (a gold star);
+  - JumpStand (a cyan pad);
+  - SuperSpinDriver and SpinDriver (a cyan star).
+
+  Hit boxes and behaviour are the game's.
+- **When it applies:** textures and colours change as models load, so turn the
+  mod on before entering a level (models loaded earlier keep their look until
+  they are loaded again). Stand-ins switch at once.
+- **Still the game's look:** the HUD and fonts, particle effects, colours that
+  the game animates at runtime (some glowing or colour-cycling parts), models
+  that use texture formats the rewrite skips, and the player (see "Generic
+  character"). Objects without a stand-in keep their shape, in plain colours.
+
+`PETARI_GENERIC_WORLD_TRACE=1` logs each model rewritten and the stand-ins
+drawn.
 
 ## Skip cutscenes and dialogue
 
