@@ -189,6 +189,37 @@ namespace GenericShapes {
         }
         GXEnd();
     }
+    void box(const Mtx m, const TVec3f& lo, const TVec3f& hi) {
+        const TVec3f c[8] = {TVec3f(lo.x, lo.y, lo.z), TVec3f(hi.x, lo.y, lo.z), TVec3f(hi.x, hi.y, lo.z), TVec3f(lo.x, hi.y, lo.z),
+                             TVec3f(lo.x, lo.y, hi.z), TVec3f(hi.x, lo.y, hi.z), TVec3f(hi.x, hi.y, hi.z), TVec3f(lo.x, hi.y, hi.z)};
+        const int faces[6][4] = {{0, 3, 2, 1}, {4, 5, 6, 7}, {0, 1, 5, 4}, {3, 7, 6, 2}, {0, 4, 7, 3}, {1, 2, 6, 5}};
+        GXBegin(GX_TRIANGLES, GX_VTXFMT0, 36);
+        for (const auto& f : faces) {
+            sendFlat(m, c[f[0]], c[f[1]], c[f[2]]);
+            sendFlat(m, c[f[0]], c[f[2]], c[f[3]]);
+        }
+        GXEnd();
+    }
+
+    void arrowPrism(const Mtx m, f32 y0, f32 headY, f32 y1, f32 shaftHalf, f32 headHalf, f32 halfDepth) {
+        // The outline (counter-clockwise from the shaft's back left), as triangles per face plus the sides.
+        const TVec3f outline[7] = {TVec3f(-shaftHalf, y0, 0.0f),  TVec3f(shaftHalf, y0, 0.0f),     TVec3f(shaftHalf, headY, 0.0f),
+                                   TVec3f(headHalf, headY, 0.0f), TVec3f(0.0f, y1, 0.0f),          TVec3f(-headHalf, headY, 0.0f),
+                                   TVec3f(-shaftHalf, headY, 0.0f)};
+        const int tris[5][3] = {{0, 1, 2}, {0, 2, 6}, {3, 4, 5}, {2, 3, 5}, {2, 5, 6}};
+        const TVec3f front(0.0f, 0.0f, halfDepth), back(0.0f, 0.0f, -halfDepth);
+        GXBegin(GX_TRIANGLES, GX_VTXFMT0, static_cast< u16 >((5 * 2 + 7 * 2) * 3));
+        for (const auto& t : tris) {
+            sendFlat(m, outline[t[0]] + front, outline[t[1]] + front, outline[t[2]] + front);
+            sendFlat(m, outline[t[2]] + back, outline[t[1]] + back, outline[t[0]] + back);
+        }
+        for (int i = 0; i < 7; ++i) {
+            const TVec3f a(outline[i]), b(outline[(i + 1) % 7]);
+            sendFlat(m, a + front, a + back, b + back);
+            sendFlat(m, a + front, b + back, b + front);
+        }
+        GXEnd();
+    }
 }  // namespace GenericShapes
 
 #endif

@@ -118,11 +118,13 @@ void left(bool down) {
 
 PointProbeStep pointProbeFrame() {
     PointProbeStep step;
+    // First, so its screenshots-only mode (no keys; returns false) runs beside an input script.
+    const bool figure = figureProbeFrame();
     if (inputScriptFrame()) {
         step.active = true;  // the input script's keys: the smoke script's presses wait
         return step;
     }
-    if (figureProbeFrame()) {
+    if (figure) {
         step.active = true;  // the figure probe's keys: the smoke script's presses wait
         return step;
     }

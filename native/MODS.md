@@ -280,7 +280,9 @@ unchanged, so every shape still reads.
   - Coin (a gold disc), PurpleCoin (violet), StarPiece (a pale gold gem);
   - PowerStar and GrandStar (a gold star);
   - JumpStand (a cyan pad);
-  - SuperSpinDriver and SpinDriver (a cyan star).
+  - SuperSpinDriver and SpinDriver (a cyan star);
+  - ArrowSwitch (a slate block with a blue flat arrow that turns with the
+    switch).
 
   Hit boxes and behaviour are the game's.
 - **When it applies:** textures and colours change as models load, so turn the
