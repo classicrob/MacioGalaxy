@@ -340,5 +340,35 @@ namespace EditorCamera {
         petari_editor_set_active(0);
         log("abandon (the scene was rebuilt)");
     }
+
+    bool setPose(const float eye[3], const float target[3], const float up[3], float fovy) {
+        if (!gState.active || !eye || !target || !up || !std::isfinite(fovy) || fovy < 1.0f || fovy > 175.0f) {
+            return false;
+        }
+        for (int i = 0; i < 3; ++i) {
+            if (!std::isfinite(eye[i]) || !std::isfinite(target[i]) || !std::isfinite(up[i]) || std::fabs(eye[i]) > 1e8f ||
+                std::fabs(target[i]) > 1e8f || std::fabs(up[i]) > 1e8f) {
+                return false;
+            }
+        }
+        const V e{eye[0], eye[1], eye[2]}, t{target[0], target[1], target[2]}, u{up[0], up[1], up[2]};
+        const V direction = sub(t, e);
+        if (length(direction) < 1e-4f || length(u) < 1e-4f) {
+            return false;
+        }
+        const V forward = normalized(direction, V{0, 0, -1}), unitUp = normalized(u, V{0, 1, 0});
+        if (std::fabs(dot(forward, unitUp)) > 0.99999f) {
+            return false;  // looking straight along "up": no roll to take from it
+        }
+        gState.eye = e;
+        gState.pivot = t;
+        gState.forward = forward;
+        gState.up = gState.upTarget = unitUp;
+        gState.fovy = fovy;
+        gState.known = true;
+        setView();
+        log("pose");
+        return true;
+    }
 }  // namespace EditorCamera
 #endif

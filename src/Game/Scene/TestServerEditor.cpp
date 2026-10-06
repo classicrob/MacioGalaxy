@@ -3,6 +3,7 @@
 // API's low-level ops applied to the running game through the editor's own command queue, plus the
 // verification commands (exact ground and gravity, Mario, screenshots, waits). Test-only, like the server.
 #include "Game/Scene/TestServerEditor.hpp"
+#include "Game/Camera/EditorCamera.hpp"
 #include "Game/Map/HitInfo.hpp"
 #include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/Util/GravityUtil.hpp"
@@ -33,6 +34,10 @@ using E::Json::Value;
 namespace {
     // Scene-outliving state is POD (see TestServer.cpp).
     enum class Wait : s32 { None, Model, Drain, Reload, Play, Shot, Frames };
+    // A posed screenshot waits this many server ticks before its request: frames already in the pipeline when the pose
+    // is set were drawn from the old view (measured on Good Egg in Edit: 0 and 3 ticks returned the previous view; 10
+    // returned the posed view, identical to a later capture).
+    constexpr s32 kPoseSettleFrames = 10;
     struct Pending {
         Wait wait = Wait::None;
         char name[64] = {};
@@ -309,9 +314,54 @@ bool run(const std::string& name, const std::vector< std::string >& w, bool play
         return true;
     }
     if (c == "screenshot" && w.size() >= 2) {
-        // The next presented frame (no ImGui overlay) as PNG.
+        // The next presented frame (no ImGui overlay) as PNG. Optional pose (Edit mode):
+        // screenshot PNG eye X Y Z target X Y Z [up X Y Z] [fovy F] puts the editor camera there first.
+        if (w.size() > 2) {
+            float eye[3] = {}, target[3] = {}, up[3] = {0.0f, 1.0f, 0.0f}, fovy = 45.0f;
+            bool haveEye = false, haveTarget = false, ok = true;
+            auto number = [&](std::size_t i, float* out) {
+                if (i >= w.size()) return false;
+                char* end = nullptr;
+                *out = std::strtof(w[i].c_str(), &end);
+                return end != w[i].c_str() && *end == '\0' && std::isfinite(*out);
+            };
+            for (std::size_t i = 2; ok && i < w.size();) {
+                const std::string& key = w[i];
+                const int count = key == "fovy" ? 1 : (key == "eye" || key == "target" || key == "up") ? 3 : 0;
+                float* out = key == "eye" ? eye : key == "target" ? target : key == "up" ? up : &fovy;
+                ok = count > 0;
+                for (int k = 0; ok && k < count; k++) ok = number(i + 1 + k, out + k);
+                haveEye |= ok && key == "eye";
+                haveTarget |= ok && key == "target";
+                i += 1 + count;
+            }
+            if (!ok || !haveEye || !haveTarget) {
+                reply(name, errorText("bad-args", "usage: screenshot PNG [eye X Y Z target X Y Z [up X Y Z] [fovy F]]",
+                                      "a pose needs both eye and target, as numbers", c));
+                return true;
+            }
+            if (!EditorCamera::isActive()) {
+                reply(name, errorText("not-editing", "a posed screenshot needs Edit mode", "send editor-begin first, or drop the pose", c));
+                return true;
+            }
+            if (PetariNative::Screenshot::pending.load()) {
+                reply(name, errorText("busy", "a screenshot is already pending", "retry after it is written", c));
+                return true;
+            }
+            if (!EditorCamera::setPose(eye, target, up, fovy)) {
+                reply(name, errorText("bad-args", "the pose is degenerate: eye equals target, up is zero or parallel to the view, or fovy is outside 1..175", "", c));
+                return true;
+            }
+        }
         std::error_code ec;
         fs::remove(w[1], ec);
+        if (w.size() > 2) {
+            // The frame being presented now was drawn from the old view: capture once the pose has been drawn.
+            begin(Wait::Shot, name);
+            std::snprintf(gPending.path, sizeof(gPending.path), "%s", w[1].c_str());
+            gPending.frames = kPoseSettleFrames;
+            return true;
+        }
         if (!PetariNative::Screenshot::request(w[1].c_str())) {
             reply(name, errorText("busy", "a screenshot is already pending", "retry after it is written", c));
             return true;
@@ -369,6 +419,12 @@ bool tick(bool playable, const Reply& reply) {
         else if (s.errorSerial != gPending.errorSerial) done(errorText("editor-error", s.lastError));
         break;
     case Wait::Shot: {
+        if (gPending.frames > 0) {  // a posed shot: frames left until the new view has been drawn, then the request
+            if (--gPending.frames == 0 && !PetariNative::Screenshot::request(gPending.path)) {
+                done(errorText("busy", "a screenshot is already pending", "retry after it is written"));
+            }
+            break;
+        }
         std::error_code ec;
         if (!PetariNative::Screenshot::pending.load() && fs::exists(gPending.path, ec) && fs::file_size(gPending.path, ec) > 0) {
             done(std::string("ok {\"path\":\"") + gPending.path + "\"}");

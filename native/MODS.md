@@ -568,6 +568,10 @@ the other way to show the game reads the mod's bytes.)
 A level edit is a stage archive with changed placements, put in a mod folder. The
 game loads it in place of the disc's archive; nothing else is needed.
 
+**For scripted or agent authoring**, use `petari-level` and its Python API
+([docs/dev/level-editor/AGENT_API.md](../docs/dev/level-editor/AGENT_API.md)): it uses the in-game editor's
+model, undo, Checks and patch-mod writer, and tests live through the test server.
+
 **With Whitehole** (the usual Galaxy level editor): point it at your extracted disc,
 open the galaxy, move or add objects, and save. Whitehole writes the stage
 archive (for example `StageData/EggStarGalaxy.arc`, Yaz0-compressed). Copy that

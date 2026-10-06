@@ -199,9 +199,19 @@ class Live:
     def gravity(self, pos: Sequence[float]) -> dict:
         return self.send("gravity " + " ".join(f"{v:.2f}" for v in pos))
 
-    def screenshot(self, path: str | os.PathLike) -> dict:
+    def screenshot(self, path: str | os.PathLike, eye=None, target=None, up=None, fovy=None) -> dict:
+        """The next presented frame as PNG. With eye and target (Edit mode), the editor camera moves there first."""
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        return self.send(f"screenshot {Path(path).resolve()}")
+        command = f"screenshot {Path(path).resolve()}"
+        if eye is not None or target is not None:
+            if eye is None or target is None:
+                raise ValueError("a posed screenshot needs both eye and target")
+            command += " eye " + " ".join(f"{float(v):g}" for v in eye) + " target " + " ".join(f"{float(v):g}" for v in target)
+            if up is not None:
+                command += " up " + " ".join(f"{float(v):g}" for v in up)
+            if fovy is not None:
+                command += f" fovy {float(fovy):g}"
+        return self.send(command)
 
 
     def _start_plan(self, command: str, payload: Any) -> dict:

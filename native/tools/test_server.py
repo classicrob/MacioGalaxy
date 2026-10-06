@@ -49,6 +49,17 @@ def send(directory, command, timeout):
     return "error no reply within %ds" % timeout
 
 
+def reset_queues(directory):
+    """Empty cmd/ and reply/ for a fresh server. A send() that timed out leaves its command behind; without this, a new
+    server in the same --dir would run it (a stale quit, warp or reload) and old replies could answer new names."""
+    for name in ("cmd", "reply"):
+        queue = Path(directory) / name
+        queue.mkdir(parents=True, exist_ok=True)
+        for entry in queue.iterdir():
+            if entry.is_file() or entry.is_symlink():
+                entry.unlink()
+
+
 def cmd_start(args):
     import stage_sweep as sweep
     import warm_seed
@@ -57,8 +68,7 @@ def cmd_start(args):
     if (directory / "server.pid").exists():
         sys.exit(f"test-server: {directory} already has a server (stop it first)")
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / "cmd").mkdir(exist_ok=True)
-    (directory / "reply").mkdir(exist_ok=True)
+    reset_queues(directory)
     user = directory / "user"
     if user.exists():
         subprocess.run(["rm", "-rf", str(user)], check=True)
@@ -71,7 +81,7 @@ def cmd_start(args):
     a.app, a.disc, a.frames, a.idle_frames, a.pipeline_policy = app, main / "build/game-data/RMGE01", 10_000_000, 10_000_000, "default"
     command, env_extra = sweep.app_command(a, user, args.stage, args.scenario)
     command += []
-    wargs = argparse.Namespace(app=app, seed_root=str(main / "build/shader-seed"), stages=[args.stage] if args.warm_current_stage else warm_seed.DEFAULT_STAGES, owner="test-server",
+    wargs = argparse.Namespace(app=app, seed_root=str(main / "build/shader-seed"), stages=[args.stage] if args.warm_current_stage else warm_seed.DEFAULT_STAGES, owner=args.owner,
                                timeout=900, idle=900, force=False, user=user)
     wargs.sha = warm_seed.sha256_of(app)
     seed = warm_seed.ensure(wargs)

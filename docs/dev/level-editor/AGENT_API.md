@@ -214,12 +214,13 @@ The test server (`native/tools/test_server.py`, `PETARI_TEST_SERVER`) takes thes
 | `ground x y z [dx dy dz]`, `gravity x y z` | the engine's own gravity and first map polygon (exact) |
 | `mario`, `teleport x y z`, `wait N` | Mario's position, gravity, ground, death; move him; let N frames run |
 | `screenshot PNG` | the next presented frame, without the editor's overlay |
+| `screenshot PNG eye X Y Z target X Y Z [up X Y Z] [fovy F]` | Edit mode: the editor camera moves to that pose first (it stays there, orbiting around target); `not-editing` outside Edit mode, `bad-args` for a degenerate pose |
 
 Replies are `ok <json>` / `error <json>` (the same Error object as the CLI: code, message, hint, where). `petari_level.Live` wraps them: `Live.start(app=...)`,
 `live.begin()`, `live.sync(level)` (brings the game to the workspace's journal: undoes what diverged,
 applies what is new; refs resolve in the game because they are stable), `live.reload()`,
 `live.play(pos, up)`, `live.warp(pos)`, `live.trace(frames)`, `live.ground(pos)`,
-`live.screenshot(path)`. `examples/live_verify.py` runs example 1 that way.
+`live.screenshot(path)` or `live.screenshot(path, eye=..., target=..., up=..., fovy=...)` for a framed shot in Edit mode. `examples/live_verify.py` runs example 1 that way.
 
 ### Replay and frame-held controls
 
