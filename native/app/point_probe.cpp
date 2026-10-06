@@ -118,6 +118,10 @@ void left(bool down) {
 
 PointProbeStep pointProbeFrame() {
     PointProbeStep step;
+    if (inputScriptFrame()) {
+        step.active = true;  // the input script's keys: the smoke script's presses wait
+        return step;
+    }
     if (figureProbeFrame()) {
         step.active = true;  // the figure probe's keys: the smoke script's presses wait
         return step;

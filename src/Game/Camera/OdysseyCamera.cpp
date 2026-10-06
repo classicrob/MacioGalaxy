@@ -122,6 +122,13 @@ namespace {
     }
 }  // namespace
 
+// Each scene's CameraDirector calls this when it is built: the orbit must seed from the new scene's camera
+// rather than keep the last scene's direction, pitch and distance (a stage restart or reload with no
+// scripted camera in between used to carry them over).
+void petariOdysseyCameraSceneStart() {
+    gOrbit.active = false;
+}
+
 extern "C" int petari_camera_orbit_active(void) {
     return gOrbit.active ? 1 : 0;
 }
