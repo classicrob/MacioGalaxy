@@ -31,7 +31,6 @@ true before they moved here.)
 | Script | What it does |
 | --- | --- |
 | `new-worktree.sh` | Creates a configured worktree `../petari-worktrees/<name>` on `wt/<name>` (see `docs/dev/WORKTREES.md`). |
-| `new-worktree-sweep.sh` | An older copy of `new-worktree.sh` (cap of 4 worktrees, no branch argument, no ccache); superseded by it, kept for now. |
 | `remove-worktree.sh` | Removes a merged worktree and deletes its branch; never forces. |
 | `head-check.sh` | Fast-forwards the `head-check` worktree to main, builds everything there and runs ctest. |
 | `ff-level-editor.sh` | Fast-forwards `level-editor` to a tested merge commit; refuses if it would drop commits. |
