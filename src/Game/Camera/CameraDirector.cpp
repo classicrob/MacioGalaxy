@@ -63,7 +63,15 @@ namespace {
     // static const s32 sAnimCameraZoneID =
 };  // namespace
 
+#ifdef PETARI_NATIVE
+void petariOdysseyCameraSceneStart();  // OdysseyCamera.cpp
+#endif
+
 CameraDirector::CameraDirector(const char* pName) : NameObj(pName) {
+#ifdef PETARI_NATIVE
+    // A new scene (stage entry, restart or reload): the Odyssey orbit seeds itself again.
+    petariOdysseyCameraSceneStart();
+#endif
     mTargetObj = nullptr;
     mStack = new CameraManStack();
     mOnlyCamera = new OnlyCamera("OnlyCamera");

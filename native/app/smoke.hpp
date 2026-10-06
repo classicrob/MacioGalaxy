@@ -479,6 +479,9 @@ PointProbeStep pointProbeFrame();
 // figure_probe.cpp: PETARI_FIGURE_PROBE, the Generic character mod's pose script
 // and screenshots; stepped by pointProbeFrame (true while it drives the keys).
 bool figureProbeFrame();
+// input_script_probe.cpp: PETARI_INPUT_SCRIPT, a player's keyboard script typed through the native
+// input layer once normal play is steady; stepped by pointProbeFrame (true while it types).
+bool inputScriptFrame();
 // collision_probe.cpp (SDK side): PETARI_COLLISION_PROBE, a read-only map
 // collision survey for offline route planning; stepped by observeGame.
 bool collisionProbeActive();
