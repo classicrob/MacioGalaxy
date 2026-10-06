@@ -5,7 +5,7 @@
 // '#' starts a comment. Each line holds its keys for <frames> frames; presses and releases are sent
 // only when the held set changes, so a key held across lines stays down.
 // PETARI_INPUT_SCRIPT_LOG=<csv>: one row per scripted frame: frame, line, held keys, Mario's position,
-// velocity and ground flag, and the camera's position and forward axis.
+// velocity and ground flag, the camera's position and forward axis, whether he is dead, and his gravity vector.
 // Logs "[input-script] start ..." and "[input-script] done after N frames". The start also marks the image-dump
 // phase "input-script" (petari/efb_dump_mark.hpp), so PETARI_SURFACE_DUMP_LABELS=input-script dumps only the script.
 
@@ -82,7 +82,7 @@ InputScript& script() {
         if (const char* logPath = std::getenv("PETARI_INPUT_SCRIPT_LOG")) {
             s.log = std::fopen(logPath, "w");
             if (s.log != nullptr) {
-                std::fputs("frame,line,keys,x,y,z,vx,vy,vz,ground,cam_x,cam_y,cam_z,cam_fx,cam_fy,cam_fz\n", s.log);
+                std::fputs("frame,line,keys,x,y,z,vx,vy,vz,ground,cam_x,cam_y,cam_z,cam_fx,cam_fy,cam_fz,dead,grav_x,grav_y,grav_z\n", s.log);
             }
         }
         s.phase = Phase::Wait;
@@ -163,9 +163,10 @@ bool inputScriptFrame() {
         const TVec3f f = MR::getCamZdir();
         std::string keys;
         for (Input::KeyCode k : s.held) keys += (keys.empty() ? "" : "+") + Input::keyName(k);
-        std::fprintf(s.log, "%d,%d,%s,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%d,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f\n", s.frame, s.line,
+        const TVec3f& g = *MR::getPlayerGravity();
+        std::fprintf(s.log, "%d,%d,%s,%.2f,%.2f,%.2f,%.3f,%.3f,%.3f,%d,%.2f,%.2f,%.2f,%.4f,%.4f,%.4f,%d,%.4f,%.4f,%.4f\n", s.frame, s.line,
                      keys.empty() ? "-" : keys.c_str(), p.x, p.y, p.z, v.x, v.y, v.z, MR::isOnGroundPlayer() ? 1 : 0, c.x, c.y, c.z, f.x,
-                     f.y, f.z);
+                     f.y, f.z, MR::isPlayerDead() ? 1 : 0, g.x, g.y, g.z);
     }
     ++s.frame;
     if (++s.lineFrame >= line.frames) {
