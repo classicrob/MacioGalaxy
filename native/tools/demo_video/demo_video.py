@@ -83,7 +83,9 @@ def record(a, run):
     subprocess.run(["cp", "-cR", str(Path(a.save).resolve()), str(run / "user")], check=True)
     shutil.rmtree(run / "user/cache", ignore_errors=True)
     env = {k: v for k, v in os.environ.items() if not k.startswith("PETARI_")}
-    env.update(PETARI_SMOKE_BACKGROUND="1", PETARI_OPEN_STAGE=a.stage, PETARI_OPEN_FILE="1", PETARI_OPEN_EDIT="0",
+    # PETARI_SMOKE is empty on purpose: a no-op for the app, but locked-app.sh treats an app run without PETARI_SMOKE= /
+    # --test-fixture as a person playing and collapses the lock slots to one.
+    env.update(PETARI_SMOKE="", PETARI_SMOKE_BACKGROUND="1", PETARI_OPEN_STAGE=a.stage, PETARI_OPEN_FILE="1", PETARI_OPEN_EDIT="0",
                PETARI_STAGE_GATE_MS="0", PETARI_SMOKE_FRAMES="10000000", PETARI_TEST_SERVER=str(run / "server"), PETARI_FAST_BOOT="1",
                PETARI_PIPELINE_GLOBAL_PRECOMPILE="0", SDL_AUDIODRIVER="dummy", PETARI_LOCK_CLASS="functional", PETARI_LOCK_TIMEOUT="5400",
                PETARI_CAPPY_TRACE="1", PETARI_INPUT_SCRIPT=str(Path(a.script).resolve()), PETARI_INPUT_SCRIPT_LOG=str(run / "input.csv"))
@@ -122,15 +124,44 @@ def record(a, run):
                 proc.wait(timeout=10)
         shutil.rmtree(run / "user/cache", ignore_errors=True)
     text = (run / "app.log").read_bytes().decode(errors="replace")
+    seeded = []
+    if a.seed_caches not in ("", "none") and "[input-script] done" in text:
+        seeded = save_caches(run / "user", Path(a.save) if a.seed_caches == "save" else Path(a.seed_caches))
     moves = [l for l in text.splitlines() if MOVE.match(l)]
     (run / "moves.log").write_text("\n".join(moves) + "\n")
     dumped = len(list((run / "frames").glob("*.png"))) if (run / "frames").exists() else 0
     info = dict(status=status, ok=ok, script=str(a.script), frames=frames, dumped=dumped, seconds=round(time.time() - t0),
                 app=str(a.app), stage=a.stage, exit=proc.returncode)
+    if seeded:
+        info["seeded_caches"] = seeded
     if ok and not a.no_dump and dumped == 0:
         info["ok"] = False
         info["status"] = "no frames dumped: this app has no dump mark (PETARI_SURFACE_DUMP_LABELS=input-script); use a build with it"
     return info
+
+
+def save_caches(user, target):
+    """Back the run's warm shader/pipeline caches (SQLite, consistent copies) into a reusable seed dir, so the next run
+    starts warm instead of recooking. Only after a clean finish; the app has exited, so the files are quiescent."""
+    import sqlite3
+    done = []
+    for name in ("pipeline_cache.db", "dawn_cache.db"):
+        src = user / name
+        if not src.is_file():
+            continue
+        target.mkdir(parents=True, exist_ok=True)
+        tmp = target / (name + ".new")
+        a = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+        b = sqlite3.connect(tmp)
+        with b:
+            a.backup(b)
+        a.close()
+        b.close()
+        for stale in (target / (name + "-wal"), target / (name + "-shm")):
+            stale.unlink(missing_ok=True)
+        os.replace(tmp, target / name)
+        done.append(name)
+    return done
 
 
 # ---------------------------------------------------------------- sync
@@ -390,6 +421,16 @@ def selftest(_args):
         info2 = render(run2, "selftest2", a2, tmp / "out2")
         assert info2["warning"] and info2["latency_measured"] == latency, info2
         assert probe(tmp / "out2" / "selftest2.mp4")["height"] == 720
+        # warm caches are copied consistently into the seed dir
+        import sqlite3
+        (tmp / "user").mkdir()
+        db = sqlite3.connect(tmp / "user" / "pipeline_cache.db")
+        db.execute("create table x(a)")
+        db.execute("insert into x values (7)")
+        db.commit()
+        db.close()
+        assert save_caches(tmp / "user", tmp / "seed") == ["pipeline_cache.db"]
+        assert sqlite3.connect(tmp / "seed" / "pipeline_cache.db").execute("select a from x").fetchone() == (7,)
         print("selftest PASS:", json.dumps(dict(main=main, slow=slow["seconds"], highlight=hl["seconds"], latency=measured)))
     return 0
 
@@ -403,6 +444,9 @@ def add_run_args(p):
     p.add_argument("--owner", default="video", help="build/locked-app.sh owner name (your lane)")
     p.add_argument("--lock", default=str(MAIN / "build/locked-app.sh"))
     p.add_argument("--disc", default=str(MAIN / "build/game-data/RMGE01"))
+    p.add_argument("--seed-caches", nargs="?", const="save", default="save", metavar="DIR",
+                   help="after a clean run, copy the warm pipeline_cache.db / dawn_cache.db into DIR (default: back into --save, "
+                        "which must be a private copy) so the next run starts warm; 'none' disables")
     p.add_argument("--tail", type=int, default=60, help="frames dumped after the script ends")
     p.add_argument("--no-dump", action="store_true", help="rehearsal: run the script and log, no frames (check moves.log / inputs.csv)")
     p.add_argument("--env", action="append", default=[], help="extra K=V for the app")
