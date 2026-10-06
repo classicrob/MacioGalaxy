@@ -1,6 +1,7 @@
 // Conversion of big-endian JPA particle containers into host-layout images. See
 // native/include/petari/jpa_resource.hpp. Layouts follow the JPA*Data structs in
 // JSystem/JParticle and the readers in JPAResourceLoader.cpp / JPABaseShape.cpp.
+#include "petari/generic_grey.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -8,12 +9,6 @@
 #include <petari/endian.hpp>
 #include <petari/host_allocation.hpp>
 #include <cstring>
-
-// The Generic world mod (Game/System/GenericWorld.cpp): particle colours lose their hue. This
-// default, for programs without the game, keeps them.
-extern "C" __attribute__((weak)) bool petari_generic_world_grey_particles() {
-    return false;
-}
 
 namespace PetariNative {
 namespace JPA {
@@ -192,99 +187,17 @@ namespace JPA {
         }
 
         void greyColor(std::uint8_t* rgba) {
-            const std::uint8_t g = static_cast< std::uint8_t >((rgba[0] * 299 + rgba[1] * 587 + rgba[2] * 114) / 1000);
-            rgba[0] = rgba[1] = rgba[2] = g;
-        }
-
-        int luma8(int r, int g, int b) {
-            return (r * 299 + g * 587 + b * 114) / 1000;
-        }
-        std::uint16_t grey565(std::uint16_t v) {
-            const int g = luma8(((v >> 11) & 31) * 255 / 31, ((v >> 5) & 63) * 255 / 63, (v & 31) * 255 / 31);
-            return static_cast< std::uint16_t >(((g >> 3) << 11) | ((g >> 2) << 5) | (g >> 3));
-        }
-        std::uint16_t grey5A3(std::uint16_t v) {
-            if ((v & 0x8000) != 0) {
-                const int g = luma8(((v >> 10) & 31) * 255 / 31, ((v >> 5) & 31) * 255 / 31, (v & 31) * 255 / 31) >> 3;
-                return static_cast< std::uint16_t >(0x8000 | (g << 10) | (g << 5) | g);
-            }
-            const int g = luma8(((v >> 8) & 15) * 17, ((v >> 4) & 15) * 17, (v & 15) * 17) / 17;
-            return static_cast< std::uint16_t >((v & 0x7000) | (g << 8) | (g << 4) | g);
-        }
-        std::uint16_t rd16(const std::uint8_t* p) {
-            return static_cast< std::uint16_t >((p[0] << 8) | p[1]);
-        }
-        void wr16(std::uint8_t* p, std::uint16_t v) {
-            p[0] = static_cast< std::uint8_t >(v >> 8);
-            p[1] = static_cast< std::uint8_t >(v);
-        }
-
-        // One CMPR block greyed, keeping its mode (c0 > c1: four colours; else three and transparent):
-        // when greying flips the endpoint order, the endpoints swap and the indices follow.
-        void greyCmprBlock(std::uint8_t* b) {
-            const std::uint16_t c0 = rd16(b), c1 = rd16(b + 2);
-            const bool opaque = c0 > c1;
-            std::uint16_t g0 = grey565(c0), g1 = grey565(c1);
-            bool swap = opaque ? g0 < g1 : g0 > g1;
-            if (swap) {
-                std::swap(g0, g1);
-                for (int row = 0; row < 4; ++row) {
-                    std::uint8_t out = 0;
-                    for (int t = 0; t < 4; ++t) {
-                        int i = (b[4 + row] >> (6 - 2 * t)) & 3;
-                        i = opaque ? (i ^ 1) : (i == 0 ? 1 : i == 1 ? 0 : i);  // 0<->1, 2<->3 (opaque); 0<->1 (alpha mode)
-                        out = static_cast< std::uint8_t >(out | (i << (6 - 2 * t)));
-                    }
-                    b[4 + row] = out;
-                }
-            }
-            if (opaque && g0 == g1) {
-                g0 = static_cast< std::uint16_t >(g1 | 1);  // keep c0 > c1
-                g1 = static_cast< std::uint16_t >(g1 & 0xFFFE);
-            }
-            wr16(b, g0);
-            wr16(b + 2, g1);
+            rgba[0] = rgba[1] = rgba[2] = static_cast< std::uint8_t >(Grey::luma(rgba[0], rgba[1], rgba[2]));
         }
 
         // A particle texture's colours lose their hue in place (big-endian GX data), alpha and brightness kept.
         void greyTexture(std::uint8_t* timg, std::uint8_t* end) {
             const int fmt = timg[0];
-            int w = rd16(timg + 2), h = rd16(timg + 4);
-            const int levels = std::max< int >(1, timg[0x18]);
-            std::uint8_t* data = timg + readU32BE(timg + 0x1C);
             if (fmt == 8 || fmt == 9 || fmt == 10) {  // C4, C8, C14X2: the palette
-                std::uint8_t* pal = timg + readU32BE(timg + 0x0C);
-                const int count = rd16(timg + 0x0A), palFmt = timg[0x09];
-                for (int i = 0; i < count && pal + i * 2 + 2 <= end; ++i) {
-                    if (palFmt == 1) wr16(pal + i * 2, grey565(rd16(pal + i * 2)));
-                    if (palFmt == 2) wr16(pal + i * 2, grey5A3(rd16(pal + i * 2)));
-                }
+                Grey::palette(timg[0x09], Grey::rd16(timg + 0x0A), timg + readU32BE(timg + 0x0C), end);
                 return;
             }
-            int bw, bh, bytes;
-            switch (fmt) {
-            case 4: case 5: bw = 4; bh = 4; bytes = 32; break;  // RGB565, RGB5A3
-            case 6: bw = 4; bh = 4; bytes = 64; break;          // RGBA8
-            case 14: bw = 8; bh = 8; bytes = 32; break;         // CMPR
-            default: return;                                    // intensity formats are grey already
-            }
-            for (int level = 0; level < levels; ++level) {
-                const int tiles = ((w + bw - 1) / bw) * ((h + bh - 1) / bh);
-                for (int t = 0; t < tiles && data + bytes <= end; ++t, data += bytes) {
-                    if (fmt == 14) {
-                        for (int k = 0; k < 4; ++k) greyCmprBlock(data + k * 8);
-                    } else if (fmt == 6) {
-                        for (int k = 0; k < 16; ++k) {
-                            const std::uint8_t g = static_cast< std::uint8_t >(luma8(data[k * 2 + 1], data[32 + k * 2], data[32 + k * 2 + 1]));
-                            data[k * 2 + 1] = data[32 + k * 2] = data[32 + k * 2 + 1] = g;
-                        }
-                    } else {
-                        for (int k = 0; k < 16; ++k) wr16(data + k * 2, fmt == 4 ? grey565(rd16(data + k * 2)) : grey5A3(rd16(data + k * 2)));
-                    }
-                }
-                w = std::max(1, w >> 1);
-                h = std::max(1, h >> 1);
-            }
+            Grey::texture(fmt, Grey::rd16(timg + 2), Grey::rd16(timg + 4), timg[0x18], timg + readU32BE(timg + 0x1C), end);
         }
 
         // JPABaseShapeData (0x34), then optional tables: texture coordinate matrix animation

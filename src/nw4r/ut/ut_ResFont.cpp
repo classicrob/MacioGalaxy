@@ -6,6 +6,9 @@
 #include <petari/endian.hpp>
 #include <cstring>
 #include <new>
+#ifdef PETARI_NATIVE
+#include <petari/generic_grey.hpp>
+#endif
 #endif
 
 namespace nw4r {
@@ -215,6 +218,14 @@ namespace nw4r {
                         u64 sheetBytes = static_cast< u64 >(glyph->sheetSize) * glyph->sheetNum;
                         valid = sheetOffset <= fileSize && sheetBytes <= fileSize - sheetOffset;
                         glyph->sheetImage = static_cast< u8* >(brfnt) + sheetOffset;
+                        if (valid && petari_generic_world_grey_particles()) {
+                            // The Generic world mod: coloured glyph sheets (the HUD digits) lose their hue.
+                            for (u16 sheet = 0; sheet < glyph->sheetNum; ++sheet) {
+                                u8* image = glyph->sheetImage + static_cast< u64 >(sheet) * glyph->sheetSize;
+                                PetariNative::Grey::texture(glyph->sheetFormat, glyph->sheetWidth, glyph->sheetHeight, 1, image,
+                                                            image + glyph->sheetSize);
+                            }
+                        }
                         break;
                     }
                     case 'CWDH': {

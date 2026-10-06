@@ -9,6 +9,12 @@
 #include "nw4r/ut/inlines.h"
 #include <cstdio>
 #ifdef PETARI_NATIVE
+#include <petari/generic_grey.hpp>  // the Generic world mod: drawn colours without hue (a no-op while it is off)
+#define PETARI_GREY_RGBA(c) petari_generic_world_grey_rgba(static_cast< u32 >(c))
+#else
+#define PETARI_GREY_RGBA(c) (c)
+#endif
+#ifdef PETARI_NATIVE
 // Game/System/GenericWorld.cpp: the Generic world mod's plain HUD icons (lives, star, coin, Star Bit).
 extern "C" void petari_generic_world_layout_texture(void* pTpl, const char* pName);
 // The default, for programs without the game (layout tests): no change. The game's definition replaces it.
@@ -690,7 +696,7 @@ namespace nw4r {
                 }
 
                 matColor = detail::MultipleAlpha(matColor, alpha);
-                GXSetChanMatColor(GX_COLOR0A0, matColor);
+                GXSetChanMatColor(GX_COLOR0A0, ut::Color(PETARI_GREY_RGBA(matColor)));
 
                 useRasStage = useRasStage || matColor != ut::Color::WHITE;
             }
@@ -765,14 +771,24 @@ namespace nw4r {
                 }
             }
 
+#ifdef PETARI_NATIVE
+            for (int i = 0; i < 3; ++i) {
+                GXColorS10 c = mTevCols[i];
+                if (petari_generic_world_grey_particles()) {  // the Generic world mod: no hue
+                    c.r = c.g = c.b = static_cast< s16 >(PetariNative::Grey::luma(c.r, c.g, c.b));
+                }
+                GXSetTevColorS10(static_cast< GXTevRegID >(GX_TEVREG0 + i), c);
+            }
+#else
             GXSetTevColorS10(GX_TEVREG0, mTevCols[0]);
             GXSetTevColorS10(GX_TEVREG1, mTevCols[1]);
             GXSetTevColorS10(GX_TEVREG2, mTevCols[2]);
+#endif
 
-            GXSetTevKColor(GX_KCOLOR0, mTevKCols[GX_KCOLOR0]);
-            GXSetTevKColor(GX_KCOLOR1, mTevKCols[GX_KCOLOR1]);
-            GXSetTevKColor(GX_KCOLOR2, mTevKCols[GX_KCOLOR2]);
-            GXSetTevKColor(GX_KCOLOR3, mTevKCols[GX_KCOLOR3]);
+            GXSetTevKColor(GX_KCOLOR0, ut::Color(PETARI_GREY_RGBA(mTevKCols[GX_KCOLOR0])));
+            GXSetTevKColor(GX_KCOLOR1, ut::Color(PETARI_GREY_RGBA(mTevKCols[GX_KCOLOR1])));
+            GXSetTevKColor(GX_KCOLOR2, ut::Color(PETARI_GREY_RGBA(mTevKCols[GX_KCOLOR2])));
+            GXSetTevKColor(GX_KCOLOR3, ut::Color(PETARI_GREY_RGBA(mTevKCols[GX_KCOLOR3])));
 
             if (IsTevSwapCap()) {
                 const TevSwapMode* const pTevSwap = GetTevSwapAry();
