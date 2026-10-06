@@ -20,6 +20,7 @@
 #include <JSystem/J3DGraphBase/J3DPacket.hpp>
 #include <JSystem/J3DGraphBase/J3DTexture.hpp>
 #include <JSystem/J3DGraphBase/J3DVertex.hpp>
+#include <JSystem/JUtility/JUTNameTab.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
 #include <petari/host_allocation.hpp>
 #include <petari/mods.hpp>
@@ -37,7 +38,7 @@
 namespace {
     // ---- Roles -------------------------------------------------------------
 
-    enum class Role : u8 { None, Enemy, Coin, PurpleCoin, Gem, Star, Spring, LaunchStar };
+    enum class Role : u8 { None, Enemy, Coin, PurpleCoin, Gem, Star, Spring, LaunchStar, ArrowSwitch };
 
     struct Named {
         const char* archive;
@@ -50,6 +51,7 @@ namespace {
         {"NokonokoLand", Role::Enemy},    {"Coin", Role::Coin},                 {"PurpleCoin", Role::PurpleCoin},
         {"StarPiece", Role::Gem},         {"PowerStar", Role::Star},            {"GrandStar", Role::Star},
         {"JumpStand", Role::Spring},      {"SuperSpinDriver", Role::LaunchStar}, {"SpinDriver", Role::LaunchStar},
+        {"ArrowSwitch", Role::ArrowSwitch},
     };
 
     struct ModelInfo {
@@ -119,6 +121,9 @@ namespace {
     constexpr Rgb kSkyBase = {0x0C, 0x10, 0x22};
     constexpr Rgb kSkyStar = {0xE8, 0xEC, 0xFF};
 
+    int luma(int r, int g, int b) {
+        return (r * 299 + g * 587 + b * 114) / 1000;
+    }
     u16 rd16(const u8* p) {
         return static_cast< u16 >((p[0] << 8) | p[1]);
     }
@@ -479,7 +484,8 @@ namespace {
             u8* colours = reinterpret_cast< u8* >(v.mVtxColorArray[set]);
             const u32 bytes = v.mNativeArrayBytes[3 + set];
             const int type = colorType(v, GX_VA_CLR0 + set);
-            const int stride = type == GX_RGBA8 || type == GX_RGBX8 ? 4 : type == GX_RGB8 ? 3 : 0;
+            const int stride = type == GX_RGBA8 || type == GX_RGBX8 ? 4 : type == GX_RGB8 || type == GX_RGBA6 ? 3
+                                                                        : type == GX_RGB565 || type == GX_RGBA4 ? 2 : 0;
             if (colours == nullptr || bytes == 0 || stride == 0) {
                 continue;
             }
@@ -492,9 +498,26 @@ namespace {
             }
             Backup backup;
             backup.original.assign(colours, colours + bytes);
-            for (u32 i = 0; i + 2 < bytes; i += stride) {
-                const u8 g = static_cast< u8 >((colours[i] * 299 + colours[i + 1] * 587 + colours[i + 2] * 114) / 1000);
-                colours[i] = colours[i + 1] = colours[i + 2] = g;
+            for (u32 i = 0; i + stride <= bytes; i += stride) {
+                u8* c = colours + i;
+                if (type == GX_RGB565) {  // big-endian 5:6:5
+                    const u16 v = rd16(c);
+                    const int g = luma(((v >> 11) & 31) * 255 / 31, ((v >> 5) & 63) * 255 / 63, (v & 31) * 255 / 31);
+                    wr16(c, static_cast< u16 >(((g >> 3) << 11) | ((g >> 2) << 5) | (g >> 3)));
+                } else if (type == GX_RGBA4) {  // 4:4:4:4
+                    const u16 v = rd16(c);
+                    const int g = luma(((v >> 12) & 15) * 17, ((v >> 8) & 15) * 17, ((v >> 4) & 15) * 17) / 17;
+                    wr16(c, static_cast< u16 >((g << 12) | (g << 8) | (g << 4) | (v & 15)));
+                } else if (type == GX_RGBA6) {  // 6:6:6:6 in 24 bits
+                    const u32 v = (static_cast< u32 >(c[0]) << 16) | (static_cast< u32 >(c[1]) << 8) | c[2];
+                    const int g = luma(((v >> 18) & 63) * 4, ((v >> 12) & 63) * 4, ((v >> 6) & 63) * 4) / 4;
+                    const u32 out = (static_cast< u32 >(g) << 18) | (static_cast< u32 >(g) << 12) | (static_cast< u32 >(g) << 6) | (v & 63);
+                    c[0] = static_cast< u8 >(out >> 16);
+                    c[1] = static_cast< u8 >(out >> 8);
+                    c[2] = static_cast< u8 >(out);
+                } else {
+                    c[0] = c[1] = c[2] = static_cast< u8 >(luma(c[0], c[1], c[2]));
+                }
             }
             backup.written = hashOf(colours, bytes);
             sBackups[colours] = std::move(backup);
@@ -511,9 +534,6 @@ namespace {
         p[1] = static_cast< u8 >(v >> 16);
         p[2] = static_cast< u8 >(v >> 8);
         p[3] = static_cast< u8 >(v);
-    }
-    int luma(int r, int g, int b) {
-        return (r * 299 + g * 587 + b * 114) / 1000;
     }
 
     // Every byte range we change is backed up first (restored with the mod off).
@@ -720,6 +740,14 @@ namespace {
     constexpr GXColor kGem = {0xF4, 0xDC, 0x78, 0xFF};
     constexpr GXColor kCyan = {0x30, 0xC8, 0xD8, 0xFF};
     constexpr GXColor kCyanDark = {0x1C, 0x7C, 0x88, 0xFF};
+    constexpr GXColor kSwitch = {0x3C, 0x7C, 0xF0, 0xFF};
+    constexpr GXColor kSwitchBase = {0x50, 0x58, 0x64, 0xFF};
+
+    // A joint's world matrix by name (the root's when the model has no such joint).
+    MtxPtr jointMtx(const J3DModel* pModel, const char* pName) {
+        const s32 i = pModel->mModelData->mJointTree.mJointName->getIndex(pName);
+        return pModel->mMtxBuffer->mpAnmMtx[i >= 0 ? i : 0];
+    }
 
     // m * translate(c) * rotateX(90 degrees): a y-axis shape turned to face z.
     void facingZ(const Mtx m, const TVec3f& c, Mtx out) {
@@ -730,7 +758,8 @@ namespace {
         PSMTXConcat(out, r, out);
     }
 
-    void drawStandIn(Role role, const ModelInfo& rInfo, const Mtx m) {
+    void drawStandIn(Role role, const ModelInfo& rInfo, const J3DModel* pModel) {
+        const MtxPtr m = pModel->mMtxBuffer->mpAnmMtx[0];
         const TVec3f zero(0.0f, 0.0f, 0.0f);
         TVec3f lo(-60.0f, 0.0f, -60.0f), hi(60.0f, 120.0f, 60.0f);  // with no bounds
         if (rInfo.bounds) {
@@ -792,6 +821,15 @@ namespace {
             const f32 r = rInfo.bounds ? std::max(size.x, size.y) * 0.5f : 120.0f;
             GenericShapes::color(kCyan);
             GenericShapes::starPrism(m, rInfo.bounds ? mid : TVec3f(0.0f, 0.0f, 0.0f), r, r * 0.5f, r * 0.12f);
+            break;
+        }
+        case Role::ArrowSwitch: {
+            // ArrowSwitch.bdl: a block on "Base" and a flat arrow on "Head" (pointing along the
+            // joint's +y, 60 thick), which turns with the switch. Sizes from its joint bounds.
+            GenericShapes::color(kSwitchBase);
+            GenericShapes::box(jointMtx(pModel, "Base"), TVec3f(-75.0f, -74.0f, -42.0f), TVec3f(75.0f, 91.0f, 42.0f));
+            GenericShapes::color(kSwitch);
+            GenericShapes::arrowPrism(jointMtx(pModel, "Head"), 91.0f, 230.0f, 335.0f, 36.0f, 96.0f, 30.0f);
             break;
         }
         case Role::None:
@@ -877,7 +915,7 @@ namespace GenericWorld {
             return true;  // the stand-ins are opaque: nothing in the translucent pass
         }
         if (tracing()) {
-            static int sLogged[8] = {};
+            static int sLogged[16] = {};
             if (sLogged[static_cast< int >(info.role)]++ % 600 == 0) {
                 std::fprintf(stderr, "[generic-world] stand-in role %d: %d instance packets\n", static_cast< int >(info.role),
                              static_cast< int >(pBuffer->getShapeDrawerByIndex(0)->mNumPackets));
@@ -899,7 +937,7 @@ namespace GenericWorld {
             if (packet->mLightCtrl != nullptr) {
                 packet->mLightCtrl->loadLight();
             }
-            drawStandIn(info.role, info, model->mMtxBuffer->mpAnmMtx[0]);
+            drawStandIn(info.role, info, model);
         }
         GenericShapes::end();
         return true;

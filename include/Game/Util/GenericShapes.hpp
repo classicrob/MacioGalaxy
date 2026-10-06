@@ -25,6 +25,11 @@ namespace GenericShapes {
     void cylinder(const Mtx m, const TVec3f& c, f32 radius, f32 halfHeight);
     // A five-pointed star in m's xy plane (facing z), centre c, extruded halfDepth each way.
     void starPrism(const Mtx m, const TVec3f& c, f32 outer, f32 inner, f32 halfDepth);
+    // An axis-aligned box in m's space.
+    void box(const Mtx m, const TVec3f& lo, const TVec3f& hi);
+    // A flat arrow in m's xy plane pointing +y: a shaft (half width shaftHalf) from y0 to
+    // headY, then a head (half width headHalf) to the tip y1; extruded halfDepth along z.
+    void arrowPrism(const Mtx m, f32 y0, f32 headY, f32 y1, f32 shaftHalf, f32 headHalf, f32 halfDepth);
 }  // namespace GenericShapes
 
 #endif
