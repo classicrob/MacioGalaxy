@@ -14,19 +14,19 @@ namespace {
 
 constexpr int kCount = static_cast<int>(Mod::Count);
 constexpr const char* kNames[kCount] = {"CollectStarBits", "ShootEnemy", "OdysseyMovement", "Cappy", "OdysseyJumpDive",
-                                       "SkipCutscenes", "PointToMove", "GenericCharacter", "GenericWorld"};
+                                       "SkipCutscenes", "PointToMove", "GenericCharacter", "GenericWorld", "HideHud"};
 constexpr const char* kDescriptions[kCount] = {"Collect visible Star Bits", "Fire a Star Bit at the nearest enemy",
                                                "Odyssey movement", "Cappy", "Jump during a ground pound dives",
                                                "Hold Space to skip cutscenes and dialogue", "Point to move (hold left click)",
-                                               "Generic character (not Mario)", "Generic world (plain terrain and objects)"};
+                                               "Generic character (not Mario)", "Generic world (plain terrain and objects)", "Hide the HUD"};
 // The value of a mod with no line in mods.txt (a sub-option of another mod can
 // default on: it does nothing while its mod is off).
-constexpr bool kDefaults[kCount] = {false, false, false, false, true, false, false, false, false};
+constexpr bool kDefaults[kCount] = {false, false, false, false, true, false, false, false, false, false};
 // Input::Action::Count: the mod is a mode with no button of its own.
 constexpr Input::Action kActions[kCount] = {Input::Action::ModCollectStarBits, Input::Action::ModShootEnemy,
                                             Input::Action::Count, Input::Action::ModCappyThrow, Input::Action::Count,
                                             Input::Action::Count, Input::Action::Count, Input::Action::Count,
-                                            Input::Action::Count};
+                                            Input::Action::Count, Input::Action::Count};
 
 std::atomic<bool> gEnabled[kCount];
 std::mutex gFileMutex;
@@ -51,7 +51,7 @@ bool parseInto(const std::string& text, bool (&out)[kCount], std::string* error)
             if (key == kNames[i]) index = i;
         }
         if (index < 0 || (value != "on" && value != "off")) {
-            *error = "line " + std::to_string(number) + ": expected <CollectStarBits|ShootEnemy|OdysseyMovement|Cappy|OdysseyJumpDive|SkipCutscenes|PointToMove|GenericCharacter|GenericWorld>=on|off";
+            *error = "line " + std::to_string(number) + ": expected <CollectStarBits|ShootEnemy|OdysseyMovement|Cappy|OdysseyJumpDive|SkipCutscenes|PointToMove|GenericCharacter|GenericWorld|HideHud>=on|off";
             return false;
         }
         out[index] = value == "on";
