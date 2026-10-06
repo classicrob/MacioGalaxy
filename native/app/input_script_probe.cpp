@@ -6,7 +6,8 @@
 // only when the held set changes, so a key held across lines stays down.
 // PETARI_INPUT_SCRIPT_LOG=<csv>: one row per scripted frame: frame, line, held keys, Mario's position,
 // velocity and ground flag, and the camera's position and forward axis.
-// Logs "[input-script] start ..." and "[input-script] done after N frames".
+// Logs "[input-script] start ..." and "[input-script] done after N frames". The start also marks the image-dump
+// phase "input-script" (petari/efb_dump_mark.hpp), so PETARI_SURFACE_DUMP_LABELS=input-script dumps only the script.
 
 #include <cstdio>
 #include <cstdlib>
@@ -21,6 +22,7 @@
 #include "Game/Util/CameraUtil.hpp"
 #include "Game/Util/PlayerUtil.hpp"
 #include "Game/Util/SingletonHolder.hpp"
+#include "petari/efb_dump_mark.hpp"
 #include "petari/input.hpp"
 #include "smoke.hpp"
 
@@ -142,6 +144,9 @@ bool inputScriptFrame() {
         if (s.steady < s.steadyNeeded) return false;
         s.phase = Phase::Run;
         Input::focusChanged(true);  // keys count as a focused player's, as for the other probes
+        // Image dumps (PETARI_SURFACE_DUMP / PETARI_XFB_DUMP with _LABELS=input-script) count from here, so dump
+        // index N is script frame N (plus the presentation latency; see docs/dev/ODYSSEY_CAMERA.md).
+        PetariNative::EfbDump::mark("input-script");
         const TVec3f& pos = *MR::getPlayerPos();
         std::fprintf(stderr, "[input-script] start at (%.1f, %.1f, %.1f)\n", pos.x, pos.y, pos.z);
     }
