@@ -127,6 +127,12 @@ if(BUILD_TESTING)
     # The full one is skipped by itself when there is no compile_commands.json.
     if(NOT _petari_home_menu_standalone)
         find_program(PETARI_PYTHON3 python3)
+        find_program(PETARI_FFMPEG ffmpeg)
+        if(PETARI_PYTHON3 AND PETARI_FFMPEG)
+            # The demo-video tool (native/tools/demo_video): a synthetic run through sync + overlay + encode, no game.
+            add_test(NAME native_demo_video COMMAND ${PETARI_PYTHON3} ${PETARI_REPO_ROOT}/native/tools/demo_video/demo_video.py selftest)
+            set_tests_properties(native_demo_video PROPERTIES LABELS tools TIMEOUT 300)
+        endif()
         if(PETARI_PYTHON3)
             add_test(NAME native_array_index_audit_selftest
                 COMMAND ${PETARI_PYTHON3} ${PETARI_REPO_ROOT}/native/tools/array_index_audit.py --selftest)
