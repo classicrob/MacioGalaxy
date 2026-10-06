@@ -6,6 +6,54 @@
 #include "Game/Screen/StarPointerTarget.hpp"
 #include "Game/Util/LayoutUtil.hpp"
 
+#ifdef PETARI_NATIVE
+#include <petari/host_allocation.hpp>
+#include <petari/mods.hpp>
+#include <cstdlib>
+#include <cstring>
+#include <mutex>
+#include <unordered_map>
+
+namespace {
+    // The HideHud mod: the gameplay HUD layouts (by archive name), never drawn while it is on.
+    constexpr const char* kHudLayouts[] = {"CoinCounter",       "StarCounter",       "StarPieceCounter", "PlayerLeft",
+                                           "HitPointMeter",     "PurpleCoinCounter", "BlueChipCounter",  "YellowChipCounter",
+                                           "CollectCounter",    "StarPieceTargetMeter", "AirMeter",      "FlyMeter",
+                                           "SuddenDeathMeter",  "TimeLimit",         "BombTimer",        "DPDPointer",
+                                           "DPDPointerSub",     "DPDPointerNumber",  "PointerGuidance",  "TiltGuidance",
+                                           "OneUp",             "StageTitle",        "GalaxyNamePlate",  "Welcome"};
+    std::mutex sHudMutex;
+    std::unordered_map< const LayoutActor*, bool > sHud;  // every drawing layout notes its name, so a reused address is rewritten
+
+    bool hideHud() {
+        static const bool sForced = [] {
+            const char* v = std::getenv("PETARI_HIDE_HUD");
+            return v != nullptr && v[0] != '\0' && v[0] != '0';
+        }();
+        return sForced || PetariNative::Mods::enabled(PetariNative::Mods::Mod::HideHud);
+    }
+
+    void petariNoteHudLayout(const LayoutActor* pActor, const char* pName) {
+        bool hud = false;
+        for (const char* name : kHudLayouts) {
+            hud = hud || (pName != nullptr && std::strcmp(pName, name) == 0);
+        }
+        PetariNative::HostAllocationScope host;
+        std::lock_guard< std::mutex > lock(sHudMutex);
+        sHud[pActor] = hud;
+    }
+
+    bool petariHudHidden(const LayoutActor* pActor) {
+        if (!hideHud()) {
+            return false;
+        }
+        std::lock_guard< std::mutex > lock(sHudMutex);
+        const auto it = sHud.find(pActor);
+        return it != sHud.end() && it->second;
+    }
+}  // namespace
+#endif
+
 LayoutActor::LayoutActor(const char* pName, bool) : NameObj(pName), mLayoutManager(), mSpine(), mEffectKeeper(), mPointingTarget() {
 }
 
@@ -34,6 +82,11 @@ void LayoutActor::calcAnim() {
 }
 
 void LayoutActor::draw() const {
+#ifdef PETARI_NATIVE
+    if (petariHudHidden(this)) {
+        return;  // HideHud mod / PETARI_HIDE_HUD=1
+    }
+#endif
     if (MR::isExecuteDrawLayout(this)) {
         mLayoutManager->draw();
     }
@@ -109,14 +162,23 @@ MtxPtr LayoutActor::getPaneMtxRef(const char* pParam1) {
 
 void LayoutActor::initLayoutManager(const char* pName, u32 rootPaneAnimLayerNum) {
     mLayoutManager = new LayoutManager(pName, true, rootPaneAnimLayerNum, 0x100);
+#ifdef PETARI_NATIVE
+    petariNoteHudLayout(this, pName);
+#endif
 }
 
 void LayoutActor::initLayoutManagerNoConvertFilename(const char* pName, u32 rootPaneAnimLayerNum) {
     mLayoutManager = new LayoutManager(pName, false, rootPaneAnimLayerNum, 0x100);
+#ifdef PETARI_NATIVE
+    petariNoteHudLayout(this, pName);
+#endif
 }
 
 void LayoutActor::initLayoutManagerWithTextBoxBufferLength(const char* pName, u32 textBoxBufferLength, u32 rootPaneAnimLayerNum) {
     mLayoutManager = new LayoutManager(pName, false, rootPaneAnimLayerNum, textBoxBufferLength);
+#ifdef PETARI_NATIVE
+    petariNoteHudLayout(this, pName);
+#endif
 }
 
 void LayoutActor::initNerve(const Nerve* pNerve) {

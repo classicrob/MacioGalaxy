@@ -56,6 +56,9 @@ drawn; the `band` layout keeps the cropped aspect, so a wider crop uses more of 
 also `ctest -R native_demo_video`, label `tools`). Rehearse a script first with `--no-dump` (fast; check `-moves.log`
 and `-inputs.csv`).
 
+`--hide-hud` sets `PETARI_HIDE_HUD=1` for the run: the game's counters, lives, meters, pointer cursor and stage banners are
+hidden for a clean "generic" video (a build with the HideHud mod, wt/generic-world; menus and dialogue still show).
+
 Move log: `-moves.log` keeps the game's `[cappy]` / `[odyssey]` move lines. Add `--env PETARI_ODYSSEY_TRACE=1` to also
 keep the first frame of each Odyssey air move (`[odyssey] frame 1 kind N ...`; kind 6 = long jump).
 

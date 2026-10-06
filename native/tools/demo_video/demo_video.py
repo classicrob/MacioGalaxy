@@ -72,6 +72,26 @@ def send(directory, command, timeout):
 
 
 # ---------------------------------------------------------------- record
+def app_env(a, run, frames):
+    """The environment of the recording run: the host's PETARI_* variables dropped, the run's own set."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PETARI_")}
+    # PETARI_SMOKE is empty on purpose: a no-op for the app, but locked-app.sh treats an app run without PETARI_SMOKE= /
+    # --test-fixture as a person playing and collapses the lock slots to one.
+    env.update(PETARI_SMOKE="", PETARI_SMOKE_BACKGROUND="1", PETARI_OPEN_STAGE=a.stage, PETARI_OPEN_FILE="1", PETARI_OPEN_EDIT="0",
+               PETARI_STAGE_GATE_MS="0", PETARI_SMOKE_FRAMES="10000000", PETARI_TEST_SERVER=str(run / "server"), PETARI_FAST_BOOT="1",
+               PETARI_PIPELINE_GLOBAL_PRECOMPILE="0", SDL_AUDIODRIVER="dummy", PETARI_LOCK_CLASS="functional", PETARI_LOCK_TIMEOUT="5400",
+               PETARI_CAPPY_TRACE="1", PETARI_INPUT_SCRIPT=str(Path(a.script).resolve()), PETARI_INPUT_SCRIPT_LOG=str(run / "input.csv"))
+    if not a.no_dump:
+        env.update(PETARI_SURFACE_DUMP=str(run / "frames"), PETARI_SURFACE_DUMP_LABELS="input-script", PETARI_SURFACE_DUMP_EVERY="1",
+                   PETARI_SURFACE_DUMP_SPAN=str(frames + a.tail))
+    if getattr(a, "hide_hud", False):
+        env["PETARI_HIDE_HUD"] = "1"  # counters, lives, meters, pointer, 1-UP and stage banners hidden (menus/dialogue still show)
+    for kv in a.env:
+        k, v = kv.split("=", 1)
+        env[k] = v
+    return env
+
+
 def record(a, run):
     """Boot a private copy of a save into a stage, type the script, dump every script frame. Returns run.json's dict."""
     frames = script_frames(a.script)
@@ -84,19 +104,7 @@ def record(a, run):
     (run / "server/reply").mkdir()
     subprocess.run(["cp", "-cR", str(Path(a.save).resolve()), str(run / "user")], check=True)
     shutil.rmtree(run / "user/cache", ignore_errors=True)
-    env = {k: v for k, v in os.environ.items() if not k.startswith("PETARI_")}
-    # PETARI_SMOKE is empty on purpose: a no-op for the app, but locked-app.sh treats an app run without PETARI_SMOKE= /
-    # --test-fixture as a person playing and collapses the lock slots to one.
-    env.update(PETARI_SMOKE="", PETARI_SMOKE_BACKGROUND="1", PETARI_OPEN_STAGE=a.stage, PETARI_OPEN_FILE="1", PETARI_OPEN_EDIT="0",
-               PETARI_STAGE_GATE_MS="0", PETARI_SMOKE_FRAMES="10000000", PETARI_TEST_SERVER=str(run / "server"), PETARI_FAST_BOOT="1",
-               PETARI_PIPELINE_GLOBAL_PRECOMPILE="0", SDL_AUDIODRIVER="dummy", PETARI_LOCK_CLASS="functional", PETARI_LOCK_TIMEOUT="5400",
-               PETARI_CAPPY_TRACE="1", PETARI_INPUT_SCRIPT=str(Path(a.script).resolve()), PETARI_INPUT_SCRIPT_LOG=str(run / "input.csv"))
-    if not a.no_dump:
-        env.update(PETARI_SURFACE_DUMP=str(run / "frames"), PETARI_SURFACE_DUMP_LABELS="input-script", PETARI_SURFACE_DUMP_EVERY="1",
-                   PETARI_SURFACE_DUMP_SPAN=str(frames + a.tail))
-    for kv in a.env:
-        k, v = kv.split("=", 1)
-        env[k] = v
+    env = app_env(a, run, frames)
     cmd = [str(Path(a.lock)), a.owner, str(Path(a.app).resolve()), "--disc", str(a.disc), "--user", str(run / "user")]
     log = (run / "app.log").open("wb")
     t0 = time.time()
@@ -412,6 +420,11 @@ def selftest(_args):
         assert (dest / "selftest-sheet.png").stat().st_size > 10000
         assert (dest / "selftest-inputs.csv").exists() and (dest / "selftest-moves.log").exists()
         assert not list((run / "frames").glob("*.png")), "raw frames must be deleted as they are consumed"
+        # --hide-hud reaches the game, and --env can still override
+        ns = argparse.Namespace(stage="S", script=str(tmp / "keys.txt"), no_dump=True, tail=0, env=["PETARI_X=1"], hide_hud=True)
+        env = app_env(ns, tmp / "r", 10)
+        assert env["PETARI_HIDE_HUD"] == "1" and env["PETARI_X"] == "1" and env["PETARI_INPUT_SCRIPT"].endswith("keys.txt")
+        assert "PETARI_HIDE_HUD" not in app_env(argparse.Namespace(**{**vars(ns), "hide_hud": False}), tmp / "r", 10)
         # every box label fits inside its box when all seven action/camera boxes are in use
         probe_img = Image.new("RGB", (1280, 720))
         pd = ImageDraw.Draw(probe_img)
@@ -469,6 +482,9 @@ def add_run_args(p):
                    help="after a clean run, copy the warm pipeline_cache.db / dawn_cache.db into DIR (default: back into --save, "
                         "which must be a private copy) so the next run starts warm; 'none' disables")
     p.add_argument("--tail", type=int, default=60, help="frames dumped after the script ends")
+    p.add_argument("--hide-hud", action="store_true",
+                   help="PETARI_HIDE_HUD=1: hide the game's counters, lives, meters, pointer cursor and stage banners "
+                        "(needs a build with the HideHud mod, wt/generic-world)")
     p.add_argument("--no-dump", action="store_true", help="rehearsal: run the script and log, no frames (check moves.log / inputs.csv)")
     p.add_argument("--env", action="append", default=[], help="extra K=V for the app")
     p.add_argument("--timeout", type=int, default=1800)

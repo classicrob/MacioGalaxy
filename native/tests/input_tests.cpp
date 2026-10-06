@@ -2485,6 +2485,9 @@ void testMods() {
               std::string(Mods::name(Mods::Mod::GenericWorld)) == "GenericWorld",
           "GenericWorld defaults off, parses and is named");
     check(Mods::parse("GenericWorld=off\n", &error) && !Mods::enabled(Mods::Mod::GenericWorld), "GenericWorld turns off");
+    check(!Mods::enabled(Mods::Mod::HideHud) && Mods::parse("HideHud=on\n", &error) && Mods::enabled(Mods::Mod::HideHud) &&
+              Mods::parse("HideHud=off\n", &error) && !Mods::enabled(Mods::Mod::HideHud),
+          "HideHud defaults off, parses on and off");
     setenv("PETARI_MODS", "OdysseyMovement,-OdysseyJumpDive", 1);
     check(Mods::load("/nonexistent/petari-mods.txt", &error) && Mods::enabled(Mods::Mod::OdysseyMovement) &&
               !Mods::enabled(Mods::Mod::OdysseyJumpDive),

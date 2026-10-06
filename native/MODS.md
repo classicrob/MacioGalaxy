@@ -13,6 +13,7 @@ unmodified game and every test run behave exactly as before.
 | Hold Space to skip cutscenes and dialogue (`SkipCutscenes`) | none (hold Jump/A: Space, controller bottom button) | Holding A for 1.5 s skips the cutscene or dialogue on screen, and everything after it until you have control again: see "Skip cutscenes and dialogue" below. |
 | Generic character (`GenericCharacter`) | none (a look) | The player is drawn as a plain figure with Mario's proportions and animations instead of Mario: see "Generic character" below. |
 | Generic world (`GenericWorld`) | none (a look) | Terrain, sky and objects lose the game's look: plain textures, colours without hue, and plain shapes for common enemies and items: see "Generic world" below. |
+| Hide the HUD (`HideHud`) | none (a look) | No counters, meters, lives icon, pointer cursor or stage banners on screen: see "Hide the HUD" below. |
 | Level editor (`LevelEditor`) | a tap of Tab | Edit the galaxy you are in (docs/dev/level-editor/UX.md). A short tap of Tab, with nothing else pressed, freezes the game into Edit mode where the pause menu could open; another tap plays again. Holding Tab still tilts the remote. Remappable as `LevelEditor` in `controls.txt`. |
 
 ## Turning mods on
@@ -307,6 +308,15 @@ unchanged, so every shape still reads.
 
 `PETARI_GENERIC_WORLD_TRACE=1` logs each model rewritten and the stand-ins
 drawn.
+
+## Hide the HUD
+
+Turn on "Hide the HUD" (`HideHud=on`), or set `PETARI_HIDE_HUD=1` for one run
+(the demo video tool's `--hide-hud`). The gameplay HUD is then not drawn: the
+star, coin and Star Bit counters, the lives icon, the LIFE and other meters,
+the pointer cursor and its guidance, the 1-UP popup, and the stage and galaxy
+title banners. Menus, the pause menu, dialogue and cutscenes still show. The
+game behaves as before; only those layouts are not drawn.
 
 ## Skip cutscenes and dialogue
 
