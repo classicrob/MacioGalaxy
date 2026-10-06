@@ -22,6 +22,8 @@
 #include <JSystem/J3DGraphBase/J3DVertex.hpp>
 #include <JSystem/JUtility/JUTNameTab.hpp>
 #include <JSystem/JUtility/JUTTexture.hpp>
+#define PETARI_GENERIC_GREY_IMPL  // the real hooks are below
+#include <petari/generic_grey.hpp>
 #include <petari/host_allocation.hpp>
 #include <petari/mods.hpp>
 
@@ -810,6 +812,55 @@ namespace {
         return static_cast< u16 >((a << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
     }
 
+    // Any other layout texture (counters, the LIFE meter, menus): its colours lose their hue.
+    void greyLayoutTexture(u8* pTpl) {
+        const u32 imageNum = rd32(pTpl + 4), table = rd32(pTpl + 8);
+        for (u32 i = 0; i < imageNum && i < 16; ++i) {
+            const u8* header = pTpl + rd32(pTpl + table + i * 8);
+            const u32 paletteOffset = rd32(pTpl + table + i * 8 + 4);
+            const int h = rd16(header), w = rd16(header + 2);
+            const int fmt = static_cast< int >(rd32(header + 4));
+            u8* data = pTpl + rd32(header + 8);
+            u8* region = data;
+            u32 size = 0;
+            u8* palette = nullptr;
+            int palFmt = 0, palCount = 0;
+            if (paletteOffset != 0) {
+                const u8* ph = pTpl + paletteOffset;
+                palCount = rd16(ph);
+                palFmt = static_cast< int >(rd32(ph + 4));
+                palette = pTpl + rd32(ph + 8);
+                region = palette;
+                size = static_cast< u32 >(palCount) * 2;
+            } else {
+                Format f;
+                if (!formatOf(fmt, &f) || (fmt != GX_TF_RGB565 && fmt != GX_TF_RGB5A3 && fmt != GX_TF_RGBA8 && fmt != GX_TF_CMPR)) {
+                    continue;
+                }
+                size = static_cast< u32 >(((w + f.bw - 1) / f.bw) * ((h + f.bh - 1) / f.bh) * f.tileBytes);  // level 0 (HUD images have no mips)
+            }
+            if (size == 0) {
+                continue;
+            }
+            if (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::GenericWorld)) {
+                restore(region, size);
+                continue;
+            }
+            if (ours(region, size)) {
+                continue;
+            }
+            Backup backup;
+            backup.original.assign(region, region + size);
+            if (palette != nullptr) {
+                PetariNative::Grey::palette(palFmt, palCount, palette, palette + size);
+            } else {
+                PetariNative::Grey::texture(fmt, w, h, 1, data, data + size);
+            }
+            backup.written = hashOf(region, size);
+            sBackups[region] = std::move(backup);
+        }
+    }
+
     void rewriteIcon(u8* pTpl, const char* pName) {
         const Icon icon = iconFor(pName);
         if (icon == Icon::None || pTpl == nullptr) {
@@ -1106,12 +1157,21 @@ extern "C" bool petari_generic_world_grey_particles() {
 }
 
 extern "C" void petari_generic_world_layout_texture(void* pTpl, const char* pName) {
-    if (pTpl == nullptr || pName == nullptr || iconFor(pName) == Icon::None) {
+    if (pTpl == nullptr || pName == nullptr) {
         return;
     }
     PetariNative::HostAllocationScope host;
     std::lock_guard< std::mutex > lock(sMutex);
-    rewriteIcon(static_cast< u8* >(pTpl), pName);
+    if (iconFor(pName) != Icon::None) {
+        rewriteIcon(static_cast< u8* >(pTpl), pName);
+    } else {
+        greyLayoutTexture(static_cast< u8* >(pTpl));
+    }
+}
+
+// Layout material, vertex and text colours as they are drawn (nw4r lyt, ut::CharWriter).
+extern "C" std::uint32_t petari_generic_world_grey_rgba(std::uint32_t rgba) {
+    return GenericWorld::on() ? PetariNative::Grey::rgba(rgba) : rgba;
 }
 
 extern "C" bool petari_generic_world_grey_animation(const void* pAnimation) {

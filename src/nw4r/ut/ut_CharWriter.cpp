@@ -1,6 +1,12 @@
 #include "nw4r/ut/CharWriter.h"
 #include "nw4r/ut/Font.h"
 #include <revolution/gx/GXVert.h>
+#ifdef PETARI_NATIVE
+#include <petari/generic_grey.hpp>  // the Generic world mod: drawn colours without hue (a no-op while it is off)
+#define PETARI_GREY_RGBA(c) petari_generic_world_grey_rgba(static_cast< u32 >(c))
+#else
+#define PETARI_GREY_RGBA(c) (c)
+#endif
 
 namespace {
     void SetupGXCommon() {
@@ -190,19 +196,19 @@ namespace nw4r {
             GXBegin(GX_QUADS, GX_VTXFMT0, 4);
             {
                 GXPosition3f32(posLeft, posTop, posZ);
-                GXColor1u32(mVertexColor.lu);
+                GXColor1u32(PETARI_GREY_RGBA(mVertexColor.lu));
                 GXTexCoord2u16(texLeft, texTop);
 
                 GXPosition3f32(posRight, posTop, posZ);
-                GXColor1u32(mVertexColor.ru);
+                GXColor1u32(PETARI_GREY_RGBA(mVertexColor.ru));
                 GXTexCoord2u16(texRight, texTop);
 
                 GXPosition3f32(posRight, posBottom, posZ);
-                GXColor1u32(mVertexColor.rd);
+                GXColor1u32(PETARI_GREY_RGBA(mVertexColor.rd));
                 GXTexCoord2u16(texRight, texBottom);
 
                 GXPosition3f32(posLeft, posBottom, posZ);
-                GXColor1u32(mVertexColor.ld);
+                GXColor1u32(PETARI_GREY_RGBA(mVertexColor.ld));
                 GXTexCoord2u16(texLeft, texBottom);
             }
             GXEnd();

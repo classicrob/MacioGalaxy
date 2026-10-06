@@ -4,6 +4,12 @@
 #include <revolution/gx/GXGeometry.h>
 #include <revolution/gx/GXVert.h>
 #include <cstdio>
+#ifdef PETARI_NATIVE
+#include <petari/generic_grey.hpp>  // the Generic world mod: drawn colours without hue (a no-op while it is off)
+#define PETARI_GREY_RGBA(c) petari_generic_world_grey_rgba(static_cast< u32 >(c))
+#else
+#define PETARI_GREY_RGBA(c) (c)
+#endif
 
 namespace nw4r {
     namespace lyt {
@@ -126,7 +132,7 @@ namespace nw4r {
                 GXPosition2f32(basePt.x, basePt.y);
 
                 if (vtxColors) {
-                    GXColor1u32(vtxColors[0]);
+                    GXColor1u32(PETARI_GREY_RGBA(vtxColors[0]));
                 }
 
                 for (int i = 0; i < num; i++) {
@@ -136,7 +142,7 @@ namespace nw4r {
                 GXPosition2f32(basePt.x + size.width, basePt.y);
 
                 if (vtxColors) {
-                    GXColor1u32(vtxColors[1]);
+                    GXColor1u32(PETARI_GREY_RGBA(vtxColors[1]));
                 }
 
                 for (int i = 0; i < num; i++) {
@@ -146,7 +152,7 @@ namespace nw4r {
                 GXPosition2f32(basePt.x + size.width, basePt.y + size.height);
 
                 if (vtxColors) {
-                    GXColor1u32(vtxColors[3]);
+                    GXColor1u32(PETARI_GREY_RGBA(vtxColors[3]));
                 }
 
                 for (int i = 0; i < num; i++) {
@@ -156,7 +162,7 @@ namespace nw4r {
                 GXPosition2f32(basePt.x, basePt.y + size.height);
 
                 if (vtxColors) {
-                    GXColor1u32(vtxColors[2]);
+                    GXColor1u32(PETARI_GREY_RGBA(vtxColors[2]));
                 }
 
                 for (int i = 0; i < num; i++) {
