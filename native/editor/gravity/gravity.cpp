@@ -66,7 +66,7 @@ namespace PetariEditor::Gravity {
             for (int i = 0; i < 8; i++)
                 for (int j = 0; j < 3; j++)
                     if (!(i & (1 << j)))
-                        m.lines.push_back({p[i], p[i | (1 << j)], c});
+                        m.lines.push_back({p[i], p[i | (1 << j)], c});  // audit-ok: i < 8, bit j of i is clear and j < 3, so i | (1 << j) <= 7
             const int faces[6][4] = {{0, 1, 3, 2}, {4, 6, 7, 5}, {0, 4, 5, 1}, {2, 3, 7, 6}, {0, 2, 6, 4}, {1, 5, 7, 3}};
             for (auto& q : faces) {
                 m.triangles.push_back({p[q[0]], p[q[1]], p[q[2]], (c & 0xffffff) | 0x16000000});

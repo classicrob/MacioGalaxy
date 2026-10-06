@@ -110,7 +110,7 @@ namespace PetariEditor::Playtest {
                 const auto p = v(s.position) + b.y * 12;
                 const G::V3 corners[] = {p + b.y * 22, p + b.x * 16, p - b.y * 22, p - b.x * 16};
                 for (int j = 0; j < 4; ++j)
-                    mesh.lines.push_back({vec(corners[j]), vec(corners[(j + 1) % 4]), 0xff7beeff, 3});
+                    mesh.lines.push_back({vec(corners[j]), vec(corners[(j + 1) % 4]), 0xff7beeff, 3});  // audit-ok: (j + 1) % 4 is 0..3 and corners has 4 entries
             }
         }
         return mesh;
