@@ -62,6 +62,9 @@ namespace {
 
     std::mutex sMutex;
     std::unordered_map< const J3DModelData*, ModelInfo > sModels;
+    // Colour (TEV register) animations from non-player archives, by address. Read every frame by
+    // J3D, written at load: the flag per address lives in a map under the same mutex.
+    std::unordered_map< const void*, bool > sGreyAnimations;
 
     bool tracing() {
         static const bool sOn = std::getenv("PETARI_GENERIC_WORLD_TRACE") != nullptr;
@@ -116,7 +119,7 @@ namespace {
     constexpr Rgb kTones[3][2] = {
         {{0x70, 0x7C, 0x88}, {0x60, 0x6C, 0x78}},  // slate (dark originals)
         {{0x94, 0x96, 0x90}, {0x80, 0x82, 0x7C}},  // stone
-        {{0xAE, 0xA4, 0x90}, {0x9A, 0x90, 0x7C}},  // sand (bright originals)
+        {{0xAC, 0xAA, 0xA4}, {0x98, 0x96, 0x90}},  // light (bright originals)
     };
     constexpr Rgb kSkyBase = {0x0C, 0x10, 0x22};
     constexpr Rgb kSkyStar = {0xE8, 0xEC, 0xFF};
@@ -700,6 +703,150 @@ namespace {
         }
     }
 
+    // ---- HUD icons (layout TPL textures, RGB5A3) ------------------------------
+
+    enum class Icon { None, Head, Star, Coin, Gem };
+
+    Icon iconFor(const char* pName) {
+        const std::string n = lower(pName);
+        if (n == "mymarios.tpl" || n == "myluigi.tpl") {
+            return Icon::Head;  // the lives counter: the player's head
+        }
+        if (n == "imiconstar.tpl") {
+            return Icon::Star;
+        }
+        if (n == "myiconcoin.tpl") {
+            return Icon::Coin;
+        }
+        if (n == "myiconstarpiece.tpl" || n == "myicontotalstarpiece.tpl") {
+            return Icon::Gem;
+        }
+        return Icon::None;
+    }
+
+    struct Rgba {
+        u8 r, g, b, a;
+    };
+
+    bool insideStar(f32 x, f32 y, f32 outer, f32 inner) {
+        // Point in the 10-point star outline centred at the origin (point up), by crossings.
+        f32 px[10], py[10];
+        for (int i = 0; i < 10; ++i) {
+            const f32 a = 6.2831853f * i / 10.0f;
+            const f32 r = (i & 1) != 0 ? inner : outer;
+            px[i] = std::sin(a) * r;
+            py[i] = -std::cos(a) * r;
+        }
+        bool in = false;
+        for (int i = 0, j = 9; i < 10; j = i++) {
+            if (((py[i] > y) != (py[j] > y)) && (x < (px[j] - px[i]) * (y - py[i]) / (py[j] - py[i]) + px[i])) {
+                in = !in;
+            }
+        }
+        return in;
+    }
+
+    // The icon's colour at (u, v) in 0..1 (v down); alpha 0 outside.
+    Rgba iconAt(Icon icon, f32 u, f32 v) {
+        const f32 x = u - 0.5f, y = v - 0.5f;
+        auto ellipse = [](f32 dx, f32 dy, f32 rx, f32 ry) { return (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) <= 1.0f; };
+        switch (icon) {
+        case Icon::Head: {
+            // GenericCharacter's head and bucket hat (GenericFigure.cpp colours).
+            if ((y < -0.06f && ellipse(x, y + 0.06f, 0.30f, 0.28f)) || (std::fabs(y + 0.03f) <= 0.045f && std::fabs(x) <= 0.44f)) {
+                return {0x6C, 0x7A, 0x88, 0xFF};  // hat
+            }
+            if (ellipse(x, y - 0.12f, 0.31f, 0.33f)) {
+                return {0xF4, 0xEA, 0xDE, 0xFF};  // head
+            }
+            return {0, 0, 0, 0};
+        }
+        case Icon::Star:
+            if (insideStar(x, y, 0.46f, 0.20f)) {
+                return insideStar(x, y, 0.36f, 0.15f) ? Rgba{0xF2, 0xC8, 0x30, 0xFF} : Rgba{0xB0, 0x88, 0x18, 0xFF};
+            }
+            return {0, 0, 0, 0};
+        case Icon::Coin:
+            if (ellipse(x, y, 0.36f, 0.44f)) {
+                return ellipse(x, y, 0.26f, 0.34f) ? Rgba{0xF0, 0xC8, 0x3C, 0xFF} : Rgba{0xB8, 0x8C, 0x1C, 0xFF};
+            }
+            return {0, 0, 0, 0};
+        case Icon::Gem:
+            if (std::fabs(x) / 0.30f + std::fabs(y) / 0.42f <= 1.0f) {
+                return (std::fabs(x + 0.06f) / 0.14f + std::fabs(y + 0.12f) / 0.18f <= 1.0f) ? Rgba{0xFF, 0xF4, 0xC0, 0xFF}
+                                                                                          : Rgba{0xE6, 0xCC, 0x6A, 0xFF};
+            }
+            return {0, 0, 0, 0};
+        case Icon::None:
+            break;
+        }
+        return {0, 0, 0, 0};
+    }
+
+    // 4x4 supersampled: colour of the covered samples, alpha = coverage.
+    u16 iconTexel5A3(Icon icon, int px, int py, int w, int h) {
+        int r = 0, g = 0, b = 0, n = 0;
+        for (int sy = 0; sy < 4; ++sy) {
+            for (int sx = 0; sx < 4; ++sx) {
+                const Rgba c = iconAt(icon, (px + (sx + 0.5f) / 4.0f) / w, (py + (sy + 0.5f) / 4.0f) / h);
+                if (c.a != 0) {
+                    r += c.r;
+                    g += c.g;
+                    b += c.b;
+                    ++n;
+                }
+            }
+        }
+        if (n == 0) {
+            return 0;
+        }
+        r /= n;
+        g /= n;
+        b /= n;
+        if (n == 16) {
+            return static_cast< u16 >(0x8000 | ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+        }
+        const int a = std::min(7, n * 8 / 16);
+        return static_cast< u16 >((a << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+    }
+
+    void rewriteIcon(u8* pTpl, const char* pName) {
+        const Icon icon = iconFor(pName);
+        if (icon == Icon::None || pTpl == nullptr) {
+            return;
+        }
+        const u32 imageNum = rd32(pTpl + 4), table = rd32(pTpl + 8);
+        for (u32 i = 0; i < imageNum && i < 4; ++i) {
+            const u8* header = pTpl + rd32(pTpl + table + i * 8);
+            const int h = rd16(header), w = rd16(header + 2);
+            const u32 fmt = rd32(header + 4);
+            u8* data = pTpl + rd32(header + 8);
+            if (fmt != GX_TF_RGB5A3 || w <= 0 || h <= 0 || w > 256 || h > 256) {
+                continue;
+            }
+            const u32 size = static_cast< u32 >(((w + 3) / 4) * ((h + 3) / 4) * 32);
+            if (!PetariNative::Mods::enabled(PetariNative::Mods::Mod::GenericWorld)) {
+                restore(data, size);
+                continue;
+            }
+            if (ours(data, size)) {
+                continue;
+            }
+            Backup backup;
+            backup.original.assign(data, data + size);
+            u8* t = data;
+            for (int ty = 0; ty < (h + 3) / 4; ++ty) {
+                for (int tx = 0; tx < (w + 3) / 4; ++tx) {
+                    for (int k = 0; k < 16; ++k, t += 2) {
+                        wr16(t, iconTexel5A3(icon, tx * 4 + k % 4, ty * 4 + k / 4, w, h));
+                    }
+                }
+            }
+            backup.written = hashOf(data, size);
+            sBackups[data] = std::move(backup);
+        }
+    }
+
     // ---- Bounds ------------------------------------------------------------
 
     bool vertexBounds(J3DModelData* pData, TVec3f* pMin, TVec3f* pMax) {
@@ -888,6 +1035,15 @@ namespace GenericWorld {
         }
     }
 
+    void onAnimation(const void* pAnimation, const char* pArchive) {
+        if (pAnimation == nullptr) {
+            return;
+        }
+        PetariNative::HostAllocationScope host;
+        std::lock_guard< std::mutex > lock(sMutex);
+        sGreyAnimations[pAnimation] = !isPlayer(baseName(pArchive));  // a new one at a freed one's address replaces it
+    }
+
     void onModelFile(void* pFile, const char* pArchive) {
         if (pFile == nullptr || isPlayer(baseName(pArchive))) {
             return;
@@ -943,5 +1099,23 @@ namespace GenericWorld {
         return true;
     }
 }  // namespace GenericWorld
+
+extern "C" void petari_generic_world_layout_texture(void* pTpl, const char* pName) {
+    if (pTpl == nullptr || pName == nullptr || iconFor(pName) == Icon::None) {
+        return;
+    }
+    PetariNative::HostAllocationScope host;
+    std::lock_guard< std::mutex > lock(sMutex);
+    rewriteIcon(static_cast< u8* >(pTpl), pName);
+}
+
+extern "C" bool petari_generic_world_grey_animation(const void* pAnimation) {
+    if (!GenericWorld::on()) {
+        return false;
+    }
+    std::lock_guard< std::mutex > lock(sMutex);
+    const auto it = sGreyAnimations.find(pAnimation);
+    return it != sGreyAnimations.end() && it->second;
+}
 
 #endif
