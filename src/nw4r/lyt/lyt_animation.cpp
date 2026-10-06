@@ -11,6 +11,8 @@
 #ifdef PETARI_NATIVE
 // Game/System/GenericWorld.cpp: the Generic world mod's plain HUD icons (lives, star, coin, Star Bit).
 extern "C" void petari_generic_world_layout_texture(void* pTpl, const char* pName);
+// The default, for programs without the game (layout tests): no change. The game's definition replaces it.
+extern "C" __attribute__((weak)) void petari_generic_world_layout_texture(void*, const char*) {}
 #endif
 
 const f32 R_SAME_TOLERANCE = 1.0e-5F;

@@ -8,6 +8,10 @@
 #ifdef PETARI_NATIVE
 // Game/System/GenericWorld.cpp: true for a colour animation from a non-player archive while the mod is on.
 extern "C" bool petari_generic_world_grey_animation(const void* pAnimation);
+// The default, for programs without the game (the J3D tests): no change. The game's definition replaces it.
+extern "C" __attribute__((weak)) bool petari_generic_world_grey_animation(const void*) {
+    return false;
+}
 #endif
 
 // Key-framed rotations are stored scaled down by 2^mDecShift. Shifting a negative value left
