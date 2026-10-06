@@ -244,10 +244,12 @@ are the game's.
   plain white ghost with the same hat (the Boo Mario model is hidden).
 - **Cappy** (with the Cappy mod): the thrown cap is the figure's hat, spinning
   and growing as Cappy does, and the head is bare while it is out.
-- **Not drawn with the mod on:** Mario's reflection in mirror floors, the
-  rainbow afterimages, and the light-blue see-through-walls silhouette (the
-  game builds it from Mario's own models), so the figure is hidden behind walls
-  like any other object.
+- **Not drawn with the mod on:** Mario's own reflection model (the extra copy
+  of him that some reflective surfaces draw), the rainbow afterimages, and the
+  light-blue see-through-walls silhouette (the game builds it from Mario's own
+  models), so the figure is hidden behind walls like any other object. Floors
+  that show a distorted copy of the whole screen, such as Freezeflame's ice,
+  show the figure there, as they show everything else.
 - **Still Mario:** his voice, the HUD and life-meter icons, the ground shadow (a
   soft blob from Mario's shadow model), characters in cutscenes that are
   separate models rather than the player, the Cosmic Mario racer, and dialogue
