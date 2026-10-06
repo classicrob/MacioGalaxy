@@ -34,9 +34,22 @@ videos). Either way: gold key caps for moves, blue for camera keys, a timeline (
 back, 60 ahead dimmed), and a "MOVING + CAMERA AT THE SAME TIME" badge.
 
 ## Sync
-Script frame f is drawn on dump frame f + latency. The tool measures the latency on every run (first logged state change
-vs first changed image) and `--latency auto` (default) uses it; it warns if a forced `--latency N` is off by more than 1.
-`demo_video.py sync <run dir>` measures a kept run.
+Script frame f is drawn on dump frame f + latency (`--latency`, default 1 = the shape-garden / le-main build, measured by
+Shape Garden, Orbit Run and `calibrate`). It is a constant of a build, not of a run: calibrate a new build once with
+
+    python3 native/tools/demo_video/demo_video.py calibrate --app <binary> --save <save copy, OdysseyCamera=on> --stage <Galaxy>
+
+(an idle character, one camera key: the camera onset is crisp in the log and in the picture; prints `{"latency": N}`).
+It is deliberately not measured from a real demo: ramping, overlapping motion cannot pin a 1-2 frame offset.
+
+## Warm shader caches
+After a clean run the warm `pipeline_cache.db` / `dawn_cache.db` are backed up (SQLite backup, consistent) back into the
+`--save` copy (`--seed-caches DIR` to put them elsewhere, `none` to disable), so the next run starts warm instead of
+recooking shaders. `--save` must therefore be a private copy.
+
+## Framing
+`--crop x,y,w,h` (in dump pixels; dumps are the window size, e.g. 2048x1152 or 2560x1440) crops the scene before it is
+drawn; the `band` layout keeps the cropped aspect, so a wider crop uses more of the width and shrinks less.
 
 ## Pieces
 `record` (run + dump), `render` (overlay + encode + sheet from a run dir), `sync`, `selftest` (synthetic run, no game;

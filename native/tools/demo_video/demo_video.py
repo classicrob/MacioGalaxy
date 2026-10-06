@@ -24,9 +24,10 @@ path a person's keyboard takes, no warps or test-server pad. The script starts o
 Key names and bindings: keys.py. The app must contain the dump mark (the probe marks "input-script" when the script
 starts, so dump index N is script frame N + a small presentation latency).
 
-SYNC. The overlay draws script frame f on dump frame f + latency. The tool measures that latency on every run: the first
-frame where the logged state changes (position or camera) against the first dump frame whose image changes, and warns
-when the latency it used is off by more than a frame. --latency auto (the default) uses the measured value.
+SYNC. The overlay draws script frame f on dump frame f + latency (--latency, default 1: the build's presentation latency,
+a constant of the pipeline). Calibrate a build once with `calibrate` (an idle character and one camera key: the camera
+onset is crisp in both the input log and the picture). Real demo runs have ramping, overlapping motion, so their latency
+is not measured from the footage; check the sheet and a key press against the overlay instead.
 """
 import argparse
 import csv
@@ -186,27 +187,33 @@ def small_gray(path):
     return list(Image.open(path).convert("L").resize((160, 90)).getdata())
 
 
-def measure_latency(run, rows, search=40):
-    """Dump-frame offset of the script: (first image change) - (first logged state change), or None if nothing moves."""
-    c = first_state_change(rows)
-    if c is None or c < 2:
-        return None, c
+def onset_latency(run, rows, quiet=20, search=20):
+    """Dump frames between a script frame and its picture, from the one crisp event a calibration run has: an idle
+    character, then a camera key. latency = (first dump frame whose picture differs from the one before it) - (first
+    script frame whose logged camera moved). Returns None when the run has no such isolated onset (a real demo does not:
+    its motion ramps and overlaps, so do not use this on one; run `calibrate` once per build instead)."""
+    cam = ("cam_x", "cam_y", "cam_z")
+    c = next((int(r["frame"]) for r in rows if _dist(rows[0], r, cam) > 1.0), None)
+    if c is None or c < quiet:
+        return None
     frames = run / "frames"
-    last = c + search
-    base = small_gray(frames / "surface-input-script-0.png")
-    diffs = []
-    for i in range(0, last):
+    grays = {}
+    for i in range(0, c + search + 1):
         p = frames / f"surface-input-script-{i}.png"
         if not p.exists():
-            break
-        g = small_gray(p)
-        diffs.append(sum(abs(x - y) for x, y in zip(g, base)) / len(g))
-    quiet = diffs[:max(1, c - 1)]  # frames before anything moves: the noise floor (idle animation, fades)
-    threshold = max(0.12, max(quiet) * 3)  # a character moving alone is ~0.2 on this scale; a camera move is far more
-    for i, v in enumerate(diffs):
-        if i >= 1 and v > threshold and (i >= c - 1):
-            return i - c, c
-    return None, c
+            return None
+        grays[i] = small_gray(p)
+    diff = {i: sum(abs(x - y) for x, y in zip(grays[i], grays[i - 1])) / len(grays[i]) for i in range(1, c + search + 1)}
+    noise = max(diff[i] for i in range(1, c - 1))  # the character is idle until then: whatever moves is background
+    threshold = max(0.3, noise * 5)
+    for d in range(c - 1, c + search + 1):
+        if diff[d] > threshold:
+            return d - c
+    return None
+
+
+def _dist(r0, r1, keys):
+    return sum((float(r1[k]) - float(r0[k])) ** 2 for k in keys) ** 0.5
 
 
 # ---------------------------------------------------------------- render
@@ -267,19 +274,10 @@ def render(run, slug, a, dest):
     """Overlay + encode + sheet from a run dir (input.csv + frames/). Returns the info dict."""
     rows = read_rows(run)
     all_frames = [set() if r["keys"] == "-" else set(r["keys"].split("+")) for r in rows]
-    latency, change = (None, None)
-    if (run / "frames" / "surface-input-script-0.png").exists():
-        latency, change = measure_latency(run, rows)
-    wanted = a.latency
-    if wanted == "auto":
-        used = latency if latency is not None and 0 <= latency <= 6 else DEFAULT_LATENCY
-    else:
-        used = int(wanted)
-    warn = None
-    if latency is not None and abs(latency - used) > 1:
-        warn = f"measured latency {latency} but drawing with {used}: the overlay may be off by {abs(latency - used)} frames"
-        print("[demo_video] WARNING:", warn, flush=True)
-    print(f"[demo_video] sync: first state change at script frame {change}, measured latency {latency}, using {used}", flush=True)
+    used = int(a.latency)
+    change = first_state_change(rows)
+    latency, warn = None, None
+    print(f"[demo_video] sync: script frame f is drawn on dump frame f + {used} (the first logged state change is frame {change})", flush=True)
 
     dest.mkdir(parents=True, exist_ok=True)
     outs = [(dest / f"{slug}.mp4", None, 1)]
@@ -318,7 +316,7 @@ def render(run, slug, a, dest):
             shutil.copyfile(run / name, dest / target)
     sheet = dest / f"{slug}-sheet.png"
     contact_sheet(outs[0][0], sheet)
-    return dict(frames_drawn=done, latency_measured=latency, latency_used=used, first_state_change=change, warning=warn,
+    return dict(frames_drawn=done, latency_used=used, first_state_change=change, warning=warn,
                 outputs=[str(p) for p, _, _ in outs] + [str(sheet)])
 
 
@@ -392,12 +390,13 @@ def selftest(_args):
             img.save(run / "frames" / f"surface-input-script-{i}.png")
         (run / "moves.log").write_text("[input-script] start\n[input-script] done after 70 frames\n")
         shutil.copytree(run, tmp / "run_src")
-        measured, change = measure_latency(run, read_rows(run))
-        assert change == start and measured == latency, (measured, change)
-        a = argparse.Namespace(latency="auto", highlight="10-40", slow=True, crop="", title="Selftest", keep_run=False, layout="band")
+        assert first_state_change(read_rows(run)) == start
+        measured = onset_latency(run, read_rows(run))
+        assert measured == latency, measured
+        a = argparse.Namespace(latency=str(latency), highlight="10-40", slow=True, crop="", title="Selftest", keep_run=False, layout="band")
         dest = tmp / "out"
         info = render(run, "selftest", a, dest)
-        assert info["latency_used"] == latency and info["warning"] is None, info
+        assert info["latency_used"] == latency, info
         main = probe(dest / "selftest.mp4")
         assert (main["codec"], main["width"], main["height"], main["pix_fmt"]) == ("h264", 1280, 720, "yuv420p"), main
         assert main["fps"] == "60/1" and abs(main["seconds"] - n / 60) < 0.05, main
@@ -414,12 +413,11 @@ def selftest(_args):
         scene_rows = 720 - overlay.reserved_height(overlay.used_keys(plan.frames))
         assert canvas.crop((0, 0, 1280, scene_rows)).getbbox() is None, "the band layout drew over the scene area"
         assert canvas.crop((0, scene_rows, 1280, 720)).getbbox() is not None
-        # a second run drawn in the overlay layout, with a deliberately wrong forced latency: it must warn
+        # a second run drawn in the overlay layout
         run2 = tmp / "run2"
         shutil.copytree(tmp / "run_src", run2)
-        a2 = argparse.Namespace(latency="5", highlight="", slow=False, crop="", title="", keep_run=False, layout="overlay")
+        a2 = argparse.Namespace(latency="1", highlight="", slow=False, crop="", title="", keep_run=False, layout="overlay")
         info2 = render(run2, "selftest2", a2, tmp / "out2")
-        assert info2["warning"] and info2["latency_measured"] == latency, info2
         assert probe(tmp / "out2" / "selftest2.mp4")["height"] == 720
         # warm caches are copied consistently into the seed dir
         import sqlite3
@@ -453,9 +451,40 @@ def add_run_args(p):
     p.add_argument("--timeout", type=int, default=1800)
 
 
+CALIBRATION_SCRIPT = "40\n12 L\n40\n"  # idle, orbit the camera for 12 frames, idle
+
+
+def add_run_args_for_calibrate(p):
+    p.add_argument("--app", required=True)
+    p.add_argument("--save", required=True)
+    p.add_argument("--stage", required=True)
+    p.add_argument("--owner", default="video")
+    p.add_argument("--lock", default=str(MAIN / "build/locked-app.sh"))
+    p.add_argument("--disc", default=str(MAIN / "build/game-data/RMGE01"))
+    p.add_argument("--timeout", type=int, default=1800)
+
+
+def calibrate(a):
+    """Run the calibration script once and print this build's latency (needs the camera mod on in the save's camera.txt)."""
+    import tempfile
+    work = Path(a.out).resolve() if a.out else Path(tempfile.mkdtemp(prefix="demo_video_cal_"))
+    work.mkdir(parents=True, exist_ok=True)
+    script = work / "calibration-keys.txt"
+    script.write_text(CALIBRATION_SCRIPT)
+    run = work / "run"
+    args = argparse.Namespace(script=str(script), tail=40, no_dump=False, env=[], seed_caches="none", **{k: getattr(a, k) for k in (
+        "app", "save", "stage", "owner", "lock", "disc", "timeout")})
+    info = record(args, run)
+    latency = onset_latency(run, read_rows(run)) if info["ok"] else None
+    print(json.dumps(dict(latency=latency, **info)))
+    shutil.rmtree(work, ignore_errors=True)
+    return 0 if latency is not None else 1
+
+
 def add_render_args(p):
     p.add_argument("--title", default="")
-    p.add_argument("--latency", default="auto", help="dump frames between a script frame and its picture; 'auto' measures it")
+    p.add_argument("--latency", default=str(DEFAULT_LATENCY), help="dump frames between a script frame and its picture (calibrated "
+                   "per build with `calibrate`; 1 on the shape-garden / le-main builds)")
     p.add_argument("--layout", choices=("band", "overlay"), default="band",
                    help="band: the scene is scaled into the area above the input band, nothing covers it (default); "
                         "overlay: translucent strip + timeline over the bottom of the scene (the first orbit videos)")
@@ -482,8 +511,11 @@ def main():
     d.add_argument("--slug", required=True)
     d.add_argument("--out-root", default=str(LEVELS))
     add_render_args(d)
-    s = sub.add_parser("sync", help="measure the dump/input latency of a run dir")
+    s = sub.add_parser("sync", help="measure the latency of a CALIBRATION run dir (idle, then one camera key)")
     s.add_argument("run")
+    c = sub.add_parser("calibrate", help="measure this build's dump latency: an idle character and one camera key, no video")
+    c.add_argument("--out", default="")
+    add_run_args_for_calibrate(c)
     sub.add_parser("selftest", help="synthetic run through sync + render (needs ffmpeg; no game)")
     a = ap.parse_args()
 
@@ -491,9 +523,10 @@ def main():
         sys.exit(selftest(a))
     if a.cmd == "sync":
         run = Path(a.run)
-        lat, change = measure_latency(run, read_rows(run))
-        print(json.dumps(dict(first_state_change=change, latency=lat)))
+        print(json.dumps(dict(latency=onset_latency(run, read_rows(run)))))
         return
+    if a.cmd == "calibrate":
+        sys.exit(calibrate(a))
     if a.cmd == "render":
         run = Path(a.run).resolve()
         dest = Path(a.out_root) / a.slug
