@@ -412,6 +412,14 @@ def selftest(_args):
         assert (dest / "selftest-sheet.png").stat().st_size > 10000
         assert (dest / "selftest-inputs.csv").exists() and (dest / "selftest-moves.log").exists()
         assert not list((run / "frames").glob("*.png")), "raw frames must be deleted as they are consumed"
+        # every box label fits inside its box when all seven action/camera boxes are in use
+        probe_img = Image.new("RGB", (1280, 720))
+        pd = ImageDraw.Draw(probe_img)
+        wbox = (1280 - 150 - 10) // len(overlay.BOXES) - 8
+        for _, label, name, _ in overlay.BOXES:
+            for text, fonts in ((name, (overlay.bold, overlay.small, overlay.tiny)), (label, (overlay.cap, overlay.bold, overlay.small))):
+                font = overlay.fit_font(pd, text, wbox - 20, fonts)
+                assert pd.textlength(text, font=font) <= wbox - 20 or font is fonts[-1], (text, wbox)
         # band layout: nothing is drawn above the reserved band, whatever keys are held
         canvas = Image.new("RGB", (1280, 720), (0, 0, 0))
         overlay.draw(canvas, 35, plan.frames[35], plan.frames, "Selftest", overlay.used_keys(plan.frames), band=True)
