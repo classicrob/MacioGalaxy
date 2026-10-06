@@ -23,6 +23,7 @@ enum class Mod : int {
     PointToMove,      // hold left click: Mario runs toward the pointer (petari/point_move.hpp); no button of its own
     GenericCharacter, // the player is drawn as a plain figure, not Mario (Game/Player/GenericFigure.hpp); no button
     GenericWorld,     // plain terrain, sky and object stand-ins (Game/System/GenericWorld.hpp); no button
+    HideHud,          // no HUD (counters, meters, pointer); PETARI_HIDE_HUD=1 forces it on (LayoutActor.cpp); no button
     Count
 };
 
