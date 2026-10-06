@@ -79,7 +79,7 @@ int main() try {
     reset(5000000000);
     check(PetariNative::App::preparePipelines(window), "cold preparation failed");
     check(drawn >= 178 && drawn <= 183 && ended == drawn, "startup did not present at 60 Hz after reveal delay");
-    check(updates > 295 && gotFocus && title == "Super Mario Galaxy", "events, focus or title not restored");
+    check(updates > 295 && gotFocus && title == "MacioGalaxy", "events, focus or title not restored");
     check(!views.empty() && views.back().remainingSeconds >= 0, "remaining-time estimate was never populated");
     reset(5000000000);
     eventWorkNs = 2000000;

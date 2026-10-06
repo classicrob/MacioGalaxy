@@ -54,12 +54,16 @@ if(NOT _petari_app_standalone)
     target_link_libraries(petari PRIVATE petari_app_host petari_app_platform aurora::core aurora::main SQLite::SQLite3)
     # A real bundle identity: macOS uses it for the Dock/menu name, window state,
     # permissions and app identification. User data stays at the explicit path in app_main.
+    # The product is MacioGalaxy: the Dock and menu-bar name (CFBundleName, CFBundleDisplayName) and the window title.
+    # The executable, the .app file name and the bundle identifier stay "Petari": scripts, locks and the saved
+    # window state depend on them (see Info.plist.in).
     set_target_properties(petari PROPERTIES OUTPUT_NAME "Petari"
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
         MACOSX_BUNDLE_GUI_IDENTIFIER "dev.petari.Petari"
-        MACOSX_BUNDLE_BUNDLE_NAME "Petari"
+        MACOSX_BUNDLE_BUNDLE_NAME "MacioGalaxy"
         MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
-        MACOSX_BUNDLE_INFO_STRING "Petari: native Super Mario Galaxy for macOS")
+        MACOSX_BUNDLE_INFO_STRING "MacioGalaxy: native Super Mario Galaxy for macOS")
     set(PETARI_PIPELINE_STAGE_SEEDS "${CMAKE_SOURCE_DIR}/build/pipeline-seeds" CACHE PATH
         "Offline-generated per-stage Aurora configuration manifests")
     # Clones start from the tracked pack (native/data/pipeline-seeds.v*.xz). Locally generated seeds (no
