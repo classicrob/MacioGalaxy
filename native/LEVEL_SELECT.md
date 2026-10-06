@@ -4,7 +4,7 @@ Start the game with `--stage` and, optionally, `--scenario` (the mission
 number, default 1):
 
 ```sh
-./Play\ Petari.command --stage good-egg --scenario 2
+./Play\ MacioGalaxy.command --stage good-egg --scenario 2
 # or
 build/macos-gx/native/app/Petari.app/Contents/MacOS/Petari --disc build/game-data/RMGE01 --stage good-egg --scenario 2
 ```

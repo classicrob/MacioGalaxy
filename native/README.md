@@ -1,7 +1,7 @@
-# Native Apple Silicon port
+# Native Apple Silicon port (MacioGalaxy)
 
-This is an in-progress source port of Petari at `e5bc761c0`, whose commit marks the
-completed SMG1 decompilation. **The opening is playable on Apple Silicon;
+MacioGalaxy is an in-progress source port of the SMGCommunity Petari decompilation at
+`e5bc761c0`, whose commit marks the completed SMG1 decompilation. **The opening is playable on Apple Silicon;
 full-game compatibility remains in progress.**
 The upstream README's decompilation progress wording does not describe this fork's
 native-port progress. Native compilation and successful game behavior are separate
@@ -24,10 +24,10 @@ with its chord table. Focused
 tests have rendered both a J3D Mario model and the default
 Mii face/icon on Metal, with GPU pixel readback checks.
 
-To play on this development checkout, double-click `Play Petari.command` in the
+To play on this development checkout, double-click `Play MacioGalaxy.command` in the
 repository root. It locates the built app and extracted disc independently of
 the Terminal's current directory. Normal saves, settings and crash reports go to
-`~/Library/Application Support/Petari`, separate from automated test saves.
+`~/Library/Application Support/Petari` (the folder keeps its old name), separate from automated test saves.
 The launcher accepts the app's `--user DIR` option for a different save location.
 
 At the title, hold **Space + left mouse** together (A+B). Point with the mouse

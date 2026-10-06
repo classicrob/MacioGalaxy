@@ -1,6 +1,6 @@
 # Native controls
 
-These main defaults were approved for the native Mac port. The native input layer
+These main defaults were approved for the native Mac port (MacioGalaxy). The native input layer
 and text-file remapping are implemented. Opening movement, jumping and menu
 selection have been exercised in the full game; later controls remain unverified.
 
