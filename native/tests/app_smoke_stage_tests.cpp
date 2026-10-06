@@ -3,6 +3,7 @@
 // opens after a 12-frame Plus hold and closes on the next Plus press.
 
 #include "../app/smoke_stage.hpp"
+#include "petari/home_menu.hpp"
 
 #include <cstdio>
 #include <cmath>
@@ -10,6 +11,19 @@
 #include <string>
 
 using namespace PetariNative::App::Smoke;
+
+namespace PetariNative::HomeMenu {
+// The stage script's Home tour asks the published menu view for the focused item (smoke_stage.cpp);
+// the fake menu is always on "Back".
+View publishedView() {
+    View view;
+    view.visible = true;
+    view.itemCount = 1;
+    view.items[0].label = "Back";
+    view.items[0].focused = true;
+    return view;
+}
+}  // namespace PetariNative::HomeMenu
 
 namespace {
 

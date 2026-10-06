@@ -23,6 +23,7 @@
 #include "../app/spike_profiler.hpp"
 #include "../app/smoke.hpp"
 #include "petari/app.hpp"
+#include "petari/home_menu.hpp"
 #include "petari/frame_telemetry.hpp"
 #include "petari/host_allocation.hpp"
 
@@ -119,6 +120,16 @@ void drawImGuiOverlay(float x, float y, float width, float height) {
     overlay[1] = y;
     overlay[2] = width;
     overlay[3] = height;
+}
+// The stage script's Home tour asks the published menu view for the focused item (smoke_stage.cpp);
+// the fake menu is always on "Back".
+View publishedView() {
+    View view;
+    view.visible = true;
+    view.itemCount = 1;
+    view.items[0].label = "Back";
+    view.items[0].focused = true;
+    return view;
 }
 }  // namespace PetariNative::HomeMenu
 
