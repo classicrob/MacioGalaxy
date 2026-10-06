@@ -229,7 +229,11 @@ ResFileInfo* ResourceHolder::createAndRegisterObject(const char* pName, void* pD
     }
 
     if (strstr(pName, ".brk") != nullptr) {
-        return mBrkResTable->add(pName, J3DAnmLoaderDataBase::load(pData), true);
+        J3DAnmBase* anim = J3DAnmLoaderDataBase::load(pData);
+#ifdef PETARI_NATIVE
+        GenericWorld::onAnimation(anim, mArchive->mLoaderName);  // Generic world mod: colour animations without hue
+#endif
+        return mBrkResTable->add(pName, anim, true);
     }
 
     if (strstr(pName, ".blk") != nullptr) {

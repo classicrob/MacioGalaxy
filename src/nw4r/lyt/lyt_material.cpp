@@ -8,6 +8,12 @@
 #include "nw4r/math/types.h"
 #include "nw4r/ut/inlines.h"
 #include <cstdio>
+#ifdef PETARI_NATIVE
+// Game/System/GenericWorld.cpp: the Generic world mod's plain HUD icons (lives, star, coin, Star Bit).
+extern "C" void petari_generic_world_layout_texture(void* pTpl, const char* pName);
+// The default, for programs without the game (layout tests): no change. The game's definition replaces it.
+extern "C" __attribute__((weak)) void petari_generic_world_layout_texture(void*, const char*) {}
+#endif
 
 const GXColorS10 DefaultBlackColor = {0, 0, 0, 0};
 
@@ -281,6 +287,9 @@ namespace nw4r {
                         const char* const fileName = detail::ConvertOffsToPtr< char >(textures, textures[pResTexMap[si].texIdx].nameStrOffset);
 
                         void* const pTplRes = resBlockSet.pResAccessor->GetResource(0x74696D67, fileName, nullptr);
+#ifdef PETARI_NATIVE
+                        petari_generic_world_layout_texture(pTplRes, fileName);
+#endif
                         texMaps[di].ReplaceImage(static_cast< TPLPalettePtr >(pTplRes), 0);
                         texMaps[di].SetWrapMode(pResTexMap[si].GetWarpModeS(), pResTexMap[si].GetWarpModeT());
                         texMaps[di].SetFilter(pResTexMap[si].GetMinFilter(), pResTexMap[si].GetMagFilter());

@@ -270,7 +270,7 @@ unchanged, so every shape still reads.
 - **Terrain and every other model** (planets, map parts, scenery, editor
   brushes) get plain textures when they load. Each texture keeps its size, mip
   levels and alpha cut-outs. Its colours become one of three mid-grey tones
-  (slate, stone, sand, picked by how bright the original was) in a soft
+  (slate, stone and a light grey, picked by how bright the original was) in a soft
   16-texel checker. Material and vertex colours lose their hue but keep their
   brightness, so the game's lighting still shades them.
 - **Sky** models (`*Sky`, `VR*`) become a dark field with sparse stars.
@@ -288,10 +288,15 @@ unchanged, so every shape still reads.
 - **When it applies:** textures and colours change as models load, so turn the
   mod on before entering a level (models loaded earlier keep their look until
   they are loaded again). Stand-ins switch at once.
-- **Still the game's look:** the HUD and fonts, particle effects, colours that
-  the game animates at runtime (some glowing or colour-cycling parts), models
-  that use texture formats the rewrite skips, and the player (see "Generic
-  character"). Objects without a stand-in keep their shape, in plain colours.
+- **Colour animations** (glows, colour-cycling parts, NPC colour variants) lose
+  their hue too, keeping brightness.
+- **HUD icons**: the lives icon is a plain head with the bucket hat (not
+  Mario's head), the star counter a plain gold star, the coin counter a gold
+  disc, the Star Bit counter a pale gold gem.
+- **Still the game's look:** the HUD digits, the LIFE meter and other HUD
+  screens, fonts and banners, particle effects, models that use texture formats
+  the rewrite skips, and the player (see "Generic character"). Objects without a
+  stand-in keep their shape, in plain colours.
 
 `PETARI_GENERIC_WORLD_TRACE=1` logs each model rewritten and the stand-ins
 drawn.

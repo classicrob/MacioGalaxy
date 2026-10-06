@@ -5,6 +5,15 @@
 #include "JSystem/JMath/JMath.hpp"
 #include <math.h>
 
+#ifdef PETARI_NATIVE
+// Game/System/GenericWorld.cpp: true for a colour animation from a non-player archive while the mod is on.
+extern "C" bool petari_generic_world_grey_animation(const void* pAnimation);
+// The default, for programs without the game (the J3D tests): no change. The game's definition replaces it.
+extern "C" __attribute__((weak)) bool petari_generic_world_grey_animation(const void*) {
+    return false;
+}
+#endif
+
 // Key-framed rotations are stored scaled down by 2^mDecShift. Shifting a negative value left
 // is undefined before C++20; natively the shift is done on the unsigned bits, which gives the
 // same result as the PowerPC slw.
@@ -1289,6 +1298,12 @@ void J3DAnmTevRegKey::getTevColorReg(u16 index, GXColorS10* pColor) const {
             OSf32tos16(&col, &pColor->a);
         }
     }
+#ifdef PETARI_NATIVE
+    if (petari_generic_world_grey_animation(this)) {  // Generic world mod: animated colours lose their hue
+        const s16 grey = static_cast< s16 >((pColor->r * 299 + pColor->g * 587 + pColor->b * 114) / 1000);
+        pColor->r = pColor->g = pColor->b = grey;
+    }
+#endif
 }
 
 void J3DAnmTevRegKey::getTevKonstReg(u16 index, GXColor* pColor) const {
@@ -1366,6 +1381,12 @@ void J3DAnmTevRegKey::getTevKonstReg(u16 index, GXColor* pColor) const {
             OSf32tou8(&col, &pColor->a);
         }
     }
+#ifdef PETARI_NATIVE
+    if (petari_generic_world_grey_animation(this)) {  // Generic world mod: animated colours lose their hue
+        const u8 grey = static_cast< u8 >((pColor->r * 299 + pColor->g * 587 + pColor->b * 114) / 1000);
+        pColor->r = pColor->g = pColor->b = grey;
+    }
+#endif
 }
 
 void J3DAnmTevRegKey::searchUpdateMaterialID(J3DMaterialTable* pMatTable) {
