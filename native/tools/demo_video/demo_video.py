@@ -124,11 +124,12 @@ def record(a, run):
             except subprocess.TimeoutExpired:
                 os.killpg(proc.pid, 15)
                 proc.wait(timeout=10)
-        shutil.rmtree(run / "user/cache", ignore_errors=True)
     text = (run / "app.log").read_bytes().decode(errors="replace")
     seeded = []
     if a.seed_caches not in ("", "none") and "[input-script] done" in text:
+        # BEFORE the cache dir is deleted: a test run keeps its live pipeline_cache.db / dawn_cache.db in <user>/cache
         seeded = save_caches(run / "user", Path(a.save) if a.seed_caches == "save" else Path(a.seed_caches))
+    shutil.rmtree(run / "user/cache", ignore_errors=True)
     moves = [l for l in text.splitlines() if MOVE.match(l)]
     (run / "moves.log").write_text("\n".join(moves) + "\n")
     dumped = len(list((run / "frames").glob("*.png"))) if (run / "frames").exists() else 0
@@ -148,9 +149,12 @@ def save_caches(user, target):
     import sqlite3
     done = []
     for name in ("pipeline_cache.db", "dawn_cache.db"):
-        src = user / name
-        if not src.is_file():
+        # The live databases are the newest copy: <user>/cache/<name> in a test run (the file in <user> itself is the
+        # seed the run was cloned with); fall back to the seed if the app wrote none.
+        candidates = [p for p in (user / "cache" / name, user / name) if p.is_file()]
+        if not candidates:
             continue
+        src = max(candidates, key=lambda p: p.stat().st_mtime)
         target.mkdir(parents=True, exist_ok=True)
         tmp = target / (name + ".new")
         a = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
@@ -425,13 +429,20 @@ def selftest(_args):
         assert MOVE.match("[cappy] throw (air) at (1, 2, 3)") and not MOVE.match("[cappy] trace something else")
         # warm caches are copied consistently into the seed dir
         import sqlite3
-        (tmp / "user").mkdir()
-        db = sqlite3.connect(tmp / "user" / "pipeline_cache.db")
-        db.execute("create table x(a)")
-        db.execute("insert into x values (7)")
+        # The run's seed copy is in <user>/, the live (newer, warmer) database in <user>/cache/: the live one must win.
+        (tmp / "user" / "cache").mkdir(parents=True)
+        for where, value in ((tmp / "user", 1), (tmp / "user" / "cache", 7)):
+            db = sqlite3.connect(where / "pipeline_cache.db")
+            db.execute("create table x(a)")
+            db.execute("insert into x values (?)", (value,))
+            db.commit()
+            db.close()
+            time.sleep(0.05)
+        db = sqlite3.connect(tmp / "user" / "dawn_cache.db")  # no live copy: the seed is kept
+        db.execute("create table y(a)")
         db.commit()
         db.close()
-        assert save_caches(tmp / "user", tmp / "seed") == ["pipeline_cache.db"]
+        assert sorted(save_caches(tmp / "user", tmp / "seed")) == ["dawn_cache.db", "pipeline_cache.db"]
         assert sqlite3.connect(tmp / "seed" / "pipeline_cache.db").execute("select a from x").fetchone() == (7,)
         print("selftest PASS:", json.dumps(dict(main=main, slow=slow["seconds"], highlight=hl["seconds"], latency=measured)))
     return 0
