@@ -8,13 +8,17 @@
 // need other mods (Cappy: Cappy + OdysseyMovement; the dive: OdysseyMovement)
 // show whatever the keys do without them. PETARI_FIGURE_PROBE_FROM=<frame> starts
 // the script there (300: the front view, Cappy and the dive). PETARI_FIGURE_PROBE_WHEN=mode:N
-// waits for that player mode (MarioActor::mPlayerMode: 2 fire, 4 bee, 6 boo, ...). While it runs, the smoke script's own
+// waits for that player mode (MarioActor::mPlayerMode: 2 fire, 4 bee, 6 boo, ...).
+// PETARI_FIGURE_PROBE_SHOTS_AT=<frame>,<frame>: no keys, only figure-at-<frame>.png at those
+// frames after steady play (beside another driver such as PETARI_INPUT_SCRIPT). While it runs, the smoke script's own
 // presses are dropped (pointProbeFrame reports it active).
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
+#include <algorithm>
 
 #include "Game/Scene/SceneObjHolder.hpp"
 #include "Game/System/GameSystem.hpp"
@@ -84,6 +88,7 @@ struct Probe {
     int steady = 0;
     int frame = 0;
     int whenMode = -1;  // PETARI_FIGURE_PROBE_WHEN=mode:N: start once the player is in that mode
+    std::vector<int> shotsAt;  // PETARI_FIGURE_PROBE_SHOTS_AT: screenshots only, at these frames (no keys)
     std::string shots;
 };
 
@@ -95,6 +100,14 @@ Probe& probe() {
         const char* dir = std::getenv("PETARI_FIGURE_PROBE_SHOTS");
         if (dir == nullptr) dir = std::getenv("PETARI_SKIP_PROBE_SHOTS");
         if (dir != nullptr) p.shots = dir;
+        if (const char* at = std::getenv("PETARI_FIGURE_PROBE_SHOTS_AT"); at != nullptr) {
+            for (const char* q = at; *q != '\0';) {
+                p.shotsAt.push_back(std::atoi(q));
+                const char* comma = std::strchr(q, ',');
+                if (comma == nullptr) break;
+                q = comma + 1;
+            }
+        }
         if (const char* when = std::getenv("PETARI_FIGURE_PROBE_WHEN"); when != nullptr && std::strncmp(when, "mode:", 5) == 0) {
             p.whenMode = std::atoi(when + 5);
         }
@@ -123,6 +136,11 @@ bool figureProbeFrame() {
     Probe& p = probe();
     if (!p.enabled || p.phase == Phase::Done) return false;
     if (!sceneReadable()) {
+        if (p.phase == Phase::Run && !p.shotsAt.empty()) {
+            p.phase = Phase::Wait;  // screenshots only: count again from the next scene's player
+            p.steady = 0;
+            return false;
+        }
         if (p.phase == Phase::Run) {
             releaseAll();
             std::fprintf(stderr, "[figure-probe] the scene went away during the script; stopped\n");
@@ -135,12 +153,37 @@ bool figureProbeFrame() {
     const bool play = o.playerValid && o.pausePermitted && !o.demoActive && !o.talkActive;
     if (p.phase == Phase::Wait) {
         p.steady = play && (p.whenMode < 0 || o.playerMode == p.whenMode) ? p.steady + 1 : 0;
-        if (p.steady < 90) return false;
+        // Screenshots only: from the first frame with the player (another driver may keep play from looking steady).
+        const bool placed = o.playerValid && (o.playerX != 0.0f || o.playerY != 0.0f || o.playerZ != 0.0f);
+        if (p.steady < 90 && !(!p.shotsAt.empty() && placed)) return false;
         p.phase = Phase::Run;
         p.frame = 0;
         if (const char* from = std::getenv("PETARI_FIGURE_PROBE_FROM")) p.frame = std::atoi(from);  // skip the steps before it
         std::fprintf(stderr, "[figure-probe] normal play steady (player mode %d); script starts at (%.1f, %.1f, %.1f)\n", o.playerMode,
                      o.playerX, o.playerY, o.playerZ);
+    }
+    if (!p.shotsAt.empty()) {
+        // Screenshots only (beside another driver, e.g. PETARI_INPUT_SCRIPT): no keys pressed.
+        int last = 0;
+        for (int at : p.shotsAt) {
+            last = std::max(last, at);
+            if (at == p.frame && !p.shots.empty()) {
+                const std::string file = p.shots + "/figure-at-" + std::to_string(at) + ".png";
+                const bool requested = Screenshot::request(file.c_str());
+                std::fprintf(stderr, "[figure-probe] frame %d at (%.1f, %.1f, %.1f): %s\n", p.frame, o.playerX, o.playerY, o.playerZ,
+                             requested ? file.c_str() : "no screenshot");
+            }
+        }
+        if (p.frame % 200 == 0) {
+            std::fprintf(stderr, "[figure-probe] shots-only frame %d at (%.1f, %.1f, %.1f)\n", p.frame, o.playerX, o.playerY, o.playerZ);
+        }
+        if (p.frame >= last) {
+            std::fprintf(stderr, "[figure-probe] done\n");
+            p.phase = Phase::Done;
+        }
+        std::fflush(stderr);
+        ++p.frame;
+        return false;  // the other driver keeps going
     }
     Input::focusChanged(true);
     for (const PoseStep& s : kScript) {
