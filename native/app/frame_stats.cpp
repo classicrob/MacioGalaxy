@@ -269,7 +269,7 @@ bool Recorder::writeCsv(const char* path) const {
         std::fprintf(file, ",%s_ms", kPartNames[part]);
     }
     // Display-level presentation (petari/present_stats.hpp): empty without a tracked drawable.
-    std::fputs(",present_ms,presented_frame,present_state\n", file);
+    std::fputs(",present_ms,presented_frame,present_state,occluded,drawable_id\n", file);
     const std::size_t kept = std::min<std::uint64_t>(mFrames, mRing.size());
     const std::size_t first = mFrames > mRing.size() ? mRingNext : 0;
     for (std::size_t i = 0; i < kept; i++) {
@@ -282,8 +282,10 @@ bool Recorder::writeCsv(const char* path) const {
         const PresentStats::RowFields present = PresentStats::rowFields(f.index, f.entryNs);
         if (present.presentMs >= 0.0) std::fprintf(file, ",%.3f", present.presentMs);
         else std::fputc(',', file);
-        if (present.onScreenFrame >= 0) std::fprintf(file, ",%ld,%s\n", present.onScreenFrame, present.state);
-        else std::fprintf(file, ",,%s\n", present.state);
+        if (present.onScreenFrame >= 0) std::fprintf(file, ",%ld,%s", present.onScreenFrame, present.state);
+        else std::fprintf(file, ",,%s", present.state);
+        if (present.occluded >= 0) std::fprintf(file, ",%d,%lld\n", present.occluded, present.drawableId);
+        else std::fputs(",,\n", file);
     }
     return std::fclose(file) == 0;
 }
