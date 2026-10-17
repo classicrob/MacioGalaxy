@@ -108,6 +108,33 @@ class Compare(unittest.TestCase):
         self.assertIn("within noise", y_line)
 
 
+class Spikes(unittest.TestCase):
+    def test_spikes_with_events(self):
+        normal = (16.68, {"retrace_wait": 10.0, "game_work": 6.0}, [])
+        frames = [normal] * 20 + [
+            (40.0, {"retrace_wait": 10.0, "game_work": 30.0}, []),   # row 21: overruns
+            (10.04, {"retrace_wait": 3.36, "game_work": 6.68}, []),  # row 22: the late retrace
+        ] + [normal] * 10
+        data = rows(frames)
+        data[29]["phase"] = "loading"
+        data[29]["interval_ms"] = "120.0"
+        data[29]["stage_prep_wait_ms"] = "100.0"
+        data[29]["game_work_ms"] = "101.0"
+        log = "PETARI SMOKE [frame 15]: planet Peanut: collecting star chips\nPETARI SMOKE [frame 25]: PowerStar.Get\n"
+        result = pb.spike_list(data, 1, pb.events_from_log(log))
+        worst = result["worst"]
+        self.assertEqual(worst[0]["kind"], "long frame")
+        self.assertEqual(worst[0]["frame"], 30)
+        self.assertIn("stage_prep 100.0", worst[0]["cause"])
+        self.assertEqual(worst[0]["before"], "-5f PowerStar.Get")
+        late = next(s for s in worst if s["kind"] == "late retrace")
+        self.assertEqual(late["frame"], 22)
+        self.assertIn("game_cpu 30.0", late["cause"])
+        self.assertEqual(late["before"], "-7f planet Peanut: collecting star chips")
+        self.assertEqual(late["after"], "+3f PowerStar.Get")
+        self.assertEqual(result["counts"], {"long frame": 2, "late retrace": 1})
+
+
 class CleanGuard(unittest.TestCase):
     def test_refuses_while_busy(self):
         import fcntl, os, tempfile
