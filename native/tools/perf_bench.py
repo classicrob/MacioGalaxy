@@ -596,7 +596,9 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
     slow = (result.get("shaders") or {}).get("slow_compiles") or 0
     result["not_warm"] = not cold and slow > NOT_WARM_SLOW
     if result["not_warm"]:
-        contaminated.append(f"NOT WARM ({slow} slow compiles; stale or disturbed Metal cache: `warm --refresh`)")
+        cause = f"Dawn cache prune at launch: {result.get('dawn_pruned')} entries" if result.get("dawn_pruned") \
+            else "stale or disturbed Metal cache: `warm --refresh`"
+        contaminated.append(f"NOT WARM ({slow} slow compiles; {cause})")
     if ft.get("unfocused"):
         contaminated.append(f"{ft['unfocused']} unfocused frames")
     if ft.get("occluded"):
@@ -921,6 +923,9 @@ def analyze_run(run_dir, user, stage, status, timed_out, drive=None):
     latency = [float(x) for x in re.findall(r"^\[latency\] press: .*? shown ([\d.]+) ms", text, re.M)]
     if latency:
         result["latency_shown_ms"] = {"n": len(latency), "p50": round(pct(latency, .5), 1), "max": round(max(latency), 1)}
+    # Aurora's launch-time Dawn cache prune (racing the __global__ queue, main 2026-10-17) leaves a "warm" run cold.
+    pruned = [int(n) for n in re.findall(r"Pruned (\d+) stale Dawn cache entries", text)]
+    result["dawn_pruned"] = sum(pruned)
     cache = re.findall(r"^\[gx pipeline cache\].*$", text, re.M)
     result["cache_line"] = cache[-1] if cache else None
     csv_path = run_dir / "frames.csv"
