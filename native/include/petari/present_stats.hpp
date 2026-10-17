@@ -61,7 +61,8 @@ inline double percentileSorted(const std::vector<double>& sorted, double p) {
 // interval is within toleranceMs of it.
 inline bool onCadence(double intervalMs, double refreshHz, double toleranceMs, unsigned* multiple = nullptr) {
     const double period = refreshHz > 0.0 ? 1000.0 / refreshHz : 1000.0 / 60.0;
-    const double k = std::max(1.0, std::round(intervalMs / period));
+    // At least one period; capped so the unsigned conversion below stays defined for huge or non-finite intervals.
+    const double k = std::min(1.0e6, std::max(1.0, std::round(intervalMs / period)));
     if (multiple != nullptr) *multiple = static_cast<unsigned>(k);
     return std::fabs(intervalMs - k * period) <= toleranceMs;
 }
@@ -73,7 +74,7 @@ inline IntervalSummary summarize(std::vector<double> intervalsMs, double refresh
     for (double interval : intervalsMs) {
         unsigned k = 1;
         if (!onCadence(interval, refreshHz, toleranceMs, &k)) ++s.offCadence;
-        ++s.ticks[std::min(k, 4u) - 1];
+        ++s.ticks[std::clamp(k, 1u, 4u) - 1];  // audit-ok: clamped to 0..3, ticks has 4 entries
     }
     std::sort(intervalsMs.begin(), intervalsMs.end());
     s.p50 = percentileSorted(intervalsMs, 50);
