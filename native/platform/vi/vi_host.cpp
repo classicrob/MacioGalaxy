@@ -27,6 +27,7 @@
 #include "os_internal.hpp"
 #include "petari/frame_telemetry.hpp"
 #include "petari/host_allocation.hpp"
+#include "petari/present_pacing.hpp"
 #include "petari/platform/vi.hpp"
 
 namespace OS = PetariNative::Platform::OS;
@@ -219,6 +220,7 @@ void* viThreadMain(void*) {
         makeRetraceThreadRealtime(period);
     }
     auto next = Clock::now();
+    bool displayLocked = false;
     while (true) {
         next += period;
         if (legacy) {
@@ -249,6 +251,23 @@ void* viThreadMain(void*) {
         period = fieldPeriodLocked();
         // Interrupt return: delivers any reschedule the handlers requested.
         OSEnableInterrupts();
+        // PETARI_VI_CLOCK=display (petari/present_pacing.hpp): the display's 60 Hz frame,
+        // phase-steered against the refresh grid; the nominal field rate without a grid.
+        if (!legacy) {
+            namespace Pacing = PetariNative::PresentPacing;
+            Pacing::ServoOutput servo;
+            const bool lockedNow = Pacing::viServo(std::chrono::duration<double>(period).count(), &servo);
+            if (lockedNow) {
+                period = std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(servo.period));
+                next += std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(servo.correction));
+            }
+            if (lockedNow != displayLocked) {
+                displayLocked = lockedNow;
+                std::fprintf(stderr, "PETARI VI: retrace clock %s at retrace %u (field %.4f ms)\n",
+                             lockedNow ? "locked to the display" : "on its own timer", gRetraceCount,
+                             std::chrono::duration<double, std::milli>(period).count());
+            }
+        }
     }
     return nullptr;
 }

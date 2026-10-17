@@ -330,6 +330,13 @@ def patch_aurora(text):
                         '          PetariNative::FrameTelemetry::Scope petariTiming{PetariNative::FrameTelemetry::PresentCall};\n'
                         '          status = g_surface.Present();\n'
                         '          PetariNative::LatencyProbe::notePresent(petariProbeFrame);\n')
+    # PETARI_PRESENT_PACING=displaylink (petari/present_pacing.hpp): hold the present until the display's
+    # refresh-grid slot, outside the surface lock (the main thread takes it on resize).
+    text = replace_once(text, '      wgpu::ConvertibleStatus status = wgpu::Status::Error;\n',
+                        '      wgpu::ConvertibleStatus status = wgpu::Status::Error;\n'
+                        '      PetariNative::PresentPacing::waitToPresent();\n')
+    text = replace_once(text, '#include <petari/present_stats.hpp>\n',
+                        '#include <petari/present_stats.hpp>\n#include <petari/present_pacing.hpp>\n')
     return text
 
 

@@ -54,7 +54,7 @@ if(NOT _petari_app_standalone)
         target_compile_definitions(petari_app_host PRIVATE PETARI_EDITOR_UI=1)
     endif()
 
-    add_executable(petari MACOSX_BUNDLE app_main.cpp editor_m4_smoke.cpp smoke_storage.cpp pipeline_cache_dir.cpp latency_report.cpp)
+    add_executable(petari MACOSX_BUNDLE app_main.cpp editor_m4_smoke.cpp smoke_storage.cpp pipeline_cache_dir.cpp latency_report.cpp display_link.cpp)
     target_link_libraries(petari PRIVATE petari_app_host petari_app_platform aurora::core aurora::main SQLite::SQLite3)
     if(TARGET petari_editor_ui)
         target_compile_definitions(petari PRIVATE PETARI_EDITOR_UI=1)
@@ -162,6 +162,10 @@ if(BUILD_TESTING)
     add_executable(petari_present_stats_tests ${PETARI_REPO_ROOT}/native/tests/present_stats_tests.cpp)
     target_include_directories(petari_present_stats_tests PRIVATE ${PETARI_REPO_ROOT}/native/include)
     add_test(NAME native_present_stats COMMAND petari_present_stats_tests)
+    add_executable(petari_present_pacing_tests ${PETARI_REPO_ROOT}/native/tests/present_pacing_tests.cpp)
+    target_include_directories(petari_present_pacing_tests PRIVATE ${PETARI_REPO_ROOT}/native/include)
+    target_compile_features(petari_present_pacing_tests PRIVATE cxx_std_20)
+    add_test(NAME native_present_pacing COMMAND petari_present_pacing_tests)
 
     # Physical input is counted separately from the smoke driver's injected input.
     add_executable(petari_app_input_events_tests ${PETARI_REPO_ROOT}/native/tests/app_input_events_tests.cpp

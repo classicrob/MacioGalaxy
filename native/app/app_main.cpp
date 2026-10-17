@@ -54,6 +54,7 @@ extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgb
 #include "smoke_background.hpp"
 #include "smoke_storage.hpp"
 #include "pipeline_cache_dir.hpp"
+#include "display_link.hpp"
 #include "latency_report.hpp"
 #include <petari/launch_stage.hpp>
 #include <petari/player_launch.hpp>
@@ -1028,6 +1029,7 @@ int main(int argc, char** argv) {
     }
 #endif
     App::LatencyReport::configureLayer(info.window);
+    App::DisplayLink::start(info.window);  // PETARI_PRESENT_PACING=displaylink
     if (!prepareKnownPipelines(static_cast<SDL_Window*>(info.window))) {
         aurora_shutdown();
         return 0;
