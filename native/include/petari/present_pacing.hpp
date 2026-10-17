@@ -24,6 +24,12 @@
 // hidden: the link stops), a stale grid, or a refresh rate that is not a
 // multiple of 60 Hz: no wait, present as before.
 //
+// Measured (perf_bench foreground, EggStar s1 + HB s1, 120 Hz panel, build/fc/bench/fc-pacing
+// in the frame-cost worktree): the gate alone did NOT help (1/2/3-refresh 45/1364/48 vs 45/1364/48
+// unpaced). The link asks for 60 Hz, so on a 120 Hz panel its grid is every other refresh, and a
+// frame released mid-interval can still land on either panel refresh. The VI clock lock
+// (PETARI_VI_CLOCK=display, below) alone removed the bursts: 0/1457/0 and 1/1455/1. Use that.
+//
 // Header-only; the decision is a pure function (unit-tested).
 
 #include <atomic>
