@@ -106,6 +106,10 @@ class Compare(unittest.TestCase):
         y_line = next(l for l in table.splitlines() if l.startswith("| Y-s1"))
         self.assertIn("r2r_p99 better", x_line)
         self.assertIn("within noise", y_line)
+        b[0]["not_warm"] = True  # a run that did not start warm: no verdict for that stage
+        x_line = next(l for l in pb.compare_table(a, b).splitlines() if l.startswith("| X-s1"))
+        self.assertIn("NOT WARM (1 run(s)): no verdict", x_line)
+        self.assertNotIn("better", x_line)
 
 
 class Spikes(unittest.TestCase):

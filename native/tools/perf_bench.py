@@ -67,6 +67,8 @@ REPO = TOOLS.parents[1]
 sys.path.insert(0, str(TOOLS))
 import stage_sweep as sweep  # noqa: E402
 
+# Warm runs compile 0-11 pipelines slowly (>= 20 ms); above this the run did not start warm (NOT WARM, no A/B verdict).
+NOT_WARM_SLOW = 50
 FIELD_MS = 1000.0 * 1001.0 / 60000.0  # NTSC VI field, 16.683 ms
 THRESHOLDS = (16.7, 20.8, 33.3)       # the brief's buckets: > one field (+jitter), late (1.25 fields), > two fields
 LATE_MS = 20.8
@@ -163,7 +165,7 @@ def cache_key():
 class BenchApp:
     """An APFS clone of a Petari.app whose bundle id is BENCH_ID (the private Metal cache path)."""
 
-    def __init__(self, app, warm_root, warm_key=None):
+    def __init__(self, app, warm_root, warm_key=None, cold=False):
         bundle = Path(app).resolve()
         while bundle.suffix != ".app" and bundle != bundle.parent:
             bundle = bundle.parent
@@ -171,21 +173,28 @@ class BenchApp:
             raise SystemExit(f"perf_bench: {app} is not inside an .app bundle")
         self.source = bundle
         self.sha = sha256_of(bundle / "Contents/MacOS/Petari")
-        self.root = Path(warm_root) / "apps" / self.sha[:16]
-        self.bundle = self.root / "Petari.app"
-        self.exe = self.bundle / "Contents/MacOS/Petari"
-        self.metal_dir = darwin_cache_dir() / BENCH_ID
-        # warm_key: a separately filled warm cache for a build whose generated shader source differs from main's
-        # (main's cache would make its "warm" runs compile cold). Same warm root, so metal.lock still serializes.
+        # One Metal path per warm cache (and one for cold runs). MTLCompilerService processes live for days and serve
+        # every client; when an A/B alternated two different snapshots at ONE path, ~10-20% of a "warm" run's
+        # compiles missed (2026-10-17, ch-ab-warm-1: 660-908 slow compiles on 6 of 12 runs; same-snapshot sessions
+        # stayed at 0). The team cache keeps the original path (dev.petari.Petari.bench) so its fill stays valid.
         if warm_key and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,40}", warm_key):
             raise SystemExit(f"perf_bench: --warm-key {warm_key!r}: lowercase letters, digits, dashes")
+        tag = "cold" if cold else (warm_key or "")
+        self.bundle_id = BENCH_ID + (f"-{tag}" if tag else "")
+        self.root = Path(warm_root) / "apps" / (self.sha[:16] + (f"-{tag}" if tag else ""))
+        self.bundle = self.root / "Petari.app"
+        self.exe = self.bundle / "Contents/MacOS/Petari"
+        self.metal_dir = darwin_cache_dir() / self.bundle_id
+        # warm_key: a separately filled warm cache for a build whose generated shader source differs from main's
+        # (main's cache would make its "warm" runs compile cold). Same warm root, so metal.lock still serializes.
         self.warm_key = warm_key
         self.warm_cache = Path(warm_root) / (f"cache-{cache_key()}" + (f"-{warm_key}" if warm_key else ""))
 
     def freeze(self):
         """Clone the bundle (copy-on-write, ~no disk) and rewrite its bundle id. Idempotent."""
         self.root.mkdir(parents=True, exist_ok=True)
-        if self.exe.is_file() and sha256_of(self.exe) == self.sha:
+        if self.exe.is_file() and sha256_of(self.exe) == self.sha and \
+                plistlib.loads((self.bundle / "Contents/Info.plist").read_bytes()).get("CFBundleIdentifier") == self.bundle_id:
             os.utime(self.root)
             return self
         partial = self.root / "Petari.app.partial"
@@ -194,20 +203,23 @@ class BenchApp:
         clone_tree(self.source, partial)
         plist = partial / "Contents/Info.plist"
         info = plistlib.loads(plist.read_bytes())
-        info["CFBundleIdentifier"] = BENCH_ID  # Info.plist is not bound by the ad-hoc linker signature
+        info["CFBundleIdentifier"] = self.bundle_id  # Info.plist is not bound by the ad-hoc linker signature
         plist.write_bytes(plistlib.dumps(info))
         if sha256_of(partial / "Contents/MacOS/Petari") != self.sha:
             raise SystemExit(f"perf_bench: {self.source} changed while it was copied (rebuild in progress?)")
         partial.rename(self.bundle)
         (self.root / "app.json").write_text(json.dumps({"source": str(self.source), "sha256": self.sha,
-                                                        "bundle_id": BENCH_ID}, indent=2) + "\n")
+                                                        "bundle_id": self.bundle_id}, indent=2) + "\n")
         return self
 
 
-def warm_ok(path):
+def warm_ok(path, bundle_id=None):
     try:
-        json.loads((path / "warm.json").read_text())
+        note = json.loads((path / "warm.json").read_text())
     except (OSError, ValueError):
+        return False
+    # The Metal snapshot belongs to the path it was filled at (fills before 2026-10-17 18:00: the shared BENCH_ID).
+    if bundle_id is not None and note.get("bundle_id", BENCH_ID) != bundle_id:
         return False
     return (path / "metal").is_dir() and all((path / db).is_file() for db in ("pipeline_cache.db", "dawn_cache.db"))
 
@@ -272,7 +284,7 @@ def ensure_warm(args, app, refresh=False, fill_env=()):
     functional owner perf-bench-warmup (a compile storm: MTLCompilerService near 400% for ~10 min)."""
     app.freeze()
     target = app.warm_cache
-    if warm_ok(target) and not refresh:
+    if warm_ok(target, app.bundle_id) and not refresh:
         os.utime(target / "warm.json")
         return
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -294,12 +306,12 @@ def ensure_warm(args, app, refresh=False, fill_env=()):
         env = dict(os.environ, PERF_BENCH_IN_LOCK="1", PETARI_LOCK_CLASS="functional",
                    PETARI_LOCK_TIMEOUT=str(1800 * (1 + len(args.visit)) + 600))
         status = subprocess.run(command, cwd=REPO, env=env).returncode
-        if status != 0 or not warm_ok(target):
+        if status != 0 or not warm_ok(target, app.bundle_id):
             raise SystemExit(f"perf_bench: warm fill for {target.name} failed (exit {status})")
         return
     with open(target.parent / "fill.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if warm_ok(target) and not refresh:
+        if warm_ok(target, app.bundle_id) and not refresh:
             return
         if free_gib(target.parent) < 45:
             raise SystemExit(f"perf_bench: only {free_gib(target.parent):.0f} GiB free; the 40 GB floor needs room")
@@ -345,12 +357,13 @@ def ensure_warm(args, app, refresh=False, fill_env=()):
         stage_dir.mkdir()
         try:
             app.metal_dir.rename(stage_dir / "metal")
-        finally:
+        except BaseException:
             metal_lock.close()
+            raise
         for db in ("pipeline_cache.db", "dawn_cache.db"):
             sweep.snapshot_sqlite(user / db, stage_dir / db)
         (stage_dir / "warm.json").write_text(json.dumps({
-            "key": target.name, "fill_env": list(fill_env), "filled_with": str(app.source), "sha256": app.sha,
+            "key": target.name, "bundle_id": app.bundle_id, "fill_env": list(fill_env), "filled_with": str(app.source), "sha256": app.sha,
             "filled": datetime.datetime.now().isoformat(timespec="seconds"), "seconds": round(time.time() - started),
             "prep_total": int(prep[1]), "prep_failed": int(prep[3]), "visits": [f"{s}-s{n}" for s, n in visits],
         }, indent=2) + "\n")
@@ -358,6 +371,7 @@ def ensure_warm(args, app, refresh=False, fill_env=()):
         if target.exists():
             target.rename(old)
         stage_dir.rename(target)
+        metal_lock.close()  # runs clone target/metal under metal.lock: swap first, then release
         shutil.rmtree(old, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
         log(f"warm cache ready: {target} ({prep[1]} variants, {time.time() - started:.0f} s)")
@@ -579,6 +593,10 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
         contaminated.append("another Petari app ran")
     if not load_cmd and (result["machine"]["other_cpu_pct_mean"] or 0) > 300:  # 3 of 16 cores: an editor/agent desktop idles near 150%
         contaminated.append(f"other CPU {result['machine']['other_cpu_pct_mean']}%")
+    slow = (result.get("shaders") or {}).get("slow_compiles") or 0
+    result["not_warm"] = not cold and slow > NOT_WARM_SLOW
+    if result["not_warm"]:
+        contaminated.append(f"NOT WARM ({slow} slow compiles; stale or disturbed Metal cache: `warm --refresh`)")
     if ft.get("unfocused"):
         contaminated.append(f"{ft['unfocused']} unfocused frames")
     if ft.get("occluded"):
@@ -1113,6 +1131,9 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
     for key in sorted(set(ga) & set(gb)):
         ra, rb = ga[key], gb[key]
         cells, verdict = [], []
+        cold_runs = [r for r in ra + rb if r.get("not_warm")]
+        if cold_runs:
+            verdict.append(f"NOT WARM ({len(cold_runs)} run(s)): no verdict")
         for m in shown:
             va, vb = values_of(ra, m), values_of(rb, m)
             if not va or not vb:
@@ -1121,7 +1142,7 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
             xa, xb = statistics.median(va), statistics.median(vb)
             d = xb - xa
             cells.append(f"{xa:g} | {xb:g} | {d:+.2f}")
-            if m in ("r2r_p99", "r2r_late", "busy_p99", "present_late", "present_offcad"):
+            if m in ("r2r_p99", "r2r_late", "busy_p99", "present_late", "present_offcad") and not cold_runs:
                 if abs(d) < RESOLUTION[m]:
                     continue  # below what the metric resolves (percentile bins, single frames)
                 n = pooled.get(m)
@@ -1214,7 +1235,8 @@ def finish(args, out, meta, results, apps):
     if not args.keep_metal and apps:
         with open(Path(args.warm_root) / "metal.lock", "w") as metal_lock:
             fcntl.flock(metal_lock, fcntl.LOCK_EX)
-            shutil.rmtree(apps[0].metal_dir, ignore_errors=True)
+            for app in apps:
+                shutil.rmtree(app.metal_dir, ignore_errors=True)
     # The bench dir can hold several invocations (labels, extra repeats): summarize every run in it.
     collected = []
     for path in sorted((out / "runs").glob("*/*/result.json")):
@@ -1242,7 +1264,7 @@ def batch(args, runs):
     lock = MAIN / "build/locked-app.sh"
     if not lock.is_file():
         return False
-    fill = 0 if args.cold or warm_ok(BenchApp(getattr(args, "app", None) or args.a, args.warm_root).warm_cache) else 1800
+    fill = 0 if args.cold else 1800  # (a fill, if needed, runs inside this session)
     bound = runs * (args.timeout + 30) + fill + 300
     minutes = round((runs * 75 + fill) / 60)
     print(f"[perf-bench] FOREGROUND SESSION: {runs} visible Petari runs that take focus, about {minutes} min "
@@ -1257,7 +1279,7 @@ def batch(args, runs):
 def cmd_run(args):
     batch(args, len(resolve_stages(args)) * args.repeat)
     out, meta = start_bench(args, "cold" if args.cold else "warm")
-    app = BenchApp(args.app, args.warm_root, args.warm_key).freeze()
+    app = BenchApp(args.app, args.warm_root, args.warm_key, cold=args.cold).freeze()
     if not args.cold:
         ensure_warm(args, app, fill_env=args.env if args.warm_key else ())
     meta["apps"][args.label] = {"source": str(app.source), "sha256": app.sha}
@@ -1281,8 +1303,8 @@ def cmd_ab(args):
     a_label, b_label = args.a_label, args.b_label
     if a_label == b_label:
         raise SystemExit("perf_bench: --a-label and --b-label must differ")
-    variants = {a_label: (BenchApp(args.a, args.warm_root, args.a_warm_key).freeze(), args.a_env),
-                b_label: (BenchApp(args.b or args.a, args.warm_root, args.b_warm_key).freeze(), args.b_env)}
+    variants = {a_label: (BenchApp(args.a, args.warm_root, args.a_warm_key, cold=args.cold).freeze(), args.a_env),
+                b_label: (BenchApp(args.b or args.a, args.warm_root, args.b_warm_key, cold=args.cold).freeze(), args.b_env)}
     loads = {a_label: args.a_load, b_label: args.b_load}
     if variants[a_label][0].sha == variants[b_label][0].sha and args.a_env == args.b_env and args.a_load == args.b_load:
         log("A and B are the same build and environment: this measures noise only")
@@ -1312,7 +1334,7 @@ def cmd_ab(args):
 def cmd_warm(args):
     app = BenchApp(args.app, args.warm_root, args.warm_key)
     if args.print_path:
-        print(app.warm_cache if warm_ok(app.warm_cache) else "")
+        print(app.warm_cache if warm_ok(app.warm_cache, app.bundle_id) else "")
         return
     if args.refresh:
         refuse_if_busy(args, "refresh the warm cache")
