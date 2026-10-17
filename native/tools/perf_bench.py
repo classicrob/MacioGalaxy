@@ -224,7 +224,7 @@ def app_env(args, stage, scenario, extra):
     })
     drive = getattr(args, "drive", None)
     if drive == "soak":
-        env["PETARI_SOAK_MINUTES"] = "0"  # one cycle: stage, back to the observatory, End Game with the save, title
+        env["PETARI_SOAK_MINUTES"] = "0.5"  # one cycle (~65 s; 0 means the default 60): stage, back to the observatory, End Game with the save, title
     if drive == "replay":
         env["PETARI_REPLAY_ROUTE"] = str(Path(args.route).resolve())
     env.update(extra)
@@ -704,7 +704,7 @@ def analyze_run(run_dir, user, stage, status, timed_out, drive=None):
     cache = re.findall(r"^\[gx pipeline cache\].*$", text, re.M)
     result["cache_line"] = cache[-1] if cache else None
     csv_path = run_dir / "frames.csv"
-    if csv_path.is_file() and frames.get("ready") and frames.get("end"):
+    if csv_path.is_file() and not drive and frames.get("ready") and frames.get("end"):
         with csv_path.open() as handle:
             rows = list(csv.DictReader(handle))
         hz = (result.get("present_exit") or {}).get("display_hz")
@@ -1242,10 +1242,13 @@ def main():
         p.add_argument("--timeout", type=int, default=None, help="seconds per app run, inside the lock (420; drives 1500)")
         p.add_argument("--lock-wait", type=int, default=7200, help="extra seconds allowed for waiting on the lock")
         p.add_argument("--frames", type=int, default=None, help="PETARI_SMOKE_FRAMES (safety bound; 12000, drives 60000)")
-        p.add_argument("--drive", choices=("goodegg1", "soak", "replay"), default=None,
+        p.add_argument("--drive", choices=("goodegg1", "soak", "replay", "stage"), default=None,
                        help="a gameplay driver instead of the stage script: goodegg1 (Good Egg mission 1 to the star, "
                             "save, observatory), soak (one cycle: stage, back to the observatory, End Game save, title), "
-                            "replay (--route, a recorded route; FAILs where no star is collected, frames stay valid)")
+                            "replay (--route, a recorded route; FAILs where no star is collected, frames stay valid), "
+                            "stage (the stage script analyzed as a drive: whole run + spikes; with --env "
+                            "PETARI_STAGE_WARP=x,y,z onto a placed PowerStar and PETARI_SMOKE_QUIT_DELAY=<frames> it "
+                            "records a genuine star-get and the return to the observatory)")
         p.add_argument("--route", type=Path, default=None, help="route CSV for --drive replay (recording_segments.py)")
         p.add_argument("--idle-frames", type=int, default=600, help="PETARI_STAGE_IDLE_FRAMES")
         p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="extra app environment")
