@@ -468,12 +468,15 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
         contaminated.append(f"other CPU {result['machine']['other_cpu_pct_mean']}%")
     if ft.get("unfocused"):
         contaminated.append(f"{ft['unfocused']} unfocused frames")
+    if ft.get("occluded"):
+        contaminated.append(f"{ft['occluded']} occluded frames")
     result["contaminated"] = contaminated
     (run_dir / "result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     # Disposable caches: the cloned databases and the reset-per-run Metal dir stay out of the run record.
     if not args.keep_user:
         for db in list(user.glob("dawn_cache.db*")) + list(user.glob("pipeline_cache.db*")):
             db.unlink()
+        shutil.rmtree(user / "NAND", ignore_errors=True)  # the fixture save copy (8.7 MB per run); crash reports stay
     w = result.get("window") or {}
     q = w.get("r2r") or {}
     log(f"done {label}/{name}: {result['outcome']} r2r p99 {q.get('p99')} max {q.get('max')} late {q.get('over_20.8')}; "
@@ -551,6 +554,8 @@ def window_stats(rows, first, last, display_hz=None):
         "p50": round(pct(intervals, 0.50), 2), "p95": round(pct(intervals, 0.95), 2),
         "p99": round(pct(intervals, 0.99), 2), "max": round(max(intervals), 2),
         "unfocused": sum(1 for r in frames if r.get("unfocused") == "1"),
+        # Window covered (frames.csv `occluded`, when the build has it): display numbers then mean nothing.
+        "occluded": sum(1 for r in frames if r.get("occluded") == "1") if "occluded" in frames[0] else None,
     }
     for t in THRESHOLDS:
         stats[f"over_{t}"] = sum(1 for v in intervals if v > t)
@@ -636,6 +641,11 @@ def analyze_run(run_dir, user, stage, status, timed_out):
                                   "ticks_1_2_3_4plus": [int(x) for x in v[7:11]], "display_hz": float(v[11]),
                                   "mode": v[12], "drawables": int(v[13]), "presented": int(v[14]),
                                   "dropped": int(v[15]), "never_presented": int(v[16])}
+        tail = re.findall(r"^Petari present intervals .*?maximumDrawableCount (\d+).*?; occluded at acquire (\d+), "
+                          r"presented while occluded (\d+)", text, re.M)
+        if tail:
+            result["present_exit"].update({"max_drawables": int(tail[-1][0]), "occluded_at_acquire": int(tail[-1][1]),
+                                           "presented_while_occluded": int(tail[-1][2])})
     elif "Petari present intervals: no drawables observed" in text:
         result["present_exit"] = {"n": 0}
     latency = [float(x) for x in re.findall(r"^\[latency\] press: .*? shown ([\d.]+) ms", text, re.M)]
