@@ -30,55 +30,78 @@ def rows(frames, extra=None):
 
 
 class WindowStats(unittest.TestCase):
-    def test_thresholds_and_dominant_phase(self):
+    def test_thresholds_r2r_busy_and_late_phase(self):
         normal = (16.68, {"retrace_wait": 10.0, "game_work": 6.0}, [])
+        # A consistent timeline (retraces every 16.68 ms). Row 96's work (30 ms) misses one retrace: row 97 waits
+        # for the one after (r2r 33.36). Row 98 is seam-to-seam jitter only: 15 ms of work, the next retrace on time.
         frames = [normal] * 96 + [
-            (25.0, {"game_work": 20.0, "token_barrier_wait": 2.0, "retrace_wait": 1.0}, []),
-            (40.0, {"game_work": 30.0, "draw_done_wait": 5.0}, []),
-            (22.0, {"game_work": 4.0, "draw_done_wait": 16.0}, []),
-            (16.9, {"game_work": 16.0}, []),
+            (40.0, {"retrace_wait": 10.0, "game_work": 30.0}, []),
+            (10.04, {"retrace_wait": 3.36, "game_work": 6.68}, []),
+            (25.0, {"retrace_wait": 10.0, "game_work": 15.0}, []),
+            (8.36, {"retrace_wait": 1.68, "game_work": 6.68}, []),
         ]
         stats = pb.window_stats(rows(frames), 0, 100)
         self.assertEqual(stats["frames"], 100)
-        self.assertEqual(stats["over_16.7"], 4)
-        self.assertEqual(stats["over_20.8"], 3)
+        self.assertEqual(stats["over_20.8"], 2)          # raw intervals 40 and 25
         self.assertEqual(stats["over_33.3"], 1)
-        self.assertEqual(stats["slow_frames"], 3)
-        self.assertEqual(stats["dominant"], "game_cpu")  # 18 + 30 + 4 = 52 vs draw-done 21
-        self.assertAlmostEqual(stats["slow_mean_ms"]["token_barrier"], 0.67, places=2)
-        self.assertEqual(stats["max"], 40.0)
+        r2r = stats["r2r"]
+        self.assertEqual(r2r["n"], 99)
+        self.assertEqual(r2r["over_20.8"], 1)             # only the real overrun
+        self.assertAlmostEqual(r2r["max"], 33.36, places=2)
+        self.assertEqual(stats["late"]["basis"], "r2r > 20.8")
+        self.assertEqual(stats["dominant"], "game_cpu")   # row 96's 30 ms of game work
+        self.assertAlmostEqual(stats["busy"]["max"], 30.0, places=2)
 
     def test_window_bounds_exclude_loading(self):
-        frames = [(200.0, {}, [])] * 5 + [(16.68, {}, [])] * 10
+        frames = [(200.0, {}, [])] * 5 + [(16.68, {"retrace_wait": 10.0}, [])] * 10
         stats = pb.window_stats(rows(frames), 5, 15)
         self.assertEqual(stats["frames"], 10)
         self.assertEqual(stats["max"], 16.68)
         self.assertEqual(stats["dominant"], "-")
+        self.assertEqual(stats["r2r"]["max"], 16.68)
 
-    def test_present_timestamps_become_intervals(self):
-        frames = [(16.68, {}, [100000.0 + 16.68 * i]) for i in range(50)]
-        frames[30] = (16.68, {}, [100000.0 + 16.68 * 30 + 10.0])
-        stats = pb.window_stats(rows(frames, ["present_ms"]), 0, 50)
-        self.assertEqual(stats["present"]["column"], "present_ms")
+    def test_present_columns(self):
+        frames = [(16.68, {}, ["16.67", str(i), "ok"]) for i in range(40)]
+        frames += [(16.68, {}, ["", "", "dropped"])] * 9 + [(16.68, {}, ["33.33", "50", "ok"])]
+        stats = pb.window_stats(rows(frames, ["present_ms", "presented_frame", "present_state"]), 0, 50)
+        self.assertEqual(stats["present"]["states"], {"ok": 41, "dropped": 9})
         self.assertEqual(stats["present"]["over_20.8"], 1)
+        self.assertEqual(stats["present"]["p50"], 16.67)
+
+
+class ExitLine(unittest.TestCase):
+    def test_present_exit_line(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            run = Path(tmp)
+            (run / "app.log").write_text(
+                "Petari present intervals (on-screen, 1200): p50 16.67 p95 16.70 p99 25.00 max 50.01 ms; off-cadence "
+                "(not within 2 ms of a multiple of the refresh period) 12 (1.0%); intervals of 1/2/3/4+ refreshes "
+                "10/1150/30/10; display 120.00 Hz; present mode Fifo; drawables 1500, presented 1210, dropped 280, "
+                "never presented 3, out of order 0\n")
+            result = pb.analyze_run(run, run / "user", "EggStarGalaxy", 0, False)
+        e = result["present_exit"]
+        self.assertEqual((e["n"], e["p99"], e["mode"], e["dropped"]), (1200, 25.0, "Fifo", 280))
+        self.assertEqual(e["ticks_1_2_3_4plus"], [10, 1150, 30, 10])
 
 
 class Compare(unittest.TestCase):
     def result(self, label, stage, repeat, p99, late):
         return {"label": label, "stage": stage, "scenario": 1, "repeat": repeat,
-                "window": {"p50": 16.7, "p99": p99, "max": p99 + 5, "over_20.8": late, "over_33.3": 0}}
+                "window": {"p99": p99, "r2r": {"p99": p99, "over_20.8": late, "max": p99 + 5},
+                           "busy": {"p99": 10.0}}}
 
     def test_noise_and_verdicts(self):
         a = [self.result("A", "X", 1, 30.0, 40), self.result("A", "X", 2, 31.0, 44),
              self.result("A", "Y", 1, 20.0, 10), self.result("A", "Y", 2, 20.5, 12)]
         b = [self.result("B", "X", 1, 18.0, 2), self.result("B", "X", 2, 18.5, 3),
              self.result("B", "Y", 1, 20.2, 11), self.result("B", "Y", 2, 20.4, 11)]
-        self.assertEqual(pb.noise(a)["p99"], 0.75)
+        self.assertEqual(pb.noise(a)["r2r_p99"], 0.75)
         table = pb.compare_table(a, b)
-        self.assertIn("| X-s1 | 2/2 |", table)
         x_line = next(l for l in table.splitlines() if l.startswith("| X-s1"))
         y_line = next(l for l in table.splitlines() if l.startswith("| Y-s1"))
-        self.assertIn("p99 better", x_line)
+        self.assertIn("r2r_p99 better", x_line)
         self.assertIn("within noise", y_line)
 
 

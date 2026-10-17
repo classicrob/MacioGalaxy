@@ -476,8 +476,10 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold):
         for db in list(user.glob("dawn_cache.db*")) + list(user.glob("pipeline_cache.db*")):
             db.unlink()
     w = result.get("window") or {}
-    log(f"done {label}/{name}: {result['outcome']} p50 {w.get('p50')} p99 {w.get('p99')} max {w.get('max')} "
-        f">20.8 {w.get('over_20.8')} slow-phase {w.get('dominant')} ({result['wall_seconds']} s)"
+    q = w.get("r2r") or {}
+    log(f"done {label}/{name}: {result['outcome']} r2r p99 {q.get('p99')} max {q.get('max')} late {q.get('over_20.8')}; "
+        f"busy p99 {(w.get('busy') or {}).get('p99')}; interval p99 {w.get('p99')}; present {present_cell(result)}; "
+        f"late phase {w.get('dominant')} ({result['wall_seconds']} s)"
         + (f" CONTAMINATED: {'; '.join(contaminated)}" if contaminated else ""))
     return result
 
@@ -496,8 +498,51 @@ def pct(values, fraction):
     return sweep.percentile(values, fraction)
 
 
+SEAM = ("seam_compose_ms", "seam_end_frame_ms", "seam_begin_frame_ms", "seam_reacquire_ms")
+
+
+def fc_pct(ordered, q):
+    """frame-cost's retrace_pace.py indexing (v[int(q*(n-1))]), so the numbers agree."""
+    return ordered[int(q * (len(ordered) - 1))]
+
+
+def frame_parts(prev, row):
+    """Game-thread parts of a retrace-to-retrace span: the previous row's work after its retrace (game work, draw-done,
+    rest), then this row's seam and retrace wait (the span ends at this row's retrace)."""
+    game_work = num(prev, "game_work_ms")
+    token, prep = num(prev, "token_barrier_wait_ms"), num(prev, "stage_prep_wait_ms")
+    values = {
+        "game_cpu": max(0.0, game_work - token - prep), "token_barrier": token, "stage_prep": prep,
+        "draw_done": num(prev, "draw_done_wait_ms"), "unattributed": num(prev, "unattributed_ms"),
+        "gx_submit": num(row, "seam_compose_ms") + num(row, "seam_end_frame_ms"),
+        "frame_slot": num(row, "seam_begin_frame_ms"), "reacquire": num(row, "seam_reacquire_ms"),
+        "retrace": num(row, "retrace_wait_ms"),
+    }
+    for key in OTHER_THREADS:  # other threads, overlapping; both rows' share of the span
+        values[key] = num(prev, key + "_ms") + num(row, key + "_ms")
+    return values
+
+
+def breakdown(spans):
+    parts = {}
+    for values in spans:
+        for key, value in values.items():
+            parts[key] = parts.get(key, 0.0) + value
+    if not spans:
+        return {"n": 0, "dominant": "-"}
+    costs = {k: parts[k] for k in GAME_THREAD if k != "retrace"}  # retrace wait is idle time, not cost
+    dominant = max(costs, key=costs.get)
+    return {"n": len(spans), "mean_ms": {k: round(v / len(spans), 2) for k, v in parts.items()},
+            "dominant": dominant, "dominant_share": round(costs[dominant] / max(1e-9, sum(costs.values())), 2)}
+
+
 def window_stats(rows, first, last):
-    """Gameplay window (first, last]: interval percentiles, threshold counts, slow-frame phase breakdown."""
+    """Gameplay window (first, last].
+
+    Primary pacing metric: retrace-to-retrace (r2r), the time between consecutive frame-loop retrace marks
+    (seam entry + seam parts + retrace wait), as frame-cost's retrace_pace.py: it is what the VI cadence sees, while the
+    seam-to-seam interval jitters with per-frame work even when no retrace is missed. Headroom: busy = interval -
+    retrace wait. The raw interval stats are kept alongside. Late spans (r2r > 20.8 ms) get a phase breakdown."""
     frames = [r for r in rows if first < int(r["frame"]) <= last]
     if not frames:
         return None
@@ -510,44 +555,48 @@ def window_stats(rows, first, last):
     }
     for t in THRESHOLDS:
         stats[f"over_{t}"] = sum(1 for v in intervals if v > t)
-    slow = [r for r in frames if num(r, "interval_ms") > LATE_MS]
-    parts = {}
-    for r in slow:
-        game_work = num(r, "game_work_ms")
-        token, prep = num(r, "token_barrier_wait_ms"), num(r, "stage_prep_wait_ms")
-        values = {
-            "game_cpu": max(0.0, game_work - token - prep), "token_barrier": token, "stage_prep": prep,
-            "draw_done": num(r, "draw_done_wait_ms"),
-            "gx_submit": num(r, "seam_compose_ms") + num(r, "seam_end_frame_ms"),
-            "frame_slot": num(r, "seam_begin_frame_ms"), "reacquire": num(r, "seam_reacquire_ms"),
-            "retrace": num(r, "retrace_wait_ms"), "unattributed": num(r, "unattributed_ms"),
-        }
-        for key in OTHER_THREADS:
-            values[key] = num(r, key + "_ms")
-        for key, value in values.items():
-            parts[key] = parts.get(key, 0.0) + value
-    if slow:
-        stats["slow_frames"] = len(slow)
-        stats["slow_mean_ms"] = {k: round(v / len(slow), 2) for k, v in parts.items()}
-        # Which game-thread part made the slow frames slow (retrace wait is idle time, not cost).
-        costs = {k: parts[k] for k in GAME_THREAD if k != "retrace"}
-        stats["dominant"] = max(costs, key=costs.get)
-        stats["dominant_share"] = round(costs[stats["dominant"]] / max(1e-9, sum(costs.values())), 2)
-    else:
-        stats["slow_frames"], stats["dominant"] = 0, "-"
-    # On-screen present timing, when the frame CSV has it (wt/present-pacing). Timestamps or intervals.
-    for column in ("present_interval_ms", "present_ms"):
-        if column in frames[0]:
-            values = [num(r, column) for r in frames if num(r, column) > 0]
-            if values and column == "present_ms" and all(b >= a for a, b in zip(values, values[1:])) and values[-1] > 1e4:
-                values = [b - a for a, b in zip(values, values[1:]) if b > a]
-            if values:
-                stats["present"] = {"column": column, "p50": round(pct(values, .5), 2), "p99": round(pct(values, .99), 2),
-                                    "max": round(max(values), 2), "over_20.8": sum(1 for v in values if v > LATE_MS)}
-            break
-    extra = [c for c in frames[0] if c.startswith("off_cadence") or c.startswith("present_off")]
-    for column in extra:
-        stats.setdefault("present", {})[column] = int(sum(num(r, column) for r in frames))
+    r2r, late_spans = [], []
+    for prev, row in zip(frames, frames[1:]):
+        if prev.get("phase") != "gameplay" or row.get("phase") != "gameplay":
+            continue
+        span = num(prev, "interval_ms") + sum(num(row, c) for c in SEAM) + num(row, "retrace_wait_ms") \
+            - sum(num(prev, c) for c in SEAM) - num(prev, "retrace_wait_ms")
+        r2r.append(span)
+        if span > LATE_MS:
+            late_spans.append(frame_parts(prev, row))
+    if r2r:
+        v = sorted(r2r)
+        stats["r2r"] = {"n": len(v), "p50": round(fc_pct(v, .5), 2), "p99": round(fc_pct(v, .99), 2),
+                        "max": round(v[-1], 2), "over_17.5": sum(x > 17.5 for x in v),
+                        "over_20.8": sum(x > 20.8 for x in v), "over_33.3": sum(x > 33.3 for x in v)}
+    busy = sorted(num(r, "interval_ms") - num(r, "retrace_wait_ms") for r in frames if r.get("phase") == "gameplay")
+    if busy:
+        stats["busy"] = {"p50": round(busy[len(busy) // 2], 2), "p95": round(busy[int(.95 * len(busy))], 2),
+                         "p99": round(busy[int(.99 * len(busy))], 2), "max": round(busy[-1], 2)}
+    # Phase of the late retrace spans; without any, of the frames whose seam interval exceeded 20.8 ms.
+    late = breakdown(late_spans)
+    late["basis"] = "r2r > 20.8"
+    if not late_spans:
+        pairs = [(p, r) for p, r in zip(frames, frames[1:]) if num(r, "interval_ms") > LATE_MS]
+        late = breakdown([frame_parts(p, r) for p, r in pairs])
+        late["basis"] = "interval > 20.8 (no late retrace)"
+    stats["late"] = late
+    stats["slow_frames"], stats["dominant"] = late["n"], late["dominant"]
+    stats["dominant_share"] = late.get("dominant_share")
+    stats["slow_mean_ms"] = late.get("mean_ms", {})
+    stats["drawable_acquire_mean"] = round(statistics.fmean(num(r, "drawable_acquire_ms") for r in frames), 3)
+    # On-screen presentation (frames.csv present_ms / present_state, native/gx/present/README.md): present_ms is
+    # this frame's drawable vs the previous presented one, empty unless the drawable was presented.
+    if "present_state" in frames[0]:
+        states = {}
+        for r in frames:
+            states[r.get("present_state") or "none"] = states.get(r.get("present_state") or "none", 0) + 1
+        values = [num(r, "present_ms") for r in frames if r.get("present_ms") not in (None, "")]
+        present = {"states": states}
+        if values:
+            present.update({"n": len(values), "p50": round(pct(values, .5), 2), "p99": round(pct(values, .99), 2),
+                            "max": round(max(values), 2), "over_20.8": sum(1 for v in values if v > LATE_MS)})
+        stats["present"] = present
     return stats
 
 
@@ -567,6 +616,22 @@ def analyze_run(run_dir, user, stage, status, timed_out):
     result["pipeline_summary"] = summary[-1] if summary else None
     skipped = re.findall(r"skipped_draws=(\d+)", summary[-1]) if summary else []
     result["skipped_draws"] = int(skipped[0]) if skipped else None
+    present = re.findall(r"^Petari present intervals \(on-screen, (\d+)\): p50 ([\d.]+) p95 ([\d.]+) p99 ([\d.]+) "
+                         r"max ([\d.]+) ms; off-cadence .*? (\d+) \(([\d.]+)%\); intervals of 1/2/3/4\+ refreshes "
+                         r"(\d+)/(\d+)/(\d+)/(\d+); display ([\d.]+) Hz; present mode (\w+); drawables (\d+), "
+                         r"presented (\d+), dropped (\d+), never presented (\d+)", text, re.M)
+    if present:
+        v = present[-1]
+        result["present_exit"] = {"n": int(v[0]), "p50": float(v[1]), "p95": float(v[2]), "p99": float(v[3]),
+                                  "max": float(v[4]), "off_cadence": int(v[5]), "off_cadence_pct": float(v[6]),
+                                  "ticks_1_2_3_4plus": [int(x) for x in v[7:11]], "display_hz": float(v[11]),
+                                  "mode": v[12], "drawables": int(v[13]), "presented": int(v[14]),
+                                  "dropped": int(v[15]), "never_presented": int(v[16])}
+    elif "Petari present intervals: no drawables observed" in text:
+        result["present_exit"] = {"n": 0}
+    latency = [float(x) for x in re.findall(r"^\[latency\] press: .*? shown ([\d.]+) ms", text, re.M)]
+    if latency:
+        result["latency_shown_ms"] = {"n": len(latency), "p50": round(pct(latency, .5), 1), "max": round(max(latency), 1)}
     cache = re.findall(r"^\[gx pipeline cache\].*$", text, re.M)
     result["cache_line"] = cache[-1] if cache else None
     csv_path = run_dir / "frames.csv"
@@ -589,28 +654,66 @@ def fmt(value):
     return "-" if value is None else (f"{value:g}" if isinstance(value, float) else str(value))
 
 
+def present_cell(r):
+    e = r.get("present_exit")
+    if not e:
+        return "-"
+    if not e.get("n"):
+        return f"none presented ({e.get('dropped', '?')} dropped)" if "dropped" in e else "none presented"
+    return f"{e['p50']:g}/{e['p99']:g}/{e['max']:g} ({e['presented']} shown, {e['dropped']} dropped) {e['mode']}"
+
+
+def ticks_cell(r):
+    e = r.get("present_exit") or {}
+    t = e.get("ticks_1_2_3_4plus")
+    return "/".join(str(x) for x in t) + f" @{e['display_hz']:g}Hz, off-cadence {e['off_cadence_pct']:g}%" if t else "-"
+
+
 def run_table(results):
-    lines = ["| run | outcome | frames | p50 | p95 | p99 | max | >16.7 | >20.8 | >33.3 | slow-frame phase (share) "
-             "| game_cpu / draw_done / gx_submit / frame_slot / pipeline (ms per slow frame) | present p99 | slow "
-             "compiles | skipped draws | load max | wall s | flags |",
-             "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|---:|---:|---:|---:|---:|---|"]
+    lines = ["| run | outcome | frames | r2r p50/p99/max | r2r >17.5/>20.8/>33.3 | busy p50/p95/p99 | interval p50/p99/max "
+             "| interval >16.7/>20.8/>33.3 | late phase (share; basis) | game_cpu / draw_done / gx_submit / frame_slot / "
+             "pipeline (ms per late span) | acquire ms | present p50/p99/max | refresh ticks 1/2/3/4+ | slow compiles | "
+             "skipped draws | load max | wall s | flags |",
+             "|---|---|---:|---|---|---|---|---|---|---|---:|---|---|---:|---:|---:|---:|---|"]
     for r in results:
         w = r.get("window") or {}
-        s = w.get("slow_mean_ms") or {}
-        phase = f"{w.get('dominant', '-')} ({w.get('dominant_share', '-')})" if w.get("slow_frames") else "-"
-        breakdown = " / ".join(fmt(s.get(k)) for k in ("game_cpu", "draw_done", "gx_submit", "frame_slot",
-                                                         "pipeline_wait")) if s else "-"
-        lines.append(f"| {r['label']}/{r['stage']}-s{r['scenario']}-r{r['repeat']} | {r['outcome']} | "
-                     f"{fmt(w.get('frames'))} | {fmt(w.get('p50'))} | {fmt(w.get('p95'))} | {fmt(w.get('p99'))} | "
-                     f"{fmt(w.get('max'))} | {fmt(w.get('over_16.7'))} | {fmt(w.get('over_20.8'))} | "
-                     f"{fmt(w.get('over_33.3'))} | {phase} | {breakdown} | {fmt((w.get('present') or {}).get('p99'))} | "
-                     f"{fmt(r['shaders'].get('slow_compiles'))} | {fmt(r.get('skipped_draws'))} | "
-                     f"{fmt((r.get('loading') or {}).get('max'))} | {fmt(r.get('wall_seconds'))} | "
-                     f"{'; '.join(r.get('contaminated') or []) or 'ok'} |")
+        q = w.get("r2r") or {}
+        b = w.get("busy") or {}
+        late = w.get("late") or {}
+        m = late.get("mean_ms") or {}
+        phase = f"{late.get('dominant', '-')} ({late.get('dominant_share', '-')}; {late.get('basis', '-')})" \
+            if late.get("n") else "-"
+        parts = " / ".join(fmt(m.get(k)) for k in ("game_cpu", "draw_done", "gx_submit", "frame_slot",
+                                                     "pipeline_wait")) if m else "-"
+        lines.append(
+            f"| {r['label']}/{r['stage']}-s{r['scenario']}-r{r['repeat']} | {r['outcome']} | {fmt(w.get('frames'))} | "
+            f"{fmt(q.get('p50'))}/{fmt(q.get('p99'))}/{fmt(q.get('max'))} | "
+            f"{fmt(q.get('over_17.5'))}/{fmt(q.get('over_20.8'))}/{fmt(q.get('over_33.3'))} | "
+            f"{fmt(b.get('p50'))}/{fmt(b.get('p95'))}/{fmt(b.get('p99'))} | "
+            f"{fmt(w.get('p50'))}/{fmt(w.get('p99'))}/{fmt(w.get('max'))} | "
+            f"{fmt(w.get('over_16.7'))}/{fmt(w.get('over_20.8'))}/{fmt(w.get('over_33.3'))} | {phase} | {parts} | "
+            f"{fmt(w.get('drawable_acquire_mean'))} | {present_cell(r)} | {ticks_cell(r)} | "
+            f"{fmt(r['shaders'].get('slow_compiles'))} | {fmt(r.get('skipped_draws'))} | "
+            f"{fmt((r.get('loading') or {}).get('max'))} | {fmt(r.get('wall_seconds'))} | "
+            f"{'; '.join(r.get('contaminated') or []) or 'ok'} |")
     return "\n".join(lines)
 
 
-METRICS = ("p50", "p99", "max", "over_20.8", "over_33.3")
+# Comparison metrics: (name, getter). Late verdicts key off retrace-to-retrace and present intervals.
+def _get(*path):
+    def get(r):
+        value = r
+        for key in path:
+            value = (value or {}).get(key) if isinstance(value, dict) else None
+        return value
+    return get
+
+
+METRICS = {
+    "r2r_p99": _get("window", "r2r", "p99"), "r2r_late": _get("window", "r2r", "over_20.8"),
+    "r2r_max": _get("window", "r2r", "max"), "busy_p99": _get("window", "busy", "p99"),
+    "interval_p99": _get("window", "p99"), "present_p99": _get("present_exit", "p99"),
+}
 
 
 def by_stage(results):
@@ -621,15 +724,18 @@ def by_stage(results):
     return groups
 
 
+def values_of(runs, metric):
+    return [v for v in (METRICS[metric](r) for r in runs) if v is not None]
+
+
 def noise(results):
     """Per metric: median over stages of the spread (max - min) between repeats of the same stage."""
     spreads = {m: [] for m in METRICS}
     for runs in by_stage(results).values():
-        if len(runs) < 2:
-            continue
         for m in METRICS:
-            values = [r["window"][m] for r in runs]
-            spreads[m].append(max(values) - min(values))
+            values = values_of(runs, m)
+            if len(values) >= 2:
+                spreads[m].append(max(values) - min(values))
     return {m: (round(statistics.median(v), 2) if v else None) for m, v in spreads.items()}
 
 
@@ -638,40 +744,31 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
     na, nb = noise(a_results), noise(b_results)
     pooled = {m: max([x for x in (na.get(m), nb.get(m)) if x is not None], default=None) for m in METRICS}
     ga, gb = by_stage(a_results), by_stage(b_results)
-    lines = [f"| stage | n | {a_name} p99 | {b_name} p99 | d p99 | {a_name} max | {b_name} max | {a_name} >20.8 | "
-             f"{b_name} >20.8 | d >20.8 | {a_name} >33.3 | {b_name} >33.3 | verdict |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
-    totals = {"a": {m: [] for m in METRICS}, "b": {m: [] for m in METRICS}}
-    for key in sorted(set(ga) | set(gb)):
-        ra, rb = ga.get(key, []), gb.get(key, [])
-        if not ra or not rb:
-            continue
-        med = lambda runs, m: statistics.median(r["window"][m] for r in runs)
-        cells = {m: (med(ra, m), med(rb, m)) for m in METRICS}
-        for m in METRICS:
-            totals["a"][m].append(cells[m][0])
-            totals["b"][m].append(cells[m][1])
-        d99 = cells["p99"][1] - cells["p99"][0]
-        dlate = cells["over_20.8"][1] - cells["over_20.8"][0]
-        verdict = []
-        for m, d in (("p99", d99), ("over_20.8", dlate)):
-            n = pooled.get(m)
-            if n is None:
-                verdict.append(f"{m} ? (no repeats)")
-            elif abs(d) > 2 * n:
-                verdict.append(f"{m} {'better' if d < 0 else 'WORSE'}")
-        lines.append(f"| {key[0]}-s{key[1]} | {len(ra)}/{len(rb)} | {cells['p99'][0]:.2f} | {cells['p99'][1]:.2f} | "
-                     f"{d99:+.2f} | {cells['max'][0]:.1f} | {cells['max'][1]:.1f} | {cells['over_20.8'][0]:g} | "
-                     f"{cells['over_20.8'][1]:g} | {dlate:+g} | {cells['over_33.3'][0]:g} | {cells['over_33.3'][1]:g} | "
+    shown = ("r2r_p99", "r2r_late", "busy_p99", "interval_p99", "present_p99")
+    head = " | ".join(f"{m} {a_name} | {m} {b_name} | d" for m in shown)
+    lines = [f"| stage | n | {head} | verdict |", "|---|---:|" + "---:|---:|---:|" * len(shown) + "---|"]
+    for key in sorted(set(ga) & set(gb)):
+        ra, rb = ga[key], gb[key]
+        cells, verdict = [], []
+        for m in shown:
+            va, vb = values_of(ra, m), values_of(rb, m)
+            if not va or not vb:
+                cells.append("- | - | -")
+                continue
+            xa, xb = statistics.median(va), statistics.median(vb)
+            d = xb - xa
+            cells.append(f"{xa:g} | {xb:g} | {d:+.2f}")
+            if m in ("r2r_p99", "r2r_late", "busy_p99", "present_p99"):
+                n = pooled.get(m)
+                if n is None:
+                    verdict.append(f"{m} ? (no repeats)") if d else None
+                elif abs(d) > 2 * n and d:
+                    verdict.append(f"{m} {'better' if d < 0 else 'WORSE'}")
+        lines.append(f"| {key[0]}-s{key[1]} | {len(ra)}/{len(rb)} | {' | '.join(cells)} | "
                      f"{', '.join(verdict) or 'within noise'} |")
-    if totals["a"]["p99"]:
-        lines.append(f"| **median of stages** | | {statistics.median(totals['a']['p99']):.2f} | "
-                     f"{statistics.median(totals['b']['p99']):.2f} | | | | {sum(totals['a']['over_20.8']):g} (sum) | "
-                     f"{sum(totals['b']['over_20.8']):g} (sum) | | {sum(totals['a']['over_33.3']):g} | "
-                     f"{sum(totals['b']['over_33.3']):g} | |")
     lines.append("")
     lines.append(f"Noise (median over stages of the spread between repeats of one stage): {a_name} {na}; {b_name} {nb}. "
-                 "A per-stage delta counts only beyond 2x the larger spread.")
+                 "A per-stage delta counts only beyond 2x the larger spread; with one repeat there is no noise estimate.")
     return "\n".join(lines)
 
 
@@ -679,9 +776,11 @@ def write_summary(out, meta, results):
     sections = [f"# perf_bench {out.name}", "",
                 f"{meta.get('started')} - {datetime.datetime.now().isoformat(timespec='seconds')}; mode "
                 f"{meta.get('mode')}; set {meta.get('set')}; repeats {meta.get('repeat')}; lock {meta.get('lock_class')}",
-                "", "Frame times are GAME-THREAD CADENCE (seam-to-seam, VI-paced), not displayed frames. "
-                "Window: stage ready -> end of the stage driver script. Slow frame = interval > 20.8 ms; its phase is "
-                "the game-thread part with the largest total over slow frames (retrace wait excluded).", ""]
+                "", "Game pacing = retrace-to-retrace (r2r: consecutive frame-loop retrace marks, as frame-cost's "
+                "retrace_pace.py); headroom = busy (interval - retrace wait); interval = seam-to-seam game-thread cadence "
+                "(jitters with per-frame work; kept for reference). Display = on-screen present intervals (Petari present "
+                "intervals exit line). Late = r2r > 20.8 ms; its phase is the game-thread part with the largest total over "
+                "late spans (retrace wait excluded). Window: stage ready -> end of the stage driver script.", ""]
     for label, info in meta.get("apps", {}).items():
         sections.append(f"- {label}: {info['source']} sha256 {info['sha256'][:16]}")
     sections += ["", run_table(results), ""]
@@ -729,7 +828,21 @@ def finish(args, out, meta, results, apps):
         with open(Path(args.warm_root) / "metal.lock", "w") as metal_lock:
             fcntl.flock(metal_lock, fcntl.LOCK_EX)
             shutil.rmtree(apps[0].metal_dir, ignore_errors=True)
-    text = write_summary(out, meta, results)
+    # The bench dir can hold several invocations (labels, extra repeats): summarize every run in it.
+    collected = []
+    for path in sorted((out / "runs").glob("*/*/result.json")):
+        try:
+            collected.append(json.loads(path.read_text()))
+        except (OSError, ValueError):
+            pass
+    previous = {}
+    try:
+        previous = json.loads((out / "results.json").read_text()).get("meta", {})
+    except (OSError, ValueError):
+        pass
+    meta["apps"] = {**previous.get("apps", {}), **meta["apps"]}
+    meta["invocations"] = previous.get("invocations", []) + [{"argv": sys.argv[1:], "seconds": meta.get("bench_seconds")}]
+    text = write_summary(out, meta, collected or results)
     print(text)
     log(f"summary: {out / 'summary.md'}")
 
