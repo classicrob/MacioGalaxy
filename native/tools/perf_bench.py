@@ -29,8 +29,15 @@ Pipeline policy, global precompile and stage gate are the app's defaults (what a
   perf_bench.py run --set quick [--app APP] [--cold] [--repeat 2] [--name NAME]
   perf_bench.py run --stages HeavenlyBeachGalaxy:1,AstroGalaxy:2 --name repro
   perf_bench.py ab --a APP_A --b APP_B --set quick [--repeat 2] [--name NAME]   # interleaved A/B
+  perf_bench.py run --drive goodegg1 --stages EggStarGalaxy:1 --frames 17000      # genuine play: event coverage
+  perf_bench.py run --drive soak --stages HeavenlyBeachGalaxy:1                    # stage, exit, observatory, save, title
+  perf_bench.py run --drive replay --route seg.csv --stages PhantomGalaxy:2        # a recorded route (recording_segments.py)
+  perf_bench.py run --drive stage --stages BeltConveyerExGalaxy:1 --env PETARI_STAGE_WARP=26683.05,1300.0,-11987.62 \
+      --env PETARI_SMOKE_QUIT_DELAY=1500                                           # star-get + return to the observatory
+      (drives report r2r/busy/present over every gameplay frame and a spike list with the driver events around each)
+  perf_bench.py run --warm-key NAME | ab --b-warm-key NAME   # a separately filled warm cache for a shader-changing build
   perf_bench.py report NAME [--vs OTHER_NAME]          # re-print tables (and a comparison)
-  perf_bench.py clean [--all-warm]                     # remove bench Metal dirs (and warm caches)
+  perf_bench.py clean [--all-warm] | clean --apps       # bench Metal dir (and warm caches; refuses while in use) | old app clones
 
 APP is a Petari.app bundle or its Contents/MacOS/Petari (default: the main checkout's build). Output: <repo>/build/
 perf-bench/<name>/ (results.json, summary.md, runs/<label>/<Stage>-s<n>-r<k>/{app.log,frames.csv,result.json}). The
@@ -155,7 +162,7 @@ def cache_key():
 class BenchApp:
     """An APFS clone of a Petari.app whose bundle id is BENCH_ID (the private Metal cache path)."""
 
-    def __init__(self, app, warm_root):
+    def __init__(self, app, warm_root, warm_key=None):
         bundle = Path(app).resolve()
         while bundle.suffix != ".app" and bundle != bundle.parent:
             bundle = bundle.parent
@@ -167,7 +174,12 @@ class BenchApp:
         self.bundle = self.root / "Petari.app"
         self.exe = self.bundle / "Contents/MacOS/Petari"
         self.metal_dir = darwin_cache_dir() / BENCH_ID
-        self.warm_cache = Path(warm_root) / f"cache-{cache_key()}"
+        # warm_key: a separately filled warm cache for a build whose generated shader source differs from main's
+        # (main's cache would make its "warm" runs compile cold). Same warm root, so metal.lock still serializes.
+        if warm_key and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,40}", warm_key):
+            raise SystemExit(f"perf_bench: --warm-key {warm_key!r}: lowercase letters, digits, dashes")
+        self.warm_key = warm_key
+        self.warm_cache = Path(warm_root) / (f"cache-{cache_key()}" + (f"-{warm_key}" if warm_key else ""))
 
     def freeze(self):
         """Clone the bundle (copy-on-write, ~no disk) and rewrite its bundle id. Idempotent."""
@@ -209,7 +221,7 @@ def lock_command(args, inner_seconds, command, owner=None):
 def app_env(args, stage, scenario, extra):
     env = {k: v for k, v in os.environ.items() if not k.startswith("PETARI_")}
     env.update({
-        "PETARI_SMOKE": "stage", "PETARI_STAGE": stage, "PETARI_SCENARIO": str(scenario),
+        "PETARI_SMOKE": getattr(args, "drive", None) or "stage", "PETARI_STAGE": stage, "PETARI_SCENARIO": str(scenario),
         "PETARI_SMOKE_FRAMES": str(args.frames), "PETARI_STAGE_IDLE_FRAMES": str(args.idle_frames),
         "PETARI_SMOKE_BACKGROUND": "0",       # visible window, takes focus, real audio output
         "PETARI_FAST_BOOT": "1",              # strap screen accepts a button after 30 frames (boot only)
@@ -218,14 +230,20 @@ def app_env(args, stage, scenario, extra):
         # no Return-skips-preparation). Builds without it ignore the variable.
         "PETARI_SMOKE_IGNORE_PHYSICAL": "1",
     })
+    drive = getattr(args, "drive", None)
+    if drive == "soak":
+        env["PETARI_SOAK_MINUTES"] = "1"  # the budget is checked after each stage part: 1 min = stage, exit, observatory, save, title, stage again (0 means 60): stage, back to the observatory, End Game with the save, title
+    if drive == "replay":
+        env["PETARI_REPLAY_ROUTE"] = str(Path(args.route).resolve())
     env.update(extra)
     return env
 
 
-def launch(args, run_dir, mode, app, warm_metal, command, env, owner, timeout, log_path):
+def launch(args, run_dir, mode, app, warm_metal, command, env, owner, timeout, log_path, metal_lock_held=False):
     """One app launch through the app lock and `_launch` (Metal reset under metal.lock). Returns (status, timed_out)."""
     spec = {"run_dir": str(run_dir), "mode": mode, "metal_dir": str(app.metal_dir), "warm_metal": str(warm_metal),
-            "metal_lock": str(Path(args.warm_root) / "metal.lock"), "command": command, "env": env}
+            "metal_lock": str(Path(args.warm_root) / "metal.lock"), "metal_lock_held": metal_lock_held,
+            "command": command, "env": env}
     (run_dir / "spec.json").write_text(json.dumps(spec, indent=2) + "\n")
     inner = [sys.executable, "-I", str(Path(__file__).resolve()), "_launch", "--spec", str(run_dir / "spec.json")]
     with log_path.open("wb") as stream:
@@ -257,6 +275,25 @@ def ensure_warm(args, app, refresh=False):
         os.utime(target / "warm.json")
         return
     target.parent.mkdir(parents=True, exist_ok=True)
+    lock_script = MAIN / "build/locked-app.sh"
+    if not os.environ.get("PERF_BENCH_IN_LOCK") and lock_script.is_file():
+        # Lock order app lock -> metal.lock, as every run: the whole fill runs as one `warm` invocation inside one
+        # app-lock hold (owner perf-bench-warmup), so it never holds metal.lock while queuing for the app lock.
+        command = [str(lock_script), "perf-bench-warmup", sys.executable, "-I", str(Path(__file__).resolve()), "warm",
+                   "--app", str(app.source), "--warm-root", str(args.warm_root), "--disc", str(args.disc),
+                   "--source", str(args.source), "--force"]
+        if app.warm_key:
+            command += ["--warm-key", app.warm_key]
+        if refresh:
+            command.append("--refresh")
+        if args.visit:
+            command += ["--visit", ",".join(f"{s_}:{n}" for s_, n in args.visit)]
+        env = dict(os.environ, PERF_BENCH_IN_LOCK="1", PETARI_LOCK_CLASS="functional",
+                   PETARI_LOCK_TIMEOUT=str(1800 * (1 + len(args.visit)) + 600))
+        status = subprocess.run(command, cwd=REPO, env=env).returncode
+        if status != 0 or not warm_ok(target):
+            raise SystemExit(f"perf_bench: warm fill for {target.name} failed (exit {status})")
+        return
     with open(target.parent / "fill.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if warm_ok(target) and not refresh:
@@ -274,6 +311,10 @@ def ensure_warm(args, app, refresh=False):
             "visible window (do not press Return: it skips the preparation), owner perf-bench-warmup")
         started = time.time()
         prep = None
+        # metal.lock from the first visit through the rename: between visits, another bench's reset or end-of-bench
+        # cleanup must not touch the bench Metal dir the fill is building (2026-10-17: a finishing bench deleted it).
+        metal_lock = open(Path(args.warm_root) / "metal.lock", "a")
+        fcntl.flock(metal_lock, fcntl.LOCK_EX)
         for number, (stage, scenario) in enumerate(visits):
             extra = {"PETARI_LOCK_CLASS": "functional"}
             if number == 0:
@@ -281,11 +322,12 @@ def ensure_warm(args, app, refresh=False):
                 extra["PETARI_PIPELINE_GLOBAL_PRECOMPILE"] = "1"
             visit_args = argparse.Namespace(**vars(args))
             visit_args.idle_frames = 120
+            visit_args.drive, visit_args.frames = None, 12000  # the fill always uses the stage script
             env = app_env(visit_args, stage, scenario, extra)
             step = work / f"visit{number}"
             step.mkdir()
             status, timed_out, _ = launch(args, step, "cold" if number == 0 else "keep", app, "", command, env,
-                                          "perf-bench-warmup", 1800, step / "app.log")
+                                          "perf-bench-warmup", 1800, step / "app.log", metal_lock_held=True)
             text = (step / "app.log").read_text(errors="replace")
             log(f"  warm visit {stage}-s{scenario}: exit {status}{' (timeout)' if timed_out else ''}")
             if number == 0:
@@ -297,9 +339,10 @@ def ensure_warm(args, app, refresh=False):
                 log(f"  (visit failed; the cache is kept, the stage may be colder) see {step}/app.log")
         stage_dir = work / "cache"
         stage_dir.mkdir()
-        with open(Path(args.warm_root) / "metal.lock", "w") as metal_lock:
-            fcntl.flock(metal_lock, fcntl.LOCK_EX)
+        try:
             app.metal_dir.rename(stage_dir / "metal")
+        finally:
+            metal_lock.close()
         for db in ("pipeline_cache.db", "dawn_cache.db"):
             sweep.snapshot_sqlite(user / db, stage_dir / db)
         (stage_dir / "warm.json").write_text(json.dumps({
@@ -317,17 +360,37 @@ def ensure_warm(args, app, refresh=False):
         prune(args)
 
 
-def prune(args, keep_caches=2, app_days=3):
-    """Keep the 2 most recently used warm caches and app clones used in the last 3 days (clones cost ~no disk)."""
+def prune(args, keep_caches=4, app_days=3):
+    """Keep the 4 most recently used warm caches and app clones used in the last 3 days (clones cost ~no disk)."""
     root = Path(args.warm_root)
     caches = sorted((p for p in root.glob("cache-*") if (p / "warm.json").is_file()),
                     key=lambda p: (p / "warm.json").stat().st_mtime, reverse=True)
     for old in caches[keep_caches:]:
         shutil.rmtree(old, ignore_errors=True)
         log(f"pruned warm cache {old.name}")
-    for clone in (root / "apps").glob("*") if (root / "apps").is_dir() else []:
-        if time.time() - clone.stat().st_mtime > app_days * 86400:
-            shutil.rmtree(clone, ignore_errors=True)
+    prune_apps(root)
+
+
+def prune_apps(warm_root, keep=3, recent_minutes=30, listing=None):
+    """App clones (<warm-root>/apps/<sha16>): keep the `keep` most recently used, any used in the last
+    `recent_minutes` (freeze and every run touch their clone, so a queued or long bench keeps its own), and any a
+    running process executes. A rebuilt bundle shares no blocks with an older clone, so each old clone costs real
+    disk (up to the bundle size, ~440 MB). Returns the removed names."""
+    apps = Path(warm_root) / "apps"
+    if not apps.is_dir():
+        return []
+    if listing is None:
+        listing = subprocess.run(["ps", "-axo", "command="], capture_output=True, text=True).stdout
+    clones = sorted((c for c in apps.iterdir() if c.is_dir()), key=lambda c: c.stat().st_mtime, reverse=True)
+    removed = []
+    for clone in clones[keep:]:
+        if time.time() - clone.stat().st_mtime < recent_minutes * 60 or str(clone) + "/" in listing:
+            continue
+        shutil.rmtree(clone, ignore_errors=True)
+        removed.append(clone.name)
+    if removed:
+        log(f"pruned {len(removed)} app clone(s): {', '.join(removed)}")
+    return removed
 
 
 # --- one run ----------------------------------------------------------------------------------------------------------
@@ -347,9 +410,10 @@ def cmd_launch(args):
     load = os.getloadavg()
     metal = Path(spec["metal_dir"])
     # Held until the app exits (the descriptor survives exec): one bench app at a time owns the bench Metal dir.
-    fd = os.open(spec["metal_lock"], os.O_CREAT | os.O_RDWR, 0o644)
-    fcntl.flock(fd, fcntl.LOCK_EX)
-    os.set_inheritable(fd, True)
+    if not spec.get("metal_lock_held"):
+        fd = os.open(spec["metal_lock"], os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.set_inheritable(fd, True)
     t0 = time.time()
     if spec["mode"] != "keep":
         shutil.rmtree(metal, ignore_errors=True)
@@ -430,13 +494,15 @@ class Sampler:
 
 
 def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=None, load_cmd=None):
-    name = f"{stage}-s{scenario}-r{repeat}"
+    drive = getattr(args, "drive", None)
+    name = (f"{drive}-" if drive else "") + f"{stage}-s{scenario}-r{repeat}"
     run_dir = out / "runs" / label / name
     if (run_dir / "result.json").is_file() and not args.rerun:
         log(f"skip {label}/{name}: result exists")
         return json.loads((run_dir / "result.json").read_text())
     shutil.rmtree(run_dir, ignore_errors=True)
     run_dir.mkdir(parents=True)
+    os.utime(app.root)  # in use: prune_apps keeps recently used clones
     user = run_dir / "user"
     sweep.load_fixture_module().create(args.source, user, "stage")
     if not cold:
@@ -469,7 +535,7 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
                     os.killpg(load.pid, signal.SIGKILL)
                 except ProcessLookupError:
                     pass
-    result = analyze_run(run_dir, user, stage, status, timed_out)
+    result = analyze_run(run_dir, user, stage, status, timed_out, drive)
     launched = {}
     try:
         launched = json.loads((run_dir / "launch.json").read_text())
@@ -482,6 +548,7 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
                      if not k.endswith(".bg") and v not in (args.owner, f"quiet-{args.owner}")}
     result.update({
         "label": label, "stage": stage, "scenario": scenario, "repeat": repeat, "mode": "cold" if cold else "warm",
+        "drive": drive, "route": str(args.route) if drive == "replay" else None,
         "app": str(app.source), "app_sha256": app.sha, "lock_class": args.lock_class, "extra_env": env_items, "load_cmd": load_cmd,
         "wall_seconds": round(time.time() - started, 1),
         "app_seconds": round(time.time() - launched["started"], 1) if launched.get("started") else None,
@@ -514,6 +581,7 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
         for db in list(user.glob("dawn_cache.db*")) + list(user.glob("pipeline_cache.db*")):
             db.unlink()
         shutil.rmtree(user / "NAND", ignore_errors=True)  # the fixture save copy (8.7 MB per run); crash reports stay
+        shutil.rmtree(user / "cache", ignore_errors=True)  # a background run's private Metal/Dawn caches
     w = result.get("window") or {}
     q = w.get("r2r") or {}
     log(f"done {label}/{name}: {result['outcome']} r2r p99 {q.get('p99')} max {q.get('max')} late {q.get('over_20.8')}; "
@@ -651,7 +719,7 @@ def window_stats(rows, first, last, display_hz=None):
     return stats
 
 
-def analyze_run(run_dir, user, stage, status, timed_out):
+def analyze_run(run_dir, user, stage, status, timed_out, drive=None):
     base = sweep.analyze(run_dir / "app.log", run_dir / "frames.csv", stage, status, timed_out, user)
     base["outcome"], base["signature"] = sweep.classify(base)
     frames = base.get("frames") or {}
@@ -691,7 +759,7 @@ def analyze_run(run_dir, user, stage, status, timed_out):
     cache = re.findall(r"^\[gx pipeline cache\].*$", text, re.M)
     result["cache_line"] = cache[-1] if cache else None
     csv_path = run_dir / "frames.csv"
-    if csv_path.is_file() and frames.get("ready") and frames.get("end"):
+    if csv_path.is_file() and not drive and frames.get("ready") and frames.get("end"):
         with csv_path.open() as handle:
             rows = list(csv.DictReader(handle))
         hz = (result.get("present_exit") or {}).get("display_hz")
@@ -700,9 +768,93 @@ def analyze_run(run_dir, user, stage, status, timed_out):
             loading = window_stats(rows, frames["load_start"], frames["ready"])
             if loading:
                 result["loading"] = {k: loading[k] for k in ("frames", "p50", "p99", "max", "over_33.3")}
+    elif csv_path.is_file() and drive:
+        # A gameplay driver (goodegg1, soak, replay): the window is the whole run from the first gameplay frame; the
+        # pacing metrics (r2r, busy) count gameplay frames only, the spike list covers every phase.
+        with csv_path.open() as handle:
+            rows = list(csv.DictReader(handle))
+        first = next((int(r["frame"]) for r in rows if r.get("phase") == "gameplay"), None)
+        hz = (result.get("present_exit") or {}).get("display_hz")
+        if first is not None:
+            result["window"] = window_stats(rows, first - 1, int(rows[-1]["frame"]), hz)
+            result["window"]["first_gameplay_frame"] = first
+            phases = {}
+            for r in rows:
+                if int(r["frame"]) >= first:
+                    phases[r.get("phase")] = phases.get(r.get("phase"), 0) + 1
+            result["window"]["phase_frames"] = phases
+            result["spikes"] = spike_list(rows, first, events_from_log(text), hz)
+        else:
+            result["window"] = None
     else:
         result["window"] = None
+    if drive:
+        result["events"] = len(events_from_log(text))
     return result
+
+
+EVENT = re.compile(r"^PETARI SMOKE \[frame (\d+)\]: (.*)$", re.M)
+
+
+def events_from_log(text):
+    """The driver's own log lines, by frame (the frame CSV's index): planets, launches, talks, star, save, deaths."""
+    return [(int(f), line.strip()[:160]) for f, line in EVENT.findall(text)]
+
+
+def row_parts(row):
+    """Game-thread parts of one seam-to-seam frame, and the other-thread waits beside it."""
+    game_work, token, prep = num(row, "game_work_ms"), num(row, "token_barrier_wait_ms"), num(row, "stage_prep_wait_ms")
+    parts = {"game_cpu": max(0.0, game_work - token - prep), "token_barrier": token, "stage_prep": prep,
+             "draw_done": num(row, "draw_done_wait_ms"), "gx_submit": num(row, "seam_compose_ms") + num(row, "seam_end_frame_ms"),
+             "frame_slot": num(row, "seam_begin_frame_ms"), "reacquire": num(row, "seam_reacquire_ms"),
+             "unattributed": num(row, "unattributed_ms")}
+    return parts
+
+
+def describe(parts, others):
+    main = sorted(parts.items(), key=lambda kv: -kv[1])[:2]
+    text = ", ".join(f"{k} {v:.1f}" for k, v in main if v >= 0.5)
+    extra = ", ".join(f"{k} {v:.1f}" for k, v in others.items() if v >= 1.0)
+    return text + (f" (beside: {extra})" if extra else "")
+
+
+def spike_list(rows, first, events, hz=None, limit=20):
+    """Worst moments after the first gameplay frame: late retrace spans (gameplay), long frames in any phase
+    (> 33.3 ms: a visible stall, e.g. a loading or menu animation), and on-screen present gaps >= 33 ms. Each with its
+    phase breakdown and the driver events around it."""
+    spikes = []
+    rows = [r for r in rows if int(r["frame"]) >= first - 1]
+    for prev, row in zip(rows, rows[1:]):
+        frame = int(row["frame"])
+        others = {k: num(row, k + "_ms") for k in ("pipeline_wait", "texture_upload", "drawable_acquire", "efb_submit_wait")}
+        if prev.get("phase") == "gameplay" and row.get("phase") == "gameplay":
+            span = num(prev, "interval_ms") + sum(num(row, c) for c in SEAM) + num(row, "retrace_wait_ms") \
+                - sum(num(prev, c) for c in SEAM) - num(prev, "retrace_wait_ms")
+            if span > LATE_MS:
+                parts = {k: v for k, v in frame_parts(prev, row).items() if k in GAME_THREAD and k != "retrace"}
+                spikes.append({"frame": frame, "kind": "late retrace", "ms": round(span, 2), "phase": "gameplay",
+                               "cause": describe(parts, others)})
+                continue
+        interval = num(row, "interval_ms")
+        if interval > 33.3:
+            spikes.append({"frame": frame, "kind": "long frame", "ms": round(interval, 2), "phase": row.get("phase"),
+                           "cause": describe(row_parts(row), others)})
+        if row.get("present_state") == "ok" and num(row, "present_ms") >= 33.0:
+            spikes.append({"frame": frame, "kind": "present gap", "ms": round(num(row, "present_ms"), 2),
+                           "phase": row.get("phase"), "cause": f"{round(num(row, 'present_ms') * (hz or 60) / 1000)} refreshes"})
+    spikes.sort(key=lambda s: -s["ms"])
+    frames_of = [f for f, _ in events]
+    import bisect
+    for spike in spikes[:limit]:
+        i = bisect.bisect_right(frames_of, spike["frame"])
+        if i > 0:
+            spike["before"] = f"-{spike['frame'] - events[i - 1][0]}f {events[i - 1][1]}"
+        if i < len(events):
+            spike["after"] = f"+{events[i][0] - spike['frame']}f {events[i][1]}"
+    counts = {}
+    for spike in spikes:
+        counts[spike["kind"]] = counts.get(spike["kind"], 0) + 1
+    return {"counts": counts, "worst": spikes[:limit]}
 
 
 # --- tables -----------------------------------------------------------------------------------------------------------
@@ -859,6 +1011,18 @@ def write_summary(out, meta, results):
     for label, info in meta.get("apps", {}).items():
         sections.append(f"- {label}: {info['source']} sha256 {info['sha256'][:16]}")
     sections += ["", run_table(results), ""]
+    for r in results:
+        sp = r.get("spikes")
+        if not sp:
+            continue
+        w = r.get("window") or {}
+        sections += [f"### Spikes: {r['label']}/{r.get('drive')}-{r['stage']}-s{r['scenario']}-r{r['repeat']} "
+                     f"({r['outcome']}; {sp['counts']}; phases {w.get('phase_frames')}; {r.get('events')} driver events)", "",
+                     "| frame | kind | ms | phase | cause (ms) | event before | event after |", "|---:|---|---:|---|---|---|---|"]
+        for s_ in sp["worst"]:
+            sections.append(f"| {s_['frame']} | {s_['kind']} | {s_['ms']} | {s_['phase']} | {s_['cause']} | "
+                            f"{s_.get('before', '-').replace('|', '/')} | {s_.get('after', '-').replace('|', '/')} |")
+        sections.append("")
     labels = sorted({r["label"] for r in results})
     if len(labels) == 2:
         a = [r for r in results if r["label"] == labels[0]]
@@ -899,6 +1063,7 @@ def start_bench(args, mode_label):
 
 
 def finish(args, out, meta, results, apps):
+    prune_apps(args.warm_root)
     if not args.keep_metal and apps:
         with open(Path(args.warm_root) / "metal.lock", "w") as metal_lock:
             fcntl.flock(metal_lock, fcntl.LOCK_EX)
@@ -945,7 +1110,7 @@ def batch(args, runs):
 def cmd_run(args):
     batch(args, len(resolve_stages(args)) * args.repeat)
     out, meta = start_bench(args, "cold" if args.cold else "warm")
-    app = BenchApp(args.app, args.warm_root).freeze()
+    app = BenchApp(args.app, args.warm_root, args.warm_key).freeze()
     if not args.cold:
         ensure_warm(args, app)
     meta["apps"][args.label] = {"source": str(app.source), "sha256": app.sha}
@@ -969,15 +1134,18 @@ def cmd_ab(args):
     a_label, b_label = args.a_label, args.b_label
     if a_label == b_label:
         raise SystemExit("perf_bench: --a-label and --b-label must differ")
-    variants = {a_label: (BenchApp(args.a, args.warm_root).freeze(), args.a_env),
-                b_label: (BenchApp(args.b or args.a, args.warm_root).freeze(), args.b_env)}
+    variants = {a_label: (BenchApp(args.a, args.warm_root, args.a_warm_key).freeze(), args.a_env),
+                b_label: (BenchApp(args.b or args.a, args.warm_root, args.b_warm_key).freeze(), args.b_env)}
     loads = {a_label: args.a_load, b_label: args.b_load}
     if variants[a_label][0].sha == variants[b_label][0].sha and args.a_env == args.b_env and args.a_load == args.b_load:
         log("A and B are the same build and environment: this measures noise only")
     if not args.cold:
-        ensure_warm(args, variants[a_label][0])  # one team cache for both: Metal/Dawn/Aurora entries are content-keyed
+        # One team cache for both unless a side has its own --*-warm-key (filled with that side's app).
+        for app, _ in variants.values():
+            ensure_warm(args, app)
     for label, (app, env) in variants.items():
-        meta["apps"][label] = {"source": str(app.source), "sha256": app.sha, "env": env, "load": loads[label]}
+        meta["apps"][label] = {"source": str(app.source), "sha256": app.sha, "env": env, "load": loads[label],
+                               "warm_cache": app.warm_cache.name}
     chosen = resolve_stages(args)
     results = []
     t0 = time.time()
@@ -994,7 +1162,7 @@ def cmd_ab(args):
 
 
 def cmd_warm(args):
-    app = BenchApp(args.app, args.warm_root)
+    app = BenchApp(args.app, args.warm_root, args.warm_key)
     if args.print_path:
         print(app.warm_cache if warm_ok(app.warm_cache) else "")
         return
@@ -1009,7 +1177,8 @@ def reanalyze(out):
     for path in sorted((out / "runs").glob("*/*/result.json")):
         old = json.loads(path.read_text())
         run_dir = path.parent
-        fresh = analyze_run(run_dir, run_dir / "user", old["stage"], old.get("exit_status"), old.get("timed_out", False))
+        fresh = analyze_run(run_dir, run_dir / "user", old["stage"], old.get("exit_status"), old.get("timed_out", False),
+                            old.get("drive"))
         old.update(fresh)
         path.write_text(json.dumps(old, indent=2, ensure_ascii=False) + "\n")
     data = json.loads((out / "results.json").read_text())
@@ -1090,6 +1259,12 @@ def refuse_if_busy(args, what):
 
 
 def cmd_clean(args):
+    if args.apps:
+        # Only app clones: the newest --keep, recently used and running ones stay; no lock guard needed.
+        before = free_gib(args.warm_root)
+        prune_apps(args.warm_root, keep=args.keep)
+        log(f"free disk {before:.1f} -> {free_gib(args.warm_root):.1f} GiB")
+        return
     refuse_if_busy(args, "clean")
     base = darwin_cache_dir()
     with open(Path(args.warm_root) / "metal.lock", "a") if Path(args.warm_root).is_dir() else open(os.devnull) as lock:
@@ -1126,9 +1301,17 @@ def main():
         p.add_argument("--cold", action="store_true", help="empty Metal/pipeline/Dawn caches for every run")
         p.add_argument("--lock-class", choices=("quiet", "functional"), default="quiet",
                        help="functional runs are marked contaminated (not timing evidence)")
-        p.add_argument("--timeout", type=int, default=420, help="seconds per app run, inside the lock")
+        p.add_argument("--timeout", type=int, default=None, help="seconds per app run, inside the lock (420; drives 1500)")
         p.add_argument("--lock-wait", type=int, default=7200, help="extra seconds allowed for waiting on the lock")
-        p.add_argument("--frames", type=int, default=12000, help="PETARI_SMOKE_FRAMES (safety bound)")
+        p.add_argument("--frames", type=int, default=None, help="PETARI_SMOKE_FRAMES (safety bound; 12000, drives 60000)")
+        p.add_argument("--drive", choices=("goodegg1", "soak", "replay", "stage"), default=None,
+                       help="a gameplay driver instead of the stage script: goodegg1 (Good Egg mission 1 to the star, "
+                            "save, observatory), soak (one cycle: stage, back to the observatory, End Game save, title), "
+                            "replay (--route, a recorded route; FAILs where no star is collected, frames stay valid), "
+                            "stage (the stage script analyzed as a drive: whole run + spikes; with --env "
+                            "PETARI_STAGE_WARP=x,y,z onto a placed PowerStar and PETARI_SMOKE_QUIT_DELAY=<frames> it "
+                            "records a genuine star-get and the return to the observatory)")
+        p.add_argument("--route", type=Path, default=None, help="route CSV for --drive replay (recording_segments.py)")
         p.add_argument("--idle-frames", type=int, default=600, help="PETARI_STAGE_IDLE_FRAMES")
         p.add_argument("--env", action="append", default=[], metavar="KEY=VALUE", help="extra app environment")
         p.add_argument("--rerun", action="store_true", help="rerun runs that already have a result")
@@ -1140,6 +1323,7 @@ def main():
 
     p = sub.add_parser("run", help="one app over a stage set")
     bench(p)
+    p.add_argument("--warm-key", default=None, help="use (fill if missing) the warm cache keyed <name>, filled with --app")
     p.add_argument("--app", type=Path, default=default_app)
     p.add_argument("--label", default="main", help="run label (directory under runs/)")
     p.set_defaults(fn=cmd_run)
@@ -1153,6 +1337,8 @@ def main():
     p.add_argument("--a-load", default=None, metavar="SHELL_CMD",
                    help="a concurrent load started just before each A app run and killed after it (process group)")
     p.add_argument("--b-load", default=None, metavar="SHELL_CMD", help="the same for B")
+    p.add_argument("--a-warm-key", default=None, help="A's own warm cache (filled with A's app); default the team cache")
+    p.add_argument("--b-warm-key", default=None, help="B's own warm cache (filled with B's app); default the team cache")
     p.add_argument("--a-label", default="A")
     p.add_argument("--b-label", default="B")
     p.set_defaults(fn=cmd_ab)
@@ -1160,6 +1346,7 @@ def main():
     common(p)
     p.add_argument("--app", type=Path, default=default_app, help="the app that fills it (default: main build)")
     p.add_argument("--refresh", action="store_true", help="rebuild it even if it exists")
+    p.add_argument("--warm-key", default=None, help="a separately keyed cache (cache-<key>-<name>), filled with --app")
     p.add_argument("--force", action="store_true", help="refresh even while bench runs or app-lock holders exist")
     p.add_argument("--print-path", action="store_true", help="print the current warm cache path ('' if none)")
     p.add_argument("--visit", default="", help="extra warm-up stage visits after the global fill: quick, full or Stage:n,...")
@@ -1179,11 +1366,18 @@ def main():
     common(p)
     p.add_argument("--all-warm", action="store_true")
     p.add_argument("--force", action="store_true", help="clean even while bench runs or app-lock holders exist")
+    p.add_argument("--apps", action="store_true", help="only prune app clones (keep the newest --keep, recent, running)")
+    p.add_argument("--keep", type=int, default=3)
     p.set_defaults(fn=cmd_clean)
     p = sub.add_parser("_launch", help=argparse.SUPPRESS)
     p.add_argument("--spec", required=True)
     p.set_defaults(fn=cmd_launch)
     args = parser.parse_args()
+    if getattr(args, "drive", None) == "replay" and not args.route:
+        parser.error("--drive replay needs --route")
+    if hasattr(args, "drive"):
+        args.frames = args.frames or (60000 if args.drive else 12000)
+        args.timeout = args.timeout or (1500 if args.drive else 420)
     if hasattr(args, "visit"):
         args.visit = resolve_stages(argparse.Namespace(stages=None if args.visit in ("quick", "full") else args.visit,
                                                        set=args.visit, disc=args.disc)) if args.visit else []
