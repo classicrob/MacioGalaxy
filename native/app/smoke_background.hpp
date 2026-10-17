@@ -5,11 +5,23 @@
 namespace PetariNative::App::SmokeBackground {
 
 inline bool enabled = false;
+// PETARI_SMOKE_IGNORE_PHYSICAL=1 on a foreground (visible, focused) smoke or fixture run: physical keyboard, mouse,
+// controller and touch input is dropped as in background mode, but the window, activation and focus events stay
+// normal, so frame timing is that of a focused window and the frame CSV's focus column stays truthful. Benchmarks
+// (native/tools/perf_bench.py) use it so a person at the machine cannot steer, assist or skip a run.
+inline bool ignorePhysical = false;
 
 inline bool requested(const char* smoke, bool fixture, const char* overrideValue) {
     if (overrideValue && overrideValue[0]) return overrideValue[0] != '0';
     return fixture || (smoke && smoke[0] && smoke[0] != '0');
 }
+
+// Only for automated runs (a smoke script or a test fixture); a normal launch always takes physical input.
+inline bool ignorePhysicalRequested(const char* smoke, bool fixture, const char* value) {
+    return value && value[0] == '1' && (fixture || (smoke && smoke[0] && smoke[0] != '0'));
+}
+
+inline bool dropsPhysical() { return enabled || ignorePhysical; }
 
 inline bool physicalEvent(Uint32 type) {
     return (type >= SDL_EVENT_KEY_DOWN && type <= SDL_EVENT_KEYMAP_CHANGED) ||
@@ -34,7 +46,7 @@ inline bool testMouseEvent(const SDL_Event* event) {
 }
 
 inline bool SDLCALL eventFilter(void*, SDL_Event* event) {
-    return !enabled || !physicalEvent(event->type) || testMouseEvent(event);
+    return !dropsPhysical() || !physicalEvent(event->type) || testMouseEvent(event);
 }
 
 } // namespace PetariNative::App::SmokeBackground

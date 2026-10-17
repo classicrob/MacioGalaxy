@@ -290,6 +290,35 @@ int main() {
               gDelivered[7].kind == Delivered::PadRemoved,
           "pad events delivered unchanged (" + std::to_string(gDelivered.size()) + " calls)");
 
+    // PETARI_SMOKE_IGNORE_PHYSICAL: a foreground automated run drops physical input but keeps focus events.
+    check(!Background::ignorePhysicalRequested(nullptr, false, "1"), "normal launch never ignores physical input");
+    check(Background::ignorePhysicalRequested("stage", false, "1") && Background::ignorePhysicalRequested(nullptr, true, "1"),
+          "smoke or fixture with the flag ignores physical input");
+    check(!Background::ignorePhysicalRequested("stage", true, "0") && !Background::ignorePhysicalRequested("stage", true, nullptr),
+          "flag off keeps physical input");
+    SDL_Event press = key(SDL_SCANCODE_W, true);
+    check(Background::eventFilter(nullptr, &press), "flag off: a physical key passes the SDL filter");
+    Background::ignorePhysical = true;
+    gDelivered.clear();
+    const Smoke::PhysicalInputs ignoredBefore = Events::physicalInputs();
+    check(!Background::eventFilter(nullptr, &press), "flag on: a physical key is dropped by the SDL filter");
+    Events::input(press);
+    Events::input(padButton(SDL_GAMEPAD_BUTTON_SOUTH, true));
+    check(gDelivered.empty() && Events::physicalInputs().gameplay == ignoredBefore.gameplay,
+          "flag on: physical key/pad input neither delivered nor counted");
+    SDL_Event focusLost = ofType(SDL_EVENT_WINDOW_FOCUS_LOST);
+    check(Background::eventFilter(nullptr, &focusLost), "flag on: focus events pass the SDL filter");
+    Events::input(focusLost);
+    check(gDelivered.size() == 1 && gDelivered[0].kind == Delivered::Focus &&
+              Events::physicalInputs().focus == ignoredBefore.focus + 1,
+          "flag on: focus events still reach the input layer and are counted");
+    Background::ignorePhysical = false;
+    gDelivered.clear();
+    Events::input(press);
+    check(gDelivered.size() == 1 && gDelivered[0].kind == Delivered::Key &&
+              Events::physicalInputs().gameplay == ignoredBefore.gameplay + 1,
+          "flag off: the same key is delivered and counted");
+
     std::printf("native app input events tests passed (%d checks)\n", checks);
     return 0;
 }

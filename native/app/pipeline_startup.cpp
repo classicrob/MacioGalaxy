@@ -95,7 +95,7 @@ bool preparePipelines(SDL_Window* window) {
             const auto& input = event->sdl;
             if (input.type == SDL_EVENT_WINDOW_FOCUS_LOST) focused = false;
             if (input.type == SDL_EVENT_WINDOW_FOCUS_GAINED) focused = true;
-            if (SmokeBackground::enabled || !focused) continue;
+            if (SmokeBackground::dropsPhysical() || !focused) continue;
             const bool key = input.type == SDL_EVENT_KEY_DOWN && !input.key.repeat &&
                 (input.key.scancode == SDL_SCANCODE_RETURN || input.key.scancode == SDL_SCANCODE_KP_ENTER);
             const bool button = input.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN &&
