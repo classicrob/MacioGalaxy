@@ -44,6 +44,7 @@ extern "C" void petari_gx_pipeline_report();
 #include "soak_telemetry.hpp"
 #include "petari/asset_diagnostics.hpp"
 #include "petari/frame_telemetry.hpp"
+#include "petari/present_pacing.hpp"
 #include "petari/home_menu.hpp"
 #include "petari/host_allocation.hpp"
 #include "petari/test_fixture.hpp"
@@ -671,6 +672,7 @@ void reportFrameStats() {
     }
     gTiming.recorder->writeSummary(stderr);
     PetariNative::PresentStats::writeSummary(stderr);
+    PetariNative::PresentPacing::writeSummary(stderr);
     if (gTiming.csvPath != nullptr) {
         if (gTiming.recorder->writeCsv(gTiming.csvPath)) {
             std::fprintf(stderr, "Petari frame times: per-frame rows written to %s\n", gTiming.csvPath);

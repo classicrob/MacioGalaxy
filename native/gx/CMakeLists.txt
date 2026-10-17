@@ -185,13 +185,37 @@ set_property(TARGET aurora_core PROPERTY SOURCES "${_sources}")
 set_source_files_properties("${_imgui_output}" TARGET_DIRECTORY aurora_core PROPERTIES
     COMPILE_OPTIONS "-iquote${aurora_SOURCE_DIR}/lib")
 
+# ImGui's SDL3 backend rebuilds its monitor list (synchronous WindowServer queries on
+# macOS) only after display changes, not every frame (patch_imgui_sdl3_monitors.py).
+if(TARGET imgui_backends)
+    get_target_property(_sources imgui_backends SOURCES)
+    list(FILTER _sources INCLUDE REGEX "imgui_impl_sdl3\\.cpp$")
+    list(GET _sources 0 _sdl3_source)
+    get_target_property(_sdl3_dir imgui_backends SOURCE_DIR)
+    if(NOT IS_ABSOLUTE "${_sdl3_source}")
+        set(_sdl3_source "${_sdl3_dir}/${_sdl3_source}")
+    endif()
+    get_filename_component(_sdl3_backends "${_sdl3_source}" DIRECTORY)
+    set(_sdl3_output "${CMAKE_CURRENT_BINARY_DIR}/imgui-sdl3/imgui_impl_sdl3.cpp")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/patch_imgui_sdl3_monitors.py" "${_sdl3_source}")
+    execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/patch_imgui_sdl3_monitors.py"
+        "${_sdl3_source}" "${_sdl3_output}" COMMAND_ERROR_IS_FATAL ANY)
+    get_target_property(_sources imgui_backends SOURCES)
+    list(FILTER _sources EXCLUDE REGEX "imgui_impl_sdl3\\.cpp$")
+    list(APPEND _sources "${_sdl3_output}")
+    set_property(TARGET imgui_backends PROPERTY SOURCES "${_sources}")
+    set_source_files_properties("${_sdl3_output}" TARGET_DIRECTORY imgui_backends PROPERTIES
+        COMPILE_OPTIONS "-iquote${_sdl3_backends}")
+endif()
+
 set(_pipeline_source "${aurora_SOURCE_DIR}/lib/gfx/pipeline_cache.cpp")
 set(_pipeline_output "${CMAKE_CURRENT_BINARY_DIR}/aurora-pipeline-cache.cpp")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_pipeline.py" "${_pipeline_source}"
     "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_profile.hpp" "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_runtime.inc"
     "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_worker.inc" "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_stage.inc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_global.inc")
+    "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_global.inc" "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_fast_path.hpp")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_pipeline.py"
     "${_pipeline_source}" "${_pipeline_output}" COMMAND_ERROR_IS_FATAL ANY)
 get_target_property(_sources aurora_gx SOURCES)
@@ -514,6 +538,11 @@ if(_petari_build_testing)
     else()
         set(_petari_imgui_wgpu "${CMAKE_SOURCE_DIR}/build/aurora/_deps/imgui-src/backends/imgui_impl_wgpu.cpp")
     endif()
+    if(DEFINED _sdl3_source AND EXISTS "${_sdl3_source}")
+        add_test(NAME native_imgui_sdl3_monitors COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/native/tests/imgui_sdl3_monitors_tests.py" "${_sdl3_source}")
+        set_tests_properties(native_imgui_sdl3_monitors PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" TIMEOUT 30)
+    endif()
     if(EXISTS "${_petari_imgui_wgpu}")
         add_test(NAME native_pipeline_imgui COMMAND "${Python3_EXECUTABLE}"
             "${CMAKE_SOURCE_DIR}/native/tools/pipeline_imgui_tests.py"
@@ -551,6 +580,10 @@ if(_petari_build_testing)
     add_test(NAME native_pipeline_stage COMMAND petari_pipeline_stage_tests)
     add_test(NAME native_pipeline_seed COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_SOURCE_DIR}/native/tools/pipeline_seed_tests.py" --aurora "${aurora_SOURCE_DIR}")
+    add_test(NAME native_pipeline_fast_path COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_SOURCE_DIR}/native/tests/pipeline_fast_path_tests.py" "${CMAKE_CXX_COMPILER}"
+        --aurora "${aurora_SOURCE_DIR}")
+    set_tests_properties(native_pipeline_fast_path PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" TIMEOUT 120)
     add_test(NAME native_pipeline_dependencies COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_SOURCE_DIR}/native/tools/pipeline_dependencies_tests.py")
     add_test(NAME native_pipeline_observations COMMAND "${Python3_EXECUTABLE}"
