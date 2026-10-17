@@ -60,8 +60,11 @@ inline Clock::duration drawWaitBudget() {
 }
 // Stage gate: how long scene start may wait for the stage manifest. Draws do not
 // need it for correctness; it only reduces pop-in when compiles are nearly done.
+// The wait freezes the screen (no frame is presented), so the default is two
+// fields: a gate that cannot finish in that time is skipped (pipeline_stage.inc)
+// or proceeds with pop-in. It was 1,500 ms before 2026-10-17 (ten seconds before 2026-09-30).
 inline Clock::duration stageGateBudget() {
-    static const unsigned ms = millisecondsSetting("PETARI_STAGE_GATE_MS", 1500, 10000);
+    static const unsigned ms = millisecondsSetting("PETARI_STAGE_GATE_MS", 33, 10000);
     return std::chrono::milliseconds(ms);
 }
 // Set on the GX recording thread while resolving a GX draw pipeline.

@@ -27,7 +27,7 @@ The game starts at once. Nothing waits for the shader backlog:
   `skipped_draws` (encoded draws dropped) and `deferred_draws` (draw requests whose
   budget ran out) in `[gx pipeline summary]`, plus per-config `[gx pipeline miss]`.
 - **Short stage gate.** Scene start waits for the stage manifest at most
-  `PETARI_STAGE_GATE_MS` (default 1500, max 10000); nothing needs the gate for
+  `PETARI_STAGE_GATE_MS` (default 33 since 2026-10-17, was 1500; max 10000); nothing needs the gate for
   correctness, it only trims pop-in when compiles are nearly done.
 - **Per-machine cache.** A normal launch keeps `pipeline_cache.db` and `dawn_cache.db`
   in `~/Library/Caches/Petari`, not the `--user` directory, so copying or switching
@@ -119,8 +119,21 @@ burst workers. Good Egg went from 2,580 skipped draws to 0, and HeavenlyBeach
 from 22,655 to 763. Without burst workers (`PETARI_PIPELINE_BURST_THREADS=4`)
 the same runs gave 1,711 and 6,449. A foreground second session of Good Egg
 (caches from the first) had every gate under 0.02 ms, no skipped draws and no
-late frame. Not yet fixed: a 370 to 570 ms game-thread wait at file-select entry
-in `GXSync::waitTokensDelivered`, on cold caches only.
+late frame.
+
+**File-select stalls (a944913c6).** Two stalls at file-select entry were left on
+cold caches. The first was a 370 to 570 ms game-thread wait in
+`GXSync::waitTokensDelivered`. The first EFB capture created its compute
+pipeline lazily, which is a cold Metal compile. The cause is confirmed: the
+prewarm now logs `[gx pipeline prewarm] kind=efb_capture build_ms=418-439`.
+`petari_efb_snapshot_prewarm` builds that pipeline at startup on its own
+thread. The second was the file-select gate freezing for up to 1.1 s.
+`PETARI_STAGE_GATE_MS` now defaults to 33 ms. `perf_bench ab --cold`
+(`build/perf-bench/ch-ab-cold-fs`, merged d72cb428c against a944913c6) gave
+these results. On HeavenlyBeach s1 the worst frame of the run went from 417 ms
+to under 33 ms. On HellProminence s1 it went from 1,159 ms to 37 ms (the startup
+frame), and no later frame exceeded 36 ms. Skipped draws were 3,195 -> 2,300 and
+15,364 -> 9,145, and r2r p99 was unchanged at 16.72-16.73. These are single runs.
 
 ### Measured, 2026-09-30 (galaxy smoke, quiet slot, M4 Max)
 
@@ -209,7 +222,7 @@ contain raw versioned config structs, not Metal binaries. Re-export when the
 Aurora config ABI changes. Use trusted locally generated caches.
 
 `petari_gx_pipeline_stage_wait()` waits for the current stage plus overlay targets
-for at most `PETARI_STAGE_GATE_MS` (default 1.5 s; ten seconds before 2026-09-30),
+for at most `PETARI_STAGE_GATE_MS` (default 33 ms; 1.5 s before 2026-10-17, ten seconds before 2026-09-30),
 prints residual wait/pending/failed counts, and proceeds.
 The caller must release the emulated CPU baton around this host wait. After a
 stage-gate timeout, later Blocking draws can still wait for pending compiles.

@@ -270,7 +270,7 @@ int main() {
     const auto gateWaited = PetariPipeline::Clock::now() - gateStart;
     require(gateWaited >= PetariPipeline::stageGateBudget() - std::chrono::milliseconds(5) &&
             gateWaited < PetariPipeline::stageGateBudget() + std::chrono::milliseconds(500) &&
-            PetariPipeline::stageGateBudget() <= std::chrono::milliseconds(2000),
+            PetariPipeline::stageGateBudget() <= std::chrono::milliseconds(50),
             "stage gate did not proceed after its short default budget");
     petari_stage_reset();
     // At a known cold compile cost the same gate cannot finish in budget: no wait at all.
