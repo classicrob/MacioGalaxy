@@ -135,6 +135,24 @@ class Spikes(unittest.TestCase):
         self.assertEqual(result["counts"], {"long frame": 2, "late retrace": 1})
 
 
+class PruneApps(unittest.TestCase):
+    def test_keeps_newest_recent_and_running(self):
+        import os, tempfile, time
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            apps = Path(tmp) / "apps"
+            old = time.time() - 7200
+            for i, name in enumerate(["a1", "a2", "a3", "a4", "a5", "a6"]):
+                (apps / name).mkdir(parents=True)
+                os.utime(apps / name, (old - i * 60, old - i * 60))  # a1 newest ... a6 oldest
+            os.utime(apps / "a6", None)  # just used
+            running = f"{apps}/a5/Petari.app/Contents/MacOS/Petari --disc x"
+            removed = pb.prune_apps(tmp, keep=3, listing=running)
+            # Newest three by use: a6 (just used), a1, a2. a5 is running. a3 and a4 go.
+            self.assertEqual(removed, ["a3", "a4"])
+            self.assertEqual(sorted(p.name for p in apps.iterdir()), ["a1", "a2", "a5", "a6"])
+
+
 class CleanGuard(unittest.TestCase):
     def test_refuses_while_busy(self):
         import fcntl, os, tempfile

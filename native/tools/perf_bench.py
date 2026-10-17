@@ -171,6 +171,7 @@ class BenchApp:
         # (main's cache would make its "warm" runs compile cold). Same warm root, so metal.lock still serializes.
         if warm_key and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,40}", warm_key):
             raise SystemExit(f"perf_bench: --warm-key {warm_key!r}: lowercase letters, digits, dashes")
+        self.warm_key = warm_key
         self.warm_cache = Path(warm_root) / (f"cache-{cache_key()}" + (f"-{warm_key}" if warm_key else ""))
 
     def freeze(self):
@@ -231,10 +232,11 @@ def app_env(args, stage, scenario, extra):
     return env
 
 
-def launch(args, run_dir, mode, app, warm_metal, command, env, owner, timeout, log_path):
+def launch(args, run_dir, mode, app, warm_metal, command, env, owner, timeout, log_path, metal_lock_held=False):
     """One app launch through the app lock and `_launch` (Metal reset under metal.lock). Returns (status, timed_out)."""
     spec = {"run_dir": str(run_dir), "mode": mode, "metal_dir": str(app.metal_dir), "warm_metal": str(warm_metal),
-            "metal_lock": str(Path(args.warm_root) / "metal.lock"), "command": command, "env": env}
+            "metal_lock": str(Path(args.warm_root) / "metal.lock"), "metal_lock_held": metal_lock_held,
+            "command": command, "env": env}
     (run_dir / "spec.json").write_text(json.dumps(spec, indent=2) + "\n")
     inner = [sys.executable, "-I", str(Path(__file__).resolve()), "_launch", "--spec", str(run_dir / "spec.json")]
     with log_path.open("wb") as stream:
@@ -266,6 +268,25 @@ def ensure_warm(args, app, refresh=False):
         os.utime(target / "warm.json")
         return
     target.parent.mkdir(parents=True, exist_ok=True)
+    lock_script = MAIN / "build/locked-app.sh"
+    if not os.environ.get("PERF_BENCH_IN_LOCK") and lock_script.is_file():
+        # Lock order app lock -> metal.lock, as every run: the whole fill runs as one `warm` invocation inside one
+        # app-lock hold (owner perf-bench-warmup), so it never holds metal.lock while queuing for the app lock.
+        command = [str(lock_script), "perf-bench-warmup", sys.executable, "-I", str(Path(__file__).resolve()), "warm",
+                   "--app", str(app.source), "--warm-root", str(args.warm_root), "--disc", str(args.disc),
+                   "--source", str(args.source), "--force"]
+        if app.warm_key:
+            command += ["--warm-key", app.warm_key]
+        if refresh:
+            command.append("--refresh")
+        if args.visit:
+            command += ["--visit", ",".join(f"{s_}:{n}" for s_, n in args.visit)]
+        env = dict(os.environ, PERF_BENCH_IN_LOCK="1", PETARI_LOCK_CLASS="functional",
+                   PETARI_LOCK_TIMEOUT=str(1800 * (1 + len(args.visit)) + 600))
+        status = subprocess.run(command, cwd=REPO, env=env).returncode
+        if status != 0 or not warm_ok(target):
+            raise SystemExit(f"perf_bench: warm fill for {target.name} failed (exit {status})")
+        return
     with open(target.parent / "fill.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         if warm_ok(target) and not refresh:
@@ -283,6 +304,10 @@ def ensure_warm(args, app, refresh=False):
             "visible window (do not press Return: it skips the preparation), owner perf-bench-warmup")
         started = time.time()
         prep = None
+        # metal.lock from the first visit through the rename: between visits, another bench's reset or end-of-bench
+        # cleanup must not touch the bench Metal dir the fill is building (2026-10-17: a finishing bench deleted it).
+        metal_lock = open(Path(args.warm_root) / "metal.lock", "a")
+        fcntl.flock(metal_lock, fcntl.LOCK_EX)
         for number, (stage, scenario) in enumerate(visits):
             extra = {"PETARI_LOCK_CLASS": "functional"}
             if number == 0:
@@ -295,7 +320,7 @@ def ensure_warm(args, app, refresh=False):
             step = work / f"visit{number}"
             step.mkdir()
             status, timed_out, _ = launch(args, step, "cold" if number == 0 else "keep", app, "", command, env,
-                                          "perf-bench-warmup", 1800, step / "app.log")
+                                          "perf-bench-warmup", 1800, step / "app.log", metal_lock_held=True)
             text = (step / "app.log").read_text(errors="replace")
             log(f"  warm visit {stage}-s{scenario}: exit {status}{' (timeout)' if timed_out else ''}")
             if number == 0:
@@ -307,9 +332,10 @@ def ensure_warm(args, app, refresh=False):
                 log(f"  (visit failed; the cache is kept, the stage may be colder) see {step}/app.log")
         stage_dir = work / "cache"
         stage_dir.mkdir()
-        with open(Path(args.warm_root) / "metal.lock", "w") as metal_lock:
-            fcntl.flock(metal_lock, fcntl.LOCK_EX)
+        try:
             app.metal_dir.rename(stage_dir / "metal")
+        finally:
+            metal_lock.close()
         for db in ("pipeline_cache.db", "dawn_cache.db"):
             sweep.snapshot_sqlite(user / db, stage_dir / db)
         (stage_dir / "warm.json").write_text(json.dumps({
@@ -335,9 +361,29 @@ def prune(args, keep_caches=4, app_days=3):
     for old in caches[keep_caches:]:
         shutil.rmtree(old, ignore_errors=True)
         log(f"pruned warm cache {old.name}")
-    for clone in (root / "apps").glob("*") if (root / "apps").is_dir() else []:
-        if time.time() - clone.stat().st_mtime > app_days * 86400:
-            shutil.rmtree(clone, ignore_errors=True)
+    prune_apps(root)
+
+
+def prune_apps(warm_root, keep=3, recent_minutes=30, listing=None):
+    """App clones (<warm-root>/apps/<sha16>): keep the `keep` most recently used, any used in the last
+    `recent_minutes` (freeze and every run touch their clone, so a queued or long bench keeps its own), and any a
+    running process executes. A rebuilt bundle shares no blocks with an older clone, so each old clone costs real
+    disk (up to the bundle size, ~440 MB). Returns the removed names."""
+    apps = Path(warm_root) / "apps"
+    if not apps.is_dir():
+        return []
+    if listing is None:
+        listing = subprocess.run(["ps", "-axo", "command="], capture_output=True, text=True).stdout
+    clones = sorted((c for c in apps.iterdir() if c.is_dir()), key=lambda c: c.stat().st_mtime, reverse=True)
+    removed = []
+    for clone in clones[keep:]:
+        if time.time() - clone.stat().st_mtime < recent_minutes * 60 or str(clone) + "/" in listing:
+            continue
+        shutil.rmtree(clone, ignore_errors=True)
+        removed.append(clone.name)
+    if removed:
+        log(f"pruned {len(removed)} app clone(s): {', '.join(removed)}")
+    return removed
 
 
 # --- one run ----------------------------------------------------------------------------------------------------------
@@ -357,9 +403,10 @@ def cmd_launch(args):
     load = os.getloadavg()
     metal = Path(spec["metal_dir"])
     # Held until the app exits (the descriptor survives exec): one bench app at a time owns the bench Metal dir.
-    fd = os.open(spec["metal_lock"], os.O_CREAT | os.O_RDWR, 0o644)
-    fcntl.flock(fd, fcntl.LOCK_EX)
-    os.set_inheritable(fd, True)
+    if not spec.get("metal_lock_held"):
+        fd = os.open(spec["metal_lock"], os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        os.set_inheritable(fd, True)
     t0 = time.time()
     if spec["mode"] != "keep":
         shutil.rmtree(metal, ignore_errors=True)
@@ -448,6 +495,7 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
         return json.loads((run_dir / "result.json").read_text())
     shutil.rmtree(run_dir, ignore_errors=True)
     run_dir.mkdir(parents=True)
+    os.utime(app.root)  # in use: prune_apps keeps recently used clones
     user = run_dir / "user"
     sweep.load_fixture_module().create(args.source, user, "stage")
     if not cold:
@@ -1008,6 +1056,7 @@ def start_bench(args, mode_label):
 
 
 def finish(args, out, meta, results, apps):
+    prune_apps(args.warm_root)
     if not args.keep_metal and apps:
         with open(Path(args.warm_root) / "metal.lock", "w") as metal_lock:
             fcntl.flock(metal_lock, fcntl.LOCK_EX)
@@ -1203,6 +1252,12 @@ def refuse_if_busy(args, what):
 
 
 def cmd_clean(args):
+    if args.apps:
+        # Only app clones: the newest --keep, recently used and running ones stay; no lock guard needed.
+        before = free_gib(args.warm_root)
+        prune_apps(args.warm_root, keep=args.keep)
+        log(f"free disk {before:.1f} -> {free_gib(args.warm_root):.1f} GiB")
+        return
     refuse_if_busy(args, "clean")
     base = darwin_cache_dir()
     with open(Path(args.warm_root) / "metal.lock", "a") if Path(args.warm_root).is_dir() else open(os.devnull) as lock:
@@ -1304,6 +1359,8 @@ def main():
     common(p)
     p.add_argument("--all-warm", action="store_true")
     p.add_argument("--force", action="store_true", help="clean even while bench runs or app-lock holders exist")
+    p.add_argument("--apps", action="store_true", help="only prune app clones (keep the newest --keep, recent, running)")
+    p.add_argument("--keep", type=int, default=3)
     p.set_defaults(fn=cmd_clean)
     p = sub.add_parser("_launch", help=argparse.SUPPRESS)
     p.add_argument("--spec", required=True)
