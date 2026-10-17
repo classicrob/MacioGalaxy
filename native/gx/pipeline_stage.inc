@@ -252,7 +252,8 @@ extern "C" void petari_gx_pipeline_stage_wait() {
   PetariNative::HostAllocationScope petariHostAllocations;
   const auto start = PetariPipeline::Clock::now();
   size_t pending = 0, failed = 0, gateVariants = 0;
-  bool complete = false;
+  bool complete = false, skipped = false;
+  double estimateMs = 0;
   std::string name;
   {
     std::unique_lock lock{g_pipelineMutex};
@@ -271,8 +272,16 @@ extern "C" void petari_gx_pipeline_stage_wait() {
           std::all_of(targets.begin(), targets.end(), [](auto key) { return g_pipelines.contains(key); });
     };
     // Short by default (PETARI_STAGE_GATE_MS): unready draws wait within the
-    // per-frame budget and are then skipped, so the gate only trims pop-in.
-    complete = g_pipelineReadyCv.wait_until(lock, start + PetariPipeline::stageGateBudget(), ready);
+    // per-frame budget and are then skipped, so the gate only trims pop-in. The
+    // wait freezes the screen, so it is skipped outright when the pending gate
+    // targets cannot compile within the budget at the recent per-compile cost.
+    size_t gatePending = 0;
+    for (const auto key : targets) gatePending += !g_pipelines.contains(key);
+    const double workers = std::max(1u, petariActiveWorkers);
+    estimateMs = gatePending * petariCompileEwmaMs / workers;
+    const double budgetMs = PetariPipeline::milliseconds(PetariPipeline::stageGateBudget());
+    if (gatePending && petariCompileEwmaMs > 0 && estimateMs > budgetMs) skipped = true;
+    else complete = g_pipelineReadyCv.wait_until(lock, start + PetariPipeline::stageGateBudget(), ready);
     for (const auto key : targets) {
       const auto found = g_pipelines.find(key);
       if (found == g_pipelines.end()) ++pending;
@@ -281,9 +290,10 @@ extern "C" void petari_gx_pipeline_stage_wait() {
     petariStages[name].prepared = true;
     for (const auto& tag : petariOverlayStages) petariStages[tag].prepared = true;
   }
-  std::fprintf(stderr, "[gx stage ready] stage=%s residual_wait_ms=%.3f pending=%zu failed=%zu gate_variants=%zu result=%s\n",
+  std::fprintf(stderr, "[gx stage ready] stage=%s residual_wait_ms=%.3f pending=%zu failed=%zu gate_variants=%zu "
+               "estimate_ms=%.0f result=%s\n",
                name.c_str(), PetariPipeline::milliseconds(PetariPipeline::Clock::now() - start), pending, failed,
-               gateVariants, complete ? "completed" : "timeout-proceed");
+               gateVariants, estimateMs, complete ? "completed" : skipped ? "skipped-estimate" : "timeout-proceed");
   petari_stage_flush_logs();
 }
 

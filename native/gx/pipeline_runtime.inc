@@ -46,6 +46,10 @@ static bool petariGameplay = false;
 static PetariPipeline::Clock::duration petariDrawBudgetLeft = PetariPipeline::drawWaitBudget();
 static uint64_t petariDeferredDraws = 0;
 static unsigned petariBackgroundCap = ~0u;
+// Recent compile cost (exponential average of build_ms over every finished job,
+// cache hits included), guarded by g_pipelineMutex. The stage gate uses it to skip
+// waits that cannot finish within the budget: a frozen frame is worse than pop-in.
+static double petariCompileEwmaMs = 0;
 
 extern "C" void petari_gx_pipeline_startup_finished() {
   unsigned previous, current;

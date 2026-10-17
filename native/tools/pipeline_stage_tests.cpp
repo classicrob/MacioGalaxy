@@ -46,6 +46,8 @@ static std::mutex g_pipelineMutex;
 static std::condition_variable g_pipelineReadyCv, g_pipelineQueueCv;
 static std::atomic<bool> g_pipelineThreadEnd{false};
 static unsigned summaryCalls = 0;
+static unsigned petariActiveWorkers = 4;
+static double petariCompileEwmaMs = 0;
 static void petari_pipeline_summary() { ++summaryCalls; }
 static std::deque<Pending> g_pipelineQueue, g_backgroundPipelineQueue;
 static std::unordered_map<PipelineRef, Sample> petariPipelineSamples;
@@ -271,10 +273,20 @@ int main() {
             PetariPipeline::stageGateBudget() <= std::chrono::milliseconds(2000),
             "stage gate did not proceed after its short default budget");
     petari_stage_reset();
+    // At a known cold compile cost the same gate cannot finish in budget: no wait at all.
+    g_pipelineQueue.clear(); g_pipelines.clear();
+    petari_gx_pipeline_stage_begin("ColdStage", nullptr);
+    petariCompileEwmaMs = 1000.0 * PetariPipeline::milliseconds(PetariPipeline::stageGateBudget());
+    const auto skipStart = PetariPipeline::Clock::now();
+    petari_gx_pipeline_stage_wait();
+    require(PetariPipeline::Clock::now() - skipStart < std::chrono::milliseconds(100), "hopeless gate still froze the scene");
+    require(petariStages["ColdStage"].prepared, "skipped gate did not mark the stage prepared");
+    petariCompileEwmaMs = 0;
+    petari_stage_reset();
     g_pipelineQueue.clear();
     manifestFailureTest();
     hotGateTest();
     petari_gx_pipeline_report();
     require(summaryCalls == 1, "explicit pipeline report did not reach summary");
-    std::puts("Stage preparation: manifest failure counter, idempotence, additive overlays, first-use tags, ready gate, short cold gate, hot-row gate and priority demotion pass");
+    std::puts("Stage preparation: manifest failure counter, idempotence, additive overlays, first-use tags, ready gate, short cold gate, hopeless-gate skip, hot-row gate and priority demotion pass");
 }

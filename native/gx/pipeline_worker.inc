@@ -61,6 +61,8 @@ static void pipeline_worker(unsigned workerIndex = 0) {
       g_pendingPipelines.erase(pending.hash);
       petariBackgroundInFlight -= background;
       petariStageSpeculativeInFlight -= speculative;
+      const double buildMs = PetariPipeline::milliseconds(finished - stored.started);
+      petariCompileEwmaMs = petariCompileEwmaMs == 0 ? buildMs : petariCompileEwmaMs * 0.9 + buildMs * 0.1;
     }
     // A throttled slot opened; a worker parked by a cap may take the next job.
     // notify_all: a woken burst worker may not be allowed to take the job.
