@@ -27,7 +27,7 @@ The game starts at once. Nothing waits for the shader backlog:
   `skipped_draws` (encoded draws dropped) and `deferred_draws` (draw requests whose
   budget ran out) in `[gx pipeline summary]`, plus per-config `[gx pipeline miss]`.
 - **Short stage gate.** Scene start waits for the stage manifest at most
-  `PETARI_STAGE_GATE_MS` (default 1500, max 10000); nothing needs the gate for
+  `PETARI_STAGE_GATE_MS` (default 33 since 2026-10-17, was 1500; max 10000); nothing needs the gate for
   correctness, it only trims pop-in when compiles are nearly done.
 - **Per-machine cache.** A normal launch keeps `pipeline_cache.db` and `dawn_cache.db`
   in `~/Library/Caches/Petari`, not the `--user` directory, so copying or switching
@@ -209,7 +209,7 @@ contain raw versioned config structs, not Metal binaries. Re-export when the
 Aurora config ABI changes. Use trusted locally generated caches.
 
 `petari_gx_pipeline_stage_wait()` waits for the current stage plus overlay targets
-for at most `PETARI_STAGE_GATE_MS` (default 1.5 s; ten seconds before 2026-09-30),
+for at most `PETARI_STAGE_GATE_MS` (default 33 ms; 1.5 s before 2026-10-17, ten seconds before 2026-09-30),
 prints residual wait/pending/failed counts, and proceeds.
 The caller must release the emulated CPU baton around this host wait. After a
 stage-gate timeout, later Blocking draws can still wait for pending compiles.

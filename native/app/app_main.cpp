@@ -60,6 +60,7 @@ extern "C" int petari_present_take_readback(const void* copy, unsigned char* rgb
 #include <petari/host_allocation.hpp>
 
 extern "C" void petari_gx_pipeline_background_begin();
+extern "C" void petari_efb_snapshot_prewarm();
 extern "C" void petari_gx_pipeline_set_gameplay(bool gameplay);
 
 namespace App = PetariNative::App;
@@ -1043,6 +1044,9 @@ int main(int argc, char** argv) {
     // Default (unset or PETARI_PIPELINE_GLOBAL_PRECOMPILE=background): queue the global seed
     // at background priority so it compiles while the game plays. A no-op for 0 or 1.
     petari_gx_pipeline_background_begin();
+    // The EFB capture compute pipeline would otherwise compile on the first capture
+    // (file-select entry) and stall it by up to ~0.5 s on a cold Metal cache.
+    petari_efb_snapshot_prewarm();
     // Audio opens on a game thread when the game starts AI DMA; initialize
     // SDL's audio subsystem here, on the main thread, first. The sink's own
     // initialization then only adds a reference.

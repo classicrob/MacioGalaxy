@@ -11,6 +11,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <thread>
+#include <chrono>
 #include <vector>
 #include <cstdio>
 #include <cstdlib>
@@ -193,9 +195,15 @@ void returnReadback(wgpu::Buffer buffer, std::uint64_t generation) {
     }
 }
 
-Resources& prepareResources(std::uint64_t storageBytes) {
+// Creating the compute pipeline is a Metal compile: ~300-570 ms with a cold
+// shader cache. Built lazily it stalled the first capture (file-select entry,
+// GXSync::waitTokensDelivered); petari_efb_snapshot_prewarm builds it at startup
+// on its own thread. The mutex orders that thread against the render worker.
+std::mutex pipelineMutex;
+
+void ensurePipeline(Resources& r) {
     using aurora::webgpu::g_device;
-    Resources& r = resources();
+    std::lock_guard pipelineLock(pipelineMutex);
     if (r.device.Get() != g_device.Get()) {
         r = {};
         r.device = g_device;
@@ -214,6 +222,12 @@ Resources& prepareResources(std::uint64_t storageBytes) {
         readbackBytes = 0;
         ++readbackGeneration;
     }
+}
+
+Resources& prepareResources(std::uint64_t storageBytes) {
+    using aurora::webgpu::g_device;
+    Resources& r = resources();
+    ensurePipeline(r);
     if (r.storageBytes != storageBytes) {
         const wgpu::BufferDescriptor storageDesc{.label = "Petari EFB pixels",
             .usage = wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc, .size = storageBytes};
@@ -336,4 +350,16 @@ extern "C" void petari_gx_install_snapshots() {
 extern "C" bool petari_gx_read_snapshot(std::uint64_t ticket, std::uint16_t x,
     std::uint16_t y, std::uint32_t* depth, std::uint32_t* argb) {
     return PetariNative::GX::readSnapshot(ticket, x, y, *depth, *argb);
+}
+
+// Startup: build the EFB capture pipeline off the game and render threads, so the
+// first capture does not wait for its Metal compile. Idempotent; cheap when warm.
+extern "C" void petari_efb_snapshot_prewarm() {
+    std::thread([] {
+        PetariNative::HostAllocationScope host;
+        const auto start = std::chrono::steady_clock::now();
+        PetariNative::GX::ensurePipeline(PetariNative::GX::resources());
+        std::fprintf(stderr, "[gx pipeline prewarm] kind=efb_capture build_ms=%.3f\n",
+                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+    }).detach();
 }
