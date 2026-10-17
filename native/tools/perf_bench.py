@@ -29,8 +29,15 @@ Pipeline policy, global precompile and stage gate are the app's defaults (what a
   perf_bench.py run --set quick [--app APP] [--cold] [--repeat 2] [--name NAME]
   perf_bench.py run --stages HeavenlyBeachGalaxy:1,AstroGalaxy:2 --name repro
   perf_bench.py ab --a APP_A --b APP_B --set quick [--repeat 2] [--name NAME]   # interleaved A/B
+  perf_bench.py run --drive goodegg1 --stages EggStarGalaxy:1 --frames 17000      # genuine play: event coverage
+  perf_bench.py run --drive soak --stages HeavenlyBeachGalaxy:1                    # stage, exit, observatory, save, title
+  perf_bench.py run --drive replay --route seg.csv --stages PhantomGalaxy:2        # a recorded route (recording_segments.py)
+  perf_bench.py run --drive stage --stages BeltConveyerExGalaxy:1 --env PETARI_STAGE_WARP=26683.05,1300.0,-11987.62 \
+      --env PETARI_SMOKE_QUIT_DELAY=1500                                           # star-get + return to the observatory
+      (drives report r2r/busy/present over every gameplay frame and a spike list with the driver events around each)
+  perf_bench.py run --warm-key NAME | ab --b-warm-key NAME   # a separately filled warm cache for a shader-changing build
   perf_bench.py report NAME [--vs OTHER_NAME]          # re-print tables (and a comparison)
-  perf_bench.py clean [--all-warm]                     # remove bench Metal dirs (and warm caches)
+  perf_bench.py clean [--all-warm] | clean --apps       # bench Metal dir (and warm caches; refuses while in use) | old app clones
 
 APP is a Petari.app bundle or its Contents/MacOS/Petari (default: the main checkout's build). Output: <repo>/build/
 perf-bench/<name>/ (results.json, summary.md, runs/<label>/<Stage>-s<n>-r<k>/{app.log,frames.csv,result.json}). The
@@ -225,7 +232,7 @@ def app_env(args, stage, scenario, extra):
     })
     drive = getattr(args, "drive", None)
     if drive == "soak":
-        env["PETARI_SOAK_MINUTES"] = "0.5"  # one cycle (~65 s; 0 means the default 60): stage, back to the observatory, End Game with the save, title
+        env["PETARI_SOAK_MINUTES"] = "1"  # the budget is checked after each stage part: 1 min = stage, exit, observatory, save, title, stage again (0 means 60): stage, back to the observatory, End Game with the save, title
     if drive == "replay":
         env["PETARI_REPLAY_ROUTE"] = str(Path(args.route).resolve())
     env.update(extra)
