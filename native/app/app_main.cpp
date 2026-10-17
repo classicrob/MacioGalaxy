@@ -1038,7 +1038,7 @@ int main(int argc, char** argv) {
     }
 #endif
     App::LatencyReport::configureLayer(info.window);
-    App::DisplayLink::start(info.window);  // PETARI_PRESENT_PACING=displaylink
+    App::DisplayLink::start(info.window);  // PETARI_VI_CLOCK=display
     if (!prepareKnownPipelines(static_cast<SDL_Window*>(info.window))) {
         aurora_shutdown();
         return 0;
