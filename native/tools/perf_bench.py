@@ -414,7 +414,12 @@ def cmd_launch(args):
     load = os.getloadavg()
     metal = Path(spec["metal_dir"])
     # Held until the app exits (the descriptor survives exec): one bench app at a time owns the bench Metal dir.
-    if not spec.get("metal_lock_held"):
+    # A background-window run (PETARI_SMOKE_BACKGROUND=1) keeps Metal in its own <user>/cache namespace: it neither
+    # uses nor resets the shared bench Metal path, so it takes no metal.lock and runs beside other bench apps.
+    background = spec["env"].get("PETARI_SMOKE_BACKGROUND") == "1"
+    if background:
+        spec["mode"] = "keep"
+    if not spec.get("metal_lock_held") and not background:
         fd = os.open(spec["metal_lock"], os.O_CREAT | os.O_RDWR, 0o644)
         fcntl.flock(fd, fcntl.LOCK_EX)
         os.set_inheritable(fd, True)
