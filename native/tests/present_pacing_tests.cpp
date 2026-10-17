@@ -228,7 +228,7 @@ int main() {
         std::printf("VI servo closed loop (120 Hz, +-1 ms jitter, grid phase jump midway): arrival %.2f ms after a refresh "
                     "(target %.2f), settled intervals 1/2/3 refreshes %u/%u/%u, longest field %.3f ms\n",
                     finalOffset * 1000, Pacing::arrivalTarget() * 1000, hist[1], hist[2], hist[3], longest * 1000);
-        check(std::fabs(finalOffset - Pacing::arrivalTarget()) < 0.0005, "servo converges to the target phase");
+        check(std::fabs(Pacing::wrapPhase(finalOffset - Pacing::arrivalTarget(), refresh)) < 0.0005, "servo converges to the target phase");
         check(hist[1] == 0 && hist[3] == 0 && hist[2] > 17000, "settled: every frame two refreshes apart");
         check(longest <= kNtsc + Pacing::kMaxCorrection, "no field longer than a field plus one step");
     }

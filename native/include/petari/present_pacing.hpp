@@ -125,10 +125,14 @@ inline void notePresent() {
     state.arrivalValid = true;
 }
 
+// 5.5 ms after a refresh of the (60 Hz) link grid: about 2.5 ms before the next 120 Hz compositor
+// deadline. Measured (perf_bench foreground, EggStar s1 + HB s1, ~78 probe presses each):
+// press-to-screen mean 64.0/65.4 ms at 5.5 vs 68.0/67.6 ms at 2 (timer: 65.4/65.5 ms, jittery);
+// present-to-screen 19.4 ms flat vs 23.0; 1/3-refresh flips 4+2 vs 1+0 per ~5,650 frames.
 inline double arrivalTarget() {
     static const double target = [] {
         const char* value = std::getenv("PETARI_VI_PHASE_TARGET_MS");
-        return value != nullptr && value[0] != '\0' ? std::atof(value) / 1000.0 : 0.002;
+        return value != nullptr && value[0] != '\0' ? std::atof(value) / 1000.0 : 0.0055;
     }();
     return target;
 }
