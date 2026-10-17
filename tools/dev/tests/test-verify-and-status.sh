@@ -35,6 +35,25 @@ echo "$OUT" | grep -q "SENTINEL" && bad "traversed symlink" || ok "no symlink tr
 s=$(date +%s); "$DEV/team-status.sh" >/dev/null 2>&1; e=$(( $(date +%s) - s ))
 [ "$e" -lt 5 ] && ok "real team-status took ${e}s (<5)" || bad "team-status too slow (${e}s)"
 
+# --- verify-main: a test added after the last configure (as by a merge) is configured, built and run in one go ---
+if command -v cmake >/dev/null && command -v cc >/dev/null; then
+  mkdir -p "$T/proj" "$T/stubbuild"
+  printf '#!/bin/bash\nshift\nexec "$@"\n' > "$T/stubbuild/locked-build.sh"; chmod +x "$T/stubbuild/locked-build.sh"
+  echo 'int main(void){return 0;}' > "$T/proj/m.c"
+  cat > "$T/proj/CMakeLists.txt" <<'CM'
+cmake_minimum_required(VERSION 3.10)
+project(vm C)
+enable_testing()
+add_executable(petari m.c)
+add_executable(t1_tests m.c)
+add_test(NAME native_t1 COMMAND t1_tests)
+CM
+  cmake -S "$T/proj" -B "$T/pb" >/dev/null && cmake --build "$T/pb" >/dev/null
+  printf 'add_executable(t2_tests m.c)\nadd_test(NAME native_t2 COMMAND t2_tests)\n' >> "$T/proj/CMakeLists.txt"
+  OUT=$(VERIFY_MAIN_BUILD="$T/stubbuild" "$DEV/verify-main.sh" "$T/pb" 2>&1); rc=$?
+  [ $rc = 0 ] && echo "$OUT" | grep -q "RESULT: PASS 2/2" && ok "merge-added test built and run (2/2)" || { bad "merge-added test"; echo "$OUT" | tail -12; }
+fi
+
 # --- verify-main dry run on a real configured build dir, if given ---
 if [ -n "${1:-}" ]; then
   OUT=$("$DEV/verify-main.sh" --dry-run "$1" toolsmith 2>&1)
