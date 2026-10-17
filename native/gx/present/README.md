@@ -191,10 +191,12 @@ wait; it cannot see when a frame reached the screen. With the switch on, `-[CAMe
 
 - `frames.csv` gains `present_ms` (this frame's drawable vs the previous presented one), `presented_frame`
   (the frame whose drawable was on screen at this row's seam entry) and `present_state`
-  (`ok`, `dropped` = `presentedTime` 0, `pending`, `none`).
+  (`ok`, `dropped` = `presentedTime` 0, `pending`, `none`), `occluded` (1 when the NSWindow's
+  `occlusionState` lacked Visible as the drawable was acquired) and `drawable_id` (`MTLDrawable.drawableID`).
 - At exit, one `Petari present intervals` line: p50/p95/p99/max of on-screen intervals, off-cadence count (not
   within 2 ms of a multiple of the display refresh period), intervals of 1/2/3/4+ refreshes, the display's
-  refresh rate (SDL; a ProMotion panel reports its maximum), the present mode, and drawable counts.
+  refresh rate (SDL; a ProMotion panel reports its maximum), the present mode, and drawable counts, `maximumDrawableCount` (and whether `PETARI_MAX_DRAWABLES` set it), and how many
+  drawables were acquired and presented while occluded.
 - `PETARI_PRESENT_MODE=immediate|fifo|fiforelaxed|mailbox` overrides Aurora's choice (default: Immediate,
   because the app sets `vsync = false`). Unknown or unsupported values warn and keep the default.
   Patched in `lib/webgpu/gpu.cpp` by `patch_aurora_present.py`.

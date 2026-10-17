@@ -95,6 +95,8 @@ struct Record {
     std::atomic<std::uint8_t> state{Empty};
     std::atomic<std::uint64_t> acquiredNs{0};   // host uptime clock
     std::atomic<std::uint64_t> presentedNs{0};  // host uptime clock (CACurrentMediaTime base)
+    std::atomic<std::uint64_t> drawableId{0};   // MTLDrawable.drawableID (per CAMetalLayer)
+    std::atomic<std::uint8_t> occluded{0};      // NSWindow occlusionState lacked Visible when acquired
 };
 inline Record records[kRing];
 inline std::atomic<std::uint32_t> highestFrame{0};
@@ -103,6 +105,10 @@ inline std::atomic<std::uint64_t> acquiredTotal{0}, presentedTotal{0}, droppedTo
 // The Aurora frame the current thread is acquiring a drawable for (set around
 // Surface::GetCurrentTexture by the patched aurora_end_frame).
 inline thread_local std::uint32_t acquiringFrame = kNoFrame;
+
+inline std::atomic<unsigned> maxDrawables{0};  // CAMetalLayer.maximumDrawableCount, 0 unknown
+inline std::atomic<bool> maxDrawablesFromEnv{false};  // PETARI_MAX_DRAWABLES applied
+inline std::atomic<std::uint64_t> occludedAcquired{0}, presentedWhileOccluded{0};
 
 inline std::atomic<double> refreshHz{0.0};  // display refresh rate (SDL), 0 unknown
 inline char modeName[24] = "unknown";        // wgpu::PresentMode, set where Aurora picks it
@@ -113,11 +119,14 @@ inline void setMode(std::string_view name) {
 }
 
 // Render worker: a drawable was acquired for `frame`.
-inline void noteAcquired(std::uint32_t frame, std::uint64_t nowNs) {
+inline void noteAcquired(std::uint32_t frame, std::uint64_t nowNs, std::uint64_t drawableId = 0, bool occluded = false) {
     Record& r = records[frame % kRing];
     r.state.store(Acquired, std::memory_order_relaxed);
     r.acquiredNs.store(nowNs, std::memory_order_relaxed);
     r.presentedNs.store(0, std::memory_order_relaxed);
+    r.drawableId.store(drawableId, std::memory_order_relaxed);
+    r.occluded.store(occluded ? 1 : 0, std::memory_order_relaxed);
+    if (occluded) occludedAcquired.fetch_add(1, std::memory_order_relaxed);
     r.frame.store(frame + 1, std::memory_order_release);
     std::uint32_t high = highestFrame.load(std::memory_order_relaxed);
     while (frame > high && !highestFrame.compare_exchange_weak(high, frame, std::memory_order_relaxed)) {
@@ -133,6 +142,7 @@ inline void notePresented(std::uint32_t frame, double presentedSeconds) {
     if (presentedSeconds > 0.0) {
         r.presentedNs.store(static_cast<std::uint64_t>(presentedSeconds * 1e9), std::memory_order_relaxed);
         r.state.store(Presented, std::memory_order_release);
+        if (r.occluded.load(std::memory_order_relaxed) != 0) presentedWhileOccluded.fetch_add(1, std::memory_order_relaxed);
         presentedTotal.fetch_add(1, std::memory_order_relaxed);
     } else {
         r.state.store(Dropped, std::memory_order_release);
@@ -179,6 +189,8 @@ struct RowFields {
     double presentMs = -1;         // this frame's drawable vs the previous presented one; -1: n/a
     long onScreenFrame = -1;       // the frame whose drawable was on screen at entryNs; -1: none known
     const char* state = "none";    // ok | dropped | none (no drawable seen) | pending
+    int occluded = -1;             // 1 window not visible when the drawable was acquired, 0 visible, -1 n/a
+    long long drawableId = -1;     // MTLDrawable.drawableID, -1 n/a
 };
 
 // Per CSV row: `frame` is the FrameStats frame index, entryNs the seam entry time.
@@ -188,6 +200,8 @@ inline RowFields rowFields(std::uint64_t frame, std::uint64_t entryNs) {
     const std::uint32_t f = static_cast<std::uint32_t>(frame);
     const Record* r = find(f);
     if (r != nullptr) {
+        out.occluded = r->occluded.load(std::memory_order_relaxed);
+        out.drawableId = static_cast<long long>(r->drawableId.load(std::memory_order_relaxed));
         switch (r->state.load(std::memory_order_acquire)) {
         case Presented: out.state = "ok"; break;
         case Dropped: out.state = "dropped"; break;
@@ -237,12 +251,16 @@ inline void writeSummary(std::FILE* out) {
                  "Petari present intervals (on-screen, %zu): p50 %.2f p95 %.2f p99 %.2f max %.2f ms; "
                  "off-cadence (not within 2 ms of a multiple of the refresh period) %zu (%.1f%%); "
                  "intervals of 1/2/3/4+ refreshes %zu/%zu/%zu/%zu; display %.2f Hz; present mode %s; "
-                 "drawables %llu, presented %llu, dropped %llu, never presented %llu, out of order %zu\n",
+                 "drawables %llu, presented %llu, dropped %llu, never presented %llu, out of order %zu; "
+                 "maximumDrawableCount %u%s; occluded at acquire %llu, presented while occluded %llu\n",
                  s.count, s.p50, s.p95, s.p99, s.max, s.offCadence,
                  s.count != 0 ? 100.0 * static_cast<double>(s.offCadence) / static_cast<double>(s.count) : 0.0, s.ticks[0],
                  s.ticks[1], s.ticks[2], s.ticks[3], hz, modeName, static_cast<unsigned long long>(acquired),
                  static_cast<unsigned long long>(presented), static_cast<unsigned long long>(dropped),
-                 static_cast<unsigned long long>(unpresented), reordered);
+                 static_cast<unsigned long long>(unpresented), reordered, maxDrawables.load(),
+                 maxDrawablesFromEnv.load() ? " (PETARI_MAX_DRAWABLES)" : " (default)",
+                 static_cast<unsigned long long>(occludedAcquired.load()),
+                 static_cast<unsigned long long>(presentedWhileOccluded.load()));
 }
 
 }  // namespace PetariNative::PresentStats

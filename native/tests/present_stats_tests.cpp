@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 
 namespace PS = PetariNative::PresentStats;
@@ -59,7 +60,7 @@ int main() {
     // Records: frames 10..14, frame 12 dropped, frame 13 never reported; times in 16.7 ms steps
     // except frame 14 which lands 25 ms after frame 11.
     const std::uint64_t base = 1'000'000'000ull;
-    for (std::uint32_t f = 10; f <= 14; ++f) PS::noteAcquired(f, base + f);
+    for (std::uint32_t f = 10; f <= 14; ++f) PS::noteAcquired(f, base + f, 100 + f, f == 11 || f == 14);
     PS::notePresented(10, base / 1e9 + 0.0);
     PS::notePresented(11, (base + 16'700'000ull) / 1e9);
     PS::notePresented(12, 0.0);  // dropped
@@ -72,7 +73,9 @@ int main() {
     PS::RowFields row = PS::rowFields(11, base + 17'000'000ull);
     CHECK(std::string(row.state) == "ok" && near(std::round(row.presentMs * 10), 167));
     CHECK(row.onScreenFrame == 11);
+    CHECK(row.occluded == 1 && row.drawableId == 111);
     row = PS::rowFields(12, base + 30'000'000ull);
+    CHECK(row.occluded == 0 && row.drawableId == 112);
     CHECK(std::string(row.state) == "dropped" && row.presentMs < 0 && row.onScreenFrame == 11);
     row = PS::rowFields(13, base + 40'000'000ull);
     CHECK(std::string(row.state) == "pending" && row.onScreenFrame == 11);
@@ -81,6 +84,23 @@ int main() {
     CHECK(row.onScreenFrame == 14);
     row = PS::rowFields(500, base);
     CHECK(std::string(row.state) == "none" && row.onScreenFrame == -1);
+
+    // Frames 11 and 14 were presented while the window was occluded.
+    CHECK(PS::occludedAcquired.load() == 2 && PS::presentedWhileOccluded.load() == 2);
+    CHECK(PS::rowFields(500, base).occluded == -1 && PS::rowFields(500, base).drawableId == -1);
+
+    // The summary names the drawable queue and the occlusion counts.
+    PS::maxDrawables.store(2);
+    PS::maxDrawablesFromEnv.store(true);
+    std::FILE* tmp = std::tmpfile();
+    PS::writeSummary(tmp);
+    std::rewind(tmp);
+    char line[1024] = {};
+    std::fgets(line, sizeof line, tmp);
+    std::fclose(tmp);
+    CHECK(std::strstr(line, "maximumDrawableCount 2 (PETARI_MAX_DRAWABLES)") != nullptr);
+    CHECK(std::strstr(line, "presented while occluded 2") != nullptr);
+    CHECK(std::strstr(line, "present mode") != nullptr);
 
     // A reused ring slot ignores a stale handler.
     PS::noteAcquired(10 + PS::kRing, base + 99);
