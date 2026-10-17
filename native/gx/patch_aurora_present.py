@@ -330,6 +330,13 @@ def patch_aurora(text):
                         '          PetariNative::FrameTelemetry::Scope petariTiming{PetariNative::FrameTelemetry::PresentCall};\n'
                         '          status = g_surface.Present();\n'
                         '          PetariNative::LatencyProbe::notePresent(petariProbeFrame);\n')
+    # PETARI_VI_CLOCK=display (petari/present_pacing.hpp): when each frame reaches the present, for the
+    # VI clock's phase steering.
+    text = replace_once(text, '      wgpu::ConvertibleStatus status = wgpu::Status::Error;\n',
+                        '      wgpu::ConvertibleStatus status = wgpu::Status::Error;\n'
+                        '      PetariNative::PresentPacing::notePresent();\n')
+    text = replace_once(text, '#include <petari/present_stats.hpp>\n',
+                        '#include <petari/present_stats.hpp>\n#include <petari/present_pacing.hpp>\n')
     return text
 
 

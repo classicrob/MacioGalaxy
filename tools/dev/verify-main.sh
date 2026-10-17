@@ -49,8 +49,8 @@ def parse_ctest_files(bd):
             continue
         seen.add(d)
         text = open(f, errors="replace").read()
-        for m in re.finditer(r'^add_test\("((?:[^"\\]|\\.)*)"((?:\s+"(?:[^"\\]|\\.)*")*)\s*\)', text, re.M):
-            out[m.group(1)] = [a.replace('\\"', '"') for a in re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(2))]
+        for m in re.finditer(r'^add_test\(\s*(?:"((?:[^"\\]|\\.)*)"|([^\s"()]+))((?:\s+"(?:[^"\\]|\\.)*")*)\s*\)', text, re.M):
+            out[m.group(1) or m.group(2)] = [a.replace('\\"', '"') for a in re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(3))]
         for m in re.finditer(r'^subdirs?\("([^"]+)"', text, re.M):
             todo.append(os.path.join(d, m.group(1)))
     return out
@@ -70,6 +70,15 @@ def list_targets(bd):
         if m:
             t.add(m.group(1))
     return t
+
+def cache_value(bd, key):
+    try:
+        for line in open(os.path.join(bd, "CMakeCache.txt"), errors="replace"):
+            if line.startswith(key + ":"):
+                return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return None
 
 def discover(bd):
     """-> (tests: {name: argv}, selected names (not labelled timing/disabled))"""
@@ -243,6 +252,21 @@ def main(argv):
     if free < 40 and not dry:
         print("verify-main: refusing: less than 40 GiB free on /"); return 2
 
+    locked_cmd = [locked, owner]
+    src = cache_value(bd, "CMAKE_HOME_DIRECTORY")
+    if dry:
+        print("verify-main: (dry run skips the configure step, so tests added by a merge may be missing from this inventory)")
+    elif src:
+        # Re-run configure first so tests/targets added by a merge are in the inventory (and get built).
+        clog = os.path.join(bd, "verify-main-configure.log")
+        print("verify-main: configuring (cmake -S %s -B %s, log: %s) ..." % (src, bd, clog)); sys.stdout.flush()
+        with open(clog, "w") as f:
+            rc = subprocess.run(locked_cmd + ["cmake", "-S", src, "-B", bd], stdout=f, stderr=subprocess.STDOUT).returncode
+        if rc != 0:
+            print("\n".join(open(clog, errors="replace").read().splitlines()[-25:]))
+            print("verify-main: configure FAILED (rc %d)" % rc); return 2
+    else:
+        print("verify-main: warning: no CMAKE_HOME_DIRECTORY in the cache; skipping configure")
     targets = list_targets(bd)
     if "petari" not in targets:
         print("verify-main: no target named petari in %s" % bd); return 2
@@ -290,6 +314,18 @@ def main(argv):
             print("verify-main: hint: a binary was linked to a vanished dylib; if the link line names an old "
                   "versioned path (e.g. Cellar/...), reconfigure the build dir (cmake -S . -B build/macos-gx).")
         return 2
+    # Re-inventory: anything the build/configure added is now known; every selected test must have its binary.
+    tests2, selected2 = discover(bd)
+    exes2, unknown2 = test_executables(bd, [tests2[n] for n in selected2], list_targets(bd))
+    late = sorted(set(exes2.values()) - set(exes.values()))
+    if late:
+        print("verify-main: %d test target(s) appeared after the build started: %s; building them" % (len(late), ", ".join(late)))
+        rc = subprocess.run(locked_cmd + ["cmake", "--build", bd, "-j8", "--target"] + late,
+                            stdout=open(blog, "a"), stderr=subprocess.STDOUT).returncode
+        if rc != 0:
+            print("\n".join(open(blog, errors="replace").read().splitlines()[-25:]))
+            print("verify-main: build of late targets FAILED"); return 2
+    selected, exes = selected2, exes2
     still = {}
     for e in exes:
         if os.path.exists(e):
@@ -317,7 +353,11 @@ def main(argv):
     never = sorted(expected - set(res))
     print("")
     print("== verify-main summary (%.0f s of ctest) ==" % (time.time() - t0))
-    print("tests: %d passed, %d failed, of %d selected" % (len(passed), len(failed), len(selected)))
+    total = len(selected)
+    if len(passed) + len(failed) + len(never) != total:  # ctest ran a different set than we inventoried
+        total = len(passed) + len(failed) + len(never)
+        print("note: ctest reported %d tests, inventory had %d" % (len(res), len(selected)))
+    print("tests: %d passed, %d failed, %d no result, of %d" % (len(passed), len(failed), len(never), total))
     groups = {"dyld": "dyld/stale (rebuild/reconfigure)", "notrun": "stale: Not Run (binary missing)", "real": "REAL failures"}
     for k, title in groups.items():
         names_k = sorted(n for n, c in failed.items() if c == k)
@@ -326,7 +366,7 @@ def main(argv):
     if never:
         print("no result recorded for: " + ", ".join(never) + " (ctest aborted?)")
     ok = rc == 0 and not failed and not never and not still
-    print("RESULT: %s" % ("PASS %d/%d" % (len(passed), len(selected)) if ok else "FAIL"))
+    print("RESULT: %s" % ("PASS %d/%d" % (len(passed), total) if ok else "FAIL"))
     return 0 if ok else 1
 
 if __name__ == "__main__":
