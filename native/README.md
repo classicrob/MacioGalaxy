@@ -73,6 +73,49 @@ afterwards. The reload run passed with unchanged save hashes (app27); the fresh 
 run also passed with normal shutdown (app28).
 See [playtest results](PLAYTEST.md) for measured results and remaining coverage.
 
+## Frame pacing and the display clock
+
+The Wii's video interface (VI) runs at 59.94 Hz; a Mac display refreshes at 60 Hz
+(or a multiple, such as a 120 Hz ProMotion panel). On a fixed 59.94 Hz timer the
+game's frames drift against the display, and every 8 to 17 seconds a burst of frames
+was shown for one or three refreshes instead of two (visible judder).
+
+By default the VI retrace clock therefore follows the display:
+
+- A display link from the game window tells VI when the display refreshes. VI then
+  runs at the display's 60 Hz frame (16.667 ms per field). **The game runs at
+  60.00 Hz, 0.1% faster than on a Wii.** VI also keeps each frame a fixed time after
+  a display refresh, so every frame is shown for the same number of refreshes.
+- Audio is unaffected: it follows the audio device's clock, as before. Movies show a
+  video frame one extra time when the picture gets more than 25 ms ahead of the
+  sound. That happens about once every 17 seconds of movie.
+- VI falls back to its own 59.94 Hz timer while the refresh grid is unusable, and
+  follows the display again once it is steady (about half a second):
+  - the display's refresh rate is not a multiple of 60 Hz (for example 144, 165, 100
+    or 75 Hz);
+  - the refresh rate keeps changing (a variable-refresh display), or changes because
+    the window moved to another display;
+  - the window is hidden, minimised or fully covered (the display link stops);
+  - macOS before 14, where the window has no display link.
+- `PETARI_VI_CLOCK=timer` keeps the fixed 59.94 Hz timer.
+  `PETARI_VI_PHASE_TARGET_MS` (default 2.5) sets how long after a refresh a frame
+  should reach the present, for measurement only.
+
+The log shows the mode at start and every change:
+
+```
+PETARI VI: retrace clock mode display (follows a steady 60 Hz-multiple display; PETARI_VI_CLOCK=timer opts out)
+[vi clock] display link 60.00 Hz: a multiple of 60 Hz
+PETARI VI: retrace clock locked to the display at retrace 30 (field 16.6667 ms)
+PETARI VI: retrace clock on its own timer at retrace N (field 16.6833 ms): <reason>
+```
+
+With frame statistics on (`PETARI_FRAME_STATS=1`, `PETARI_FRAME_CSV` or `PETARI_TRACE_BOOT=1`), the exit
+report also prints a `[vi clock] display:` line with the fields locked to the
+display, the fields on the timer, and the lock and unlock counts. The design,
+measurements and tests are in `native/include/petari/present_pacing.hpp` and
+`native/tests/present_pacing_tests.cpp`.
+
 ## Build the native core
 
 Requires Apple Silicon, Xcode Command Line Tools, and CMake 3.25 or newer.
