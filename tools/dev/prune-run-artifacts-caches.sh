@@ -7,7 +7,7 @@ DRY=0; [ "$1" = --dry-run ] && { DRY=1; shift; }
 AGE=${1:-30}
 MAIN=$(cd "$(dirname "$0")/.." && pwd)
 ROOTS=("$MAIN/build")
-for w in "$MAIN"/../petari-worktrees/*/build; do [ -d "$w" ] && ROOTS+=("$(cd "$w" && pwd)"); done
+for w in "${PETARI_WORKTREE_ROOT:-$MAIN/../macio-worktrees}"/*/build "$MAIN"/../petari-worktrees/*/build; do [ -d "$w" ] && ROOTS+=("$(cd "$w" && pwd)"); done
 # Worker thread storage (smoke runs often keep <run>-user dirs there too).
 for t in "$HOME"/.bb/thread-storage/thr_*; do [ -d "$t" ] && ROOTS+=("$t"); done
 OPEN=$(mktemp); lsof -Fn 2>/dev/null | sed -n 's/^n//p' > "$OPEN"

@@ -6,8 +6,8 @@ READY flow are unchanged.
 
 ## Convention
 
-- Worktrees live in `<repo-parent>/petari-worktrees/<name>` (a sibling of the
-  repository, never under `~/Space`), on branch `wt/<name>`, created from `main`.
+- Worktrees live in `<repo-parent>/macio-worktrees/<name>` (a sibling of the
+  repository, never under `~/Space`; the older `petari-worktrees` is stored in ~/Space), on branch `wt/<name>`, created from `main`.
 - At most **3** at a time: disk is limited and a build directory is about 3.5 GiB.
 - Only committed work on `main` is in a new worktree. Uncommitted changes in the
   main checkout are not.
@@ -33,7 +33,7 @@ so the machine-wide limits hold. The lock scripts keep their state next to
 themselves, in the main checkout's `build/`, whatever the current directory is.
 
 ```sh
-cd <repo-parent>/petari-worktrees/<name>
+cd <repo-parent>/macio-worktrees/<name>
 <main>/build/locked-build.sh <name> cmake --build build/macos-gx -j6 --target petari
 <main>/build/locked-build.sh <name> ctest --test-dir build/macos-gx -j4 --timeout 600 -LE timing
 PETARI_LOCK_CLASS=functional <main>/build/locked-app.sh <name> <command that runs the app>

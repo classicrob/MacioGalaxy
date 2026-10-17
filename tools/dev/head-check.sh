@@ -4,7 +4,7 @@
 # usage: build/head-check.sh      logs: build/head-check-<hash>-{build,test}.log
 set -uo pipefail
 MAIN=$(cd "$(dirname "$0")/.." && pwd -P)
-WT=$(dirname "$MAIN")/petari-worktrees/head-check
+WT=${PETARI_WORKTREE_ROOT:-$(dirname "$MAIN")/macio-worktrees}/head-check
 [ -d "$WT" ] || { echo "head-check: worktree missing; run build/new-worktree.sh head-check" >&2; exit 2; }
 # This checks MAIN: refuse to run while the worktree is on anything but its own branch (e.g. detached at level-editor).
 [ "$(git -C "$WT" branch --show-current)" = "wt/head-check" ] || { echo "head-check: $WT is not on branch wt/head-check (it is on '$(git -C "$WT" branch --show-current)' / detached); switch it back first" >&2; exit 2; }
@@ -14,7 +14,7 @@ echo "head-check: $H (clean: $(git -C "$WT" status --short | wc -l | tr -d ' ') 
 cd "$WT"
 # A person may be playing from this worktree's app: never relink it under them.
 APPT=petari
-if pgrep -f "petari-worktrees/head-check/build/macos-gx/native/app/Petari.app" >/dev/null; then
+if pgrep -f "worktrees/head-check/build/macos-gx/native/app/Petari.app" >/dev/null; then
   APPT=""; echo "head-check: Petari is running from head-check; NOT rebuilding the petari app target"
 fi
 B="$MAIN/build/head-check-$H-build.log"; T="$MAIN/build/head-check-$H-test.log"

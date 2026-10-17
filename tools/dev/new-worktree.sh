@@ -1,7 +1,7 @@
 #!/bin/bash
 # Create an isolated git worktree for a worker (convention: docs/dev/WORKTREES.md).
 # usage: build/new-worktree.sh <name> [base-ref=main] [branch=wt/<name>]
-#   -> <repo-parent>/petari-worktrees/<name> on the branch (default wt/<name>), configured in build/macos-gx.
+#   -> <repo-parent>/macio-worktrees/<name> (local disk; override with PETARI_WORKTREE_ROOT) on the branch (default wt/<name>), configured in build/macos-gx.
 # Untracked dev script: lives in the main checkout's build/ next to the lock scripts.
 set -euo pipefail
 trap '' PIPE   # a reader that closes early (| head) must not kill the setup half way
@@ -10,16 +10,19 @@ NAME=${1:-}
 BASE=${2:-main}
 MAIN=$(cd "$(dirname "$0")/.." && pwd -P)
 PARENT=$(dirname "$MAIN")
-ROOT=$PARENT/petari-worktrees
+ROOT=${PETARI_WORKTREE_ROOT:-$PARENT/macio-worktrees}
 MAX=${NEW_WORKTREE_MAX:-12}  # worktrees under petari-worktrees/ (including head-check); lead-approved while free disk > 30 GiB
-MIN_FREE_GIB=10
+MIN_FREE_GIB=${NEW_WORKTREE_MIN_FREE_GIB:-45}  # the user wants >= 40 GB free at all times; a build dir is 3.5+ GiB
 
 die() { echo "new-worktree: $*" >&2; exit 1; }
 say() { { echo "$@" >&3; } 2>/dev/null || true; }   # to the caller's stdout; a closed pipe is ignored
 
 [[ "$NAME" =~ ^[a-z0-9][a-z0-9-]{0,30}$ ]] || die "usage: build/new-worktree.sh <name> [base-ref]  (name: lowercase letters, digits, dashes)"
 [ -d "$MAIN/.git" ] || die "$MAIN is not the main checkout"
-case "$ROOT" in "$HOME/Space"*) die "worktrees must not live under ~/Space" ;; esac
+mkdir -p "$ROOT"
+# Resolve symlinks: ~/petari-worktrees is stored in ~/Space, which the literal check below missed.
+ROOT=$(cd "$ROOT" && pwd -P)
+case "$ROOT" in "$HOME/Space"*|/Volumes/*) die "worktrees must not live under ~/Space ($ROOT)" ;; esac
 
 WT=$ROOT/$NAME
 BRANCH=${3:-wt/$NAME}
