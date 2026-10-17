@@ -125,11 +125,14 @@ inline void notePresent() {
     state.arrivalValid = true;
 }
 
-// 2.5 ms after a refresh of the (60 Hz) link grid (placeholder; the away batch picks 2-3 ms).
-// Measured (perf_bench foreground, EggStar s1 + HB s1, ~78 probe presses each): target 2 gave
-// present-to-screen 23.0 ms flat and no flips from busy spikes; target 5.5 gave 19.4 ms but a
-// 1/3-refresh flip whenever a frame's work exceeded its median by more than the ~2.7 ms margin
-// left before the compositor deadline (FIFO draw-done spikes, ~0.1% of frames): consistency first.
+// 2.5 ms after a refresh of the (60 Hz) link grid: consistency over latency. Measured (perf_bench
+// foreground, 120 Hz, EggStar s1 + HB s1, ~78 probe presses and ~5,650 gameplay frames per run;
+// build/fc/bench/fc-phase2 in the frame-cost worktree):
+//   target 2:   present-to-screen 22.9 ms, 1/3-refresh flips 0+0
+//   target 3:   22.0 ms, 1+0     target 4: 21.0 ms, 1+0     target 5.5: 19.5 ms, 5+4
+// Later targets leave less margin before the compositor deadline, so the rare draw-done spikes
+// (host scheduling latency of the renderer threads, ~0.1% of frames) flip frames on screen.
+// (The 59.94 Hz timer had ~20 ms on average but a burst of 1/3 flips every ~8 s.)
 inline double arrivalTarget() {
     static const double target = [] {
         const char* value = std::getenv("PETARI_VI_PHASE_TARGET_MS");
