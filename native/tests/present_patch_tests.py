@@ -82,6 +82,21 @@ def main():
         check(result.returncode != 0 and 'anchor mismatch' in result.stderr + result.stdout,
               'a moved window.cpp anchor fails')
 
+        check('PresentStats::acquiringFrame = petariProbeFrame;' in both.read_text(),
+              'drawable acquisition is tagged with the frame for the present statistics')
+        gpu = aurora / 'lib/webgpu/gpu.cpp'
+        gout = tmp / 'gpu/gpu.cpp'
+        check(run(present, gpu, gout).returncode == 0, 'gpu.cpp patches')
+        text = gout.read_text()
+        check('PETARI_PRESENT_MODE' in text and 'PresentStats::setMode(' in text
+              and text.index('auto presentMode = select_present_mode') < text.index('PETARI_PRESENT_MODE'),
+              'PETARI_PRESENT_MODE overrides the mode Aurora selects')
+        brokenGpu = tmp / 'brokengpu/gpu.cpp'
+        brokenGpu.parent.mkdir()
+        brokenGpu.write_text(gpu.read_text().replace('auto presentMode = select_present_mode(', 'auto mode = select_present_mode('))
+        result = run(present, brokenGpu, tmp / 'brokengpu-out/gpu.cpp')
+        check(result.returncode != 0 and 'anchor mismatch' in result.stderr + result.stdout, 'a moved gpu.cpp anchor fails')
+
         fb = (tmp / 'fb/GXFrameBuffer.cpp').read_text()
         check('traceCopy("display"' in fb and 'traceCopy("texture"' in fb and 'PETARI_TRACE_BOOT' in fb,
               'copy sizes are traced (opt-in)')

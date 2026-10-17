@@ -304,12 +304,15 @@ def patch_aurora(text):
     # Frame telemetry (petari/frame_telemetry.hpp): render-worker wall time of
     # the drawable acquisition, the frame's queue submit and the present call.
     text = replace_once(text, '#include "present_aurora.hpp"\n',
-                        '#include "present_aurora.hpp"\n#include <petari/frame_telemetry.hpp>\n#include <petari/latency_probe.hpp>\n')
+                        '#include "present_aurora.hpp"\n#include <petari/frame_telemetry.hpp>\n#include <petari/latency_probe.hpp>\n#include <petari/present_stats.hpp>\n')
     text = replace_once(text, '        g_surface.GetCurrentTexture(&surfaceTexture);\n',
                         '        petari_present::surface_dump_prepare();  // opt-in PETARI_SURFACE_DUMP: copy-source surface\n'
                         '        {\n'
                         '          PetariNative::FrameTelemetry::Scope petariTiming{PetariNative::FrameTelemetry::DrawableAcquire};\n'
+                        '          // Tags the drawable nextDrawable returns for the display-level present statistics.\n'
+                        '          PetariNative::PresentStats::acquiringFrame = petariProbeFrame;\n'
                         '          g_surface.GetCurrentTexture(&surfaceTexture);\n'
+                        '          PetariNative::PresentStats::acquiringFrame = PetariNative::PresentStats::kNoFrame;\n'
                         '        }\n')
     # Opt-in dump of the final window image (the presented frame plus the ImGui overlay).
     text = replace_once(text, '    wgpu::Texture currentTexture;\n    wgpu::TextureView currentView;\n',
@@ -327,6 +330,37 @@ def patch_aurora(text):
                         '          PetariNative::FrameTelemetry::Scope petariTiming{PetariNative::FrameTelemetry::PresentCall};\n'
                         '          status = g_surface.Present();\n'
                         '          PetariNative::LatencyProbe::notePresent(petariProbeFrame);\n')
+    return text
+
+
+def patch_gpu(text):
+    """PETARI_PRESENT_MODE=immediate|fifo|fiforelaxed|mailbox overrides the present mode Aurora
+    picks (vsync=false -> Immediate, which on Metal turns CAMetalLayer displaySync off). An
+    unsupported or unknown value logs a warning and keeps Aurora's choice. The chosen mode is
+    recorded for the present statistics summary (petari/present_stats.hpp)."""
+    text = replace_once(text, '#include "gpu.hpp"\n', '#include "gpu.hpp"\n\n#include <cstdlib>\n#include <cstring>\n#include <optional>\n#include <petari/present_stats.hpp>\n')
+    text = replace_once(
+        text,
+        '  auto presentMode = select_present_mode(g_surfaceCapabilities);\n',
+        '  auto presentMode = select_present_mode(g_surfaceCapabilities);\n'
+        '  if (const char* petariMode = std::getenv("PETARI_PRESENT_MODE"); petariMode != nullptr && petariMode[0] != 0) {\n'
+        '    std::optional<wgpu::PresentMode> wanted;\n'
+        '    if (std::strcmp(petariMode, "immediate") == 0) wanted = wgpu::PresentMode::Immediate;\n'
+        '    else if (std::strcmp(petariMode, "fifo") == 0) wanted = wgpu::PresentMode::Fifo;\n'
+        '    else if (std::strcmp(petariMode, "fiforelaxed") == 0) wanted = wgpu::PresentMode::FifoRelaxed;\n'
+        '    else if (std::strcmp(petariMode, "mailbox") == 0) wanted = wgpu::PresentMode::Mailbox;\n'
+        '    bool supported = false;\n'
+        '    for (size_t i = 0; wanted && i < g_surfaceCapabilities.presentModeCount; ++i) {\n'
+        '      supported = supported || g_surfaceCapabilities.presentModes[i] == *wanted;\n'
+        '    }\n'
+        '    if (wanted && supported) {\n'
+        '      presentMode = *wanted;\n'
+        '    } else {\n'
+        '      Log.warn("PETARI_PRESENT_MODE={} is unknown or unsupported here; keeping {}", petariMode,\n'
+        '               magic_enum::enum_name(presentMode));\n'
+        '    }\n'
+        '  }\n'
+        '  PetariNative::PresentStats::setMode(magic_enum::enum_name(presentMode));\n')
     return text
 
 
@@ -393,6 +427,8 @@ def main():
         text = patch_aurora(text)
     elif source.name == 'window.cpp':
         text = patch_window(text)
+    elif source.name == 'gpu.cpp':
+        text = patch_gpu(text)
     else:
         fail(f'unexpected source {source.name}')
     output.parent.mkdir(parents=True, exist_ok=True)

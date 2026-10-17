@@ -179,3 +179,29 @@ copies are not dropped while a pipeline compiles. It also gives render
 textures `CopySrc` usage, for test readback only; the product patch doesn't
 change texture usage. The GPU test needs a window, so it must run outside a
 sandbox that blocks the window server.
+
+## Display-level present statistics
+
+`PETARI_FRAME_CSV`, `PETARI_FRAME_STATS`, `PETARI_TRACE_BOOT` or `PETARI_PRESENT_STATS=1` turn on
+`petari/present_stats.hpp`. The seam interval in `frames.csv` is game-thread time, locked to the VI retrace
+wait; it cannot see when a frame reached the screen. With the switch on, `-[CAMetalLayer nextDrawable]`
+(`native/app/latency_report.cpp`) is wrapped so every drawable Aurora acquires for a frame gets an
+`addPresentedHandler:`; the patched `aurora_end_frame` tags the acquisition with the frame number
+(`PresentStats::acquiringFrame`). `presentedTime` is on the host uptime clock.
+
+- `frames.csv` gains `present_ms` (this frame's drawable vs the previous presented one), `presented_frame`
+  (the frame whose drawable was on screen at this row's seam entry) and `present_state`
+  (`ok`, `dropped` = `presentedTime` 0, `pending`, `none`), `occluded` (1 when the NSWindow's
+  `occlusionState` lacked Visible as the drawable was acquired) and `drawable_id` (`MTLDrawable.drawableID`).
+- At exit, one `Petari present intervals` line: p50/p95/p99/max of on-screen intervals, off-cadence count (not
+  within 2 ms of a multiple of the display refresh period), intervals of 1/2/3/4+ refreshes, the display's
+  refresh rate (SDL; a ProMotion panel reports its maximum), the present mode, and drawable counts, `maximumDrawableCount` (and whether `PETARI_MAX_DRAWABLES` set it), and how many
+  drawables were acquired and presented while occluded.
+- `PETARI_PRESENT_MODE=immediate|fifo|fiforelaxed|mailbox` overrides Aurora's choice (default: Immediate,
+  because the app sets `vsync = false`). Unknown or unsupported values warn and keep the default.
+  Patched in `lib/webgpu/gpu.cpp` by `patch_aurora_present.py`.
+
+Caveats. A hidden window (the stage sweep's `PETARI_SMOKE_BACKGROUND`) is never composited, so every drawable
+reports `presentedTime` 0; use `PETARI_SMOKE_BACKGROUND=0` and a visible, unoccluded window. Under Immediate
+(`displaySyncEnabled` NO) most drawables also reported 0 in the first measurements; whether that means
+"superseded before the compositor" or "no timestamp is produced without display sync" is not settled.

@@ -158,6 +158,11 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME native_app_seam COMMAND petari_app_seam_tests)
 
+    # Present-interval summary and off-cadence math (petari/present_stats.hpp).
+    add_executable(petari_present_stats_tests ${PETARI_REPO_ROOT}/native/tests/present_stats_tests.cpp)
+    target_include_directories(petari_present_stats_tests PRIVATE ${PETARI_REPO_ROOT}/native/include)
+    add_test(NAME native_present_stats COMMAND petari_present_stats_tests)
+
     # Physical input is counted separately from the smoke driver's injected input.
     add_executable(petari_app_input_events_tests ${PETARI_REPO_ROOT}/native/tests/app_input_events_tests.cpp
         input_events.cpp ${PETARI_REPO_ROOT}/native/input/bindings.cpp ${PETARI_REPO_ROOT}/native/input/remap.cpp)

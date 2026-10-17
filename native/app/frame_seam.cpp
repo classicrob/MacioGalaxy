@@ -3,6 +3,7 @@
 #ifdef PETARI_EDITOR_UI
 #include <petari/editor/ui.hpp>
 #endif
+#include <petari/present_stats.hpp>
 #include <aurora/aurora.h>
 #include <aurora/event.h>
 
@@ -140,6 +141,7 @@ void recordFrame(std::uint64_t entry, FrameStats::Phase phase) {
     }
     FrameStats::Frame frame;
     frame.index = ++t.frames;
+    frame.entryNs = entry;
     frame.intervalMs = static_cast<double>(entry - t.lastEntry) / 1e6;
     frame.phase = phase;
     frame.unfocused = t.unfocusedInFrame;
@@ -668,6 +670,7 @@ void reportFrameStats() {
         return;
     }
     gTiming.recorder->writeSummary(stderr);
+    PetariNative::PresentStats::writeSummary(stderr);
     if (gTiming.csvPath != nullptr) {
         if (gTiming.recorder->writeCsv(gTiming.csvPath)) {
             std::fprintf(stderr, "Petari frame times: per-frame rows written to %s\n", gTiming.csvPath);
