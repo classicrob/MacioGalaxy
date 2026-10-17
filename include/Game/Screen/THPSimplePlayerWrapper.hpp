@@ -152,17 +152,26 @@ public:
     // Decoded THP audio frames not yet fully mixed (including the one being mixed); 20 (full)
     // for a movie without audio.
     s32 nativeQueuedAudioFrames() const;
+    // Video ahead of the audio by more than cNativeVideoLeadSeconds: the movie should show its
+    // current frame one more game frame instead of decoding the next. With the VI clock locked to
+    // a 60.00 Hz display (petari/present_pacing.hpp) game frames come 0.1% faster than the movies'
+    // 59.94 fps, while audio follows the audio device; unchecked, video would lead by 0.1% of the
+    // play time (93 ms at the end of PrologueA, 169 ms in EpilogueA). With the 59.94 Hz timer it
+    // never triggers in normal play (the lead stays below zero). Counted as "held" in [movie-av].
+    static constexpr f64 cNativeVideoLeadSeconds = 0.025;
+    bool nativeHoldForAudio();
 
 private:
     void nativeResetAv();
     void nativeReportAv(bool final);
-    u32 mNativeAvVideoFrames;   // decode() returned 0
+    u32 mNativeAvVideoFrames;   // decode() returned 0 (counted always: nativeHoldForAudio)
     u32 mNativeAvAudioWaits;    // decode() returned 3: audio buffer slot still full
     u32 mNativeAvAudioSamples;  // mixed from decoded THP audio
     u32 mNativeAvSilence;       // mixed as silence while playing (audio not decoded yet)
     OSTime mNativeAvStart;
     OSTime mNativeAvLast;
     u32 mNativeAvLastVideo, mNativeAvLastAudio, mNativeAvLastSilence, mNativeAvLastWaits;
+    u32 mNativeAvHolds, mNativeAvLastHolds;  // nativeHoldForAudio() held the video frame
     bool mNativeAvActive;
 #endif
 };
