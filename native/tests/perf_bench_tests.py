@@ -106,6 +106,10 @@ class Compare(unittest.TestCase):
         y_line = next(l for l in table.splitlines() if l.startswith("| Y-s1"))
         self.assertIn("r2r_p99 better", x_line)
         self.assertIn("within noise", y_line)
+        b[0]["not_warm"] = True  # a run that did not start warm: no verdict for that stage
+        x_line = next(l for l in pb.compare_table(a, b).splitlines() if l.startswith("| X-s1"))
+        self.assertIn("NOT WARM (1 run(s)): no verdict", x_line)
+        self.assertNotIn("better", x_line)
 
 
 class Spikes(unittest.TestCase):
@@ -151,6 +155,59 @@ class PruneApps(unittest.TestCase):
             # Newest three by use: a6 (just used), a1, a2. a5 is running. a3 and a4 go.
             self.assertEqual(removed, ["a3", "a4"])
             self.assertEqual(sorted(p.name for p in apps.iterdir()), ["a1", "a2", "a5", "a6"])
+
+
+class Harvest(unittest.TestCase):
+    SCHEMA = ("CREATE TABLE aurora_schema(value INTEGER);"
+              "CREATE TABLE pipeline_cache(type INTEGER NOT NULL, hash INTEGER NOT NULL, config_version INTEGER NOT NULL,"
+              " config_size INTEGER NOT NULL, config BLOB NOT NULL, first_frame_used INTEGER NOT NULL,"
+              " PRIMARY KEY(type, hash));")
+
+    def db(self, path, hashes, frame=5):
+        import sqlite3
+        con = sqlite3.connect(path)
+        with con:
+            con.executescript(self.SCHEMA)
+            con.execute("insert into aurora_schema values (13)")
+            con.executemany("insert into pipeline_cache values (1,?,13,4,?,?)",
+                            [(h, b"cfg" + str(h).encode(), frame) for h in hashes])
+        con.close()
+
+    def test_harvest_and_merge(self):
+        import argparse, json, sqlite3, tempfile, types
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            seeds = tmp / "bundle/Contents/Resources/pipeline-seeds"
+            seeds.mkdir(parents=True)
+            self.db(seeds / "__global__.db", [1, 2])
+            self.db(seeds / "EggStarGalaxy.db", [1])
+            run = tmp / "bench/runs/main/goodegg1-EggStarGalaxy-s1-r1"
+            (run / "user").mkdir(parents=True)
+            big = -(2**63) + 5  # a hash above 2^63, stored signed
+            self.db(run / "user/pipeline_cache.db", [1, 2, 3, big])
+            (run / "app.log").write_text(
+                "[gx stage config] stage=EggStarGalaxy config=0000000000000003 phase=after_prep covered=0\n"
+                "[gx stage config] stage=EggStarGalaxy config=0000000000000001 phase=after_prep covered=1\n"
+                f"[gx pipeline miss] key=ab config={(big & (2**64 - 1)):016x} skipped=631 first_skip_to_terminal_or_exit_ms=1\n")
+            app = types.SimpleNamespace(bundle=tmp / "bundle")
+            note = pb.harvest_run(run, run / "user", app, {})
+            self.assertEqual(note["rows"], 2)
+            data = json.loads((run / "harvest.json").read_text())
+            self.assertEqual(data["stages"], {"0000000000000003": ["EggStarGalaxy"]})
+            self.assertEqual(data["misses_unseeded"], [f"{(big & (2**64 - 1)):016x}"])
+            pb.cmd_harvest(argparse.Namespace(out=str(tmp / "out"), benches=[str(tmp / "bench")], seed_dir=seeds))
+            out = tmp / "out/seeds"
+            glob_rows = {h for (h,) in sqlite3.connect(out / "__global__.db").execute("select hash from pipeline_cache")}
+            stage_rows = dict(sqlite3.connect(out / "EggStarGalaxy.db").execute("select hash, first_frame_used from pipeline_cache"))
+            self.assertEqual(glob_rows, {1, 2, 3, big})
+            # The attributed config and the miss (no stage line: the run's stage), both hot.
+            self.assertEqual(stage_rows, {1: 5, 3: 0, big: 0})
+            stages = json.loads((tmp / "out/stages.json").read_text())
+            self.assertEqual(stages["stages"][f"{(big & (2**64 - 1)):016x}"], ["EggStarGalaxy"])
+            self.assertEqual(stages["weights"], {f"{(big & (2**64 - 1)):016x}": 631})
+            summary = json.loads((tmp / "out/harvest.json").read_text())
+            self.assertEqual(next(iter(summary.values()))["skipped_draws"], 631)
 
 
 class CleanGuard(unittest.TestCase):

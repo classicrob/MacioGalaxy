@@ -54,6 +54,7 @@ import plistlib
 import re
 import shutil
 import signal
+import sqlite3
 import statistics
 import subprocess
 import sys
@@ -66,6 +67,8 @@ REPO = TOOLS.parents[1]
 sys.path.insert(0, str(TOOLS))
 import stage_sweep as sweep  # noqa: E402
 
+# Warm runs compile 0-11 pipelines slowly (>= 20 ms); above this the run did not start warm (NOT WARM, no A/B verdict).
+NOT_WARM_SLOW = 50
 FIELD_MS = 1000.0 * 1001.0 / 60000.0  # NTSC VI field, 16.683 ms
 THRESHOLDS = (16.7, 20.8, 33.3)       # the brief's buckets: > one field (+jitter), late (1.25 fields), > two fields
 LATE_MS = 20.8
@@ -162,7 +165,7 @@ def cache_key():
 class BenchApp:
     """An APFS clone of a Petari.app whose bundle id is BENCH_ID (the private Metal cache path)."""
 
-    def __init__(self, app, warm_root, warm_key=None):
+    def __init__(self, app, warm_root, warm_key=None, cold=False):
         bundle = Path(app).resolve()
         while bundle.suffix != ".app" and bundle != bundle.parent:
             bundle = bundle.parent
@@ -170,21 +173,28 @@ class BenchApp:
             raise SystemExit(f"perf_bench: {app} is not inside an .app bundle")
         self.source = bundle
         self.sha = sha256_of(bundle / "Contents/MacOS/Petari")
-        self.root = Path(warm_root) / "apps" / self.sha[:16]
-        self.bundle = self.root / "Petari.app"
-        self.exe = self.bundle / "Contents/MacOS/Petari"
-        self.metal_dir = darwin_cache_dir() / BENCH_ID
-        # warm_key: a separately filled warm cache for a build whose generated shader source differs from main's
-        # (main's cache would make its "warm" runs compile cold). Same warm root, so metal.lock still serializes.
+        # One Metal path per warm cache (and one for cold runs). MTLCompilerService processes live for days and serve
+        # every client; when an A/B alternated two different snapshots at ONE path, ~10-20% of a "warm" run's
+        # compiles missed (2026-10-17, ch-ab-warm-1: 660-908 slow compiles on 6 of 12 runs; same-snapshot sessions
+        # stayed at 0). The team cache keeps the original path (dev.petari.Petari.bench) so its fill stays valid.
         if warm_key and not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,40}", warm_key):
             raise SystemExit(f"perf_bench: --warm-key {warm_key!r}: lowercase letters, digits, dashes")
+        tag = "cold" if cold else (warm_key or "")
+        self.bundle_id = BENCH_ID + (f"-{tag}" if tag else "")
+        self.root = Path(warm_root) / "apps" / (self.sha[:16] + (f"-{tag}" if tag else ""))
+        self.bundle = self.root / "Petari.app"
+        self.exe = self.bundle / "Contents/MacOS/Petari"
+        self.metal_dir = darwin_cache_dir() / self.bundle_id
+        # warm_key: a separately filled warm cache for a build whose generated shader source differs from main's
+        # (main's cache would make its "warm" runs compile cold). Same warm root, so metal.lock still serializes.
         self.warm_key = warm_key
         self.warm_cache = Path(warm_root) / (f"cache-{cache_key()}" + (f"-{warm_key}" if warm_key else ""))
 
     def freeze(self):
         """Clone the bundle (copy-on-write, ~no disk) and rewrite its bundle id. Idempotent."""
         self.root.mkdir(parents=True, exist_ok=True)
-        if self.exe.is_file() and sha256_of(self.exe) == self.sha:
+        if self.exe.is_file() and sha256_of(self.exe) == self.sha and \
+                plistlib.loads((self.bundle / "Contents/Info.plist").read_bytes()).get("CFBundleIdentifier") == self.bundle_id:
             os.utime(self.root)
             return self
         partial = self.root / "Petari.app.partial"
@@ -193,20 +203,23 @@ class BenchApp:
         clone_tree(self.source, partial)
         plist = partial / "Contents/Info.plist"
         info = plistlib.loads(plist.read_bytes())
-        info["CFBundleIdentifier"] = BENCH_ID  # Info.plist is not bound by the ad-hoc linker signature
+        info["CFBundleIdentifier"] = self.bundle_id  # Info.plist is not bound by the ad-hoc linker signature
         plist.write_bytes(plistlib.dumps(info))
         if sha256_of(partial / "Contents/MacOS/Petari") != self.sha:
             raise SystemExit(f"perf_bench: {self.source} changed while it was copied (rebuild in progress?)")
         partial.rename(self.bundle)
         (self.root / "app.json").write_text(json.dumps({"source": str(self.source), "sha256": self.sha,
-                                                        "bundle_id": BENCH_ID}, indent=2) + "\n")
+                                                        "bundle_id": self.bundle_id}, indent=2) + "\n")
         return self
 
 
-def warm_ok(path):
+def warm_ok(path, bundle_id=None):
     try:
-        json.loads((path / "warm.json").read_text())
+        note = json.loads((path / "warm.json").read_text())
     except (OSError, ValueError):
+        return False
+    # The Metal snapshot belongs to the path it was filled at (fills before 2026-10-17 18:00: the shared BENCH_ID).
+    if bundle_id is not None and note.get("bundle_id", BENCH_ID) != bundle_id:
         return False
     return (path / "metal").is_dir() and all((path / db).is_file() for db in ("pipeline_cache.db", "dawn_cache.db"))
 
@@ -266,12 +279,12 @@ def launch(args, run_dir, mode, app, warm_metal, command, env, owner, timeout, l
     return status, timed_out or status == 128 + signal.SIGALRM, sampler.summary()
 
 
-def ensure_warm(args, app, refresh=False):
+def ensure_warm(args, app, refresh=False, fill_env=()):
     """The team warm cache (one per cache_key), filled first if missing: foreground runs of `app` under the
     functional owner perf-bench-warmup (a compile storm: MTLCompilerService near 400% for ~10 min)."""
     app.freeze()
     target = app.warm_cache
-    if warm_ok(target) and not refresh:
+    if warm_ok(target, app.bundle_id) and not refresh:
         os.utime(target / "warm.json")
         return
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -288,15 +301,17 @@ def ensure_warm(args, app, refresh=False):
             command.append("--refresh")
         if args.visit:
             command += ["--visit", ",".join(f"{s_}:{n}" for s_, n in args.visit)]
+        for item in fill_env:
+            command += ["--fill-env", item]
         env = dict(os.environ, PERF_BENCH_IN_LOCK="1", PETARI_LOCK_CLASS="functional",
                    PETARI_LOCK_TIMEOUT=str(1800 * (1 + len(args.visit)) + 600))
         status = subprocess.run(command, cwd=REPO, env=env).returncode
-        if status != 0 or not warm_ok(target):
+        if status != 0 or not warm_ok(target, app.bundle_id):
             raise SystemExit(f"perf_bench: warm fill for {target.name} failed (exit {status})")
         return
     with open(target.parent / "fill.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if warm_ok(target) and not refresh:
+        if warm_ok(target, app.bundle_id) and not refresh:
             return
         if free_gib(target.parent) < 45:
             raise SystemExit(f"perf_bench: only {free_gib(target.parent):.0f} GiB free; the 40 GB floor needs room")
@@ -317,6 +332,7 @@ def ensure_warm(args, app, refresh=False):
         fcntl.flock(metal_lock, fcntl.LOCK_EX)
         for number, (stage, scenario) in enumerate(visits):
             extra = {"PETARI_LOCK_CLASS": "functional"}
+            extra.update(item.split("=", 1) for item in fill_env)  # e.g. PETARI_PIPELINE_SEED_DIR for this cache
             if number == 0:
                 # The blocking full preparation: every bundled global variant compiles before the game starts.
                 extra["PETARI_PIPELINE_GLOBAL_PRECOMPILE"] = "1"
@@ -341,12 +357,13 @@ def ensure_warm(args, app, refresh=False):
         stage_dir.mkdir()
         try:
             app.metal_dir.rename(stage_dir / "metal")
-        finally:
+        except BaseException:
             metal_lock.close()
+            raise
         for db in ("pipeline_cache.db", "dawn_cache.db"):
             sweep.snapshot_sqlite(user / db, stage_dir / db)
         (stage_dir / "warm.json").write_text(json.dumps({
-            "key": target.name, "filled_with": str(app.source), "sha256": app.sha,
+            "key": target.name, "bundle_id": app.bundle_id, "fill_env": list(fill_env), "filled_with": str(app.source), "sha256": app.sha,
             "filled": datetime.datetime.now().isoformat(timespec="seconds"), "seconds": round(time.time() - started),
             "prep_total": int(prep[1]), "prep_failed": int(prep[3]), "visits": [f"{s}-s{n}" for s, n in visits],
         }, indent=2) + "\n")
@@ -354,6 +371,7 @@ def ensure_warm(args, app, refresh=False):
         if target.exists():
             target.rename(old)
         stage_dir.rename(target)
+        metal_lock.close()  # runs clone target/metal under metal.lock: swap first, then release
         shutil.rmtree(old, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
         log(f"warm cache ready: {target} ({prep[1]} variants, {time.time() - started:.0f} s)")
@@ -410,7 +428,12 @@ def cmd_launch(args):
     load = os.getloadavg()
     metal = Path(spec["metal_dir"])
     # Held until the app exits (the descriptor survives exec): one bench app at a time owns the bench Metal dir.
-    if not spec.get("metal_lock_held"):
+    # A background-window run (PETARI_SMOKE_BACKGROUND=1) keeps Metal in its own <user>/cache namespace: it neither
+    # uses nor resets the shared bench Metal path, so it takes no metal.lock and runs beside other bench apps.
+    background = spec["env"].get("PETARI_SMOKE_BACKGROUND") == "1"
+    if background:
+        spec["mode"] = "keep"
+    if not spec.get("metal_lock_held") and not background:
         fd = os.open(spec["metal_lock"], os.O_CREAT | os.O_RDWR, 0o644)
         fcntl.flock(fd, fcntl.LOCK_EX)
         os.set_inheritable(fd, True)
@@ -570,11 +593,20 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
         contaminated.append("another Petari app ran")
     if not load_cmd and (result["machine"]["other_cpu_pct_mean"] or 0) > 300:  # 3 of 16 cores: an editor/agent desktop idles near 150%
         contaminated.append(f"other CPU {result['machine']['other_cpu_pct_mean']}%")
+    slow = (result.get("shaders") or {}).get("slow_compiles") or 0
+    result["not_warm"] = not cold and slow > NOT_WARM_SLOW
+    if result["not_warm"]:
+        contaminated.append(f"NOT WARM ({slow} slow compiles; stale or disturbed Metal cache: `warm --refresh`)")
     if ft.get("unfocused"):
         contaminated.append(f"{ft['unfocused']} unfocused frames")
     if ft.get("occluded"):
         contaminated.append(f"{ft['occluded']} occluded frames")
     result["contaminated"] = contaminated
+    (run_dir / "result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
+    try:
+        result["harvest"] = harvest_run(run_dir, user, app, env)
+    except Exception as error:  # never lose a run over the harvest
+        result["harvest"] = {"error": str(error)}
     (run_dir / "result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     # Disposable caches: the cloned databases and the reset-per-run Metal dir stay out of the run record.
     if not args.keep_user:
@@ -589,6 +621,139 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
         f"late phase {w.get('dominant')} ({result['wall_seconds']} s)"
         + (f" CONTAMINATED: {'; '.join(contaminated)}" if contaminated else ""))
     return result
+
+
+# --- seed harvest -----------------------------------------------------------------------------------------------------
+
+STAGE_CONFIG = re.compile(r"^\[gx stage config\] stage=(\S+) config=([0-9a-f]{16})", re.M)
+MISS = re.compile(r"^\[gx pipeline miss\] key=\w+ config=([0-9a-f]{16}) skipped=(\d+)", re.M)
+
+
+def u64(value):
+    return value & (2**64 - 1)
+
+
+def seed_dir_for(app_bundle, env):
+    override = env.get("PETARI_PIPELINE_SEED_DIR")
+    return Path(override) if override else Path(app_bundle) / "Contents/Resources/pipeline-seeds"
+
+
+def harvest_run(run_dir, user, app, env):
+    """Configs this run used that the seeds it ran with lack: their rows (from the run's own pipeline_cache.db) go to
+    run_dir/harvest.db, their stages ([gx stage config] lines) and skipped-draw misses to harvest.json. Real play
+    reaches configs idle sweeps never do; a player otherwise meets them as pop-in even after a full warm-up."""
+    db = next((p for p in (user / "cache/pipeline_cache.db", user / "pipeline_cache.db") if p.is_file()), None)
+    global_db = seed_dir_for(app.bundle, env) / "__global__.db"
+    if db is None or not global_db.is_file():
+        return {"error": f"no run database ({db}) or global seed ({global_db})"}
+    seeded = {u64(h) for (h,) in sqlite3.connect(f"file:{global_db}?immutable=1", uri=True).execute(
+        "select hash from pipeline_cache")}
+    text = (run_dir / "app.log").read_text(errors="replace")
+    stages = {}
+    for stage, config in STAGE_CONFIG.findall(text):
+        if int(config, 16) not in seeded:
+            stages.setdefault(config, set()).add(stage)
+    misses = {c: int(n) for c, n in MISS.findall(text)}
+    source = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    schema = source.execute("select value from aurora_schema").fetchone()
+    rows = [r for r in source.execute("select type,hash,config_version,config_size,config,first_frame_used "
+                                      "from pipeline_cache") if u64(r[1]) not in seeded]
+    source.close()
+    out = run_dir / "harvest.db"
+    out.unlink(missing_ok=True)
+    target = sqlite3.connect(out)
+    with target:
+        target.executescript("CREATE TABLE aurora_schema(value INTEGER);"
+                             "CREATE TABLE pipeline_cache(type INTEGER NOT NULL, hash INTEGER NOT NULL, config_version "
+                             "INTEGER NOT NULL, config_size INTEGER NOT NULL, config BLOB NOT NULL, first_frame_used "
+                             "INTEGER NOT NULL, PRIMARY KEY(type, hash));")
+        target.execute("insert into aurora_schema values (?)", schema)
+        target.executemany("insert into pipeline_cache values (?,?,?,?,?,?)", rows)
+    target.close()
+    note = {"seeds": str(global_db.parent), "rows": len(rows), "run_stage": env.get("PETARI_STAGE"),
+            "stages": {c: sorted(v) for c, v in sorted(stages.items())},
+            "misses": misses, "misses_unseeded": sorted(c for c in misses if int(c, 16) not in seeded),
+            "rows_without_stage": sorted(f"{u64(r[1]):016x}" for r in rows if f"{u64(r[1]):016x}" not in stages)}
+    (run_dir / "harvest.json").write_text(json.dumps(note, indent=2) + "\n")
+    return {k: (len(v) if isinstance(v, (dict, list)) else v) for k, v in note.items()}
+
+
+def cmd_harvest(args):
+    """Merge the harvests of benches (run dirs with harvest.db/json) into OUT: harvest.db (all rows), harvest.json
+    (config -> stages, runs, skipped draws), and with --seed-dir a test seed dir: the given seeds plus the rows, in
+    __global__.db and in each attributed <Stage>.db, hot (first_frame_used 0) so gates and backlogs take them first."""
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    rows, info = {}, {}
+    schema = None
+    for bench in args.benches:
+        for note_path in sorted(Path(bench).glob("runs/*/*/harvest.json")):
+            note = json.loads(note_path.read_text())
+            db = note_path.with_name("harvest.db")
+            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+            schema = schema or con.execute("select value from aurora_schema").fetchone()
+            for row in con.execute("select type,hash,config_version,config_size,config,first_frame_used from pipeline_cache"):
+                rows.setdefault((row[0], row[1]), row)
+            con.close()
+            run = str(note_path.parent)
+            # The run's stage (older harvests: from the run dir name, <drive>-<Stage>-s<n>-r<k>).
+            run_stage = note.get("run_stage") or re.sub(r"^(?:[a-z0-9]+-)?(\w+?)-s\d+-r\d+$", r"\1", note_path.parent.name)
+            for config in note.get("misses_unseeded", []):
+                # A miss was really drawn where it missed: with no [gx stage config] line, attribute it to the run's stage.
+                if not note["stages"].get(config):
+                    note["stages"][config] = [run_stage]
+            for config, stages in note["stages"].items():
+                entry = info.setdefault(config, {"stages": set(), "runs": set(), "skipped": 0})
+                entry["stages"].update(stages)
+                entry["runs"].add(run)
+            for config, skipped in note["misses"].items():
+                entry = info.setdefault(config, {"stages": set(), "runs": set(), "skipped": 0})
+                entry["skipped"] += skipped
+                entry["runs"].add(run)
+    by_hash = {f"{u64(key[1]):016x}": key for key in rows}
+    merged = out / "harvest.db"
+    merged.unlink(missing_ok=True)
+    con = sqlite3.connect(merged)
+    with con:
+        con.executescript("CREATE TABLE aurora_schema(value INTEGER);"
+                          "CREATE TABLE pipeline_cache(type INTEGER NOT NULL, hash INTEGER NOT NULL, config_version "
+                          "INTEGER NOT NULL, config_size INTEGER NOT NULL, config BLOB NOT NULL, first_frame_used "
+                          "INTEGER NOT NULL, PRIMARY KEY(type, hash));")
+        if schema:
+            con.execute("insert into aurora_schema values (?)", schema)
+        con.executemany("insert into pipeline_cache values (?,?,?,?,?,?)", rows.values())
+    con.close()
+    summary = {c: {"stages": sorted(e["stages"]), "runs": len(e["runs"]), "skipped_draws": e["skipped"],
+                   "row": c in by_hash} for c, e in sorted(info.items(), key=lambda kv: -kv[1]["skipped"])}
+    (out / "harvest.json").write_text(json.dumps(summary, indent=2) + "\n")
+    # For order_pipeline_seeds.py add-rows (cold-hitch): config -> stages, and skipped draws as ranking weights.
+    (out / "stages.json").write_text(json.dumps({
+        "stages": {c: e["stages"] for c, e in summary.items() if e["row"] and e["stages"]},
+        "weights": {c: e["skipped_draws"] for c, e in summary.items() if e["row"] and e["skipped_draws"]},
+    }, indent=2) + "\n")
+    log(f"harvest: {len(rows)} rows, {len(summary)} configs ({sum(1 for v in summary.values() if v['skipped_draws'])} "
+        f"with skipped draws) -> {out}")
+    if args.seed_dir:
+        seeds = out / "seeds"
+        shutil.rmtree(seeds, ignore_errors=True)
+        shutil.copytree(args.seed_dir, seeds)
+        def add(db_path, wanted):
+            con = sqlite3.connect(db_path)
+            with con:
+                con.executemany("insert or ignore into pipeline_cache values (?,?,?,?,?,0)",
+                                [rows[by_hash[c]][:5] for c in wanted if c in by_hash])
+            con.close()
+        add(seeds / "__global__.db", list(by_hash))
+        per_stage = {}
+        for config, entry in summary.items():
+            for stage in entry["stages"]:
+                per_stage.setdefault(stage, []).append(config)
+        for stage, configs in sorted(per_stage.items()):
+            if (seeds / f"{stage}.db").is_file():
+                add(seeds / f"{stage}.db", configs)
+            else:
+                log(f"  no seed database for stage {stage}: its {len(configs)} configs are in __global__ only")
+        log(f"test seed dir: {seeds} (use with --env PETARI_PIPELINE_SEED_DIR={seeds})")
 
 
 # --- analysis ---------------------------------------------------------------------------------------------------------
@@ -966,6 +1131,9 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
     for key in sorted(set(ga) & set(gb)):
         ra, rb = ga[key], gb[key]
         cells, verdict = [], []
+        cold_runs = [r for r in ra + rb if r.get("not_warm")]
+        if cold_runs:
+            verdict.append(f"NOT WARM ({len(cold_runs)} run(s)): no verdict")
         for m in shown:
             va, vb = values_of(ra, m), values_of(rb, m)
             if not va or not vb:
@@ -974,7 +1142,7 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
             xa, xb = statistics.median(va), statistics.median(vb)
             d = xb - xa
             cells.append(f"{xa:g} | {xb:g} | {d:+.2f}")
-            if m in ("r2r_p99", "r2r_late", "busy_p99", "present_late", "present_offcad"):
+            if m in ("r2r_p99", "r2r_late", "busy_p99", "present_late", "present_offcad") and not cold_runs:
                 if abs(d) < RESOLUTION[m]:
                     continue  # below what the metric resolves (percentile bins, single frames)
                 n = pooled.get(m)
@@ -1048,7 +1216,14 @@ def resolve_stages(args):
         return list(QUICK)
     if args.set == "full":
         rows = sweep.enumerate_stages(args.disc / "files")
-        return [(s["stage"], c["scenario"]) for s in rows if s["stage"] not in EXCLUDE_FULL for c in s["scenarios"]]
+        chosen = [(s["stage"], c["scenario"]) for s in rows if s["stage"] not in EXCLUDE_FULL for c in s["scenarios"]]
+        chunk = getattr(args, "chunk", None)
+        if chunk:
+            # i/n: the i-th of n contiguous slices (1-based), so a long baseline can be several shorter quiet holds.
+            i, n = (int(x) for x in chunk.split("/"))
+            size = -(-len(chosen) // n)
+            chosen = chosen[(i - 1) * size:i * size]
+        return chosen
     raise SystemExit(f"perf_bench: unknown set {args.set}")
 
 
@@ -1067,7 +1242,8 @@ def finish(args, out, meta, results, apps):
     if not args.keep_metal and apps:
         with open(Path(args.warm_root) / "metal.lock", "w") as metal_lock:
             fcntl.flock(metal_lock, fcntl.LOCK_EX)
-            shutil.rmtree(apps[0].metal_dir, ignore_errors=True)
+            for app in apps:
+                shutil.rmtree(app.metal_dir, ignore_errors=True)
     # The bench dir can hold several invocations (labels, extra repeats): summarize every run in it.
     collected = []
     for path in sorted((out / "runs").glob("*/*/result.json")):
@@ -1095,7 +1271,7 @@ def batch(args, runs):
     lock = MAIN / "build/locked-app.sh"
     if not lock.is_file():
         return False
-    fill = 0 if args.cold or warm_ok(BenchApp(getattr(args, "app", None) or args.a, args.warm_root).warm_cache) else 1800
+    fill = 0 if args.cold else 1800  # (a fill, if needed, runs inside this session)
     bound = runs * (args.timeout + 30) + fill + 300
     minutes = round((runs * 75 + fill) / 60)
     print(f"[perf-bench] FOREGROUND SESSION: {runs} visible Petari runs that take focus, about {minutes} min "
@@ -1110,9 +1286,9 @@ def batch(args, runs):
 def cmd_run(args):
     batch(args, len(resolve_stages(args)) * args.repeat)
     out, meta = start_bench(args, "cold" if args.cold else "warm")
-    app = BenchApp(args.app, args.warm_root, args.warm_key).freeze()
+    app = BenchApp(args.app, args.warm_root, args.warm_key, cold=args.cold).freeze()
     if not args.cold:
-        ensure_warm(args, app)
+        ensure_warm(args, app, fill_env=args.env if args.warm_key else ())
     meta["apps"][args.label] = {"source": str(app.source), "sha256": app.sha}
     chosen = resolve_stages(args)
     results = []
@@ -1134,15 +1310,16 @@ def cmd_ab(args):
     a_label, b_label = args.a_label, args.b_label
     if a_label == b_label:
         raise SystemExit("perf_bench: --a-label and --b-label must differ")
-    variants = {a_label: (BenchApp(args.a, args.warm_root, args.a_warm_key).freeze(), args.a_env),
-                b_label: (BenchApp(args.b or args.a, args.warm_root, args.b_warm_key).freeze(), args.b_env)}
+    variants = {a_label: (BenchApp(args.a, args.warm_root, args.a_warm_key, cold=args.cold).freeze(), args.a_env),
+                b_label: (BenchApp(args.b or args.a, args.warm_root, args.b_warm_key, cold=args.cold).freeze(), args.b_env)}
     loads = {a_label: args.a_load, b_label: args.b_load}
     if variants[a_label][0].sha == variants[b_label][0].sha and args.a_env == args.b_env and args.a_load == args.b_load:
         log("A and B are the same build and environment: this measures noise only")
     if not args.cold:
         # One team cache for both unless a side has its own --*-warm-key (filled with that side's app).
-        for app, _ in variants.values():
-            ensure_warm(args, app)
+        for label, (app, env) in variants.items():
+            # A keyed cache is filled with that side's environment (e.g. its PETARI_PIPELINE_SEED_DIR).
+            ensure_warm(args, app, fill_env=env if app.warm_key else ())
     for label, (app, env) in variants.items():
         meta["apps"][label] = {"source": str(app.source), "sha256": app.sha, "env": env, "load": loads[label],
                                "warm_cache": app.warm_cache.name}
@@ -1164,11 +1341,11 @@ def cmd_ab(args):
 def cmd_warm(args):
     app = BenchApp(args.app, args.warm_root, args.warm_key)
     if args.print_path:
-        print(app.warm_cache if warm_ok(app.warm_cache) else "")
+        print(app.warm_cache if warm_ok(app.warm_cache, app.bundle_id) else "")
         return
     if args.refresh:
         refuse_if_busy(args, "refresh the warm cache")
-    ensure_warm(args, app, refresh=args.refresh)
+    ensure_warm(args, app, refresh=args.refresh, fill_env=args.fill_env)
     print(app.warm_cache)
 
 
@@ -1296,6 +1473,7 @@ def main():
         common(p)
         p.add_argument("--name", default=None, help="output: <out-root>/<name> (default: set + mode + time)")
         p.add_argument("--set", choices=("quick", "full"), default="quick")
+        p.add_argument("--chunk", default=None, metavar="I/N", help="with --set full: only the I-th of N contiguous slices")
         p.add_argument("--stages", help="Stage:scenario list, e.g. HeavenlyBeachGalaxy:1,AstroGalaxy:2 (overrides --set)")
         p.add_argument("--repeat", type=int, default=1, help="passes over the stage list")
         p.add_argument("--cold", action="store_true", help="empty Metal/pipeline/Dawn caches for every run")
@@ -1347,12 +1525,19 @@ def main():
     p.add_argument("--app", type=Path, default=default_app, help="the app that fills it (default: main build)")
     p.add_argument("--refresh", action="store_true", help="rebuild it even if it exists")
     p.add_argument("--warm-key", default=None, help="a separately keyed cache (cache-<key>-<name>), filled with --app")
+    p.add_argument("--fill-env", action="append", default=[], metavar="KEY=VALUE",
+                   help="environment for the fill runs (e.g. PETARI_PIPELINE_SEED_DIR=<seeds> for a keyed cache)")
     p.add_argument("--force", action="store_true", help="refresh even while bench runs or app-lock holders exist")
     p.add_argument("--print-path", action="store_true", help="print the current warm cache path ('' if none)")
     p.add_argument("--visit", default="", help="extra warm-up stage visits after the global fill: quick, full or Stage:n,...")
     p.add_argument("--frames", type=int, default=12000)
     p.add_argument("--lock-wait", type=int, default=7200)
     p.set_defaults(fn=cmd_warm)
+    p = sub.add_parser("harvest", help="merge benches' harvested unseeded configs (and build a test seed dir)")
+    p.add_argument("out")
+    p.add_argument("benches", nargs="+", help="bench dirs (e.g. build/perf-bench/routes-warm)")
+    p.add_argument("--seed-dir", type=Path, default=None, help="seeds to extend into OUT/seeds (e.g. the app's Resources)")
+    p.set_defaults(fn=cmd_harvest)
     p = sub.add_parser("report", help="re-print a bench summary, or compare two benches")
     common(p)
     p.add_argument("name")
