@@ -183,6 +183,7 @@ PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLa
     return full;
   }
   PetariFastPipeline::misses.fetch_add(1, std::memory_order_relaxed);
+  PetariFastPipeline::reportAtExitOnce();
   const auto full = petari_find_pipeline_full(config, layout);
   if (full == petariKey && current_frame() != UINT32_MAX) {
     bool ready = false;
@@ -201,15 +202,6 @@ PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLa
                    'static void petari_stage_reset() {\n',
                    'extern "C" void petari_gx_pipeline_stage_begin(const char* name, const char* seedPath) {\n'):
         text = replace(anchor, anchor + '  const PetariFastPipeline::InvalidateScope petariFastInvalidate;\n')
-    old = '  petari_stage_flush_logs();\n  petari_stage_reset();\n  petari_pipeline_summary();\n'
-    text = replace(old, '''  if (PetariFastPipeline::checkEnabled() || PetariPipeline::diagnostics()) {
-    std::fprintf(stderr, "[gx pipeline fast path] hits=%llu misses=%llu check=%d check_mismatches=%llu\\n",
-                 static_cast<unsigned long long>(PetariFastPipeline::hits.load()),
-                 static_cast<unsigned long long>(PetariFastPipeline::misses.load()),
-                 PetariFastPipeline::checkEnabled() ? 1 : 0,
-                 static_cast<unsigned long long>(PetariFastPipeline::checkMismatches.load()));
-  }
-''' + old)
     return text
 
 

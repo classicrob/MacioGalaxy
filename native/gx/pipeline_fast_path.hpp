@@ -22,6 +22,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 
 namespace PetariFastPipeline {
@@ -49,6 +50,20 @@ inline bool checkEnabled() {
         return value != nullptr && value[0] != '\0' && value[0] != '0';
     }();
     return enabled;
+}
+
+// Counts at exit, when checking (the pipeline cache's own shutdown does not run at game exit).
+inline void report() {
+    std::fprintf(stderr, "[gx pipeline fast path] hits=%llu misses=%llu check=%d check_mismatches=%llu\n",
+                 static_cast<unsigned long long>(hits.load()), static_cast<unsigned long long>(misses.load()),
+                 checkEnabled() ? 1 : 0, static_cast<unsigned long long>(checkMismatches.load()));
+}
+inline void reportAtExitOnce() {
+    static const bool registered = [] {
+        if (checkEnabled()) std::atexit(report);
+        return true;
+    }();
+    (void)registered;
 }
 
 constexpr std::size_t kEntries = 2048;  // direct-mapped, per thread (32 KiB)
