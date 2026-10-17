@@ -1,5 +1,5 @@
 #pragma once
-// VI retrace clock locked to the display (PETARI_VI_CLOCK=display).
+// VI retrace clock locked to the display (default; PETARI_VI_CLOCK=timer opts out).
 //
 // The game finishes a frame every VI field. With VI on its own 59.94 Hz timer the
 // frame's ready time drifts against the display's refresh grid; every time it
@@ -38,10 +38,14 @@
 
 namespace PetariNative::PresentPacing {
 
+// Default: display. PETARI_VI_CLOCK=timer keeps VI on its fixed 59.94 Hz timer (the previous default).
 inline bool viLockEnabled() {
     static const bool on = [] {
         const char* value = std::getenv("PETARI_VI_CLOCK");
-        return value != nullptr && std::string_view(value) == "display";
+        if (value == nullptr || value[0] == '\0' || std::string_view(value) == "display") return true;
+        if (std::string_view(value) == "timer") return false;
+        std::fprintf(stderr, "PETARI VI: unknown PETARI_VI_CLOCK=%s (display or timer); using display\n", value);
+        return true;
     }();
     return on;
 }
@@ -121,10 +125,18 @@ inline void notePresent() {
     state.arrivalValid = true;
 }
 
+// 2.5 ms after a refresh of the (60 Hz) link grid: consistency over latency. Measured (perf_bench
+// foreground, 120 Hz, EggStar s1 + HB s1, ~78 probe presses and ~5,650 gameplay frames per run;
+// build/fc/bench/fc-phase2 in the frame-cost worktree):
+//   target 2:   present-to-screen 22.9 ms, 1/3-refresh flips 0+0
+//   target 3:   22.0 ms, 1+0     target 4: 21.0 ms, 1+0     target 5.5: 19.5 ms, 5+4
+// Later targets leave less margin before the compositor deadline, so the rare draw-done spikes
+// (host scheduling latency of the renderer threads, ~0.1% of frames) flip frames on screen.
+// (The 59.94 Hz timer had ~20 ms on average but a burst of 1/3 flips every ~8 s.)
 inline double arrivalTarget() {
     static const double target = [] {
         const char* value = std::getenv("PETARI_VI_PHASE_TARGET_MS");
-        return value != nullptr && value[0] != '\0' ? std::atof(value) / 1000.0 : 0.002;
+        return value != nullptr && value[0] != '\0' ? std::atof(value) / 1000.0 : 0.0025;
     }();
     return target;
 }
