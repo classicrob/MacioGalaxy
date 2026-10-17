@@ -52,16 +52,6 @@ void tick(id, SEL, id link) {
     }
 }
 
-void report() {
-    const auto& s = Pacing::state;
-    const unsigned long long waits = s.waits.load();
-    std::fprintf(stderr,
-                 "[present pacing] releases %llu, waited %llu (mean %.2f ms), slips %llu, unpaced (no link/hidden/rate) %llu\n",
-                 static_cast<unsigned long long>(s.releases.load()), waits,
-                 waits != 0 ? s.waitedUs.load() / 1000.0 / waits : 0.0, static_cast<unsigned long long>(s.slips.load()),
-                 static_cast<unsigned long long>(s.bypassed.load()));
-}
-
 }  // namespace
 
 void start(void* window) {
@@ -97,7 +87,6 @@ void start(void* window) {
                                                                   (id)kCFRunLoopCommonModes);
         CFRunLoopRun();
     }).detach();
-    std::atexit(report);
     std::fprintf(stderr, "[present pacing] display link started (present gate %s, VI clock %s)\n", Pacing::enabled() ? "on" : "off",
                  Pacing::viLockEnabled() ? "display" : "own timer");
 }

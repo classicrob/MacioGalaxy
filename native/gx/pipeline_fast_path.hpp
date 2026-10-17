@@ -15,7 +15,7 @@
 // stores a stale tag and later misses. A miss always takes the full lookup.
 //
 // PETARI_PIPELINE_FAST_CHECK=1: hits also run the full lookup and compare (for
-// verification runs; counts mismatches, reported at shutdown).
+// verification runs; counts mismatches, reported at exit).
 //
 // Standard headers only (unit-tested in native/tests/pipeline_fast_path_tests.py).
 
@@ -52,18 +52,12 @@ inline bool checkEnabled() {
     return enabled;
 }
 
-// Counts at exit, when checking (the pipeline cache's own shutdown does not run at game exit).
-inline void report() {
-    std::fprintf(stderr, "[gx pipeline fast path] hits=%llu misses=%llu check=%d check_mismatches=%llu\n",
+// At exit (petari_gx_pipeline_report, from the frame seam's exit report), when checking.
+inline void reportIfChecking() {
+    if (!checkEnabled()) return;
+    std::fprintf(stderr, "[gx pipeline fast path] hits=%llu misses=%llu check=1 check_mismatches=%llu\n",
                  static_cast<unsigned long long>(hits.load()), static_cast<unsigned long long>(misses.load()),
-                 checkEnabled() ? 1 : 0, static_cast<unsigned long long>(checkMismatches.load()));
-}
-inline void reportAtExitOnce() {
-    static const bool registered = [] {
-        if (checkEnabled()) std::atexit(report);
-        return true;
-    }();
-    (void)registered;
+                 static_cast<unsigned long long>(checkMismatches.load()));
 }
 
 constexpr std::size_t kEntries = 2048;  // direct-mapped, per thread (32 KiB)

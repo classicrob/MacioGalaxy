@@ -183,7 +183,6 @@ PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLa
     return full;
   }
   PetariFastPipeline::misses.fetch_add(1, std::memory_order_relaxed);
-  PetariFastPipeline::reportAtExitOnce();
   const auto full = petari_find_pipeline_full(config, layout);
   if (full == petariKey && current_frame() != UINT32_MAX) {
     bool ready = false;
@@ -202,6 +201,8 @@ PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLa
                    'static void petari_stage_reset() {\n',
                    'extern "C" void petari_gx_pipeline_stage_begin(const char* name, const char* seedPath) {\n'):
         text = replace(anchor, anchor + '  const PetariFastPipeline::InvalidateScope petariFastInvalidate;\n')
+    anchor = 'extern "C" void petari_gx_pipeline_report() {\n'
+    text = replace(anchor, anchor + '  PetariFastPipeline::reportIfChecking();\n')
     return text
 
 

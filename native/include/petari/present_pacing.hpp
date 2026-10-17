@@ -29,6 +29,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <mutex>
 #include <string_view>
@@ -215,6 +216,19 @@ inline void waitToPresent() {
     std::lock_guard lock{state.mutex};
     state.lastRelease = d.release;
     state.lastReleaseGridTime = grid.refreshTime;
+}
+
+// At exit (the frame seam's report), when the link was wanted.
+inline void writeSummary(std::FILE* out) {
+    if (!linkWanted()) return;
+    const unsigned long long waits = state.waits.load();
+    std::fprintf(out,
+                 "[present pacing] gate %s, VI clock %s: releases %llu, waited %llu (mean %.2f ms), slips %llu, "
+                 "unpaced (no link/hidden/rate) %llu\n",
+                 enabled() ? "on" : "off", viLockEnabled() ? "display" : "own timer",
+                 static_cast<unsigned long long>(state.releases.load()), waits,
+                 waits != 0 ? state.waitedUs.load() / 1000.0 / waits : 0.0, static_cast<unsigned long long>(state.slips.load()),
+                 static_cast<unsigned long long>(state.bypassed.load()));
 }
 
 // ---- VI clock lock (PETARI_VI_CLOCK=display) ----
