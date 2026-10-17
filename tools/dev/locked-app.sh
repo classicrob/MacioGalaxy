@@ -8,7 +8,8 @@
 # them all, so nothing else runs beside them; while a quiet ticket is first in line, functional
 # tickets behind it wait, so it cannot starve.
 # Order: the ticket named in $LOCK.grant (owner name or ticket id, via build/lock-grant.sh) goes
-# first; then priority from build/lock-priorities.txt (unknown owners 50), ties by arrival. With a
+# first; then priority from build/lock-priorities.txt (unknown owners 50) plus aging (+1 per minute
+# waited, as in locked-build.sh, so no ticket starves behind a stream of higher-priority ones), ties by arrival. With a
 # single slot and several waiters, the lead gets 90 s after a release to choose.
 # Lock state lives in the main checkout build/ (this script's directory), so worktrees share the machine-wide locks.
 LOCKROOT=$(cd "$(dirname "$0")" && pwd)
@@ -25,6 +26,8 @@ ID="$(date +%s%N 2>/dev/null || date +%s)-$$"
 TICKET="$QUEUE/$ID"
 echo "$OWNER $CLASS" > "$TICKET"
 HELD=()
+# Test hook: print the dispatch order ("<ticket> <owner> <class>" per line) and exit; takes no slot.
+PRINT_ORDER_HOOK=${LOCKED_APP_PRINT_ORDER:-}
 # A person playing Petari (an app without PETARI_SMOKE or --test-fixture) limits tests to one slot,
 # so test runs don't eat the player's frame rate or shader compiler.
 human_playing() {
@@ -66,6 +69,13 @@ free_slots() {
   done
   echo $free
 }
+# Priority plus aging: +1 per full minute waited. The ticket name starts with the arrival time in ns
+# (seconds if the platform date has no %N).
+eff_prio() {
+  local a=${2%%-*}
+  [ "${#a}" -gt 11 ] && a=$((a / 1000000000))
+  echo $(( $(prio "$1") + ( $(date +%s) - a ) / 60 ))
+}
 # Live tickets in dispatch order: "<id> <owner> <class>".
 ordered_tickets() {
   local g t n
@@ -76,7 +86,7 @@ ordered_tickets() {
     kill -0 "${n##*-}" 2>/dev/null || { rm -f "$t"; continue; }
     read -r o c < "$t"; c=${c:-functional}
     k=0; { [ -n "$g" ] && { [ "$n" = "$g" ] || [ "$o" = "$g" ]; }; } && k=1
-    echo "$k $(prio "$o") ${n%%-*} $n $o $c"
+    echo "$k $(eff_prio "$o" "$n") ${n%%-*} $n $o $c"
   done | sort -k1,1nr -k2,2nr -k3,3n | awk '{print $4, $5, $6}'
 }
 # Succeeds when this ticket may take slots now.
@@ -114,6 +124,7 @@ take_slots() {
   done
   [ ${#HELD[@]} -gt 0 ]
 }
+if [ -n "$PRINT_ORDER_HOOK" ]; then rm -f "$TICKET"; ordered_tickets; exit 0; fi
 announced=""
 while true; do
   free=$(free_slots)
