@@ -37,6 +37,61 @@ The game starts at once. Nothing waits for the shader backlog:
   `<user>` location; background smoke runs keep `<user>/cache`. `PETARI_CACHE_DIR`
   overrides all of these. The chosen directory is logged as `[gx pipeline cache]`.
 
+## Cold first visits (2026-10-17): hot-first seeds, hot gate, burst workers
+
+**Where a cold compile goes.** A GX pipeline costs about 500 ms of Metal CPU when
+nothing is cached (M4 Max, private cache namespace, prebuilt Dawn). Split per
+pipeline: about 100 ms for the vertex `newLibraryWithSource`, about 300 ms for the
+fragment `newLibraryWithSource`, and about 23 ms for the PSO. With
+`-ftime-trace`, about 190 ms of each fragment compile is the Metal frontend
+instantiating `metal::texture2d<float, access::sample>` from metal_stdlib, and
+75 ms is parsing the uniform struct. That is a fixed cost per compile request,
+independent of how large the shader is. Dawn compiles one entry point per
+library, so it is paid once per unique fragment shader. A cold stage draws 100 to
+330 configs. Metal compiles scale almost linearly with threads: 96 pipelines take
+54.7 s on one thread, 13.6 s on four, 9.0 s on eight and 6.5 s on twelve.
+Tools: `native/tools/pipeline_compile_bench.mm` (WGSL through the app's Dawn
+package, fresh cache namespace, `--threads N`, `--dump` writes Dawn's MSL blobs)
+and `pipeline_metal_split.mm` (times the VS library, FS library and PSO
+separately). Build and usage are in their header comments.
+
+**Hot-first seed order** (`order_pipeline_seeds.py`). The bundled order mixed the
+configs a stage draws with hundreds of shared rows it never draws. On a cold Good
+Egg visit, the 40 configs that popped in sat at manifest ranks 349 to 498. The
+tool rewrites only `first_frame_used`. Configs observed drawn in that stage (clean
+PASS sweep runs, any scenario) come first, ranked by earliest first use. The other
+observed rows follow at 1,000,000 + rank. Speculative rows stay 0xFFFFFFFF. The
+global backlog is ordered by how many stages draw a config. `--create Unknown`
+adds a 13-row manifest for the boot and logo scenes. Before it, the fallback
+gated the logo on every observed config (1.5 s timeout when cold).
+
+```sh
+python3 native/tools/order_pipeline_seeds.py observe build/seed-order/full135.json build/stage-sweep/full135-v3
+python3 native/tools/order_pipeline_seeds.py observe build/seed-order/extra.json build/stage-sweep/all-extra
+python3 native/tools/seedpack.py expand native/data/pipeline-seeds.v13.xz /tmp/seeds && rm /tmp/seeds/.seedpack.json
+python3 native/tools/order_pipeline_seeds.py apply /tmp/seeds build/seed-order/*.json --create Unknown
+python3 native/tools/seedpack.py pack /tmp/seeds native/data/pipeline-seeds.v13.xz
+```
+
+Re-apply after every seed regeneration or closure. The pack keeps the order, but
+regenerated databases do not. Test: `native_seed_order`.
+
+**Hot gate.** `petari_gx_pipeline_stage_wait` now waits only for the clear masks
+plus manifest rows below 1,000,000 (`gate_variants` in `[gx stage prep]` and
+`[gx stage ready]`). Older seeds (frame numbers, all below 1,000,000) gate on
+their observed rows and skip the speculative ones. A manifest with no such rows
+gates on everything, as before. Partly warm sessions therefore stop timing out
+on never-drawn speculative rows. Test: `native_pipeline_stage` (hot-row gate).
+
+**Burst workers.** The pool is `PetariPipeline::burstWorkerCount()` threads:
+performance cores - 4, clamped to [workerCount(), 8], which is 8 on the M4 Max.
+`PETARI_PIPELINE_BURST_THREADS` overrides it (workerCount()..16). Workers past
+`workerCount()` (4) compile only outside active gameplay (menus, loading, gates,
+pause) or jobs a draw is waiting for. During gameplay they never take stage
+speculation or the backlog. Worker wake-ups are `notify_all`, so a parked burst
+worker cannot swallow a wake-up meant for a normal worker. Test:
+`native_pipeline_worker` (burst workers).
+
 ### Measured, 2026-09-30 (galaxy smoke, quiet slot, M4 Max)
 
 Background smoke runs, `build/pipeline/startup-ux/<run>/startup-ux-summary.json`

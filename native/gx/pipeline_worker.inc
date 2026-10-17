@@ -23,13 +23,13 @@ static void pipeline_worker(unsigned workerIndex = 0) {
       std::unique_lock lock{g_pipelineMutex};
       if (g_hasPipelineThread) {
         g_pipelineQueueCv.wait(lock, [workerIndex] {
-          return workerIndex >= petariActiveWorkers || petari_runnable_queue() || g_pipelineThreadEnd;
+          return workerIndex >= petariActiveWorkers || petari_runnable_queue(workerIndex) || g_pipelineThreadEnd;
         });
       } else if (g_pipelineQueue.empty() && g_backgroundPipelineQueue.empty()) {
         return;
       }
       if (g_pipelineThreadEnd || (g_hasPipelineThread && workerIndex >= petariActiveWorkers)) break;
-      auto* runnable = g_hasPipelineThread ? petari_runnable_queue() : nullptr;
+      auto* runnable = g_hasPipelineThread ? petari_runnable_queue(workerIndex) : nullptr;
       background = runnable ? runnable == &g_backgroundPipelineQueue : g_pipelineQueue.empty();
       auto& source = background ? g_backgroundPipelineQueue : g_pipelineQueue;
       pending = std::move(source.front());
@@ -63,7 +63,8 @@ static void pipeline_worker(unsigned workerIndex = 0) {
       petariStageSpeculativeInFlight -= speculative;
     }
     // A throttled slot opened; a worker parked by a cap may take the next job.
-    if (background || speculative) g_pipelineQueueCv.notify_one();
+    // notify_all: a woken burst worker may not be allowed to take the job.
+    if (background || speculative) g_pipelineQueueCv.notify_all();
     if (!g_hasPipelineThread) g_pipelinesPerFrame += std::max(1u, pipelineCount);
     notify_pipeline_ready(true, pipelineCount);
     petari_global_progress();

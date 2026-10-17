@@ -15,7 +15,12 @@ struct PetariStageRecord {
   absl::flat_hash_set<HashType> configs;
   absl::flat_hash_set<HashType> seen;
   std::vector<PipelineRef> targets;
+  // What the stage gate waits for: the clear masks plus the manifest's hot rows
+  // (first_frame_used below kPetariHotLimit: configs this stage is known to draw,
+  // native/tools/order_pipeline_seeds.py). All targets when the manifest has none.
+  std::vector<PipelineRef> gateTargets;
 };
+static constexpr uint32_t kPetariHotLimit = 1000000;
 static absl::flat_hash_map<std::string, PetariStageRecord> petariStages;
 static std::string petariActiveStage;
 static absl::flat_hash_set<std::string> petariOverlayStages;
@@ -136,7 +141,7 @@ extern "C" void petari_gx_pipeline_stage_begin(const char* name, const char* see
     std::string failure;
     if (sqlite3* db = open_pipeline_cache_seed_db(path)) {
       sqlite3_stmt* query = nullptr;
-      if (sqlite3_prepare_v2(db, "SELECT type,config_version,config FROM pipeline_cache ORDER BY first_frame_used", -1,
+      if (sqlite3_prepare_v2(db, "SELECT type,config_version,config,first_frame_used FROM pipeline_cache ORDER BY first_frame_used", -1,
                              &query, nullptr) == SQLITE_OK) {
         int status;
         unsigned rejected = 0;
@@ -145,19 +150,21 @@ extern "C" void petari_gx_pipeline_stage_begin(const char* name, const char* see
           const auto version = sqlite3_column_int(query, 1);
           const auto size = sqlite3_column_bytes(query, 2);
           const auto* data = sqlite3_column_blob(query, 2);
+          const auto firstUse = static_cast<uint32_t>(std::min<sqlite3_int64>(
+              std::max<sqlite3_int64>(sqlite3_column_int64(query, 3), 0), UINT32_MAX));
           if (type == static_cast<int>(ShaderType::GX) && version == gx::GXPipelineConfigVersion &&
               size == sizeof(gx::PipelineConfig) && data) {
             gx::PipelineConfig config;
             std::memcpy(&config, data, sizeof(config));
             if (config.version == gx::GXPipelineConfigVersion)
-              manifest.push_back({ShaderType::GX, config, UINT32_MAX});
+              manifest.push_back({ShaderType::GX, config, firstUse});
             else ++rejected;
           } else if (type == static_cast<int>(ShaderType::Clear) && version == clear::ClearPipelineConfigVersion &&
                      size == sizeof(clear::PipelineConfig) && data) {
             clear::PipelineConfig config;
             std::memcpy(&config, data, sizeof(config));
             if (config.version == clear::ClearPipelineConfigVersion)
-              manifest.push_back({ShaderType::Clear, config, UINT32_MAX});
+              manifest.push_back({ShaderType::Clear, config, firstUse});
             else ++rejected;
           } else ++rejected;
         }
@@ -194,55 +201,71 @@ extern "C" void petari_gx_pipeline_stage_begin(const char* name, const char* see
     provenance = "shared-observed-memory";
   }
 
-  absl::flat_hash_set<PipelineRef> targets;
+  absl::flat_hash_set<PipelineRef> targets, gateTargets;
   absl::flat_hash_set<HashType> configs;
-  const auto submit = [&](ShaderType type, const auto& config) {
+  size_t hotRows = 0;
+  const auto submit = [&](ShaderType type, const auto& config, bool gate) {
     const auto key = xxh3_hash(config, static_cast<HashType>(type));
     configs.insert(key);
     if (globalBackground) remember_pipeline_config(type, config, UINT32_MAX, true);
-    targets.insert(resolve_pipeline(type, config, scene, priority));
-    if (offscreen.key != scene.key) targets.insert(resolve_pipeline(type, config, offscreen, priority));
+    const auto sceneKey = resolve_pipeline(type, config, scene, priority);
+    targets.insert(sceneKey);
+    if (gate) gateTargets.insert(sceneKey);
+    if (offscreen.key != scene.key) {
+      const auto offscreenKey = resolve_pipeline(type, config, offscreen, priority);
+      targets.insert(offscreenKey);
+      if (gate) gateTargets.insert(offscreenKey);
+    }
   };
   for (unsigned mask = 0; mask != 8; ++mask) {
     clear::PipelineConfig config{};
     config.clearColor = (mask & 1) != 0;
     config.clearAlpha = (mask & 2) != 0;
     config.clearDepth = (mask & 4) != 0;
-    submit(ShaderType::Clear, config);
+    submit(ShaderType::Clear, config, true);
   }
-  for (const auto& item : manifest)
-    std::visit([&](const auto& config) { submit(item.type, config); }, item.config);
-  size_t pending = 0;
+  for (const auto& item : manifest) {
+    const bool hot = item.firstFrameUsed < kPetariHotLimit;
+    hotRows += hot;
+    std::visit([&](const auto& config) { submit(item.type, config, hot); }, item.config);
+  }
+  size_t pending = 0, gatePending = 0;
   {
     std::lock_guard lock{g_pipelineMutex};
     auto& stage = petariStages[stageName];
     stage.configs = std::move(configs);
     stage.targets.assign(targets.begin(), targets.end());
+    if (hotRows) stage.gateTargets.assign(gateTargets.begin(), gateTargets.end());
+    else stage.gateTargets = stage.targets;
     for (const auto key : targets) pending += !g_pipelines.contains(key);
+    for (const auto key : stage.gateTargets) gatePending += !g_pipelines.contains(key);
   }
   g_pipelineQueueCv.notify_all();
-  std::fprintf(stderr, "[gx stage prep] stage=%s source=%s configs=%zu variants=%zu pending=%zu enqueue_ms=%.3f\n",
-               stageName.c_str(), provenance.c_str(), manifest.size(), targets.size(), pending,
+  std::fprintf(stderr, "[gx stage prep] stage=%s source=%s configs=%zu variants=%zu pending=%zu hot_configs=%zu "
+               "gate_variants=%zu gate_pending=%zu enqueue_ms=%.3f\n",
+               stageName.c_str(), provenance.c_str(), manifest.size(), targets.size(), pending, hotRows,
+               hotRows ? gateTargets.size() : targets.size(), gatePending,
                PetariPipeline::milliseconds(PetariPipeline::Clock::now() - started));
 }
 
 extern "C" void petari_gx_pipeline_stage_wait() {
   PetariNative::HostAllocationScope petariHostAllocations;
   const auto start = PetariPipeline::Clock::now();
-  size_t pending = 0, failed = 0;
+  size_t pending = 0, failed = 0, gateVariants = 0;
   bool complete = false;
   std::string name;
   {
     std::unique_lock lock{g_pipelineMutex};
     name = petariActiveStage;
     if (name.empty()) return;
-    auto targets = petariStages[name].targets;
+    auto targets = petariStages[name].gateTargets;
     for (const auto& tag : petariOverlayStages) {
-      const auto& extra = petariStages[tag].targets;
+      const auto& extra = petariStages[tag].gateTargets;
       targets.insert(targets.end(), extra.begin(), extra.end());
     }
     std::sort(targets.begin(), targets.end());
     targets.erase(std::unique(targets.begin(), targets.end()), targets.end());
+    gateVariants = targets.size();
     const auto ready = [&] {
       return g_pipelineThreadEnd || petariActiveStage != name ||
           std::all_of(targets.begin(), targets.end(), [](auto key) { return g_pipelines.contains(key); });
@@ -258,9 +281,9 @@ extern "C" void petari_gx_pipeline_stage_wait() {
     petariStages[name].prepared = true;
     for (const auto& tag : petariOverlayStages) petariStages[tag].prepared = true;
   }
-  std::fprintf(stderr, "[gx stage ready] stage=%s residual_wait_ms=%.3f pending=%zu failed=%zu result=%s\n",
+  std::fprintf(stderr, "[gx stage ready] stage=%s residual_wait_ms=%.3f pending=%zu failed=%zu gate_variants=%zu result=%s\n",
                name.c_str(), PetariPipeline::milliseconds(PetariPipeline::Clock::now() - start), pending, failed,
-               complete ? "completed" : "timeout-proceed");
+               gateVariants, complete ? "completed" : "timeout-proceed");
   petari_stage_flush_logs();
 }
 

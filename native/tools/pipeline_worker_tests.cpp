@@ -112,7 +112,8 @@ void parallelTest() {
     stop(workers);
 }
 void retirementTest() {
-    const auto normal = PetariPipeline::workerCount();
+    // After full preparation the pool shrinks to the burst pool; workers beyond it retire.
+    const auto normal = PetariPipeline::burstWorkerCount();
     petariActiveWorkers = normal + 1;
     std::promise<void> started, release;
     auto gate = release.get_future().share();
@@ -163,6 +164,7 @@ void gameplayThrottleTest() {
     // backlog waits while stage work is queued, a draw-requested job starts at
     // once, and leaving gameplay releases everything parked.
     petariActiveWorkers = 4;
+    petariNormalWorkers = 4;  // all four are normal workers here (burst workers: burstWorkerTest)
     petari_gx_pipeline_set_gameplay(true);
     std::promise<void> startedA, startedB, release;
     std::atomic<bool> startedC{false}, startedG{false};
@@ -204,6 +206,50 @@ void gameplayThrottleTest() {
     waitReady(5);
     require(petariStageSpeculativeInFlight == 0 && petariBackgroundInFlight == 0, "speculative accounting unbalanced");
     stop(workers);
+}
+void burstWorkerTest() {
+    // Worker 1 is a burst worker: during gameplay it takes only draw-requested jobs,
+    // never stage speculation or the backlog; outside gameplay it takes everything.
+    petariActiveWorkers = 2;
+    petariNormalWorkers = 1;
+    petari_gx_pipeline_set_gameplay(true);
+    std::promise<void> startedA, release;
+    std::atomic<bool> startedB{false}, startedG{false};
+    auto gate = release.get_future().share();
+    enqueue(81, false, [&] { startedA.set_value(); gate.wait(); return CompiledPipeline{true}; });
+    std::vector<std::thread> workers;
+    workers.emplace_back(pipeline_worker, 0u);
+    require(startedA.get_future().wait_for(std::chrono::seconds(5)) == std::future_status::ready, "normal worker idle");
+    workers.emplace_back(pipeline_worker, 1u);
+    enqueue(82, false, [&] { startedB = true; return CompiledPipeline{true}; });
+    enqueue(83, true, [&] { startedG = true; return CompiledPipeline{true}; });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    require(!startedB && !startedG, "burst worker took speculative work during gameplay");
+    {
+        std::lock_guard lock(g_pipelineMutex);
+        petariPipelineSamples[84].drawBlocking = true;
+        petariPipelineSamples[84].queued = PetariPipeline::Clock::now();
+        g_pipelineQueue.push_front({84, [] { return CompiledPipeline{true}; }});
+        g_pendingPipelines.insert(84);
+        ++queuedPipelines;
+    }
+    g_pipelineQueueCv.notify_all();
+    {
+        std::unique_lock lock(g_pipelineMutex);
+        require(g_pipelineReadyCv.wait_for(lock, std::chrono::seconds(5), [] { return g_pipelines.count(84) != 0; }),
+                "burst worker did not take a draw-requested job during gameplay");
+    }
+    require(!startedB && !startedG, "burst worker continued into speculative work");
+    petari_gx_pipeline_set_gameplay(false);
+    {
+        std::unique_lock lock(g_pipelineMutex);
+        require(g_pipelineReadyCv.wait_for(lock, std::chrono::seconds(5), [] { return g_pipelines.count(82) && g_pipelines.count(83); }),
+                "burst worker idle outside gameplay");
+    }
+    release.set_value();
+    waitReady(4);
+    stop(workers);
+    petariNormalWorkers = PetariPipeline::workerCount();
 }
 void boundedDrawTest() {
     // Nothing compiles: the first wait spends the whole frame budget (a lower bound
@@ -292,12 +338,24 @@ int main(int argc, char** argv) {
     aurora::gfx::require(PetariPipeline::startupWorkerCount() == PetariPipeline::workerCount(), "default used startup pool");
     unsetenv("PETARI_PIPELINE_STARTUP_THREADS");
     unsetenv("PETARI_PIPELINE_GLOBAL_PRECOMPILE");
+    unsetenv("PETARI_PIPELINE_BURST_THREADS");
+    const auto burst = PetariPipeline::burstWorkerCount();
+    aurora::gfx::require(burst >= PetariPipeline::workerCount() && burst <= 8, "burst pool outside [normal, 8]");
+    for (const auto value : {"", "0", "17", "invalid"}) {
+        setenv("PETARI_PIPELINE_BURST_THREADS", value, 1);
+        aurora::gfx::require(PetariPipeline::burstWorkerCount() == burst, "invalid burst override did not fall back");
+    }
+    setenv("PETARI_PIPELINE_BURST_THREADS", "12", 1);
+    aurora::gfx::require(PetariPipeline::burstWorkerCount() == 12, "burst override ignored");
+    unsetenv("PETARI_PIPELINE_BURST_THREADS");
     aurora::gfx::priorityTest();
     aurora::gfx::parallelTest();
     aurora::gfx::progressTest();
     aurora::gfx::retirementTest();
     aurora::gfx::backgroundCapTest();
     aurora::gfx::gameplayThrottleTest();
+    aurora::gfx::petariNormalWorkers = PetariPipeline::workerCount();
+    aurora::gfx::burstWorkerTest();
     aurora::gfx::boundedDrawTest();
-    std::puts("Pipeline worker: requested priority, concurrent progress, isolated timing state, backlog cap, gameplay throttle, bounded draw waits and shutdown pass");
+    std::puts("Pipeline worker: requested priority, concurrent progress, isolated timing state, backlog cap, gameplay throttle, burst workers, bounded draw waits and shutdown pass");
 }

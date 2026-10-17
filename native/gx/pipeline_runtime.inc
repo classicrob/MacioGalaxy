@@ -33,6 +33,8 @@ static std::atomic<unsigned> petariPipelineWaiters{0};
 static std::atomic<uint64_t> petariSkippedDraws{0};
 static uint32_t petariFailedPipelines = 0; // guarded by g_pipelineMutex
 static unsigned petariActiveWorkers = PetariPipeline::workerCount(); // guarded by g_pipelineMutex
+// Workers with an index at or above this are burst workers (PetariPipeline::burstWorkerCount()).
+static unsigned petariNormalWorkers = PetariPipeline::workerCount(); // guarded by g_pipelineMutex
 // Guarded by g_pipelineMutex: global-backlog jobs compiling now and their cap
 // outside gameplay; stage jobs no draw requested yet compiling now; and
 // whether the last frame was active gameplay (set from the frame seam).
@@ -50,12 +52,12 @@ extern "C" void petari_gx_pipeline_startup_finished() {
   {
     std::lock_guard lock{g_pipelineMutex};
     previous = petariActiveWorkers;
-    current = petariActiveWorkers = PetariPipeline::workerCount();
+    current = petariActiveWorkers = PetariPipeline::burstWorkerCount();
   }
   g_pipelineQueueCv.notify_all();
   std::fprintf(stderr, "[gx pipeline pool] startup_finished=1 previous_workers=%u background_workers=%u "
-               "gameplay_stage_cap=%u gameplay_backlog_cap=%u extra_inflight=drain\n",
-               previous, current, PetariPipeline::gameplayStageCap(), PetariPipeline::gameplayBacklogCap());
+               "normal_workers=%u gameplay_stage_cap=%u gameplay_backlog_cap=%u extra_inflight=drain\n",
+               previous, current, petariNormalWorkers, PetariPipeline::gameplayStageCap(), PetariPipeline::gameplayBacklogCap());
 }
 
 
@@ -121,15 +123,18 @@ struct PetariPipelineWait {
 
 // Next queue a worker may take from, or null (guarded by g_pipelineMutex).
 // Draw-requested jobs sit at the front of the requested queue and are never
-// throttled; stage work precedes the global backlog.
-static std::deque<PendingPipeline>* petari_runnable_queue() {
+// throttled; stage work precedes the global backlog. During gameplay, burst
+// workers (index >= petariNormalWorkers) take only draw-requested jobs.
+static std::deque<PendingPipeline>* petari_runnable_queue(unsigned workerIndex) {
+  const bool burst = workerIndex >= petariNormalWorkers;
   if (!g_pipelineQueue.empty()) {
     const auto sample = petariPipelineSamples.find(g_pipelineQueue.front().hash);
-    if (!petariGameplay || (sample != petariPipelineSamples.end() && sample->second.drawBlocking) ||
-        petariStageSpeculativeInFlight < PetariPipeline::gameplayStageCap())
+    const bool drawn = sample != petariPipelineSamples.end() && sample->second.drawBlocking;
+    if (!petariGameplay || drawn || (!burst && petariStageSpeculativeInFlight < PetariPipeline::gameplayStageCap()))
       return &g_pipelineQueue;
     return nullptr;
   }
+  if (burst && petariGameplay) return nullptr;
   const unsigned backlogCap = petariGameplay ? PetariPipeline::gameplayBacklogCap() : petariBackgroundCap;
   if (!g_backgroundPipelineQueue.empty() && petariBackgroundInFlight < backlogCap) return &g_backgroundPipelineQueue;
   return nullptr;

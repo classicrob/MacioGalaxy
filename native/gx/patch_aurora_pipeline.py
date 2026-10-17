@@ -78,6 +78,13 @@ def patch(text):
             '''    const auto petariReady = [=] { return g_pipelines.contains(runtimeKey) || g_pipelineThreadEnd; };
     if (PetariPipeline::boundedDraw) petari_bounded_draw_wait(lock, petariReady);
     else g_pipelineReadyCv.wait(lock, petariReady);''')
+    # Burst workers may not take every job (pipeline_runtime.inc): wake them all so
+    # an eligible worker always sees new work.
+    replace('''  if (notifyWorker) {
+    g_pipelineQueueCv.notify_one();
+  }''', '''  if (notifyWorker) {
+    g_pipelineQueueCv.notify_all();
+  }''')
     replace('return resolve_pipeline(ShaderType::Clear, config, layout, PipelinePriority::Normal);',
             'return resolve_pipeline(ShaderType::Clear, config, layout, PipelinePriority::Blocking);')
 
@@ -87,10 +94,11 @@ def patch(text):
     start = text.index('static void pipeline_worker() {')
     end = text.index('\ntemplate <typename PipelineConfig>\nstatic size_t load_pipeline_cache_entries', start)
     text = text[:start] + (here / 'pipeline_worker.inc').read_text() + text[end:]
-    replace('    g_pipelineThread = std::thread(pipeline_worker);', '''    const unsigned count = PetariPipeline::startupWorkerCount();
+    replace('    g_pipelineThread = std::thread(pipeline_worker);', '''    const unsigned count = std::max(PetariPipeline::startupWorkerCount(), PetariPipeline::burstWorkerCount());
     petariActiveWorkers = count;
-    std::fprintf(stderr, "[gx pipeline] policy=%s compile_workers=%u\\n",
-                 PetariPipeline::asynchronous() ? "async" : "blocking", count);
+    petariNormalWorkers = PetariPipeline::workerCount();
+    std::fprintf(stderr, "[gx pipeline] policy=%s compile_workers=%u normal_workers=%u\\n",
+                 PetariPipeline::asynchronous() ? "async" : "blocking", count, petariNormalWorkers);
     for (unsigned i = 0; i < count; ++i) g_pipelineThreads.emplace_back(pipeline_worker, i);''')
     replace('    g_pipelineThread.join();',
             '    for (auto& worker : g_pipelineThreads) worker.join();\n    g_pipelineThreads.clear();')
