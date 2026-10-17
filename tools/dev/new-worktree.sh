@@ -77,7 +77,7 @@ set +e
 (cd "$WT" && "$MAIN/build/locked-build.sh" "wt-$NAME" cmake -S . -B build/macos-gx \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DPETARI_BUILD_GX_PROBE=ON \
     -DCMAKE_PREFIX_PATH="$(brew --prefix sqlite)" \
-    -DFETCHCONTENT_UPDATES_DISCONNECTED=ON "${CCACHE_ARGS[@]}" "${SRC_ARGS[@]}")
+    -DFETCHCONTENT_UPDATES_DISCONNECTED=ON -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "${CCACHE_ARGS[@]}" "${SRC_ARGS[@]}")
 CONFIGURE_STATUS=$?
 set -e
 # Fail loudly: a configure that did not finish leaves a worktree that cannot build.
