@@ -1,46 +1,36 @@
 #pragma once
-// Display-locked present pacing (PETARI_PRESENT_PACING=displaylink).
+// VI retrace clock locked to the display (PETARI_VI_CLOCK=display).
 //
-// The game finishes a frame every VI field (59.94 Hz), at a time that jitters by
-// a millisecond or two with its work, and Aurora's render worker presented it as
-// soon as it was encoded. The window shows a drawable at the first refresh
-// after it is ready, so whenever the ready time drifted across a refresh (the
-// 59.94 Hz VI beats against the display: every ~8 s at 120 Hz, ~17 s at 60 Hz)
-// the jitter flipped frames between two refreshes for dozens of frames: bursts
-// of 3- and 1-refresh intervals in the present statistics.
+// The game finishes a frame every VI field. With VI on its own 59.94 Hz timer the
+// frame's ready time drifts against the display's refresh grid; every time it
+// crossed a refresh (every ~8 s at 120 Hz, ~17 s at 60 Hz), a millisecond or two of
+// jitter flipped frames between two refreshes for dozens of frames: bursts of 3- and
+// 1-refresh intervals on screen (present p99 25 ms in every present mode).
 //
-// The gate holds each Present until a refresh grid position: the first refresh
-// at least `ticksPerFrame` refreshes after the previous release (one 60 Hz frame:
-// 1 at 60 Hz, 2 at 120 Hz). Released just after refresh k, a frame is shown at
-// refresh k + 1. A frame that arrives later than its slot is released at once
-// and is still on cadence as long as it arrives before the following refresh,
-// so arrival jitter of up to a whole refresh no longer changes the cadence; only
-// the slow VI drift does, once per beat (one slip, counted).
+// Locked, the VI field is the display's 60 Hz frame (one link period times
+// ticksPerFrame: 16.667 ms instead of 16.683), so the field no longer drifts, and its
+// phase is steered so that frames reach the present `arrivalTarget` after a refresh
+// of the link grid. Measured (perf_bench foreground, EggStar s1 + HB s1, 120 Hz panel):
+// 1/2/3-refresh intervals 45/1364/48 -> 0/1457/0, present p99 25 -> 16.67 ms, audio
+// unchanged (AI DMA follows the audio device clock, not VI).
 //
-// The display link (native/app/display_link.cpp) publishes the refresh grid: the
-// latest refresh time and the refresh period, in mach_absolute_time seconds
-// (CACurrentMediaTime). The render worker calls waitToPresent() before
-// Surface::Present (patch_aurora_present.py). No grid (link not started, window
-// hidden: the link stops), a stale grid, or a refresh rate that is not a
-// multiple of 60 Hz: no wait, present as before.
+// The display link (native/app/display_link.cpp) publishes the refresh grid in
+// mach_absolute_time seconds (CACurrentMediaTime). The render worker reports when
+// each frame reaches Surface::Present (notePresent, patch_aurora_present.py). The VI
+// retrace thread (native/platform/vi/vi_host.cpp) calls viServo once per field.
+// Without a usable, stable grid VI keeps its nominal timer; every lock and unlock is
+// logged with its reason.
 //
-// Measured (perf_bench foreground, EggStar s1 + HB s1, 120 Hz panel, build/fc/bench/fc-pacing
-// in the frame-cost worktree): the gate alone did NOT help (1/2/3-refresh 45/1364/48 vs 45/1364/48
-// unpaced). The link asks for 60 Hz, so on a 120 Hz panel its grid is every other refresh, and a
-// frame released mid-interval can still land on either panel refresh. The VI clock lock
-// (PETARI_VI_CLOCK=display, below) alone removed the bursts: 0/1457/0 and 1/1455/1. Use that.
-//
-// Header-only; the decision is a pure function (unit-tested).
+// Header-only; the per-field decision (viStep) is a pure function (unit-tested).
 
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <mutex>
 #include <string_view>
-#include <thread>
-#include <chrono>
 
 #if defined(__APPLE__)
 #include <mach/mach_time.h>
@@ -48,16 +38,6 @@
 
 namespace PetariNative::PresentPacing {
 
-inline bool enabled() {
-    static const bool on = [] {
-        const char* value = std::getenv("PETARI_PRESENT_PACING");
-        return value != nullptr && std::string_view(value) == "displaylink";
-    }();
-    return on;
-}
-
-// PETARI_VI_CLOCK=display: the VI retrace clock runs at the display's 60 Hz frame rate,
-// phase-locked so frames reach the present a fixed time after a refresh (see viServo).
 inline bool viLockEnabled() {
     static const bool on = [] {
         const char* value = std::getenv("PETARI_VI_CLOCK");
@@ -66,8 +46,8 @@ inline bool viLockEnabled() {
     return on;
 }
 
-// The display link runs for either.
-inline bool linkWanted() { return enabled() || viLockEnabled(); }
+// The display link runs only for the VI clock.
+inline bool linkWanted() { return viLockEnabled(); }
 
 // Seconds on the CACurrentMediaTime clock.
 inline double mediaTime() {
@@ -97,52 +77,23 @@ struct Grid {
     double period = 0.0;       // refresh period, seconds
 };
 
-// The index of the latest refresh at or before `now` on the grid (refresh 0 = grid.refreshTime).
-inline std::int64_t refreshIndex(const Grid& grid, double now) {
-    return static_cast<std::int64_t>(std::floor((now - grid.refreshTime) / grid.period));
+// Wraps x to [-period/2, period/2).
+inline double wrapPhase(double x, double period) {
+    return x - period * std::floor(x / period + 0.5);
 }
 
-struct Decision {
-    std::int64_t release = 0;  // refresh index after which to present
-    bool wait = false;         // that refresh is still ahead
-    bool slipped = false;      // later than the slot: a cadence slip
-};
-
-// `last`: the refresh index of the previous release, or INT64_MIN for none. `now`: current refresh index.
-inline Decision decide(std::int64_t last, std::int64_t now, unsigned ticks) {
-    Decision d;
-    if (last == INT64_MIN || ticks == 0) {
-        d.release = now;
-        return d;
-    }
-    const std::int64_t slot = last + ticks;
-    if (now < slot) {
-        d.release = slot;
-        d.wait = true;
-    } else {
-        d.release = now;
-        d.slipped = now > slot;
-    }
-    return d;
-}
-
-// Shared state: the link writes the grid, the render worker reads it.
+// Shared state: the link writes the grid, the render worker the arrival phase, VI reads both.
 struct State {
     std::mutex mutex;
     Grid grid;
-    double lastCallback = 0.0;    // media time of the latest link callback
-    std::int64_t lastRelease = INT64_MIN;
-    double lastReleaseGridTime = 0.0;  // refresh time the last release index is relative to
-    std::atomic<std::uint64_t> releases{0};
-    std::atomic<std::uint64_t> waits{0};
-    std::atomic<std::uint64_t> slips{0};
-    std::atomic<std::uint64_t> bypassed{0};  // no usable grid
-    std::atomic<std::uint64_t> waitedUs{0};
-    std::atomic<std::uint32_t> ticks{0};
-    // Render worker: where frames reach the present, relative to the latest link refresh
-    // (seconds, wrapped to +-half a link period), smoothed. Read by the VI servo.
-    double arrivalOffset = 0.0;  // under mutex
-    bool arrivalValid = false;   // under mutex
+    double lastCallback = 0.0;   // media time of the latest link callback
+    double arrivalOffset = 0.0;  // frames reach the present this long after a link refresh (smoothed)
+    bool arrivalValid = false;
+    // Statistics (VI thread writes).
+    std::atomic<std::uint64_t> lockedFields{0};
+    std::atomic<std::uint64_t> timerFields{0};
+    std::atomic<std::uint64_t> locks{0};
+    std::atomic<std::uint64_t> unlocks{0};
 };
 inline State state;
 
@@ -151,116 +102,24 @@ inline void publishRefresh(double refreshTime, double period) {
     std::lock_guard lock{state.mutex};
     state.grid = Grid{refreshTime, period};
     state.lastCallback = mediaTime();
-    state.ticks.store(ticksPerFrame(period), std::memory_order_relaxed);
 }
 
-// Wraps x to [-period/2, period/2).
-inline double wrapPhase(double x, double period) {
-    return x - period * std::floor(x / period + 0.5);
-}
-
-// Render worker: a frame reached the present at `now` (media time).
-inline void noteArrival(double now) {
+// Render worker, just before Surface::Present: a frame reached the present now.
+inline void notePresent() {
+    if (!linkWanted()) return;
+    const double now = mediaTime();
     std::lock_guard lock{state.mutex};
     if (!(state.grid.period > 0.0) || now - state.lastCallback > 0.1) {
         state.arrivalValid = false;
         return;
     }
     const double offset = wrapPhase(now - state.grid.refreshTime, state.grid.period);
-    if (!state.arrivalValid) {
-        state.arrivalOffset = offset;
-        state.arrivalValid = true;
-    } else {
-        // Smoothed on the circle: step toward the new sample by the wrapped difference.
-        state.arrivalOffset = wrapPhase(state.arrivalOffset + 0.1 * wrapPhase(offset - state.arrivalOffset, state.grid.period),
-                                        state.grid.period);
-    }
+    // Smoothed on the circle: step toward the new sample by the wrapped difference.
+    state.arrivalOffset = state.arrivalValid
+        ? wrapPhase(state.arrivalOffset + 0.1 * wrapPhase(offset - state.arrivalOffset, state.grid.period), state.grid.period)
+        : offset;
+    state.arrivalValid = true;
 }
-
-// Render worker, just before Surface::Present.
-inline void waitToPresent() {
-    if (!linkWanted()) return;
-    noteArrival(mediaTime());
-    if (!enabled()) return;
-    Grid grid;
-    std::int64_t last = INT64_MIN;
-    double lastGrid = 0.0;
-    double lastCallback = 0.0;
-    {
-        std::lock_guard lock{state.mutex};
-        grid = state.grid;
-        last = state.lastRelease;
-        lastGrid = state.lastReleaseGridTime;
-        lastCallback = state.lastCallback;
-    }
-    const unsigned ticks = ticksPerFrame(grid.period);
-    const double now = mediaTime();
-    // No refresh for 100 ms: the window is hidden or occluded and the link stopped.
-    if (ticks == 0 || now - lastCallback > 0.1) {
-        state.bypassed.fetch_add(1, std::memory_order_relaxed);
-        std::lock_guard lock{state.mutex};
-        state.lastRelease = INT64_MIN;
-        return;
-    }
-    // Re-express the previous release on the current grid (the link moves its base every refresh).
-    if (last != INT64_MIN) {
-        last += static_cast<std::int64_t>(std::llround((lastGrid - grid.refreshTime) / grid.period));
-    }
-    const Decision d = decide(last, refreshIndex(grid, now), ticks);
-    if (d.wait) {
-        // Just after the refresh: the frame is shown at the next one.
-        const double until = grid.refreshTime + static_cast<double>(d.release) * grid.period + 0.0003;
-        const double seconds = until - now;
-        if (seconds > 0.0 && seconds < 0.05) {
-            std::this_thread::sleep_for(std::chrono::duration<double>(seconds));
-            state.waitedUs.fetch_add(static_cast<std::uint64_t>(seconds * 1e6), std::memory_order_relaxed);
-        }
-        state.waits.fetch_add(1, std::memory_order_relaxed);
-    }
-    if (d.slipped) state.slips.fetch_add(1, std::memory_order_relaxed);
-    state.releases.fetch_add(1, std::memory_order_relaxed);
-    std::lock_guard lock{state.mutex};
-    state.lastRelease = d.release;
-    state.lastReleaseGridTime = grid.refreshTime;
-}
-
-// At exit (the frame seam's report), when the link was wanted.
-inline void writeSummary(std::FILE* out) {
-    if (!linkWanted()) return;
-    const unsigned long long waits = state.waits.load();
-    std::fprintf(out,
-                 "[present pacing] gate %s, VI clock %s: releases %llu, waited %llu (mean %.2f ms), slips %llu, "
-                 "unpaced (no link/hidden/rate) %llu\n",
-                 enabled() ? "on" : "off", viLockEnabled() ? "display" : "own timer",
-                 static_cast<unsigned long long>(state.releases.load()), waits,
-                 waits != 0 ? state.waitedUs.load() / 1000.0 / waits : 0.0, static_cast<unsigned long long>(state.slips.load()),
-                 static_cast<unsigned long long>(state.bypassed.load()));
-}
-
-// ---- VI clock lock (PETARI_VI_CLOCK=display) ----
-//
-// The VI retrace thread keeps its own timer and deadline; each field it asks the servo
-// for the period and a small correction of its next deadline. Locked, the period is the
-// display's 60 Hz frame (one link period times ticksPerFrame) instead of 59.94 Hz, so
-// the field no longer drifts against the refresh grid, and the phase is steered so that
-// frames reach the present `arrivalTarget` (2 ms, PETARI_VI_PHASE_TARGET_MS) after a link
-// refresh, early enough to be shown at the next refresh even without the gate: a frame released just
-// after a refresh is shown at the next one, and any lateness up to nearly a whole refresh
-// keeps that cadence. Without a usable grid (no link, window hidden, a refresh rate that
-// is not a multiple of 60 Hz, a nominal field rate that is not ~60 Hz) it returns false
-// and VI uses its nominal period.
-
-struct ServoInput {
-    Grid grid;
-    unsigned ticks = 0;
-    bool fresh = false;
-    bool arrivalValid = false;
-    double arrivalOffset = 0.0;
-};
-struct ServoOutput {
-    double period = 0.0;      // seconds per field
-    double correction = 0.0;  // seconds to add to the next deadline
-};
 
 inline double arrivalTarget() {
     static const double target = [] {
@@ -270,36 +129,113 @@ inline double arrivalTarget() {
     return target;
 }
 
-// Pure (unit-tested).
-inline bool servo(const ServoInput& in, double nominalPeriod, ServoOutput* out) {
-    if (!in.fresh || in.ticks == 0) return false;
-    const double frame = in.ticks * in.grid.period;
-    if (std::fabs(frame - nominalPeriod) > 0.01 * nominalPeriod) return false;
-    out->period = frame;
-    out->correction = 0.0;
+// ---- per-field decision (pure) ----
+
+constexpr double kStaleSeconds = 0.1;         // no link callback this long: window hidden, minimised or occluded
+constexpr unsigned kStableFields = 30;        // the refresh period must hold this many fields before locking
+constexpr double kStableTolerance = 0.002;    // relative: a period change beyond this is a new display mode
+constexpr double kMaxCorrection = 0.0002;     // seconds per field of phase steering (0.2 ms)
+
+enum class ViEvent { None, Locked, Unlocked };
+
+struct ViFieldInput {
+    Grid grid;
+    double sinceCallback = 1e9;  // seconds since the latest link callback
+    bool arrivalValid = false;
+    double arrivalOffset = 0.0;
+};
+
+struct ViClockState {  // VI thread only
+    bool locked = false;
+    double candidate = 0.0;  // the refresh period being watched for stability
+    unsigned stable = 0;     // consecutive fields with that period
+};
+
+struct ViFieldResult {
+    bool locked = false;
+    double period = 0.0;      // seconds this field
+    double correction = 0.0;  // seconds to add to the next deadline
+    ViEvent event = ViEvent::None;
+    const char* reason = "";  // why VI is (or went) on its own timer
+};
+
+inline ViFieldResult viStep(ViClockState& s, const ViFieldInput& in, double nominalPeriod) {
+    ViFieldResult r;
+    r.period = nominalPeriod;
+    const unsigned ticks = ticksPerFrame(in.grid.period);
+    const double frame = ticks * in.grid.period;
+    if (in.sinceCallback > kStaleSeconds) {
+        r.reason = "no display refresh for 100 ms (no link, window hidden or minimised)";
+    } else if (ticks == 0) {
+        r.reason = "refresh rate is not a multiple of 60 Hz";
+    } else if (std::fabs(frame - nominalPeriod) > 0.01 * nominalPeriod) {
+        r.reason = "the game's field rate is not ~60 Hz";
+    }
+    if (r.reason[0] != '\0') {
+        s.stable = 0;
+        s.candidate = 0.0;
+        if (s.locked) {
+            s.locked = false;
+            r.event = ViEvent::Unlocked;
+        }
+        return r;
+    }
+    // A changed refresh period (another display, a mode change, a variable rate): back to the timer
+    // until the new period has held for kStableFields fields.
+    if (std::fabs(in.grid.period - s.candidate) <= kStableTolerance * in.grid.period) {
+        ++s.stable;
+    } else {
+        s.candidate = in.grid.period;
+        s.stable = 1;
+        if (s.locked) {
+            s.locked = false;
+            r.event = ViEvent::Unlocked;
+            r.reason = "refresh rate changed";
+            return r;
+        }
+    }
+    if (!s.locked) {
+        if (s.stable < kStableFields) {
+            r.reason = "waiting for a steady refresh rate";
+            return r;
+        }
+        s.locked = true;
+        r.event = ViEvent::Locked;
+    }
+    r.locked = true;
+    r.period = frame;
     if (in.arrivalValid) {
         // Arriving later than the target: retrace earlier (a negative correction), and the reverse.
-        const double error = wrapPhase(in.arrivalOffset - arrivalTarget(), in.grid.period);
-        const double step = 0.05 * error;
-        const double limit = 0.0002;  // 0.2 ms per field: a full-period re-phase takes ~1-2 s
-        out->correction = -(step > limit ? limit : step < -limit ? -limit : step);
+        const double step = 0.05 * wrapPhase(in.arrivalOffset - arrivalTarget(), in.grid.period);
+        r.correction = -(step > kMaxCorrection ? kMaxCorrection : step < -kMaxCorrection ? -kMaxCorrection : step);
     }
-    return true;
+    return r;
 }
 
-// VI thread, once per field.
-inline bool viServo(double nominalPeriod, ServoOutput* out) {
-    if (!viLockEnabled()) return false;
-    ServoInput in;
+// VI thread, once per field: reads the shared state and steps `s`.
+inline ViFieldResult viServo(ViClockState& s, double nominalPeriod) {
+    ViFieldInput in;
     {
         std::lock_guard lock{state.mutex};
         in.grid = state.grid;
-        in.fresh = mediaTime() - state.lastCallback <= 0.1;
+        in.sinceCallback = state.lastCallback > 0.0 ? mediaTime() - state.lastCallback : 1e9;
         in.arrivalValid = state.arrivalValid;
         in.arrivalOffset = state.arrivalOffset;
     }
-    in.ticks = ticksPerFrame(in.grid.period);
-    return servo(in, nominalPeriod, out);
+    const ViFieldResult r = viStep(s, in, nominalPeriod);
+    (r.locked ? state.lockedFields : state.timerFields).fetch_add(1, std::memory_order_relaxed);
+    if (r.event == ViEvent::Locked) state.locks.fetch_add(1, std::memory_order_relaxed);
+    if (r.event == ViEvent::Unlocked) state.unlocks.fetch_add(1, std::memory_order_relaxed);
+    return r;
+}
+
+// At exit (the frame seam's report).
+inline void writeSummary(std::FILE* out) {
+    if (!viLockEnabled()) return;
+    std::fprintf(out, "[vi clock] display: %llu fields locked to the display, %llu on the timer, %llu locks, %llu unlocks\n",
+                 static_cast<unsigned long long>(state.lockedFields.load()),
+                 static_cast<unsigned long long>(state.timerFields.load()),
+                 static_cast<unsigned long long>(state.locks.load()), static_cast<unsigned long long>(state.unlocks.load()));
 }
 
 }  // namespace PetariNative::PresentPacing

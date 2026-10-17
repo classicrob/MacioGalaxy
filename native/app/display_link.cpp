@@ -1,5 +1,5 @@
-// The display's refresh grid for present pacing (petari/present_pacing.hpp,
-// PETARI_PRESENT_PACING=displaylink): a CADisplayLink from the game view
+// The display's refresh grid for the VI clock lock (petari/present_pacing.hpp,
+// PETARI_VI_CLOCK=display): a CADisplayLink from the game view
 // (-[NSView displayLinkWithTarget:selector:], macOS 14+), which follows the
 // view to whatever display the window is on, run on its own thread's run loop
 // (the main thread runs the game and only pumps events between frames).
@@ -40,14 +40,17 @@ void tick(id, SEL, id link) {
     const double period = target - timestamp;
     if (!(period > 0.0)) return;
     Pacing::publishRefresh(timestamp, period);
-    // Once per change of the refresh rate (startup, moving to another display).
+    // Once per change of the refresh rate (startup, moving to another display), at most 10 lines
+    // (a variable-rate display could change every refresh).
     const unsigned ticks = Pacing::ticksPerFrame(period);
     if (gLoggedTicks.exchange(ticks) != ticks) {
-        if (ticks != 0) {
-            std::fprintf(stderr, "[present pacing] display link %.2f Hz: present every %u refresh(es)\n", 1.0 / period, ticks);
-        } else {
-            std::fprintf(stderr, "[present pacing] display link %.2f Hz is not a multiple of 60 Hz: presenting unpaced\n",
-                         1.0 / period);
+        static std::atomic<unsigned> lines{0};
+        const unsigned line = lines.fetch_add(1);
+        if (line < 10) {
+            std::fprintf(stderr, "[vi clock] display link %.2f Hz: %s\n", 1.0 / period,
+                         ticks != 0 ? "a multiple of 60 Hz" : "not a multiple of 60 Hz (VI stays on its timer)");
+        } else if (line == 10) {
+            std::fprintf(stderr, "[vi clock] display link rate keeps changing; no more rate lines\n");
         }
     }
 }
@@ -60,7 +63,7 @@ void start(void* window) {
     id view = static_cast<id>(SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow), "aurora.metal_view", nullptr));
     const SEL create = sel_registerName("displayLinkWithTarget:selector:");
     if (view == nullptr || !class_respondsToSelector(object_getClass(view), create)) {
-        std::fprintf(stderr, "[present pacing] no NSView display link (needs macOS 14 and a Metal view): presenting unpaced\n");
+        std::fprintf(stderr, "[vi clock] no NSView display link (needs macOS 14 and a Metal view): VI stays on its timer\n");
         return;
     }
     Class targetClass = objc_getClass("PetariDisplayLinkTarget");
@@ -73,7 +76,7 @@ void start(void* window) {
     // Main thread (AppKit); the link keeps its target.
     gLink = reinterpret_cast<id (*)(id, SEL, id, SEL)>(objc_msgSend)(view, create, target, sel_registerName("tick:"));
     if (gLink == nullptr) {
-        std::fprintf(stderr, "[present pacing] display link creation failed: presenting unpaced\n");
+        std::fprintf(stderr, "[vi clock] display link creation failed: VI stays on its timer\n");
         return;
     }
     reinterpret_cast<id (*)(id, SEL)>(objc_msgSend)(gLink, sel_registerName("retain"));
@@ -87,8 +90,7 @@ void start(void* window) {
                                                                   (id)kCFRunLoopCommonModes);
         CFRunLoopRun();
     }).detach();
-    std::fprintf(stderr, "[present pacing] display link started (present gate %s, VI clock %s)\n", Pacing::enabled() ? "on" : "off",
-                 Pacing::viLockEnabled() ? "display" : "own timer");
+    std::fprintf(stderr, "[vi clock] display link started: VI follows the display when its refresh is steady\n");
 }
 
 }  // namespace PetariNative::App::DisplayLink
