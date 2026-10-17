@@ -15,6 +15,7 @@
 #include <imgui_internal.h>  // GImGui->HoveredWindow, ActiveId (the mouse trace)
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -566,6 +567,30 @@ void handleEvents(const AuroraEvent* event) {
 
 // Opens the next Aurora frame. While the window cannot present (minimized,
 // hidden), aurora_update waits for window events and the game stays here.
+// PETARI_TEST_FULLSCREEN="<seam>:<0|1>,...": enter (1) or leave (0) fullscreen at those seam
+// counts, as Ctrl+Cmd+F would (SDL's desktop fullscreen: a macOS fullscreen Space). Test runs only.
+void testFullscreen() {
+    static const std::string plan = [] {
+        const char* value = std::getenv("PETARI_TEST_FULLSCREEN");
+        return std::string(value != nullptr ? value : "");
+    }();
+    if (plan.empty() || gWindow == nullptr) return;
+    static unsigned long seams = 0;
+    ++seams;
+    std::size_t at = 0;
+    while (at < plan.size()) {
+        const std::size_t end = std::min(plan.find(',', at), plan.size());
+        const std::string item = plan.substr(at, end - at);
+        const std::size_t colon = item.find(':');
+        if (colon != std::string::npos && colon + 1 < item.size() && std::strtoul(item.c_str(), nullptr, 10) == seams) {
+            const bool on = item[colon + 1] == '1';
+            const bool ok = SDL_SetWindowFullscreen(gWindow, on);
+            std::fprintf(stderr, "PETARI TEST: %s fullscreen at seam %lu%s\n", on ? "entering" : "leaving", seams, ok ? "" : " (refused)");
+        }
+        at = end + 1;
+    }
+}
+
 void openFrame() {
     while (!aurora_begin_frame()) {
         ++gTrace.unpresentableWaits;
@@ -827,6 +852,7 @@ extern "C" void petari_host_frame_seam(void) {
     aurora_end_frame();
 
     const std::uint64_t beginStart = Telemetry::nowNs();
+    testFullscreen();  // PETARI_TEST_FULLSCREEN
     handleEvents(aurora_update());
     openFrame();
 
