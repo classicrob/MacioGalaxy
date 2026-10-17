@@ -153,6 +153,55 @@ class PruneApps(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in apps.iterdir()), ["a1", "a2", "a5", "a6"])
 
 
+class Harvest(unittest.TestCase):
+    SCHEMA = ("CREATE TABLE aurora_schema(value INTEGER);"
+              "CREATE TABLE pipeline_cache(type INTEGER NOT NULL, hash INTEGER NOT NULL, config_version INTEGER NOT NULL,"
+              " config_size INTEGER NOT NULL, config BLOB NOT NULL, first_frame_used INTEGER NOT NULL,"
+              " PRIMARY KEY(type, hash));")
+
+    def db(self, path, hashes, frame=5):
+        import sqlite3
+        con = sqlite3.connect(path)
+        with con:
+            con.executescript(self.SCHEMA)
+            con.execute("insert into aurora_schema values (13)")
+            con.executemany("insert into pipeline_cache values (1,?,13,4,?,?)",
+                            [(h, b"cfg" + str(h).encode(), frame) for h in hashes])
+        con.close()
+
+    def test_harvest_and_merge(self):
+        import argparse, json, sqlite3, tempfile, types
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            seeds = tmp / "bundle/Contents/Resources/pipeline-seeds"
+            seeds.mkdir(parents=True)
+            self.db(seeds / "__global__.db", [1, 2])
+            self.db(seeds / "EggStarGalaxy.db", [1])
+            run = tmp / "bench/runs/main/goodegg1-EggStarGalaxy-s1-r1"
+            (run / "user").mkdir(parents=True)
+            big = -(2**63) + 5  # a hash above 2^63, stored signed
+            self.db(run / "user/pipeline_cache.db", [1, 2, 3, big])
+            (run / "app.log").write_text(
+                "[gx stage config] stage=EggStarGalaxy config=0000000000000003 phase=after_prep covered=0\n"
+                "[gx stage config] stage=EggStarGalaxy config=0000000000000001 phase=after_prep covered=1\n"
+                f"[gx pipeline miss] key=ab config={(big & (2**64 - 1)):016x} skipped=631 first_skip_to_terminal_or_exit_ms=1\n")
+            app = types.SimpleNamespace(bundle=tmp / "bundle")
+            note = pb.harvest_run(run, run / "user", app, {})
+            self.assertEqual(note["rows"], 2)
+            data = json.loads((run / "harvest.json").read_text())
+            self.assertEqual(data["stages"], {"0000000000000003": ["EggStarGalaxy"]})
+            self.assertEqual(data["misses_unseeded"], [f"{(big & (2**64 - 1)):016x}"])
+            pb.cmd_harvest(argparse.Namespace(out=str(tmp / "out"), benches=[str(tmp / "bench")], seed_dir=seeds))
+            out = tmp / "out/seeds"
+            glob_rows = {h for (h,) in sqlite3.connect(out / "__global__.db").execute("select hash from pipeline_cache")}
+            stage_rows = dict(sqlite3.connect(out / "EggStarGalaxy.db").execute("select hash, first_frame_used from pipeline_cache"))
+            self.assertEqual(glob_rows, {1, 2, 3, big})
+            self.assertEqual(stage_rows, {1: 5, 3: 0})  # the attributed config, hot; the miss had no stage line
+            summary = json.loads((tmp / "out/harvest.json").read_text())
+            self.assertEqual(next(iter(summary.values()))["skipped_draws"], 631)
+
+
 class CleanGuard(unittest.TestCase):
     def test_refuses_while_busy(self):
         import fcntl, os, tempfile
