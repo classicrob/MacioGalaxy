@@ -4,6 +4,7 @@
 
 #include <petari/input.hpp>
 #include <petari/latency_probe.hpp>
+#include <petari/present_stats.hpp>
 
 #include <SDL3/SDL_metal.h>
 #include <SDL3/SDL_properties.h>
@@ -35,6 +36,43 @@ const char* stageName(int stage) {
     return stage >= 0 && stage <= Probe::Presented ? kNames[stage] : "?";
 }
 
+// Presentation statistics (petari/present_stats.hpp): -[CAMetalLayer nextDrawable]
+// is wrapped so every drawable Aurora's render worker acquires for a frame gets a
+// presented handler. Dawn's Metal swap chain calls nextDrawable inside
+// Surface::GetCurrentTexture, which the patched aurora_end_frame brackets with
+// PresentStats::acquiringFrame; other callers are not tracked.
+using NextDrawableFn = id (*)(id, SEL);
+NextDrawableFn gOriginalNextDrawable = nullptr;
+
+double presentedTimeOf(id drawable) {
+#if defined(__x86_64__)
+    return reinterpret_cast<double (*)(id, SEL)>(objc_msgSend_fpret)(drawable, sel_registerName("presentedTime"));
+#else
+    return reinterpret_cast<double (*)(id, SEL)>(objc_msgSend)(drawable, sel_registerName("presentedTime"));
+#endif
+}
+
+id trackedNextDrawable(id self, SEL cmd) {
+    id drawable = gOriginalNextDrawable(self, cmd);
+    const std::uint32_t frame = PresentStats::acquiringFrame;
+    if (drawable != nullptr && frame != PresentStats::kNoFrame) {
+        PresentStats::noteAcquired(frame, Probe::nowNs());
+        void (^handler)(id) = ^(id presented) {
+            PresentStats::notePresented(frame, presentedTimeOf(presented));
+        };
+        reinterpret_cast<void (*)(id, SEL, id)>(objc_msgSend)(drawable, sel_registerName("addPresentedHandler:"),
+                                                              reinterpret_cast<id>(handler));
+    }
+    return drawable;
+}
+
+void installPresentTracking() {
+    Method method = class_getInstanceMethod(objc_getClass("CAMetalLayer"), sel_registerName("nextDrawable"));
+    if (method == nullptr || gOriginalNextDrawable != nullptr) return;
+    gOriginalNextDrawable = reinterpret_cast<NextDrawableFn>(method_getImplementation(method));
+    method_setImplementation(method, reinterpret_cast<IMP>(trackedNextDrawable));
+}
+
 }  // namespace
 
 void logLayer(const char* when) {
@@ -51,6 +89,13 @@ void configureLayer(void* window) {
     auto* view = static_cast<SDL_MetalView>(SDL_GetPointerProperty(SDL_GetWindowProperties(sdlWindow), "aurora.metal_view", nullptr));
     gLayer = view != nullptr ? SDL_Metal_GetLayer(view) : nullptr;
     if (gLayer == nullptr) return;
+    if (PresentStats::enabled()) {
+        // The display's refresh rate for the off-cadence count (a ProMotion panel reports its maximum).
+        if (const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(SDL_GetDisplayForWindow(sdlWindow)); mode != nullptr) {
+            PresentStats::refreshHz.store(mode->refresh_rate);
+        }
+        installPresentTracking();
+    }
     // PETARI_MAX_DRAWABLES=2|3: CAMetalLayer's drawable queue (default 3).
     if (const char* value = std::getenv("PETARI_MAX_DRAWABLES"); value != nullptr && (value[0] == '2' || value[0] == '3')) {
         reinterpret_cast<void (*)(void*, SEL, unsigned long)>(objc_msgSend)(gLayer, sel_registerName("setMaximumDrawableCount:"),

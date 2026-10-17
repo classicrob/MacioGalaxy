@@ -59,6 +59,7 @@ constexpr unsigned kGameThreadParts = Unattributed + 1;
 
 struct Frame {
     std::uint64_t index = 0;  // 1 for the interval ending at the second seam
+    std::uint64_t entryNs = 0;  // host uptime clock at the seam that ends the interval (present_stats columns)
     double intervalMs = 0.0;
     Phase phase = Phase::Startup;
     std::uint32_t efbCaptures = 0;
