@@ -128,6 +128,10 @@ bool input(const SDL_Event& event) {
         event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_FOCUS_GAINED)) {
         return true;
     }
+    // Foreground run ignoring physical input: focus events still reach the input layer and are counted.
+    if (SmokeBackground::ignorePhysical && SmokeBackground::physicalEvent(event.type)) {
+        return true;
+    }
     countPhysical(event);
     return Input::SDL3::handleEvent(event);
 }

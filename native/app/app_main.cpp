@@ -876,6 +876,14 @@ int main(int argc, char** argv) {
     }
 
     SDL_SetHintWithPriority("PETARI_SMOKE_BACKGROUND", App::SmokeBackground::enabled ? "1" : "0", SDL_HINT_OVERRIDE);
+    App::SmokeBackground::ignorePhysical = !App::SmokeBackground::enabled &&
+        App::SmokeBackground::ignorePhysicalRequested(std::getenv("PETARI_SMOKE"), PetariNative::TestFixture::observatory,
+                                                      std::getenv("PETARI_SMOKE_IGNORE_PHYSICAL"));
+    if (App::SmokeBackground::ignorePhysical) {
+        SDL_SetEventFilter(App::SmokeBackground::eventFilter, nullptr);
+        std::fputs("PETARI SMOKE INPUT: physical input ignored (PETARI_SMOKE_IGNORE_PHYSICAL=1); visible focused window\n",
+                   stderr);
+    }
     if (App::SmokeBackground::enabled) {
         // A muted smoke has no use for a CoreAudio device (coreaudiod sat at ~35% of a core per smoke): SDL's dummy driver
         // keeps the callback timing, so the mixer and the game logic run as before. PETARI_SMOKE_REAL_AUDIO=1 opens the

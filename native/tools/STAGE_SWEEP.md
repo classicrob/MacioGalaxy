@@ -217,3 +217,11 @@ native/tools/warm_seed.py prepare --app <Petari binary> --user <user dir>    # c
 Measured (Good Egg, one class, same build): slow compiles 939 -> 376, compile build time 306 s -> 90 s, longest compile
 queue 82 s -> 29 s, launch to first frame 168 s -> 56-63 s (the cold figure included contention from other runs).
 `class_sweep.py` uses it by default (`--no-warm-seed` to compare).
+
+## Frame-time benchmark (`perf_bench.py`)
+
+Timing evidence for the 60 fps work uses `native/tools/perf_bench.py`, not this sweep. It runs the same stage
+smoke, but with a quiet lock, a visible, focused window, a fixed private Metal cache path, and warm (team cache, APFS-cloned
+per run) or `--cold` shader caches, plus interleaved A/B with a noise estimate. See its `--help`.
+Metal cache entries written by background runs did not hit in foreground runs (2026-10-17), so warm numbers from
+background sweeps are not "warm" in the player's sense.
