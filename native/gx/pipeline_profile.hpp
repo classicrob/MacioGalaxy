@@ -91,6 +91,23 @@ inline unsigned workerCount() {
     const auto count = std::strtoul(value, &end, 10);
     return end && *end == '\0' && count >= 1 && count <= 4 ? static_cast<unsigned>(count) : automatic;
 }
+// Burst workers: the pool beyond workerCount(). They compile only outside active
+// gameplay (menus, file select, loading, stage gates, pause) and jobs a draw is
+// waiting for (visible pop-in), never speculative work during gameplay. Metal
+// compiles scale almost linearly to 12 threads on a 12-performance-core M4 Max
+// (96 GX pipelines: 54.7 s on one thread, 13.6 s on four, 9.0 s on eight), and a
+// cold stage needs 100-300 of them. Default: performance cores - 4, at least
+// workerCount() and at most 8. PETARI_PIPELINE_BURST_THREADS=workerCount()..16.
+inline unsigned burstWorkerCount() {
+    const unsigned normal = workerCount();
+    const unsigned cores = performanceCores();
+    const unsigned automatic = std::max(normal, std::min(8u, cores > 4 ? cores - 4 : 1u));
+    const char* value = std::getenv("PETARI_PIPELINE_BURST_THREADS");
+    if (!value || !*value) return automatic;
+    char* end = nullptr;
+    const auto count = std::strtoul(value, &end, 10);
+    return end && *end == '\0' && count >= normal && count <= 16 ? static_cast<unsigned>(count) : automatic;
+}
 // Blocking full preparation screen: opt-in only (PETARI_PIPELINE_GLOBAL_PRECOMPILE=1).
 inline bool globalPrecompile() {
     const char* value = std::getenv("PETARI_PIPELINE_GLOBAL_PRECOMPILE");

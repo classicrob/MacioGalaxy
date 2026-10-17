@@ -46,6 +46,8 @@ static std::mutex g_pipelineMutex;
 static std::condition_variable g_pipelineReadyCv, g_pipelineQueueCv;
 static std::atomic<bool> g_pipelineThreadEnd{false};
 static unsigned summaryCalls = 0;
+static unsigned petariActiveWorkers = 4;
+static double petariCompileEwmaMs = 0;
 static void petari_pipeline_summary() { ++summaryCalls; }
 static std::deque<Pending> g_pipelineQueue, g_backgroundPipelineQueue;
 static std::unordered_map<PipelineRef, Sample> petariPipelineSamples;
@@ -80,7 +82,7 @@ static void remember_pipeline_config(ShaderType type, const Config& config, uint
     if (!persist || firstUse != UINT32_MAX) throw std::runtime_error("global speculation must persist as never drawn");
     g_knownPipelines.try_emplace(xxh3_hash(config, static_cast<HashType>(type)), KnownPipeline{type, config, firstUse});
 }
-enum class ManifestFixture { OpenFailure, QueryFailure, StepFailure, Empty, InvalidRow, Valid };
+enum class ManifestFixture { OpenFailure, QueryFailure, StepFailure, Empty, InvalidRow, Valid, HotOrdered };
 static ManifestFixture manifestFixture = ManifestFixture::OpenFailure;
 static sqlite3* open_pipeline_cache_seed_db(const std::string&) {
     if (manifestFixture == ManifestFixture::OpenFailure) return nullptr;
@@ -101,15 +103,24 @@ static sqlite3* open_pipeline_cache_seed_db(const std::string&) {
     sql("CREATE TABLE pipeline_cache(type INTEGER,config_version INTEGER,config BLOB,first_frame_used INTEGER)");
     if (manifestFixture == ManifestFixture::InvalidRow)
         sql("INSERT INTO pipeline_cache VALUES(1,13,x'00',0)");
-    if (manifestFixture == ManifestFixture::Valid) {
+    const auto insertRow = [&](unsigned id, sqlite3_int64 firstUse) {
         sqlite3_stmt* insert = nullptr;
-        if (sqlite3_prepare_v2(db, "INSERT INTO pipeline_cache VALUES(1,13,?,0)", -1, &insert, nullptr) != SQLITE_OK)
+        if (sqlite3_prepare_v2(db, "INSERT INTO pipeline_cache VALUES(1,13,?,?)", -1, &insert, nullptr) != SQLITE_OK)
             throw std::runtime_error("fixture insert prepare failed");
-        const gx::PipelineConfig config{13, 42};
+        const gx::PipelineConfig config{13, id};
         sqlite3_bind_blob(insert, 1, &config, sizeof(config), SQLITE_TRANSIENT);
+        sqlite3_bind_int64(insert, 2, firstUse);
         const auto result = sqlite3_step(insert);
         sqlite3_finalize(insert);
         if (result != SQLITE_DONE) throw std::runtime_error("fixture insert failed");
+    };
+    if (manifestFixture == ManifestFixture::Valid) insertRow(42, 0);
+    if (manifestFixture == ManifestFixture::HotOrdered) {
+        // order_pipeline_seeds.py layout: hot ranks, other observed at 1,000,000 + rank, speculative never.
+        insertRow(61, 4294967295LL);
+        insertRow(62, 1000000);
+        insertRow(63, 0);
+        insertRow(64, 1);
     }
     return db;
 }
@@ -117,6 +128,43 @@ static sqlite3* open_pipeline_cache_seed_db(const std::string&) {
 #include "../gx/pipeline_stage.inc"
 using namespace aurora::gfx;
 static void require(bool value, const char* reason) { if (!value) throw std::runtime_error(reason); }
+// The gate waits for the hot rows and clear masks only; the queue still holds the
+// whole manifest in first_frame_used order (hot, other observed, speculative).
+static void hotGateTest() {
+    const auto root = std::filesystem::temp_directory_path() /
+        ("petari-stage-hot-" + std::to_string(PetariPipeline::Clock::now().time_since_epoch().count()));
+    require(std::filesystem::create_directory(root), "fixture directory failed");
+    { std::ofstream marker(root / "HotStage.db"); marker << "fixture"; }
+    setenv("PETARI_PIPELINE_SEED_DIR", root.c_str(), 1);
+    manifestFixture = ManifestFixture::HotOrdered;
+    g_pipelineQueue.clear(); g_backgroundPipelineQueue.clear(); g_pipelines.clear();
+    petari_gx_pipeline_stage_begin("HotStage", nullptr);
+    const auto key = [](unsigned id, uint64_t layout) {
+        return xxh3_hash(layout, xxh3_hash(gx::PipelineConfig{13, id}, static_cast<HashType>(ShaderType::GX)));
+    };
+    const auto& stage = petariStages["HotStage"];
+    require(stage.targets.size() == 24 && stage.gateTargets.size() == 20, "gate must hold clears plus hot rows only");
+    for (const auto layout : {5ull, 9ull}) {
+        const auto has = [&](unsigned id) {
+            return std::find(stage.gateTargets.begin(), stage.gateTargets.end(), key(id, layout)) != stage.gateTargets.end();
+        };
+        require(has(63) && has(64) && !has(62) && !has(61), "gate targets are not the hot rows");
+    }
+    std::vector<PipelineRef> order;
+    for (const auto& job : g_pipelineQueue) order.push_back(job.hash);
+    const auto position = [&](unsigned id) { return std::find(order.begin(), order.end(), key(id, 5)) - order.begin(); };
+    require(position(63) < position(64) && position(64) < position(62) && position(62) < position(61),
+            "manifest not queued in first_frame_used order");
+    for (const auto target : stage.gateTargets) g_pipelines[target] = {};
+    const auto start = PetariPipeline::Clock::now();
+    petari_gx_pipeline_stage_wait();
+    require(PetariPipeline::Clock::now() - start < std::chrono::milliseconds(200),
+            "gate waited for rows outside the hot set");
+    unsetenv("PETARI_PIPELINE_SEED_DIR");
+    std::filesystem::remove_all(root);
+    petari_stage_reset();
+    g_pipelineQueue.clear(); g_pipelines.clear();
+}
 static void manifestFailureTest() {
     const auto initial = petari_gx_pipeline_manifest_failure_count();
     petari_gx_pipeline_stage_begin("MissingOptionalSeed", nullptr);
@@ -225,9 +273,20 @@ int main() {
             PetariPipeline::stageGateBudget() <= std::chrono::milliseconds(2000),
             "stage gate did not proceed after its short default budget");
     petari_stage_reset();
+    // At a known cold compile cost the same gate cannot finish in budget: no wait at all.
+    g_pipelineQueue.clear(); g_pipelines.clear();
+    petari_gx_pipeline_stage_begin("ColdStage", nullptr);
+    petariCompileEwmaMs = 1000.0 * PetariPipeline::milliseconds(PetariPipeline::stageGateBudget());
+    const auto skipStart = PetariPipeline::Clock::now();
+    petari_gx_pipeline_stage_wait();
+    require(PetariPipeline::Clock::now() - skipStart < std::chrono::milliseconds(100), "hopeless gate still froze the scene");
+    require(petariStages["ColdStage"].prepared, "skipped gate did not mark the stage prepared");
+    petariCompileEwmaMs = 0;
+    petari_stage_reset();
     g_pipelineQueue.clear();
     manifestFailureTest();
+    hotGateTest();
     petari_gx_pipeline_report();
     require(summaryCalls == 1, "explicit pipeline report did not reach summary");
-    std::puts("Stage preparation: manifest failure counter, idempotence, additive overlays, first-use tags, ready gate, short cold gate and priority demotion pass");
+    std::puts("Stage preparation: manifest failure counter, idempotence, additive overlays, first-use tags, ready gate, short cold gate, hopeless-gate skip, hot-row gate and priority demotion pass");
 }
