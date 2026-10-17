@@ -998,6 +998,8 @@ def cmd_warm(args):
     if args.print_path:
         print(app.warm_cache if warm_ok(app.warm_cache) else "")
         return
+    if args.refresh:
+        refuse_if_busy(args, "refresh the warm cache")
     ensure_warm(args, app, refresh=args.refresh)
     print(app.warm_cache)
 
@@ -1035,12 +1037,68 @@ def cmd_sets(args):
           f"{', '.join(sorted(EXCLUDE_FULL))})")
 
 
+def pid_alive(pid):
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (ValueError, ProcessLookupError):
+        return False
+    except PermissionError:
+        return True
+
+
+def busy_reasons(lock_root, warm_root, listing=None, own_lock=False):
+    """Why destroying shared bench caches now could break someone's run: app-lock or sweep-lane holders and live
+    tickets (unless this process runs inside its own batched lock), a held metal.lock (a bench app is using the bench
+    Metal dir), or a running bench app (an executable under <warm-root>/apps/). Empty: safe."""
+    reasons = []
+    lock_root, warm_root = Path(lock_root), Path(warm_root)
+    if not own_lock:
+        for d in sorted(lock_root.glob(".petari-app.lock*")) + [lock_root / ".petari-sweep-lane.lock"]:
+            if d.is_dir() and not d.name.endswith((".queue",)) and (d / "pid").is_file() and pid_alive((d / "pid").read_text().strip()):
+                owner = (d / "owner").read_text().strip() if (d / "owner").is_file() else "?"
+                reasons.append(f"{d.name} held by {owner}")
+        for queue in (lock_root / ".petari-app.lock.queue", lock_root / ".petari-sweep-lane.lock.queue"):
+            for ticket in sorted(queue.glob("*")) if queue.is_dir() else []:
+                if pid_alive(ticket.name.rsplit("-", 1)[-1]):
+                    reasons.append(f"waiting ticket {ticket.name} ({ticket.read_text().strip()})")
+    metal_lock = warm_root / "metal.lock"
+    if metal_lock.is_file():
+        with open(metal_lock) as handle:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            except BlockingIOError:
+                reasons.append("metal.lock held (a bench app is using the bench Metal cache)")
+    if listing is None:
+        listing = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    apps = str(warm_root / "apps") + "/"
+    for line in listing.splitlines():
+        parts = line.split(None, 1)
+        if len(parts) == 2 and parts[1].startswith(apps) and "Contents/MacOS/Petari" in parts[1].split(" ")[0]:
+            reasons.append(f"bench app running (pid {parts[0]})")
+    return reasons
+
+
+def refuse_if_busy(args, what):
+    if getattr(args, "force", False):
+        return
+    reasons = busy_reasons(MAIN / "build", args.warm_root, own_lock=bool(os.environ.get("PERF_BENCH_IN_LOCK")))
+    if reasons:
+        raise SystemExit(f"perf_bench: refusing to {what} while the shared bench caches may be in use: "
+                         f"{'; '.join(reasons)} (--force overrides)")
+
+
 def cmd_clean(args):
+    refuse_if_busy(args, "clean")
     base = darwin_cache_dir()
-    for d in [base / BENCH_ID] + list(base.glob(BENCH_ID + "-*")):
-        if d.exists():
-            shutil.rmtree(d, ignore_errors=True)
-            log(f"removed {d}")
+    with open(Path(args.warm_root) / "metal.lock", "a") if Path(args.warm_root).is_dir() else open(os.devnull) as lock:
+        if Path(args.warm_root).is_dir():
+            fcntl.flock(lock, fcntl.LOCK_EX)  # never under a running bench app
+        for d in [base / BENCH_ID] + list(base.glob(BENCH_ID + "-*")):
+            if d.exists():
+                shutil.rmtree(d, ignore_errors=True)
+                log(f"removed {d}")
     if args.all_warm:
         shutil.rmtree(args.warm_root, ignore_errors=True)
         log(f"removed {args.warm_root}")
@@ -1102,6 +1160,7 @@ def main():
     common(p)
     p.add_argument("--app", type=Path, default=default_app, help="the app that fills it (default: main build)")
     p.add_argument("--refresh", action="store_true", help="rebuild it even if it exists")
+    p.add_argument("--force", action="store_true", help="refresh even while bench runs or app-lock holders exist")
     p.add_argument("--print-path", action="store_true", help="print the current warm cache path ('' if none)")
     p.add_argument("--visit", default="", help="extra warm-up stage visits after the global fill: quick, full or Stage:n,...")
     p.add_argument("--frames", type=int, default=12000)
@@ -1119,6 +1178,7 @@ def main():
     p = sub.add_parser("clean", help="remove bench Metal dirs (and with --all-warm every warm cache)")
     common(p)
     p.add_argument("--all-warm", action="store_true")
+    p.add_argument("--force", action="store_true", help="clean even while bench runs or app-lock holders exist")
     p.set_defaults(fn=cmd_clean)
     p = sub.add_parser("_launch", help=argparse.SUPPRESS)
     p.add_argument("--spec", required=True)
