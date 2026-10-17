@@ -20,7 +20,7 @@ true before they moved here.)
 | Script | What it does |
 | --- | --- |
 | `locked-build.sh` | Serializes every configure, build, ctest and other heavy CPU job; waiters take a ticket. |
-| `locked-app.sh` | Live app launches: up to N concurrent functional slots (`build/.app-slots`) or one exclusive quiet run (`PETARI_LOCK_CLASS`). |
+| `locked-app.sh` | Live app launches (ticket order: grant, then priority + 1 per minute waited, then arrival; a quiet ticket at the head still blocks functional tickets behind it; the sweep and soak lanes age the same way; test: `tools/dev/tests/test-lock-aging.sh`): up to N concurrent functional slots (`build/.app-slots`) or one exclusive quiet run (`PETARI_LOCK_CLASS`). |
 | `locked-sweep-lane.sh` | Second app lane for functional stage-sweep runs. |
 | `locked-soak-lane.sh` | Third app lane for long functional soak runs. |
 | `lock-status.sh` | Shows lock holders and waiting tickets with their priorities. |
