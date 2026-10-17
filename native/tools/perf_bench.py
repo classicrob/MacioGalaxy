@@ -1216,7 +1216,14 @@ def resolve_stages(args):
         return list(QUICK)
     if args.set == "full":
         rows = sweep.enumerate_stages(args.disc / "files")
-        return [(s["stage"], c["scenario"]) for s in rows if s["stage"] not in EXCLUDE_FULL for c in s["scenarios"]]
+        chosen = [(s["stage"], c["scenario"]) for s in rows if s["stage"] not in EXCLUDE_FULL for c in s["scenarios"]]
+        chunk = getattr(args, "chunk", None)
+        if chunk:
+            # i/n: the i-th of n contiguous slices (1-based), so a long baseline can be several shorter quiet holds.
+            i, n = (int(x) for x in chunk.split("/"))
+            size = -(-len(chosen) // n)
+            chosen = chosen[(i - 1) * size:i * size]
+        return chosen
     raise SystemExit(f"perf_bench: unknown set {args.set}")
 
 
@@ -1466,6 +1473,7 @@ def main():
         common(p)
         p.add_argument("--name", default=None, help="output: <out-root>/<name> (default: set + mode + time)")
         p.add_argument("--set", choices=("quick", "full"), default="quick")
+        p.add_argument("--chunk", default=None, metavar="I/N", help="with --set full: only the I-th of N contiguous slices")
         p.add_argument("--stages", help="Stage:scenario list, e.g. HeavenlyBeachGalaxy:1,AstroGalaxy:2 (overrides --set)")
         p.add_argument("--repeat", type=int, default=1, help="passes over the stage list")
         p.add_argument("--cold", action="store_true", help="empty Metal/pipeline/Dawn caches for every run")
