@@ -92,6 +92,36 @@ speculation or the backlog. Worker wake-ups are `notify_all`, so a parked burst
 worker cannot swallow a wake-up meant for a normal worker. Test:
 `native_pipeline_worker` (burst workers).
 
+**Hopeless gates are skipped.** The gate freezes the screen, so it does not wait
+when (pending gate targets x recent per-compile ms / workers) exceeds the budget.
+The recent per-compile cost is an exponential average of build_ms. The log shows
+`estimate_ms=` and `result=skipped-estimate`. Warm and partly warm gates still
+wait (`native_pipeline_stage`, hopeless-gate skip).
+
+**Measured, 2026-10-17** (quiet, foreground, cold app and Metal caches, M4 Max,
+single runs). `perf_bench.py ab --cold`, main 93b34d26 against wt/cold-hitch
+d72cb428c with the repacked seeds, in `build/perf-bench/ch-ab-cold4`:
+
+| stage | skipped draws main -> new | loading max frame ms main -> new | r2r p99 main -> new |
+|---|---:|---:|---:|
+| OceanPhantomCave s2 | 40,636 -> 10,800 | 1518 -> 29 | 16.72 -> 16.73 |
+| HellProminence s1 | 27,766 -> 9,802 | 1518 -> 30 | 16.72 -> 16.73 |
+| HeavenlyBeach s1 | 20,336 -> 2,303 | 1518 -> 39 | 16.72 -> 16.72 |
+| HoneyBeeKingdom s3 | 28,072 -> 9,665 | 1518 -> 33 | 16.72 -> 16.73 |
+
+Main froze the screen three times per run (logo, file select and stage gates,
+427 to 2,075 pending at each). The new build's logo gate completes in under
+0.01 ms. Its stage gate is skipped by the estimate (98 to 168 hot variants
+pending). Its file select gate waited 98 to 1,010 ms, and those waits are
+`menu` frames. Earlier foreground runs isolated the parts. They gave hot order
+and hot gate with holdout seeds (scenario 1 removed from the observations) and
+burst workers. Good Egg went from 2,580 skipped draws to 0, and HeavenlyBeach
+from 22,655 to 763. Without burst workers (`PETARI_PIPELINE_BURST_THREADS=4`)
+the same runs gave 1,711 and 6,449. A foreground second session of Good Egg
+(caches from the first) had every gate under 0.02 ms, no skipped draws and no
+late frame. Not yet fixed: a 370 to 570 ms game-thread wait at file-select entry
+in `GXSync::waitTokensDelivered`, on cold caches only.
+
 ### Measured, 2026-09-30 (galaxy smoke, quiet slot, M4 Max)
 
 Background smoke runs, `build/pipeline/startup-ux/<run>/startup-ux-summary.json`
