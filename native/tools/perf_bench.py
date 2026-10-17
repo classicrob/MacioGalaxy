@@ -372,22 +372,25 @@ class Sampler:
         self.other_apps = 0
         self.other_cpu = []
         self.top = {}
+        self.compiler_cpu, self.compiler_count, self.compiler_pri = [], [], set()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def _run(self):
         while not self._stop.wait(5.0):
             try:
-                listing = subprocess.run(["ps", "-axo", "pid=,%cpu=,command="], capture_output=True, text=True,
+                listing = subprocess.run(["ps", "-axo", "pid=,%cpu=,pri=,command="], capture_output=True, text=True,
                                          timeout=10).stdout
             except (OSError, subprocess.SubprocessError):
                 continue
-            apps, busy = [], []
+            apps, busy, compilers = [], [], []
             for line in listing.splitlines():
-                parts = line.split(None, 2)
-                if len(parts) < 3:
+                parts = line.split(None, 3)
+                if len(parts) < 4:
                     continue
-                cpu, command = float(parts[1]), parts[2]
+                cpu, pri, command = float(parts[1]), parts[2], parts[3]
+                if re.search(r"(^|/)(clang|clang\+\+|c\+\+|cc1plus)( |$)", command.split(" -")[0]) or " -cc1 " in command:
+                    compilers.append((cpu, pri))
                 exe = command.split(" ")[0]
                 if exe.endswith("Petari.app/Contents/MacOS/Petari"):
                     apps.append(command)
@@ -400,6 +403,9 @@ class Sampler:
             self.samples += 1
             self.other_apps = max(self.other_apps, sum(1 for a in apps if self.user not in a))
             self.other_cpu.append(sum(c for c, _ in busy))
+            self.compiler_cpu.append(sum(c for c, _ in compilers))
+            self.compiler_count.append(len(compilers))
+            self.compiler_pri.update(p for _, p in compilers)
             for cpu, name in busy:
                 self.top[name] = max(self.top.get(name, 0.0), cpu)
 
@@ -415,10 +421,15 @@ class Sampler:
         return {"samples": self.samples, "other_petari_apps": self.other_apps,
                 "other_cpu_pct_mean": round(statistics.fmean(self.other_cpu), 1) if self.other_cpu else None,
                 "other_cpu_pct_max": round(max(self.other_cpu), 1) if self.other_cpu else None,
-                "other_cpu_top": [f"{n} {c:.0f}%" for n, c in top]}
+                "other_cpu_top": [f"{n} {c:.0f}%" for n, c in top],
+                # Compiler processes (a concurrent build): CPU sum, count and scheduling priorities (4 = darwin background).
+                "compiler_cpu_pct_mean": round(statistics.fmean(self.compiler_cpu), 1) if self.compiler_cpu else None,
+                "compiler_cpu_pct_max": round(max(self.compiler_cpu), 1) if self.compiler_cpu else None,
+                "compilers_mean": round(statistics.fmean(self.compiler_count), 1) if self.compiler_count else None,
+                "compiler_pri": sorted(self.compiler_pri)}
 
 
-def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=None):
+def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=None, load_cmd=None):
     name = f"{stage}-s{scenario}-r{repeat}"
     run_dir = out / "runs" / label / name
     if (run_dir / "result.json").is_file() and not args.rerun:
@@ -440,18 +451,38 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
     (run_dir / "command.txt").write_text(repro + "\n")
     log(f"run  {label}/{name} ({'cold' if cold else 'warm'})")
     started = time.time()
-    status, timed_out, machine = launch(args, run_dir, "cold" if cold else "warm", app, app.warm_cache / "metal",
-                                        command, env, None, args.timeout, run_dir / "app.log")
+    load = None
+    if load_cmd:
+        # A deliberate concurrent load (ab --a-load/--b-load), e.g. a background-QoS build beside the run.
+        load = subprocess.Popen(["/bin/bash", "-c", load_cmd], cwd=REPO, stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, start_new_session=True)
+    try:
+        status, timed_out, machine = launch(args, run_dir, "cold" if cold else "warm", app, app.warm_cache / "metal",
+                                            command, env, None, args.timeout, run_dir / "app.log")
+    finally:
+        if load is not None:
+            try:
+                os.killpg(load.pid, signal.SIGTERM)
+                load.wait(timeout=20)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(load.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
     result = analyze_run(run_dir, user, stage, status, timed_out)
     launched = {}
     try:
         launched = json.loads((run_dir / "launch.json").read_text())
     except (OSError, ValueError):
         pass
-    foreign_build = {k: v for k, v in launched.get("build_slots", {}).items() if v not in (args.owner, f"quiet-{args.owner}")}
+    slots = launched.get("build_slots", {})
+    # .macos-gx.lock.bg: a PETARI_BUILD_BACKGROUND build (efficiency cores) allowed beside quiet runs; noted apart.
+    background_build = {k: v for k, v in slots.items() if k.endswith(".bg")}
+    foreign_build = {k: v for k, v in slots.items()
+                     if not k.endswith(".bg") and v not in (args.owner, f"quiet-{args.owner}")}
     result.update({
         "label": label, "stage": stage, "scenario": scenario, "repeat": repeat, "mode": "cold" if cold else "warm",
-        "app": str(app.source), "app_sha256": app.sha, "lock_class": args.lock_class, "extra_env": env_items,
+        "app": str(app.source), "app_sha256": app.sha, "lock_class": args.lock_class, "extra_env": env_items, "load_cmd": load_cmd,
         "wall_seconds": round(time.time() - started, 1),
         "app_seconds": round(time.time() - launched["started"], 1) if launched.get("started") else None,
         "lock": launched, "foreign_build_slots": foreign_build, "machine": machine,
@@ -460,11 +491,17 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=N
     contaminated = []
     if args.lock_class != "quiet":
         contaminated.append("not quiet")
+    if load_cmd:
+        contaminated.append("deliberate load (variant)")
+    if background_build:
+        contaminated.append(f"background build beside ({','.join(background_build.values())})")
+    elif not load_cmd and (result["machine"].get("compiler_cpu_pct_mean") or 0) > 5:
+        contaminated.append(f"compiler running beside (pri {','.join(result['machine']['compiler_pri'])})")
     if foreign_build:
         contaminated.append(f"build slot held by {','.join(foreign_build.values())}")
     if result["machine"]["other_petari_apps"]:
         contaminated.append("another Petari app ran")
-    if (result["machine"]["other_cpu_pct_mean"] or 0) > 300:  # 3 of 16 cores: an editor/agent desktop idles near 150%
+    if not load_cmd and (result["machine"]["other_cpu_pct_mean"] or 0) > 300:  # 3 of 16 cores: an editor/agent desktop idles near 150%
         contaminated.append(f"other CPU {result['machine']['other_cpu_pct_mean']}%")
     if ft.get("unfocused"):
         contaminated.append(f"{ft['unfocused']} unfocused frames")
@@ -762,6 +799,10 @@ def noise(results):
     return {m: (round(statistics.median(v), 2) if v else None) for m, v in spreads.items()}
 
 
+# Smallest delta a verdict may rest on: with zero repeat spread, 2x noise alone would call 0.01 ms "better".
+RESOLUTION = {"r2r_p99": 0.05, "r2r_late": 2, "busy_p99": 0.1, "present_late": 3, "present_offcad": 2}
+
+
 def compare_table(a_results, b_results, a_name="A", b_name="B"):
     """Per stage: median of repeats for A and B, delta, and whether it exceeds 2x the pooled repeat spread."""
     na, nb = noise(a_results), noise(b_results)
@@ -782,6 +823,8 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
             d = xb - xa
             cells.append(f"{xa:g} | {xb:g} | {d:+.2f}")
             if m in ("r2r_p99", "r2r_late", "busy_p99", "present_late", "present_offcad"):
+                if abs(d) < RESOLUTION[m]:
+                    continue  # below what the metric resolves (percentile bins, single frames)
                 n = pooled.get(m)
                 if n is None:
                     verdict.append(f"{m} ? (no repeats)") if d else None
@@ -928,12 +971,13 @@ def cmd_ab(args):
         raise SystemExit("perf_bench: --a-label and --b-label must differ")
     variants = {a_label: (BenchApp(args.a, args.warm_root).freeze(), args.a_env),
                 b_label: (BenchApp(args.b or args.a, args.warm_root).freeze(), args.b_env)}
-    if variants[a_label][0].sha == variants[b_label][0].sha and args.a_env == args.b_env:
+    loads = {a_label: args.a_load, b_label: args.b_load}
+    if variants[a_label][0].sha == variants[b_label][0].sha and args.a_env == args.b_env and args.a_load == args.b_load:
         log("A and B are the same build and environment: this measures noise only")
     if not args.cold:
         ensure_warm(args, variants[a_label][0])  # one team cache for both: Metal/Dawn/Aurora entries are content-keyed
     for label, (app, env) in variants.items():
-        meta["apps"][label] = {"source": str(app.source), "sha256": app.sha, "env": env}
+        meta["apps"][label] = {"source": str(app.source), "sha256": app.sha, "env": env, "load": loads[label]}
     chosen = resolve_stages(args)
     results = []
     t0 = time.time()
@@ -943,7 +987,7 @@ def cmd_ab(args):
                 order = (a_label, b_label) if (repeat + index) % 2 else (b_label, a_label)
                 for label in order:
                     app, env = variants[label]
-                    results.append(run_once(args, out, label, app, stage, scenario, repeat, args.cold, env))
+                    results.append(run_once(args, out, label, app, stage, scenario, repeat, args.cold, env, loads[label]))
     finally:
         meta["bench_seconds"] = round(time.time() - t0)
         finish(args, out, meta, results, [variants[a_label][0]])
@@ -1048,6 +1092,9 @@ def main():
                    help="candidate app, e.g. ~/macio-worktrees/<w>/build/macos-gx/native/app/Petari.app (default: --a)")
     p.add_argument("--a-env", action="append", default=[], metavar="KEY=VALUE", help="extra environment for A only")
     p.add_argument("--b-env", action="append", default=[], metavar="KEY=VALUE", help="extra environment for B only")
+    p.add_argument("--a-load", default=None, metavar="SHELL_CMD",
+                   help="a concurrent load started just before each A app run and killed after it (process group)")
+    p.add_argument("--b-load", default=None, metavar="SHELL_CMD", help="the same for B")
     p.add_argument("--a-label", default="A")
     p.add_argument("--b-label", default="B")
     p.set_defaults(fn=cmd_ab)
