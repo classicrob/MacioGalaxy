@@ -201,7 +201,14 @@ void MoviePlayerSimple::exePlaying() {
         }
     }
 
-    if (!mMovie->_19) {
+#ifdef PETARI_NATIVE
+    // Video ahead of the audio (the VI clock locked to a 60.00 Hz display): show the current
+    // frame once more instead of decoding the next (THPSimplePlayerWrapper::nativeHoldForAudio).
+    const bool holdForAudio = !mMovie->_19 && mPlayerWrapper->nativeHoldForAudio();
+#else
+    const bool holdForAudio = false;
+#endif
+    if (!mMovie->_19 && !holdForAudio) {
         s32 result = mPlayerWrapper->decode(0);
 #ifdef PETARI_NATIVE
         mPlayerWrapper->nativeNoteDecode(result);

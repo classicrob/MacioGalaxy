@@ -1294,17 +1294,19 @@ namespace {
 void THPSimplePlayerWrapper::nativeResetAv() {
     mNativeAvVideoFrames = mNativeAvAudioWaits = mNativeAvAudioSamples = mNativeAvSilence = 0;
     mNativeAvLastVideo = mNativeAvLastAudio = mNativeAvLastSilence = mNativeAvLastWaits = 0;
+    mNativeAvHolds = mNativeAvLastHolds = 0;
     mNativeAvStart = mNativeAvLast = 0;
     mNativeAvActive = true;
 }
 
 void THPSimplePlayerWrapper::nativeNoteDecode(s32 result) {
+    if (result == 0) {
+        mNativeAvVideoFrames++;  // always: nativeHoldForAudio compares it with the audio mixed
+    }
     if (!isAudioDiag() || !mNativeAvActive) {
         return;
     }
-    if (result == 0) {
-        mNativeAvVideoFrames++;
-    } else if (result == 3) {
+    if (result == 3) {
         mNativeAvAudioWaits++;
     }
     const OSTime now = OSGetTime();
@@ -1350,6 +1352,23 @@ void THPSimplePlayerWrapper::nativeDecodeAudioAhead(s32 audio) {
     }
 }
 
+bool THPSimplePlayerWrapper::nativeHoldForAudio() {
+    // The mixer (audio thread) and this game thread are serialized by the CPU baton.
+    const f32 frameRate = getFrameRate();
+    if (!mAudioExist || !mOpen || frameRate <= 0.0f || mAudioInfo.sndFrequency == 0 || mNativeAvAudioSamples == 0) {
+        return false;  // no audio, or it has not started: nothing to follow
+    }
+    const f64 lead = mNativeAvVideoFrames / static_cast< f64 >(frameRate) -
+                     mNativeAvAudioSamples / static_cast< f64 >(mAudioInfo.sndFrequency);
+    // Only while audio is fed: decode() also decodes audio ahead, so holding with a low queue
+    // could starve the mixer and stop the audio clock this follows.
+    if (lead <= cNativeVideoLeadSeconds || nativeQueuedAudioFrames() < cNativeAudioAheadFrames / 2) {
+        return false;
+    }
+    mNativeAvHolds++;
+    return true;
+}
+
 s32 THPSimplePlayerWrapper::nativeQueuedAudioFrames() const {
     if (!mAudioExist) {
         return 20;  // no audio to keep fed
@@ -1372,11 +1391,12 @@ void THPSimplePlayerWrapper::nativeReportAv(bool final) {
     const f64 audioSeconds = rate != 0 ? mNativeAvAudioSamples / static_cast< f64 >(rate) : 0.0;
     const s32 queued = nativeQueuedAudioFrames();
     OSReport("[movie-av] %s %s at %.2f s: video %u frames (+%u) = %.3f s; audio %u samples (+%u) = %.3f s; drift %+.1f ms; "
-             "queued audio %d frames; decode waits for audio +%u; silence +%u samples\n",
+             "queued audio %d frames; decode waits for audio +%u; silence +%u samples; held for audio +%u\n",
              mNativeName != nullptr ? mNativeName : "?", final ? "end" : "play", OSTicksToMilliseconds(now - mNativeAvStart) / 1000.0,
              mNativeAvVideoFrames, mNativeAvVideoFrames - mNativeAvLastVideo, videoSeconds, mNativeAvAudioSamples,
              mNativeAvAudioSamples - mNativeAvLastAudio, audioSeconds, rate != 0 ? (videoSeconds - audioSeconds) * 1000.0 : 0.0, queued,
-             mNativeAvAudioWaits - mNativeAvLastWaits, mNativeAvSilence - mNativeAvLastSilence);
+             mNativeAvAudioWaits - mNativeAvLastWaits, mNativeAvSilence - mNativeAvLastSilence, mNativeAvHolds - mNativeAvLastHolds);
+    mNativeAvLastHolds = mNativeAvHolds;
     mNativeAvLast = now;
     mNativeAvLastVideo = mNativeAvVideoFrames;
     mNativeAvLastAudio = mNativeAvAudioSamples;
