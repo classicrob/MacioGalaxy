@@ -129,7 +129,8 @@ export PETARI_AGENT_RUN=1  # marks agent runs so human_playing() doesn't count t
 # Quiet runs also hold the sweep lane and build lock, so compiles and ctest can't load the machine during them.
 if [ "$CLASS" = quiet ] && [ -z "$PETARI_BUILD_LOCK_HELD" ]; then
   # Lock order app -> sweep lane -> build, as the timing tools require.
-  "$LOCKROOT/locked-sweep-lane.sh" "$OWNER" "$LOCKROOT/locked-build.sh" "$OWNER" /usr/bin/perl -e 'alarm shift; exec @ARGV or die "exec: $!"' "${PETARI_LOCK_TIMEOUT:-2700}" "$@"
+  # locked-build.sh holds every build slot only for owners named "quiet*", so pass quiet-<owner>.
+  "$LOCKROOT/locked-sweep-lane.sh" "$OWNER" "$LOCKROOT/locked-build.sh" "quiet-$OWNER" /usr/bin/perl -e 'alarm shift; exec @ARGV or die "exec: $!"' "${PETARI_LOCK_TIMEOUT:-2700}" "$@"
 else
   /usr/bin/perl -e 'alarm shift; exec @ARGV or die "exec: $!"' "${PETARI_LOCK_TIMEOUT:-2700}" "$@"
 fi
