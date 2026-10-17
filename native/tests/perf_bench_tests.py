@@ -108,5 +108,41 @@ class Compare(unittest.TestCase):
         self.assertIn("within noise", y_line)
 
 
+class CleanGuard(unittest.TestCase):
+    def test_refuses_while_busy(self):
+        import fcntl, os, tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as tmp:
+            locks, warm = Path(tmp) / "build", Path(tmp) / "warm"
+            locks.mkdir()
+            (warm / "apps").mkdir(parents=True)
+            self.assertEqual(pb.busy_reasons(locks, warm, listing=""), [])
+            # A live app-lock holder (this process), a dead one (ignored) and a live ticket.
+            held = locks / ".petari-app.lock"
+            held.mkdir()
+            (held / "pid").write_text(str(os.getpid()))
+            (held / "owner").write_text("frame-cost")
+            dead = locks / ".petari-app.lock.s2"
+            dead.mkdir()
+            (dead / "pid").write_text("999999")
+            queue = locks / ".petari-app.lock.queue"
+            queue.mkdir()
+            (queue / f"123-{os.getpid()}").write_text("lead quiet")
+            reasons = pb.busy_reasons(locks, warm, listing="")
+            self.assertEqual(len(reasons), 2, reasons)
+            self.assertIn("held by frame-cost", reasons[0])
+            # Inside its own batched lock, holders and tickets are this bench's own.
+            self.assertEqual(pb.busy_reasons(locks, warm, listing="", own_lock=True), [])
+            # A held metal.lock and a running bench app count even then.
+            with open(warm / "metal.lock", "w") as handle:
+                fcntl.flock(handle, fcntl.LOCK_EX)
+                app = f"{warm}/apps/abc/Petari.app/Contents/MacOS/Petari --disc x"
+                reasons = pb.busy_reasons(locks, warm, listing=f"4242 {app}\n77 /bin/zsh", own_lock=True)
+            self.assertEqual(len(reasons), 2, reasons)
+            self.assertIn("metal.lock held", reasons[0])
+            self.assertIn("pid 4242", reasons[1])
+            self.assertEqual(pb.busy_reasons(locks, warm, listing="", own_lock=True), [])
+
+
 if __name__ == "__main__":
     unittest.main()
