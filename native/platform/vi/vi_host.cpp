@@ -222,6 +222,10 @@ void* viThreadMain(void*) {
     auto next = Clock::now();
     namespace Pacing = PetariNative::PresentPacing;
     Pacing::ViClockState displayClock;
+    std::fprintf(stderr, "PETARI VI: retrace clock mode %s\n",
+                 legacy ? "legacy timer (PETARI_VI_LEGACY_TIMER)"
+                 : Pacing::viLockEnabled() ? "display (follows a steady 60 Hz-multiple display; PETARI_VI_CLOCK=timer opts out)"
+                                           : "timer (PETARI_VI_CLOCK=timer)");
     while (true) {
         next += period;
         if (legacy) {

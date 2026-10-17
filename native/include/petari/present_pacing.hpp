@@ -1,5 +1,5 @@
 #pragma once
-// VI retrace clock locked to the display (PETARI_VI_CLOCK=display).
+// VI retrace clock locked to the display (default; PETARI_VI_CLOCK=timer opts out).
 //
 // The game finishes a frame every VI field. With VI on its own 59.94 Hz timer the
 // frame's ready time drifts against the display's refresh grid; every time it
@@ -38,10 +38,14 @@
 
 namespace PetariNative::PresentPacing {
 
+// Default: display. PETARI_VI_CLOCK=timer keeps VI on its fixed 59.94 Hz timer (the previous default).
 inline bool viLockEnabled() {
     static const bool on = [] {
         const char* value = std::getenv("PETARI_VI_CLOCK");
-        return value != nullptr && std::string_view(value) == "display";
+        if (value == nullptr || value[0] == '\0' || std::string_view(value) == "display") return true;
+        if (std::string_view(value) == "timer") return false;
+        std::fprintf(stderr, "PETARI VI: unknown PETARI_VI_CLOCK=%s (display or timer); using display\n", value);
+        return true;
     }();
     return on;
 }
