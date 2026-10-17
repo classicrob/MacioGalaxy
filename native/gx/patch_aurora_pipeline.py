@@ -145,6 +145,71 @@ extern "C" uint64_t petari_gx_pipeline_skipped_draws() {
   return aurora::gfx::petariSkippedDraws.load(std::memory_order_relaxed);
 }
 '''
+    return patch_fast_path(text, here)
+
+
+def patch_fast_path(text, here):
+    """Warm-path memo for the GX find_pipeline (pipeline_fast_path.hpp): same key, no repeated bookkeeping."""
+    def replace(old, new):
+        if text.count(old) != 1:
+            raise ValueError(f'Aurora pipeline fast-path anchor mismatch: {old}')
+        return text.replace(old, new)
+
+    text = f'#include "{here / "pipeline_fast_path.hpp"}"\n' + text
+    old = '''PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLayout& layout) {
+  petari_note_stage_config('''
+    text = replace(old, '''static PipelineRef petari_find_pipeline_full(const gx::PipelineConfig& config, const RenderTargetLayout& layout) {
+  petari_note_stage_config(''')
+    old = '''      ? PipelinePriority::Normal : PipelinePriority::Blocking);
+}
+'''
+    text = replace(old, old + '''
+// A pipeline that is compiled and already noted (stage, remembered config, variant
+// sample) for the current generation resolves to its runtime key, the same key
+// resolve_pipeline computes, without repeating that bookkeeping.
+PipelineRef find_pipeline(const gx::PipelineConfig& config, const RenderTargetLayout& layout) {
+  const auto petariKey = xxh3_hash(layout.key, xxh3_hash(config, static_cast<HashType>(ShaderType::GX)));
+  const auto petariGeneration = PetariFastPipeline::current();
+  if (PetariFastPipeline::hit(petariKey, petariGeneration)) {
+    PetariFastPipeline::hits.fetch_add(1, std::memory_order_relaxed);
+    if (!PetariFastPipeline::checkEnabled()) return petariKey;
+    const auto full = petari_find_pipeline_full(config, layout);
+    bool ready = false;
+    {
+      std::lock_guard lock{g_pipelineMutex};
+      ready = g_pipelines.contains(full);
+    }
+    if (full != petariKey || !ready) PetariFastPipeline::checkMismatches.fetch_add(1, std::memory_order_relaxed);
+    return full;
+  }
+  PetariFastPipeline::misses.fetch_add(1, std::memory_order_relaxed);
+  const auto full = petari_find_pipeline_full(config, layout);
+  if (full == petariKey && current_frame() != UINT32_MAX) {
+    bool ready = false;
+    {
+      std::lock_guard lock{g_pipelineMutex};
+      ready = g_pipelines.contains(full);
+    }
+    if (ready) PetariFastPipeline::store(petariKey, petariGeneration);
+  }
+  return full;
+}
+''')
+    # Everything a full lookup reads besides the pipeline map: stage attribution
+    # (begin, reset) and the whole cache (shutdown) invalidate the memo.
+    for anchor in ('void shutdown_pipeline_cache() {\n',
+                   'static void petari_stage_reset() {\n',
+                   'extern "C" void petari_gx_pipeline_stage_begin(const char* name, const char* seedPath) {\n'):
+        text = replace(anchor, anchor + '  const PetariFastPipeline::InvalidateScope petariFastInvalidate;\n')
+    old = '  petari_stage_flush_logs();\n  petari_stage_reset();\n  petari_pipeline_summary();\n'
+    text = replace(old, '''  if (PetariFastPipeline::checkEnabled() || PetariPipeline::diagnostics()) {
+    std::fprintf(stderr, "[gx pipeline fast path] hits=%llu misses=%llu check=%d check_mismatches=%llu\\n",
+                 static_cast<unsigned long long>(PetariFastPipeline::hits.load()),
+                 static_cast<unsigned long long>(PetariFastPipeline::misses.load()),
+                 PetariFastPipeline::checkEnabled() ? 1 : 0,
+                 static_cast<unsigned long long>(PetariFastPipeline::checkMismatches.load()));
+  }
+''' + old)
     return text
 
 

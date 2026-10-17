@@ -191,7 +191,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_pipeline.py" "${_pipeline_source}"
     "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_profile.hpp" "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_runtime.inc"
     "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_worker.inc" "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_stage.inc"
-    "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_global.inc")
+    "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_global.inc" "${CMAKE_CURRENT_SOURCE_DIR}/pipeline_fast_path.hpp")
 execute_process(COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/patch_aurora_pipeline.py"
     "${_pipeline_source}" "${_pipeline_output}" COMMAND_ERROR_IS_FATAL ANY)
 get_target_property(_sources aurora_gx SOURCES)
@@ -551,6 +551,10 @@ if(_petari_build_testing)
     add_test(NAME native_pipeline_stage COMMAND petari_pipeline_stage_tests)
     add_test(NAME native_pipeline_seed COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_SOURCE_DIR}/native/tools/pipeline_seed_tests.py" --aurora "${aurora_SOURCE_DIR}")
+    add_test(NAME native_pipeline_fast_path COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_SOURCE_DIR}/native/tests/pipeline_fast_path_tests.py" "${CMAKE_CXX_COMPILER}"
+        --aurora "${aurora_SOURCE_DIR}")
+    set_tests_properties(native_pipeline_fast_path PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" TIMEOUT 120)
     add_test(NAME native_pipeline_dependencies COMMAND "${Python3_EXECUTABLE}"
         "${CMAKE_SOURCE_DIR}/native/tools/pipeline_dependencies_tests.py")
     add_test(NAME native_pipeline_observations COMMAND "${Python3_EXECUTABLE}"
