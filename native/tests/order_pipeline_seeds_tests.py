@@ -96,7 +96,23 @@ def main():
         # --exclude-scenario drops that scenario's runs (StageA then has only 3 and 1 hot).
         report = order.apply(seeds, [obs_path], exclude_scenario=1)
         assert report["StageA"]["hot"] == 2, report["StageA"]
-    print("order_pipeline_seeds: hot ranks, rest offset, speculative kept, created stage, pack round trip, holdout pass")
+        # add-rows: harvested real-play configs join __global__ and their stage, and rank hot there.
+        harvest = os.path.join(tmp, "harvest.db")
+        make_db(harvest, [row(77, 0), row(78, 0), row(79, 0), (1, 80, 12, 40, bytes(40), 0)])  # 80: wrong version
+        with open(os.path.join(tmp, "stages.json"), "w") as stream:
+            json.dump({"stages": {hexkey(77): ["StageB"], hexkey(78): ["StageB", "Missing"]},
+                       "weights": {hexkey(78): 500, hexkey(77): 3}}, stream)
+        harvest_obs = os.path.join(tmp, "harvest-obs.json")
+        counts = order.add_rows(seeds, harvest, os.path.join(tmp, "stages.json"), harvest_obs)
+        assert counts == {"rows": 4, "accepted": 3, "rejected": 1, "new_global": 3, "stage_rows": 2}, counts
+        assert (1, 79) in load(os.path.join(seeds, "__global__.db")) and (1, 80) not in load(os.path.join(seeds, "__global__.db"))
+        order.apply(seeds, [obs_path, harvest_obs])
+        # StageB: 78 (heavier miss) and 77 rank with its observed draws (8 first: earliest in its own run).
+        assert order_of(os.path.join(seeds, "StageB.db"))[:2] == [8, 78], order_of(os.path.join(seeds, "StageB.db"))
+        assert set(order_of(os.path.join(seeds, "StageB.db"))[:4]) == {8, 78, 1, 77}
+        seedpack.pack(seeds, pack)
+        assert not seedpack.check(pack), "pack with harvested rows must pass the check"
+    print("order_pipeline_seeds: add-rows, hot ranks, rest offset, speculative kept, created stage, pack round trip, holdout pass")
 
 
 if __name__ == "__main__":

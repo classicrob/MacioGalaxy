@@ -73,7 +73,11 @@ python3 native/tools/order_pipeline_seeds.py apply /tmp/seeds build/seed-order/*
 python3 native/tools/seedpack.py pack /tmp/seeds native/data/pipeline-seeds.v13.xz
 ```
 
-Re-apply after every seed regeneration or closure. The pack keeps the order, but
+Configs reached only in real play (perf_bench harvests: `harvest.db` with verbatim rows, plus `stages.json` mapping
+config → stages and skipped-draw weights) go in with `order_pipeline_seeds.py add-rows SEEDS HARVEST.db STAGES.json
+OUT_OBS.json`. That inserts them into `__global__.db` and each attributed stage; then run `apply` with OUT_OBS.json
+added so they rank hot there, heaviest miss first. 2026-10-17 harvest round 1: 33 rows (28 GX, 5 Clear) → 9,577
+global configs. Re-apply after every seed regeneration or closure. The pack keeps the order, but
 regenerated databases do not. Test: `native_seed_order`.
 
 **Hot gate.** `petari_gx_pipeline_stage_wait` now waits only for the clear masks

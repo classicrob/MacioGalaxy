@@ -19,6 +19,13 @@ drawn set is complete only after 400-1,500 compiles instead of the 100-330 it ne
                                                          STAGE.db (its observed rows, from __global__.db) when the
                                                          seeds have none, e.g. Unknown (boot/logo scenes), whose
                                                          gate otherwise waits for every observed config
+  order_pipeline_seeds.py add-rows SEED_DIR HARVEST.db STAGES.json OUT_OBS.json
+                                                         insert configs seen in real play (an Aurora pipeline_cache
+                                                         db of verbatim rows) into __global__.db and every attributed
+                                                         <Stage>.db, and write OUT_OBS.json so `apply` ranks them hot
+                                                         there. STAGES.json: {"stages": {"<config hex16>": [Stage...]},
+                                                         "weights": {"<config hex16>": skipped draws}} (weights
+                                                         optional: heavier misses rank first)
 Hot rows get ranks 0..H-1 and the other observed rows 1,000,000 + rank: the app's stage gate waits only for rows
 below 1,000,000 (the configs that stage is known to draw), not for the whole manifest. Speculative rows stay
 0xFFFFFFFF. Re-run `apply` after any seed regeneration, then repack with seedpack.py.
@@ -140,6 +147,62 @@ def create(seed_dir, stage, keys):
     return True
 
 
+def add_rows(seed_dir, harvest, stages_path, out_observations):
+    """Insert harvested rows (global + attributed stages) and write their observations. Returns counts."""
+    with open(stages_path) as stream:
+        meta = json.load(stream)
+    attributed = {signed(int(k, 16)): v for k, v in meta.get("stages", {}).items()}
+    weights = {signed(int(k, 16)): w for k, w in meta.get("weights", {}).items()}
+    source = sqlite3.connect(f"file:{harvest}?mode=ro", uri=True)
+    try:
+        rows = source.execute("select type, hash, config_version, config_size, config from pipeline_cache").fetchall()
+    finally:
+        source.close()
+    global_path = os.path.join(seed_dir, GLOBAL + ".db")
+    db = sqlite3.connect(global_path)
+    try:
+        versions = dict(db.execute("select type, max(config_version) from pipeline_cache group by type").fetchall())
+        sizes = dict(db.execute("select type, max(config_size) from pipeline_cache group by type").fetchall())
+    finally:
+        db.close()
+    accepted, rejected = [], 0
+    for t, h, v, size, blob in rows:
+        if t not in versions or v != versions[t] or size != len(blob) or size != sizes[t]:
+            rejected += 1
+            continue
+        accepted.append((t, h, v, size, blob))
+    counts = {"rows": len(rows), "accepted": len(accepted), "rejected": rejected, "new_global": 0, "stage_rows": 0}
+
+    def insert(path, chosen):
+        db = sqlite3.connect(path)
+        try:
+            before = db.total_changes
+            db.executemany("insert or ignore into pipeline_cache values(?,?,?,?,?,0)", chosen)
+            db.commit()
+            return db.total_changes - before
+        finally:
+            db.close()
+
+    counts["new_global"] = insert(global_path, accepted)
+    by_stage = defaultdict(list)
+    for row in accepted:
+        for stage in attributed.get(row[1], []):
+            by_stage[stage].append(row)
+    for stage, chosen in by_stage.items():
+        path = os.path.join(seed_dir, stage + ".db")
+        if os.path.exists(path):
+            counts["stage_rows"] += insert(path, chosen)
+    # One synthetic run per stage: heavier misses first, so `apply` ranks them hot there.
+    runs = {}
+    for stage, chosen in sorted(by_stage.items()):
+        keys = sorted((row[1] for row in chosen), key=lambda k: -weights.get(k, 0))
+        runs[f"harvest/{stage}"] = {"stage": stage, "scenario": None,
+                                    "sequences": {stage: [f"{k & ((1 << 64) - 1):016x}" for k in keys]}}
+    with open(out_observations, "w") as stream:
+        json.dump({"runs": runs}, stream, indent=0, sort_keys=True)
+    return counts
+
+
 def apply(seed_dir, observation_paths, exclude_scenario=None, stages_only=False, create_stages=()):
     observations = []
     for path in observation_paths:
@@ -177,8 +240,12 @@ def main():
     p = sub.add_parser("apply"); p.add_argument("seed_dir"); p.add_argument("observations", nargs="+")
     p.add_argument("--exclude-scenario", type=int); p.add_argument("--stages-only", action="store_true")
     p.add_argument("--create", nargs="*", default=[])
+    p = sub.add_parser("add-rows"); p.add_argument("seed_dir"); p.add_argument("harvest"); p.add_argument("stages")
+    p.add_argument("out_observations")
     args = parser.parse_args()
-    if args.command == "observe":
+    if args.command == "add-rows":
+        print(json.dumps(add_rows(args.seed_dir, args.harvest, args.stages, args.out_observations)))
+    elif args.command == "observe":
         print(f"{observe(args.out, args.sweeps)} clean runs")
     else:
         report = apply(args.seed_dir, args.observations, args.exclude_scenario, args.stages_only, args.create)
