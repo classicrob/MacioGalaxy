@@ -418,7 +418,7 @@ class Sampler:
                 "other_cpu_top": [f"{n} {c:.0f}%" for n, c in top]}
 
 
-def run_once(args, out, label, app, stage, scenario, repeat, cold):
+def run_once(args, out, label, app, stage, scenario, repeat, cold, variant_env=None):
     name = f"{stage}-s{scenario}-r{repeat}"
     run_dir = out / "runs" / label / name
     if (run_dir / "result.json").is_file() and not args.rerun:
@@ -433,7 +433,8 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold):
             clone_file(app.warm_cache / db, user / db)
     command = [str(app.exe), "--disc", str(args.disc), "--user", str(user), "--test-fixture", "stage"]
     extra = {"PETARI_FRAME_CSV": str(run_dir / "frames.csv"), "PETARI_LOCK_CLASS": args.lock_class}
-    extra.update(item.split("=", 1) for item in args.env)
+    env_items = list(args.env) + list(variant_env or [])
+    extra.update(item.split("=", 1) for item in env_items)
     env = app_env(args, stage, scenario, extra)
     repro = " ".join(f"{k}={v}" for k, v in env.items() if k.startswith("PETARI_")) + " " + " ".join(command)
     (run_dir / "command.txt").write_text(repro + "\n")
@@ -450,7 +451,7 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold):
     foreign_build = {k: v for k, v in launched.get("build_slots", {}).items() if v not in (args.owner, f"quiet-{args.owner}")}
     result.update({
         "label": label, "stage": stage, "scenario": scenario, "repeat": repeat, "mode": "cold" if cold else "warm",
-        "app": str(app.source), "app_sha256": app.sha, "lock_class": args.lock_class, "extra_env": args.env,
+        "app": str(app.source), "app_sha256": app.sha, "lock_class": args.lock_class, "extra_env": env_items,
         "wall_seconds": round(time.time() - started, 1),
         "app_seconds": round(time.time() - launched["started"], 1) if launched.get("started") else None,
         "lock": launched, "foreign_build_slots": foreign_build, "machine": machine,
@@ -463,12 +464,10 @@ def run_once(args, out, label, app, stage, scenario, repeat, cold):
         contaminated.append(f"build slot held by {','.join(foreign_build.values())}")
     if result["machine"]["other_petari_apps"]:
         contaminated.append("another Petari app ran")
-    if (result["machine"]["other_cpu_pct_mean"] or 0) > 100:
+    if (result["machine"]["other_cpu_pct_mean"] or 0) > 300:  # 3 of 16 cores: an editor/agent desktop idles near 150%
         contaminated.append(f"other CPU {result['machine']['other_cpu_pct_mean']}%")
     if ft.get("unfocused"):
         contaminated.append(f"{ft['unfocused']} unfocused frames")
-    if args.env:
-        contaminated.append("extra env")
     result["contaminated"] = contaminated
     (run_dir / "result.json").write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     # Disposable caches: the cloned databases and the reset-per-run Metal dir stay out of the run record.
@@ -536,7 +535,7 @@ def breakdown(spans):
             "dominant": dominant, "dominant_share": round(costs[dominant] / max(1e-9, sum(costs.values())), 2)}
 
 
-def window_stats(rows, first, last):
+def window_stats(rows, first, last, display_hz=None):
     """Gameplay window (first, last].
 
     Primary pacing metric: retrace-to-retrace (r2r), the time between consecutive frame-loop retrace marks
@@ -596,6 +595,16 @@ def window_stats(rows, first, last):
         if values:
             present.update({"n": len(values), "p50": round(pct(values, .5), 2), "p99": round(pct(values, .99), 2),
                             "max": round(max(values), 2), "over_20.8": sum(1 for v in values if v > LATE_MS)})
+            if display_hz:
+                # As the exit line: refresh ticks per interval, off-cadence = not within 2 ms of a tick multiple.
+                period = 1000.0 / display_hz
+                ticks = [0, 0, 0, 0]
+                off = 0
+                for v in values:
+                    n = max(1, round(v / period))
+                    ticks[min(n, 4) - 1] += 1
+                    off += abs(v - n * period) > 2.0
+                present.update({"ticks_1_2_3_4plus": ticks, "off_cadence": off, "display_hz": display_hz})
         stats["present"] = present
     return stats
 
@@ -638,7 +647,8 @@ def analyze_run(run_dir, user, stage, status, timed_out):
     if csv_path.is_file() and frames.get("ready") and frames.get("end"):
         with csv_path.open() as handle:
             rows = list(csv.DictReader(handle))
-        result["window"] = window_stats(rows, frames["ready"], frames["end"])
+        hz = (result.get("present_exit") or {}).get("display_hz")
+        result["window"] = window_stats(rows, frames["ready"], frames["end"], hz)
         if frames.get("load_start"):
             loading = window_stats(rows, frames["load_start"], frames["ready"])
             if loading:
@@ -664,9 +674,11 @@ def present_cell(r):
 
 
 def ticks_cell(r):
-    e = r.get("present_exit") or {}
-    t = e.get("ticks_1_2_3_4plus")
-    return "/".join(str(x) for x in t) + f" @{e['display_hz']:g}Hz, off-cadence {e['off_cadence_pct']:g}%" if t else "-"
+    """Gameplay-window present ticks (the exit line's histogram also covers boot and menus)."""
+    pw = ((r.get("window") or {}).get("present") or {})
+    t = pw.get("ticks_1_2_3_4plus")
+    return "/".join(str(x) for x in t) + f" @{pw['display_hz']:g}Hz, off {pw['off_cadence']}, >20.8 {pw['over_20.8']}" \
+        if t else "-"
 
 
 def run_table(results):
@@ -712,7 +724,8 @@ def _get(*path):
 METRICS = {
     "r2r_p99": _get("window", "r2r", "p99"), "r2r_late": _get("window", "r2r", "over_20.8"),
     "r2r_max": _get("window", "r2r", "max"), "busy_p99": _get("window", "busy", "p99"),
-    "interval_p99": _get("window", "p99"), "present_p99": _get("present_exit", "p99"),
+    "interval_p99": _get("window", "p99"), "present_p99": _get("window", "present", "p99"),
+    "present_late": _get("window", "present", "over_20.8"), "present_offcad": _get("window", "present", "off_cadence"),
 }
 
 
@@ -744,7 +757,7 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
     na, nb = noise(a_results), noise(b_results)
     pooled = {m: max([x for x in (na.get(m), nb.get(m)) if x is not None], default=None) for m in METRICS}
     ga, gb = by_stage(a_results), by_stage(b_results)
-    shown = ("r2r_p99", "r2r_late", "busy_p99", "interval_p99", "present_p99")
+    shown = ("r2r_p99", "r2r_late", "busy_p99", "present_late", "present_offcad")
     head = " | ".join(f"{m} {a_name} | {m} {b_name} | d" for m in shown)
     lines = [f"| stage | n | {head} | verdict |", "|---|---:|" + "---:|---:|---:|" * len(shown) + "---|"]
     for key in sorted(set(ga) & set(gb)):
@@ -758,7 +771,7 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
             xa, xb = statistics.median(va), statistics.median(vb)
             d = xb - xa
             cells.append(f"{xa:g} | {xb:g} | {d:+.2f}")
-            if m in ("r2r_p99", "r2r_late", "busy_p99", "present_p99"):
+            if m in ("r2r_p99", "r2r_late", "busy_p99", "present_late", "present_offcad"):
                 n = pooled.get(m)
                 if n is None:
                     verdict.append(f"{m} ? (no repeats)") if d else None
@@ -766,6 +779,15 @@ def compare_table(a_results, b_results, a_name="A", b_name="B"):
                     verdict.append(f"{m} {'better' if d < 0 else 'WORSE'}")
         lines.append(f"| {key[0]}-s{key[1]} | {len(ra)}/{len(rb)} | {' | '.join(cells)} | "
                      f"{', '.join(verdict) or 'within noise'} |")
+    lines.append("")
+    lines.append("Gameplay-window present intervals (refresh ticks 1/2/3/4+, off-cadence, >20.8 ms), per run:")
+    for name, runs in ((a_name, a_results), (b_name, b_results)):
+        for r in runs:
+            pw = ((r.get("window") or {}).get("present") or {})
+            if pw.get("ticks_1_2_3_4plus"):
+                lines.append(f"- {name} {r['stage']}-s{r['scenario']}-r{r['repeat']}: {'/'.join(map(str, pw['ticks_1_2_3_4plus']))}"
+                             f" @{pw['display_hz']:g} Hz, off-cadence {pw['off_cadence']}, >20.8 {pw['over_20.8']}, "
+                             f"states {pw.get('states')}")
     lines.append("")
     lines.append(f"Noise (median over stages of the spread between repeats of one stage): {a_name} {na}; {b_name} {nb}. "
                  "A per-stage delta counts only beyond 2x the larger spread; with one repeat there is no noise estimate.")
@@ -887,27 +909,34 @@ def cmd_run(args):
 
 
 def cmd_ab(args):
+    """Two variants, interleaved per stage (who goes first alternates). A variant is an app plus extra env, so one
+    build can be compared against itself with a flag (e.g. --b-env PETARI_PRESENT_MODE=fifo)."""
     batch(args, 2 * len(resolve_stages(args)) * args.repeat)
     out, meta = start_bench(args, ("cold" if args.cold else "warm") + " A/B")
-    apps = {"A": BenchApp(args.a, args.warm_root).freeze(), "B": BenchApp(args.b, args.warm_root).freeze()}
-    if apps["A"].sha == apps["B"].sha:
-        log("A and B are the same build: this measures noise only")
+    a_label, b_label = args.a_label, args.b_label
+    if a_label == b_label:
+        raise SystemExit("perf_bench: --a-label and --b-label must differ")
+    variants = {a_label: (BenchApp(args.a, args.warm_root).freeze(), args.a_env),
+                b_label: (BenchApp(args.b or args.a, args.warm_root).freeze(), args.b_env)}
+    if variants[a_label][0].sha == variants[b_label][0].sha and args.a_env == args.b_env:
+        log("A and B are the same build and environment: this measures noise only")
     if not args.cold:
-        ensure_warm(args, apps["A"])  # one team cache for both: Metal/Dawn/Aurora entries are content-keyed
-    for label, app in apps.items():
-        meta["apps"][label] = {"source": str(app.source), "sha256": app.sha}
+        ensure_warm(args, variants[a_label][0])  # one team cache for both: Metal/Dawn/Aurora entries are content-keyed
+    for label, (app, env) in variants.items():
+        meta["apps"][label] = {"source": str(app.source), "sha256": app.sha, "env": env}
     chosen = resolve_stages(args)
     results = []
     t0 = time.time()
     try:
         for repeat in range(1, args.repeat + 1):
             for index, (stage, scenario) in enumerate(chosen):
-                order = ("A", "B") if (repeat + index) % 2 else ("B", "A")  # alternate who goes first
+                order = (a_label, b_label) if (repeat + index) % 2 else (b_label, a_label)
                 for label in order:
-                    results.append(run_once(args, out, label, apps[label], stage, scenario, repeat, args.cold))
+                    app, env = variants[label]
+                    results.append(run_once(args, out, label, app, stage, scenario, repeat, args.cold, env))
     finally:
         meta["bench_seconds"] = round(time.time() - t0)
-        finish(args, out, meta, results, list(apps.values()))
+        finish(args, out, meta, results, [variants[a_label][0]])
 
 
 def cmd_warm(args):
@@ -919,7 +948,24 @@ def cmd_warm(args):
     print(app.warm_cache)
 
 
+def reanalyze(out):
+    """Re-parse every run's app.log and frames.csv with the current analysis (run metadata is kept)."""
+    for path in sorted((out / "runs").glob("*/*/result.json")):
+        old = json.loads(path.read_text())
+        run_dir = path.parent
+        fresh = analyze_run(run_dir, run_dir / "user", old["stage"], old.get("exit_status"), old.get("timed_out", False))
+        old.update(fresh)
+        path.write_text(json.dumps(old, indent=2, ensure_ascii=False) + "\n")
+    data = json.loads((out / "results.json").read_text())
+    data["results"] = [json.loads(p.read_text()) for p in sorted((out / "runs").glob("*/*/result.json"))]
+    (out / "results.json").write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+
 def cmd_report(args):
+    if args.reanalyze:
+        reanalyze(args.out_root / args.name)
+        if args.vs:
+            reanalyze(args.out_root / args.vs)
     data = json.loads((args.out_root / args.name / "results.json").read_text())
     if args.vs:
         other = json.loads((args.out_root / args.vs / "results.json").read_text())
@@ -988,7 +1034,12 @@ def main():
     p = sub.add_parser("ab", help="two apps, interleaved per stage")
     bench(p)
     p.add_argument("--a", type=Path, default=default_app, help="baseline app (default: main checkout build)")
-    p.add_argument("--b", type=Path, required=True, help="candidate app, e.g. ~/macio-worktrees/<w>/build/macos-gx/native/app/Petari.app")
+    p.add_argument("--b", type=Path, default=None,
+                   help="candidate app, e.g. ~/macio-worktrees/<w>/build/macos-gx/native/app/Petari.app (default: --a)")
+    p.add_argument("--a-env", action="append", default=[], metavar="KEY=VALUE", help="extra environment for A only")
+    p.add_argument("--b-env", action="append", default=[], metavar="KEY=VALUE", help="extra environment for B only")
+    p.add_argument("--a-label", default="A")
+    p.add_argument("--b-label", default="B")
     p.set_defaults(fn=cmd_ab)
     p = sub.add_parser("warm", help="fill (or locate) the team warm cache")
     common(p)
@@ -1003,6 +1054,7 @@ def main():
     common(p)
     p.add_argument("name")
     p.add_argument("--vs")
+    p.add_argument("--reanalyze", action="store_true", help="re-parse the runs' logs and CSVs with the current analysis")
     p.set_defaults(fn=cmd_report)
     p = sub.add_parser("sets", help="print the stage sets")
     common(p)

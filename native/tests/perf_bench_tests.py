@@ -67,6 +67,9 @@ class WindowStats(unittest.TestCase):
         self.assertEqual(stats["present"]["states"], {"ok": 41, "dropped": 9})
         self.assertEqual(stats["present"]["over_20.8"], 1)
         self.assertEqual(stats["present"]["p50"], 16.67)
+        ticked = pb.window_stats(rows(frames, ["present_ms", "presented_frame", "present_state"]), 0, 50, 120.0)
+        self.assertEqual(ticked["present"]["ticks_1_2_3_4plus"], [0, 40, 0, 1])
+        self.assertEqual(ticked["present"]["off_cadence"], 0)
 
 
 class ExitLine(unittest.TestCase):
