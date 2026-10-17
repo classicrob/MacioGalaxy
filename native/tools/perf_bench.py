@@ -647,7 +647,7 @@ def harvest_run(run_dir, user, app, env):
         target.execute("insert into aurora_schema values (?)", schema)
         target.executemany("insert into pipeline_cache values (?,?,?,?,?,?)", rows)
     target.close()
-    note = {"seeds": str(global_db.parent), "rows": len(rows),
+    note = {"seeds": str(global_db.parent), "rows": len(rows), "run_stage": env.get("PETARI_STAGE"),
             "stages": {c: sorted(v) for c, v in sorted(stages.items())},
             "misses": misses, "misses_unseeded": sorted(c for c in misses if int(c, 16) not in seeded),
             "rows_without_stage": sorted(f"{u64(r[1]):016x}" for r in rows if f"{u64(r[1]):016x}" not in stages)}
@@ -673,6 +673,12 @@ def cmd_harvest(args):
                 rows.setdefault((row[0], row[1]), row)
             con.close()
             run = str(note_path.parent)
+            # The run's stage (older harvests: from the run dir name, <drive>-<Stage>-s<n>-r<k>).
+            run_stage = note.get("run_stage") or re.sub(r"^(?:[a-z0-9]+-)?(\w+?)-s\d+-r\d+$", r"\1", note_path.parent.name)
+            for config in note.get("misses_unseeded", []):
+                # A miss was really drawn where it missed: with no [gx stage config] line, attribute it to the run's stage.
+                if not note["stages"].get(config):
+                    note["stages"][config] = [run_stage]
             for config, stages in note["stages"].items():
                 entry = info.setdefault(config, {"stages": set(), "runs": set(), "skipped": 0})
                 entry["stages"].update(stages)
@@ -697,6 +703,11 @@ def cmd_harvest(args):
     summary = {c: {"stages": sorted(e["stages"]), "runs": len(e["runs"]), "skipped_draws": e["skipped"],
                    "row": c in by_hash} for c, e in sorted(info.items(), key=lambda kv: -kv[1]["skipped"])}
     (out / "harvest.json").write_text(json.dumps(summary, indent=2) + "\n")
+    # For order_pipeline_seeds.py add-rows (cold-hitch): config -> stages, and skipped draws as ranking weights.
+    (out / "stages.json").write_text(json.dumps({
+        "stages": {c: e["stages"] for c, e in summary.items() if e["row"] and e["stages"]},
+        "weights": {c: e["skipped_draws"] for c, e in summary.items() if e["row"] and e["skipped_draws"]},
+    }, indent=2) + "\n")
     log(f"harvest: {len(rows)} rows, {len(summary)} configs ({sum(1 for v in summary.values() if v['skipped_draws'])} "
         f"with skipped draws) -> {out}")
     if args.seed_dir:

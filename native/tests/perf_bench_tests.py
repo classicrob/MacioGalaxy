@@ -197,7 +197,11 @@ class Harvest(unittest.TestCase):
             glob_rows = {h for (h,) in sqlite3.connect(out / "__global__.db").execute("select hash from pipeline_cache")}
             stage_rows = dict(sqlite3.connect(out / "EggStarGalaxy.db").execute("select hash, first_frame_used from pipeline_cache"))
             self.assertEqual(glob_rows, {1, 2, 3, big})
-            self.assertEqual(stage_rows, {1: 5, 3: 0})  # the attributed config, hot; the miss had no stage line
+            # The attributed config and the miss (no stage line: the run's stage), both hot.
+            self.assertEqual(stage_rows, {1: 5, 3: 0, big: 0})
+            stages = json.loads((tmp / "out/stages.json").read_text())
+            self.assertEqual(stages["stages"][f"{(big & (2**64 - 1)):016x}"], ["EggStarGalaxy"])
+            self.assertEqual(stages["weights"], {f"{(big & (2**64 - 1)):016x}": 631})
             summary = json.loads((tmp / "out/harvest.json").read_text())
             self.assertEqual(next(iter(summary.values()))["skipped_draws"], 631)
 
