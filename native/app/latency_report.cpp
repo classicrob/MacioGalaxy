@@ -124,13 +124,21 @@ void frame(bool gameplay) {
     if (stage == Probe::Idle) return;
     const std::uint64_t press = Probe::pressNs.load();
     if (stage == Probe::Presented) {
+        // On screen: the frame's drawable presentedTime (present statistics, same clock), which
+        // arrives a few frames after Present returned; wait up to 10 frames for it.
+        static unsigned long presentedAt = 0;
+        if (presentedAt == 0) presentedAt = frames;
+        const PresentStats::Record* record = PresentStats::find(Probe::shownFrame.load());
+        const std::uint64_t onScreen = record != nullptr ? record->presentedNs.load(std::memory_order_relaxed) : 0;
+        if (onScreen == 0 && PresentStats::enabled() && frames - presentedAt < 10) return;
+        presentedAt = 0;
         std::fprintf(stderr,
                      "[latency] press: report %.1f ms, game read %.1f ms (frame %u), display copy %.1f ms (frame %u), "
-                     "shown %.1f ms (frame %u, %u frames after the read), present returned %.1f ms\n",
+                     "shown %.1f ms (frame %u, %u frames after the read), present returned %.1f ms, on screen %.1f ms\n",
                      ms(press, Probe::reportNs.load()), ms(press, Probe::readNs.load()), Probe::readFrame.load(),
                      ms(press, Probe::copyNs.load()), Probe::copyFrame.load(), ms(press, Probe::shownNs.load()),
                      Probe::shownFrame.load(), Probe::shownFrame.load() - Probe::readFrame.load(),
-                     ms(press, Probe::presentNs.load()));
+                     ms(press, Probe::presentNs.load()), onScreen != 0 ? ms(press, onScreen) : -1.0);
         Probe::stage.store(Probe::Idle);
     } else if (Probe::nowNs() - press > 3'000'000'000ULL) {
         // A press the game never read as gameplay (menus, pause), or no new copy.
