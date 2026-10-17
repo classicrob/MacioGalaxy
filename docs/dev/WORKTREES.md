@@ -41,6 +41,11 @@ PETARI_LOCK_CLASS=functional <main>/build/locked-app.sh <name> <command that run
 
 The default `cmake --build` does not relink the app: build `--target petari`.
 
+Builds can also run beside quiet timing runs, on the efficiency cores only:
+`PETARI_BUILD_BACKGROUND=1 <main>/build/locked-build.sh <name> cmake --build build/macos-gx --target petari`.
+It takes its own single slot (`.macos-gx.lock.bg`), runs at background QoS with -j4, and refuses ctest and
+app runs. Measured within timing noise (2026-10-17), but about 3x slower: use it for incremental builds.
+
 ## Committing and merging
 
 1. Commit on `wt/<name>` as usual (path-limited commits are fine in your own tree).
