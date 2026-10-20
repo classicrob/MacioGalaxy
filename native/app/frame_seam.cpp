@@ -44,6 +44,7 @@ extern "C" void petari_gx_pipeline_report();
 #include "smoke_stage.hpp"
 #include "soak_telemetry.hpp"
 #include "petari/asset_diagnostics.hpp"
+#include "petari/display_mode.hpp"
 #include "petari/frame_telemetry.hpp"
 #include "petari/present_pacing.hpp"
 #include "petari/home_menu.hpp"
@@ -557,12 +558,14 @@ void handleEvents(const AuroraEvent* event) {
                 if (extension == ".gltf" || extension == ".glb" || extension == ".obj") PetariEditor::Ui::openImportSheet(dropped.c_str());  // M6 import
             }
 #endif
+            Display::handleEvent(event->sdl);
             Events::input(event->sdl);
             break;
         default:
             break;
         }
     }
+    Display::update();
 }
 
 // Opens the next Aurora frame. While the window cannot present (minimized,

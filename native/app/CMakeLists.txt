@@ -44,7 +44,7 @@ if(NOT _petari_app_standalone)
         petari_platform_os petari_platform_vi petari_platform_dvd petari_platform_nand petari_platform_sc
         petari_audio_sdl petari_host_runtime petari_app_smoke petari_milestone petari_editor_patch petari_editor_terrain)
 
-    add_library(petari_app_host STATIC frame_seam.cpp frame_stats.cpp spike_profiler.cpp input_events.cpp pipeline_startup.cpp)
+    add_library(petari_app_host STATIC frame_seam.cpp frame_stats.cpp spike_profiler.cpp input_events.cpp pipeline_startup.cpp display_mode.cpp)
     target_include_directories(petari_app_host PUBLIC ${PETARI_REPO_ROOT}/native/include)
     # Deliberately not petari_native_config: no SDK include paths next to Aurora's.
     target_link_libraries(petari_app_host PUBLIC aurora::core petari_input_sdl3 petari_home_menu_imgui
