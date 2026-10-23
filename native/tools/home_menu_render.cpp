@@ -277,6 +277,11 @@ int main(int argc, char** argv) {
     menu.open();
     settle();
     shot("list");
+    // The Volume slider, focused, at 60%.
+    menu.setVolume(60);
+    for (int i = 0; i < 4; ++i) menu.update(press(Down));
+    shot("list-volume");
+    for (int i = 0; i < 4; ++i) menu.update(press(Up));
     menu.update(press(Down));
     menu.update(press(A));
     shot("controls");

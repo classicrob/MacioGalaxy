@@ -1,6 +1,7 @@
 #include "petari/home_menu.hpp"
 #include "petari/launch_stage.hpp"
 #include "petari/progress.hpp"
+#include "petari/volume.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -45,14 +46,15 @@ constexpr float kRemapTableRight = 0.75f;  // the table's right edge; the scroll
 constexpr float kRemapLabelShare = 0.32f;  // of the table width; four slots share the rest
 constexpr float kRemapButtonsTop = 0.65f;
 
-constexpr const char* kListLabels[] = {"Resume", "Controls", "Mods", "My Progress", "Restart from Title", "Quit"};
-constexpr int kListCount = 6;
+constexpr const char* kListLabels[] = {"Resume", "Controls", "Mods", "My Progress", "Volume", "Restart from Title", "Quit"};
+constexpr int kListCount = 7;
 constexpr int kListResume = 0;
 constexpr int kListControls = 1;
 constexpr int kListMods = 2;
 constexpr int kListProgress = 3;
-constexpr int kListRestart = 4;
-constexpr int kListQuit = 5;
+constexpr int kListVolume = 4;  // a slider, not a button; above the actions that leave the game
+constexpr int kListRestart = 5;
+constexpr int kListQuit = 6;
 constexpr int kConfirmAccept = 0;
 constexpr int kConfirmCancel = 1;
 // Every other page's item count; View::items has to hold the largest.
@@ -113,6 +115,9 @@ void Menu::open() {
     mRepeatDir = 0;
     mRepeatTime = 0.0f;
     mPointerWasValid = false;
+    mVolumeDrag = false;
+    mSideDir = 0;
+    mSideTime = 0.0f;
     if (mRemapMode == RemapMode::Capturing && mBackend != nullptr) {
         mBackend->cancelCapture();
     }
@@ -182,14 +187,25 @@ void Menu::update(const FrameInput& input) {
         back();
         return;
     }
+    // Dragging the Volume slider: it follows the pointer while the button that
+    // clicked it (A or B, either mouse button when remapped) is held.
+    if (mVolumeDrag) {
+        if (mPhase == Phase::List && (input.hold & (Button::A | Button::B)) && input.pointerValid) {
+            setVolumeFromPointer(input.pointerX);
+            return;
+        }
+        mVolumeDrag = false;
+    }
     if (input.trigger & Button::A) {
         activate(mFocus);
+        mVolumeDrag = mPhase == Phase::List && mFocus == kListVolume && hovered == kListVolume;
         return;
     }
     if (input.trigger & Button::B) {
         if (hovered >= 0) {
             setFocus(hovered, false);
             activate(hovered);
+            mVolumeDrag = mPhase == Phase::List && hovered == kListVolume;
         } else {
             back();
         }
@@ -206,6 +222,9 @@ void Menu::update(const FrameInput& input) {
             changeCameraValue(mFocus, side == Button::Left ? -1 : 1);
             return;
         }
+    }
+    if (updateVolumeKeys(input)) {
+        return;
     }
     if (mPhase == Phase::Progress && mFocus == 0) {
         const std::uint32_t side = input.trigger & (Button::Left | Button::Right);
@@ -326,6 +345,62 @@ void Menu::changeCameraValue(int item, int delta) {
     mCameraChanged = true;
     refreshCameraLabels();
     play(item == 1 ? Sound::Focus : Sound::Select);
+}
+
+void Menu::setVolume(int percent) {
+    mVolume = Volume::snap(percent);
+    mVolumeChanged = false;
+}
+
+bool Menu::takeVolumeChange(int* percent) {
+    if (!mVolumeChanged) {
+        return false;
+    }
+    mVolumeChanged = false;
+    *percent = mVolume;
+    return true;
+}
+
+void Menu::changeVolume(int percent) {
+    percent = Volume::snap(percent);
+    if (percent == mVolume) {
+        return;
+    }
+    mVolume = percent;
+    mVolumeChanged = true;
+    play(Sound::Focus);  // one tick per step, at the new volume
+}
+
+void Menu::setVolumeFromPointer(float x) {
+    const Rect track = sliderTrack(itemRect(kListVolume));
+    const float t = std::clamp((x - track.x0) / (track.x1 - track.x0), 0.0f, 1.0f);
+    changeVolume(static_cast<int>(std::lround(t * 100.0f)));
+}
+
+bool Menu::updateVolumeKeys(const FrameInput& input) {
+    std::uint32_t side = input.hold & (Button::Left | Button::Right);
+    if (mPhase != Phase::List || mFocus != kListVolume || side == (Button::Left | Button::Right)) {
+        side = 0;
+    }
+    if (side == 0 || (side != mSideDir && !(input.trigger & side))) {
+        // Released, or held since before the slider had the focus: no repeat without a fresh press.
+        mSideDir = 0;
+        mSideTime = 0.0f;
+        return false;
+    }
+    const int step = side == Button::Left ? -Volume::kStep : Volume::kStep;
+    if (input.trigger & side) {
+        mSideDir = side;
+        mSideTime = 0.0f;
+        changeVolume(mVolume + step);
+        return true;
+    }
+    mSideTime += mConfig.frameDelta;
+    while (mSideTime >= kRepeatDelayFrames) {
+        changeVolume(mVolume + step);
+        mSideTime -= kRepeatIntervalFrames;
+    }
+    return false;
 }
 
 void Menu::setFolderMods(const FolderModEntry* entries, int count) {
@@ -666,6 +741,7 @@ View Menu::view() const {
         for (int i = 0; i < kListCount; i++) {
             setItem(i, kListLabels[i]);
         }
+        view.items[kListVolume].slider = static_cast<float>(mVolume) / 100.0f;
     } else {
         view.bands = true;
         const bool restart = mConfirming == Selection::Restart;
@@ -675,7 +751,7 @@ View Menu::view() const {
         setItem(kConfirmCancel, "Cancel");
     }
     // "<icon> <key>: <what>" for each button that works here.
-    const bool changes = mPhase == Phase::Levels || mPhase == Phase::Camera || progressPage;
+    const bool changes = (mPhase == Phase::List && !confirm && mFocus == kListVolume) || mPhase == Phase::Levels || mPhase == Phase::Camera || progressPage;
     size_t used = 0;
     auto hint = [&](const char* icon, const char* key, const char* what) {
         if (used >= sizeof(view.footer)) return;
@@ -865,6 +941,14 @@ void Menu::activate(int index) {
             mPhase = Phase::Mods;
             mFocus = 0;
             mRepeatDir = 0;
+            break;
+        case kListVolume:
+            // A click sets the slider where it lands; A without the pointer on it steps up.
+            if (mPointerWasValid && itemRect(kListVolume).contains(mPointerX, mPointerY)) {
+                setVolumeFromPointer(mPointerX);
+            } else {
+                changeVolume(mVolume + Volume::kStep);
+            }
             break;
         case kListRestart:
         case kListQuit:

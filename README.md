@@ -146,7 +146,7 @@ build/macos-gx/native/app/Petari.app/Contents/MacOS/Petari --disc build/game-dat
   textures or disc data). Without it the game still runs; it just hitches more
   on first visits. See
   [native/tools/PIPELINE_SEEDING.md](native/tools/PIPELINE_SEEDING.md#repacking-the-seed-pack).
-- Saves, settings (`controls.txt`, `mods.txt`) and crash reports live in
+- Saves, settings (`controls.txt`, `mods.txt`, `sound.txt`) and crash reports live in
   `~/Library/Application Support/Petari`. Use `--user DIR` for a separate save
   location. Native saves are not compatible with Wii saves.
 - At the title screen press **Return** (the game's "press A and B").
@@ -160,7 +160,8 @@ Keyboard and mouse by default, with game controller support. The main keys:
 **WASD** move, **Space** jump, **F** spin, **Shift** crouch, mouse aims the Star
 Pointer, left click shoots Star Bits, **Q/E** rotate the camera, **Escape**
 pauses, and **`** (the key under Escape) or **F1** opens the native Home menu
-(Controls, Mods, Restart, Quit). Everything is listed, and remappable, in
+(Controls, Mods, a Volume slider: Left/Right in 5% steps or click and drag it,
+Restart, Quit). Everything is listed, and remappable, in
 [native/CONTROLS.md](native/CONTROLS.md). Controller support follows SDL3's
 standard layout but has not yet been tested with physical hardware.
 

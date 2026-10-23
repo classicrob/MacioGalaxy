@@ -21,6 +21,9 @@
 #include "petari/platform/mod_folder.hpp"
 #include "petari/camera_settings.hpp"
 #endif
+#ifdef PETARI_HOME_MENU_VOLUME
+#include "petari/volume.hpp"
+#endif
 
 namespace PetariNative::HomeMenu {
 
@@ -445,6 +448,32 @@ void applyModToggles() {
 }
 #endif
 
+#ifdef PETARI_HOME_MENU_VOLUME
+// A Volume slider change is heard at once (on the next audio burst); sound.txt is
+// written once the menu closes, not on every step, so dragging the slider does
+// no file work on the game thread.
+bool gVolumeUnsaved = false;
+
+void applyVolumeChange() {
+    int percent = 0;
+    if (instance().takeVolumeChange(&percent)) {
+        Volume::setPercent(percent);
+        gVolumeUnsaved = true;
+    }
+}
+
+void saveVolumeIfChanged() {
+    if (!gVolumeUnsaved) {
+        return;
+    }
+    gVolumeUnsaved = false;
+    std::string error;
+    if (!Volume::save(&error)) {
+        std::fprintf(stderr, "petari: sound: %s\n", error.c_str());
+    }
+}
+#endif
+
 void init() {
     for (std::uint32_t& hold : gStickHold) {
         hold = 0;
@@ -456,6 +485,9 @@ void init() {
     refreshMods();
     refreshFolderMods();
     refreshCamera();
+#endif
+#ifdef PETARI_HOME_MENU_VOLUME
+    instance().setVolume(Volume::percent());
 #endif
 #ifdef PETARI_HOME_MENU_INPUT
     instance().setEditorEnabled(Mods::enabled(Mods::Mod::LevelEditor));
@@ -478,6 +510,9 @@ void calc(const HBMControllerData* controllers) {
     applyFolderToggles();
     applyCameraChange();
 #endif
+#ifdef PETARI_HOME_MENU_VOLUME
+    applyVolumeChange();
+#endif
     // Level Select's Go, once the menu has closed: the game starts the warp
     // at its next normal gameplay frame (GameScene::update).
     const char* stage = nullptr;
@@ -489,6 +524,9 @@ void calc(const HBMControllerData* controllers) {
     }
     if (menu.takeNewGalaxyRequest()) PlayerLaunch::newGalaxyPending.store(true);  // M4: host UI request.
     if (menu.selection() != Selection::None) {
+#ifdef PETARI_HOME_MENU_VOLUME
+        saveVolumeIfChanged();
+#endif
         // HomeButtonLayout hides itself this frame and stops calling draw.
         publish(View{});
     }

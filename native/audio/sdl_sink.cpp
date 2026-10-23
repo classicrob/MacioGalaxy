@@ -2,6 +2,7 @@
 #include <petari/host_allocation.hpp>
 #include <petari/platform/audio.hpp>
 #include <petari/platform/os_host.hpp>
+#include <petari/volume.hpp>
 #include <SDL3/SDL_audio.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_error.h>
@@ -239,9 +240,16 @@ void SDLCALL fill(void*, SDL_AudioStream* stream, int additionalBytes, int) {
         requestedFrames.fetch_add(static_cast<std::uint64_t>(frames), std::memory_order_relaxed);
     }
     ring.noteRequest(static_cast<std::size_t>(frames));  // the whole burst, before splitting
+    // The Home menu's volume slider, read once per burst.
+    const float gain = PetariNative::Volume::gain();
     while (frames > 0) {
         const int count = std::min(frames, 1024);
         ring.read(buffer, static_cast<std::size_t>(count));
+        if (gain < 1.0f) {
+            for (int i = 0; i < count * 2; i++) {
+                buffer[i] = static_cast<std::int16_t>(std::lround(buffer[i] * gain));
+            }
+        }
         if (!SDL_PutAudioStreamData(stream, buffer, count * 4)) {
             failed.store(true, std::memory_order_relaxed);
             return;
