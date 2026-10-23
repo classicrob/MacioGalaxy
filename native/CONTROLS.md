@@ -76,7 +76,7 @@ have input-component tests but have not been approved through gameplay:
 | Input | Action |
 | --- | --- |
 | Arrow keys | D-pad; Up enters first-person view where supported, Down or Space leaves it |
-| F1 or ` | Native Home menu: Resume, Controls (every control, remappable), Mods (with Level Select, native/LEVEL_SELECT.md), Restart from Title, Quit |
+| F1 or ` | Native Home menu: Resume, Controls (every control, remappable), Mods (with Level Select, native/LEVEL_SELECT.md), Volume slider (Left/Right: 5% steps; click or drag; saved in `sound.txt` when the menu closes), Restart from Title, Quit |
 | G / V | Optional mods (off by default; F1 → Mods): collect visible Star Bits / fire a Star Bit at the nearest enemy. See native/MODS.md |
 | Hold left mouse | Only with the Point to move mod on (F1 → Mods): Mario runs toward the pointer; keys still jump, spin and crouch; B shoots Star Bits. See native/MODS.md |
 | R | Cap throw, only with the Cappy mod on (F1 → Mods; it needs Odyssey movement). Hold to keep Cappy out. See native/MODS.md |

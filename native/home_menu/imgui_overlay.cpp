@@ -360,6 +360,71 @@ void galaxyButton(ImDrawList* list, ImFont* font, float textSize, ImVec2 min, Im
     centeredText(list, font, textSize, labelWidth, center, ink, label, false);
 }
 
+// The Volume slider: the button's capsule (gold when focused) holding the label on
+// the left, a recessed track with the game's blue fill and a capsule knob in the
+// middle (sliderTrack, which the pointer maps through), and the percentage, or
+// "Mute", on the right. Text is embossed like the buttons' labels.
+void galaxySlider(ImDrawList* list, ImFont* font, float textSize, const ImageSpace& image, const ViewItem& item, float unit,
+                  float alpha) {
+    const ImVec2 itemMin = image.point(item.rect.x0, item.rect.y0);
+    const ImVec2 itemMax = image.point(item.rect.x1, item.rect.y1);
+    galaxyButton(list, font, textSize, itemMin, itemMax, item.focused, unit, alpha, "");
+    const float radius = (itemMax.y - itemMin.y) * 0.5f;
+    const float middle = (itemMin.y + itemMax.y) * 0.5f;
+    const float value = std::clamp(item.slider, 0.0f, 1.0f);
+    const bool focused = item.focused;
+
+    // The track: a recessed groove, darker at the top as if lit from above, with the rim's colour.
+    const Rect trackRect = sliderTrack(item.rect);
+    const ImVec2 trackMin = image.point(trackRect.x0, trackRect.y0);
+    const ImVec2 trackMax = image.point(trackRect.x1, trackRect.y1);
+    const float trackRound = (trackMax.y - trackMin.y) * 0.5f;
+    int start = list->VtxBuffer.Size;
+    list->AddRectFilled(trackMin, trackMax, color(1.0f, 1.0f, 1.0f, alpha), trackRound);
+    shade(list, start, trackMin, trackMax, focused ? color(0.78f, 0.62f, 0.30f, 1.0f) : color(0.40f, 0.58f, 0.80f, 1.0f),
+          focused ? color(1.0f, 0.95f, 0.80f, 1.0f) : color(0.86f, 0.93f, 1.0f, 1.0f));
+    // The fill, in the buttons' blue (gold on the focused slider), lit from above.
+    const float fillX = trackMin.x + (trackMax.x - trackMin.x) * value;
+    if (value > 0.0f) {
+        const ImVec2 fillMax(std::max(fillX, trackMin.x + trackRound * 2.0f), trackMax.y);
+        start = list->VtxBuffer.Size;
+        list->AddRectFilled(trackMin, fillMax, color(1.0f, 1.0f, 1.0f, alpha), trackRound);
+        shade(list, start, trackMin, fillMax, focused ? color(1.0f, 0.93f, 0.55f, 1.0f) : color(0.55f, 0.88f, 1.0f, 1.0f),
+              focused ? color(0.96f, 0.68f, 0.12f, 1.0f) : color(0.13f, 0.56f, 0.95f, 1.0f));
+    }
+    const ImU32 rim = focused ? color(0.86f, 0.62f, 0.10f, alpha) : color(0.18f, 0.60f, 0.95f, 0.9f * alpha);
+    list->AddRect(trackMin, trackMax, rim, trackRound, 0, unit * 1.5f);
+
+    // The knob: a small white capsule with the buttons' rim, centred on the value.
+    const float knobHalfW = (trackMax.y - trackMin.y) * 0.95f;
+    const float knobHalfH = (trackMax.y - trackMin.y) * 1.25f;
+    const ImVec2 knobMin(fillX - knobHalfW, middle - knobHalfH), knobMax(fillX + knobHalfW, middle + knobHalfH);
+    list->AddRectFilled(ImVec2(knobMin.x, knobMin.y + unit * 1.5f), ImVec2(knobMax.x, knobMax.y + unit * 1.5f),
+                        color(0.0f, 0.10f, 0.25f, 0.25f * alpha), knobHalfW);  // drop shadow
+    start = list->VtxBuffer.Size;
+    list->AddRectFilled(knobMin, knobMax, color(1.0f, 1.0f, 1.0f, alpha), knobHalfW);
+    shade(list, start, knobMin, knobMax, color(1.0f, 1.0f, 1.0f, 1.0f),
+          focused ? color(1.0f, 0.88f, 0.52f, 1.0f) : color(0.74f, 0.86f, 0.98f, 1.0f));
+    list->AddRect(knobMin, knobMax, rim, knobHalfW, 0, unit * 2.0f);
+
+    // Label and value, embossed as on the buttons.
+    const ImU32 ink = focused ? color(0.30f, 0.17f, 0.02f, alpha) : color(0.20f, 0.25f, 0.34f, alpha);
+    const ImU32 emboss = color(1.0f, 1.0f, 1.0f, 0.8f * alpha);
+    auto text = [&](const char* s, float maxWidth, float x, bool alignRight, ImU32 col) {
+        const Prepared prepared = prepare(s);
+        ImVec2 extent;
+        const float size = fitSize(font, textSize, maxWidth, prepared.text, &extent);
+        const ImVec2 pos(alignRight ? x - extent.x : x, middle - extent.y * 0.5f);
+        richText(list, font, size, ImVec2(pos.x, pos.y + unit), emboss, prepared.text, false);
+        richText(list, font, size, pos, col, prepared.text, false);
+    };
+    const float pad = radius * 0.9f;
+    text(item.label, trackMin.x - itemMin.x - pad - radius * 0.5f, itemMin.x + pad, false, ink);
+    char percent[8];
+    std::snprintf(percent, sizeof(percent), "%d%%", static_cast<int>(std::lround(value * 100.0f)));
+    text(value > 0.0f ? percent : "Mute", itemMax.x - trackMax.x - pad - radius * 0.5f, itemMax.x - pad, true,
+         value > 0.0f ? ink : color(0.75f, 0.20f, 0.12f, alpha));
+}
 
 // The Controls page's remapper: action names, then two keyboard/mouse and two
 // controller slots per row, each a small key cap; the focused slot is a gold
@@ -842,6 +907,10 @@ void drawImGuiOverlay(float imageX, float imageY, float imageWidth, float imageH
             // A page with many rows (the Mods page with a dozen mods) has short buttons: the label shrinks
             // with them instead of crowding the edges. Normal pages keep itemSize.
             const float labelSize = std::min(itemSize, (itemMax.y - itemMin.y) * 0.78f);
+            if (item.slider >= 0.0f) {
+                galaxySlider(list, font, labelSize, image, item, unit, alpha);
+                continue;
+            }
             galaxyButton(list, font, labelSize, itemMin, itemMax, item.focused, unit, alpha, item.label);
         }
 

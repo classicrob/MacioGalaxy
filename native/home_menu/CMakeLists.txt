@@ -64,6 +64,12 @@ if(TARGET petari_input)
     target_link_libraries(petari_home_menu PUBLIC petari_input petari_platform_dvd)  # Mod folder page: mod_folder.hpp
     target_compile_definitions(petari_home_menu PRIVATE PETARI_HOME_MENU_INPUT=1)
 endif()
+# The Volume slider sets the audio output's master volume (native/gx adds
+# petari_volume first). Standalone builds keep the slider's value in the menu only.
+if(TARGET petari_volume)
+    target_link_libraries(petari_home_menu PUBLIC petari_volume)
+    target_compile_definitions(petari_home_menu PRIVATE PETARI_HOME_MENU_VOLUME=1)
+endif()
 
 # The Dear ImGui overlay. Uses aurora's imgui target (IMGUI_USER_CONFIG and all);
 # a standalone build compiles ImGui's core from aurora's fetched sources.
