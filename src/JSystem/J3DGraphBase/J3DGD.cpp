@@ -329,8 +329,16 @@ static u8 GX2HWFiltConv[6] = {
 
 void J3DGDSetTexLookupMode(GXTexMapID id, GXTexWrapMode wrap_s, GXTexWrapMode wrap_t, GXTexFilter min_filt, GXTexFilter mag_filt, f32 min_lod,
                            f32 max_lod, f32 lod_bias, u8 bias_clamp, u8 do_edge_lod, GXAnisotropy max_aniso) {
+#ifdef PETARI_NATIVE
+    // The Wii converts through a signed integer (fctiwz), so a negative bias keeps its two's complement byte.
+    // A direct negative float to u8 conversion is undefined: optimized arm64 code leaks the sign bits through
+    // BP_TEX_MODE0 into the register id, the mode0 write is lost and the map keeps its previous wrap and filter.
+    J3DGDWriteBPCmd(BP_TEX_MODE0(wrap_s, wrap_t, mag_filt == TRUE, GX2HWFiltConv[min_filt], !do_edge_lod,
+                                 static_cast< u8 >(static_cast< s32 >(32.0f * lod_bias)), max_aniso, bias_clamp, J3DGDTexMode0Ids[id]));
+#else
     J3DGDWriteBPCmd(BP_TEX_MODE0(wrap_s, wrap_t, mag_filt == TRUE, GX2HWFiltConv[min_filt], !do_edge_lod, (u8)(32.0f * lod_bias), max_aniso,
                                  bias_clamp, J3DGDTexMode0Ids[id]));
+#endif
     J3DGDWriteBPCmd(BP_TEX_MODE1((u8)(16.0f * min_lod), (u8)(16.0f * max_lod), J3DGDTexMode1Ids[id]));
 }
 

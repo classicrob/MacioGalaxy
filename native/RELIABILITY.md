@@ -90,6 +90,33 @@ behavior, corpus/component checks and remaining integration work.
   SnowCapsuleGalaxy stage smoke PASS, and its SnowFloor textures now reload
   (build/collision-5.log). Full ctest 93/93.
 
+## Negative texture LOD bias, 2026-10-21
+
+- Symptom: Honeyhive's lawns (ForestHomePlanet `gras_v`, `gras02_v`) drew as one flat
+  green, with colour bands on slopes. The grass showed for one frame at stage entry and
+  then vanished. The dirt beside it uses the same vertex format, texgen and TEV setup and
+  was fine.
+- Cause: `J3DGDSetTexLookupMode` wrote `(u8)(32.0f * lod_bias)` into `BP_TEX_MODE0`.
+  Converting a negative float to u8 is undefined behaviour. Optimized arm64 code kept the
+  sign bits and `BP_TEX_MODE0` does not mask its fields, so for the lawn's bias of -1.0
+  the command was 0xFFFFC1D5 instead of 0x8001C1D5. The write went to BP 0xFF and texture
+  map 0 kept its previous mode0. That was the CLAMP/LINEAR of `J3DSys::reinitTexture`
+  after each `MR::reinitGX`, so the lawn's texture coordinates (-45 to -9) all sampled
+  one edge texel. mode1 is written separately and was correct, which is why only wrap and
+  filter were stale.
+- Fixed in the `PETARI_NATIVE` branch: the bias converts through s32 like the Wii's
+  `fctiwz`, giving bias byte 0xE0 for -1.0, the value in the disc's material display
+  lists. The Wii branch is unchanged. Aurora's `GXInitTexObjLOD` and
+  `GXInitTexObjLODBias` already convert this way (native/gx/patch_aurora_texture.py), and
+  the SDK's `GDSetTexLookupMode` converts through s8.
+- Scope: 169 textures in 123 ObjectData archives have a negative LOD bias, including the
+  observatory, Honeyhive, the cannon fortress and the lava suns. Each lost its mode0 and
+  kept whatever wrap and filter the map last held. Whether this was visible depended on
+  that leftover state.
+- Tests: `native_j3d_gd` encodes biases of -1, -4, 0 and 1.5 and checks the register id.
+  Without the fix the negative cases fail. Live: the HoneyBeeKingdomGalaxy scenario 1
+  stage smoke passes and the lawn is textured (before/after XFB captures).
+
 ## Broader integration coverage
 
 - Story run 6 traversed Peach's Castle Garden, played both full prologue movies,

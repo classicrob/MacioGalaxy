@@ -235,7 +235,7 @@ if(PETARI_BUILD_GX_PROBE)
     # native/app (and a few tests) stay out of `all`: `--target petari_tests`
     # builds every test executable registered with ctest that `all` skips.
     add_custom_target(petari_tests)
-    foreach(_petari_test petari_j3d_material_anm_tests petari_app_smoke_storage_tests petari_app_smoke_domes_tests
+    foreach(_petari_test petari_j3d_gd_tests petari_j3d_material_anm_tests petari_app_smoke_storage_tests petari_app_smoke_domes_tests
             petari_app_seam_tests petari_app_input_events_tests petari_app_smoke_tests petari_app_smoke_stage_tests
             petari_app_launch_stage_tests
             # Asset tests (registered only when build/game-data exists), also EXCLUDE_FROM_ALL:
