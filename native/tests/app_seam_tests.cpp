@@ -241,6 +241,10 @@ bool SDL_GetWindowSize(SDL_Window*, int* w, int* h) {
     *h = windowHeight;
     return true;
 }
+// PETARI_TEST_FULLSCREEN in the seam; these tests never set it.
+bool SDL_SetWindowFullscreen(SDL_Window*, bool) {
+    return true;
+}
 // Smoke result gates in the seam; these tests never trip them.
 std::uint64_t petari_layout_missing_reference_count() {
     return missingLayout;
