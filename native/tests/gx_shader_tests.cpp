@@ -159,6 +159,23 @@ void regression_tests() {
     source = build_shader_source(config, DstAlphaMode::None);
     expect(source.find("textureSampleBias(tex1, tex1_samp, vec2f(0.0)") != std::string::npos,
            "zero-texgen indirect read follows Dolphin's zero-coordinate approximation");
+
+    // A TEV stage with an indirect matrix and wrap but an indirect stage past numIndStages: its own
+    // coordinate still goes through texel space, so the analysis must declare it (crashed in game:
+    // "unresolved value 'tex0_uv'" in "var ind0_texel = tex0_uv * ...", creating the shader module).
+    auto wrapOnly = indirect_config();
+    wrapOnly.numIndStages = 0;
+    auto& wrapStage = wrapOnly.tevStages[0];
+    wrapStage.indTexStage = GX_INDTEXSTAGE0;
+    wrapStage.indTexMtxId = GX_ITM_0;
+    wrapStage.indTexWrapS = GX_ITW_256;
+    wrapStage.colorPass.d = GX_CC_ZERO;
+    wrapStage.alphaPass.d = GX_CA_ZERO;
+    info = build_shader_info(wrapOnly);
+    expect(info.sampledTexCoords.test(0), "an indirect matrix without an indirect stage still reads its coordinate");
+    source = build_shader_source(wrapOnly, DstAlphaMode::None);
+    expect(source.find("tex0_uv") == std::string::npos || source.find("var tex0_uv") != std::string::npos,
+           "every texcoord the shader reads is declared");
 }
 }
 
