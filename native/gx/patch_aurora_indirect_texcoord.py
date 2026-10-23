@@ -29,6 +29,31 @@ GXTexCoordID indirect_texcoord(const ShaderConfig& config, GXTexCoordID requeste
 ''')
 
 if source.name == 'shader_info.cpp':
+    # The generator applies a stage's indirect matrix, wrap or add-previous to the stage's own
+    # coordinate even when its indirect stage is past numIndStages (shader.cpp builds
+    # ind<i>_texel from tex<n>_uv), so the analysis must declare that coordinate before it
+    # skips the stage. Otherwise WGSL fails with "unresolved value 'tex0_uv'".
+    replace('''    // Skip if not enabled
+    if (stage.indTexStage >= config.numIndStages) {
+      continue;
+    }
+    const bool usesIndStage = stage.indTexMtxId != GX_ITM_OFF || is_alpha_bump_channel(stage.channelId);
+    const bool usesTevTexCoord = stage.indTexMtxId != GX_ITM_OFF || stage.indTexWrapS != GX_ITW_OFF ||
+                                 stage.indTexWrapT != GX_ITW_OFF || stage.indTexAddPrev;
+    if (usesTevTexCoord && stage.texCoordId != GX_TEXCOORD_NULL) {
+      info.sampledTexCoords.set(stage.texCoordId);
+    }
+''', '''    const bool usesTevTexCoord = stage.indTexMtxId != GX_ITM_OFF || stage.indTexWrapS != GX_ITW_OFF ||
+                                 stage.indTexWrapT != GX_ITW_OFF || stage.indTexAddPrev;
+    if (usesTevTexCoord && stage.texCoordId != GX_TEXCOORD_NULL) {
+      info.sampledTexCoords.set(stage.texCoordId);
+    }
+    // Skip if not enabled
+    if (stage.indTexStage >= config.numIndStages) {
+      continue;
+    }
+    const bool usesIndStage = stage.indTexMtxId != GX_ITM_OFF || is_alpha_bump_channel(stage.channelId);
+''')
     replace('ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {', '''ShaderInfo build_shader_info(const ShaderConfig& inputConfig) noexcept {
   const auto config = petari_shader_indices(inputConfig);''')
     replace('      info.sampledTexCoords.set(tcg.embossSrc);', """      if (tcg.embossSrc < i && config.tcgs[tcg.embossSrc].src != GX_MAX_TEXGENSRC) {
