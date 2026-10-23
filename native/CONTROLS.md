@@ -206,5 +206,8 @@ from the screen to zoom (`CameraDPD`).
   upright.
 
 Keys pressed while Command is held go to macOS, not the game, so Cmd+Q and
-Ctrl+Cmd+F (fullscreen) do not turn the camera or spin. Focus loss releases all held controls and hides the pointer. Key repeats come
+Cmd+Return (fullscreen) do not turn the camera or spin. Cmd+Return switches
+between the window and fullscreen; fullscreen has no separate Space, so the menu
+bar and Dock stay hidden, and the Mac cursor is hidden while the game has focus
+and the F1 menu is closed. The choice is saved in `display.txt`. Focus loss releases all held controls and hides the pointer. Key repeats come
 from the game's KPAD logic, not from the operating system.
